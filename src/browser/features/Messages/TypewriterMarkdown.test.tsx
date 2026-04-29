@@ -1,7 +1,13 @@
 import type { UseSmoothStreamingTextOptions } from "@/browser/hooks/useSmoothStreamingText";
-import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { useSmoothStreamingText as importedUseSmoothStreamingText } from "@/browser/hooks/useSmoothStreamingText";
+import { afterAll, afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { cleanup, render } from "@testing-library/react";
 import { GlobalWindow } from "happy-dom";
+import { MarkdownCore as ImportedMarkdownCore } from "./MarkdownCore";
+import { TypewriterMarkdown } from "./TypewriterMarkdown";
+
+const actualMarkdownCore = ImportedMarkdownCore;
+const actualUseSmoothStreamingText = importedUseSmoothStreamingText;
 
 const mockUseSmoothStreamingText = mock(
   (options: UseSmoothStreamingTextOptions): { visibleText: string; isCaughtUp: boolean } => ({
@@ -10,30 +16,57 @@ const mockUseSmoothStreamingText = mock(
   })
 );
 
-void mock.module("./MarkdownCore", () => ({
-  MarkdownCore: (props: { content: string }) => (
-    <div data-testid="markdown-core">{props.content}</div>
-  ),
-}));
+function MarkdownCoreStub(props: { content: string }) {
+  return <div data-testid="markdown-core">{props.content}</div>;
+}
 
-void mock.module("@/browser/hooks/useSmoothStreamingText", () => ({
-  useSmoothStreamingText: mockUseSmoothStreamingText,
-}));
+// Keep module mocks inside test hooks: Bun loads test files before afterAll runs, so
+// file-scope mock.module() calls can pollute unrelated files during collection.
+async function installTypewriterMarkdownModuleMocks() {
+  await mock.module("./MarkdownCore", () => ({
+    MarkdownCore: MarkdownCoreStub,
+  }));
+  await mock.module("@/browser/hooks/useSmoothStreamingText", () => ({
+    useSmoothStreamingText: mockUseSmoothStreamingText,
+  }));
+}
 
-import { TypewriterMarkdown } from "./TypewriterMarkdown";
+async function restoreTypewriterMarkdownModuleMocks() {
+  // Bun 1.3.6's mock.module() has no disposer, and mock.restore() does not undo
+  // module mocks. Restore the real exports so these stubs do not leak into later files.
+  await mock.module("./MarkdownCore", () => ({
+    MarkdownCore: actualMarkdownCore,
+  }));
+  await mock.module("@/browser/hooks/useSmoothStreamingText", () => ({
+    useSmoothStreamingText: actualUseSmoothStreamingText,
+  }));
+}
 
 describe("TypewriterMarkdown", () => {
-  beforeEach(() => {
-    globalThis.window = new GlobalWindow() as unknown as Window & typeof globalThis;
+  let originalWindow: typeof globalThis.window;
+  let originalDocument: typeof globalThis.document;
+
+  afterAll(async () => {
+    await restoreTypewriterMarkdownModuleMocks();
+  });
+
+  beforeEach(async () => {
+    originalWindow = globalThis.window;
+    originalDocument = globalThis.document;
+
+    globalThis.window = new GlobalWindow({ url: "http://localhost" }) as unknown as Window &
+      typeof globalThis;
     globalThis.document = globalThis.window.document;
+    await installTypewriterMarkdownModuleMocks();
     mockUseSmoothStreamingText.mockClear();
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     cleanup();
+    await restoreTypewriterMarkdownModuleMocks();
     mock.restore();
-    globalThis.window = undefined as unknown as Window & typeof globalThis;
-    globalThis.document = undefined as unknown as Document;
+    globalThis.window = originalWindow;
+    globalThis.document = originalDocument;
   });
 
   test("passes smoothed visible text to MarkdownCore when streaming", () => {
