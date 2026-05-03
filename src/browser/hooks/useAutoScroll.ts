@@ -1,4 +1,4 @@
-import type { KeyboardEvent, MouseEvent, UIEvent } from "react";
+import type { KeyboardEvent, MouseEvent, UIEvent, WheelEvent } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 const BOTTOM_LOCK_EPSILON_PX = 1;
@@ -71,6 +71,12 @@ export function useAutoScroll() {
   const autoScrollRef = useRef(true);
   const programmaticDisableRef = useRef(false);
   const userScrollIntentUntilRef = useRef(0);
+  // Tracks the scrollTop observed during the previous handleScroll call so the
+  // user-intent branch can tell "user moving away from bottom" from "user
+  // moving toward bottom" without consulting wheel/touch deltas. Direction is
+  // what lets a slow wheel-up gesture release the lock on the first tick
+  // without the relock heuristic snapping it back to the bottom mid-gesture.
+  const lastScrollTopRef = useRef(0);
 
   const setAutoScrollEnabled = useCallback((enabled: boolean) => {
     autoScrollRef.current = enabled;
@@ -136,6 +142,12 @@ export function useAutoScroll() {
     programmaticDisableRef.current = false;
     setAutoScrollEnabled(true);
     stickToBottom();
+    // Seed the direction baseline used by handleScroll's released-branch
+    // user-intent path. stickToBottom doesn't always emit a scroll event
+    // (it skips the write when scrollTop is already max), so without this
+    // seed the next user-driven scroll event could compare against a stale
+    // value carried across workspace switches or earlier sessions.
+    lastScrollTopRef.current = contentRef.current?.scrollTop ?? 0;
     startBottomLockFrameLoop();
   }, [setAutoScrollEnabled, startBottomLockFrameLoop, stickToBottom]);
 
@@ -143,6 +155,14 @@ export function useAutoScroll() {
     userScrollIntentUntilRef.current = 0;
     programmaticDisableRef.current = true;
     setAutoScrollEnabled(false);
+    // Seed the direction baseline. The released-branch user-intent path in
+    // handleScroll compares the next scroll event's scrollTop against
+    // lastScrollTopRef. disableAutoScroll never fires a scroll event itself,
+    // so without this seed a small wheel-up notch following a programmatic
+    // disable would be misread as "moving toward bottom" (because
+    // previousScrollTop was 0 or some unrelated earlier value), spuriously
+    // relocking the lock that was just disabled.
+    lastScrollTopRef.current = contentRef.current?.scrollTop ?? 0;
     stopBottomLockFrameLoop();
   }, [setAutoScrollEnabled, stopBottomLockFrameLoop]);
 
@@ -150,6 +170,21 @@ export function useAutoScroll() {
     programmaticDisableRef.current = false;
     userScrollIntentUntilRef.current = Date.now() + USER_SCROLL_INTENT_WINDOW_MS;
   }, []);
+
+  const handleScrollContainerWheel = useCallback(
+    (event: WheelEvent<HTMLDivElement>) => {
+      // Filter delta-0 wheel events before opening a scroll-intent window.
+      // Modifier-key wheel (Cmd-wheel browser zoom on macOS, Shift-wheel for
+      // horizontal-only on some setups), pinch gestures, and Bluetooth-mouse
+      // jitter all dispatch wheel events with deltaY === 0 (and often
+      // deltaX === 0). Without this filter every such phantom wheel would
+      // clear programmaticDisableRef and refresh the 750 ms intent window,
+      // weakening every downstream gate that relies on those refs.
+      if (event.deltaY === 0 && event.deltaX === 0) return;
+      markUserScrollIntent();
+    },
+    [markUserScrollIntent]
+  );
 
   const contentMouseDownCandidateRef = useRef(false);
 
@@ -214,6 +249,9 @@ export function useAutoScroll() {
     (e: UIEvent<HTMLDivElement>) => {
       const scrollContainer = e.currentTarget;
       const now = Date.now();
+      const previousScrollTop = lastScrollTopRef.current;
+      const currentScrollTop = scrollContainer.scrollTop;
+      lastScrollTopRef.current = currentScrollTop;
       if (now > userScrollIntentUntilRef.current) {
         if (
           autoScrollRef.current &&
@@ -235,15 +273,37 @@ export function useAutoScroll() {
         return;
       }
 
-      // Keep momentum/scrollbar drags in the user-owned window without direction
-      // bookkeeping. The geometry alone determines whether the tail is owned.
+      // User-intent window is open (wheel/touch/key/scrollbar within the last
+      // USER_SCROLL_INTENT_WINDOW_MS). Refresh the window first so momentum
+      // and scrollbar drags stay user-owned across multiple scroll events.
       userScrollIntentUntilRef.current = now + USER_SCROLL_INTENT_WINDOW_MS;
-      const shouldEnableBottomLock = isWithinBottomThreshold(
-        scrollContainer,
-        USER_BOTTOM_RELOCK_THRESHOLD_PX
-      );
-      setAutoScrollEnabled(shouldEnableBottomLock);
-      if (shouldEnableBottomLock) {
+
+      if (autoScrollRef.current) {
+        // Currently locked. Release on the first pixel of drift away from the
+        // bottom. Using USER_BOTTOM_RELOCK_THRESHOLD_PX here would let small
+        // wheel deltas (~3-7 px, typical for a single mousewheel notch) keep
+        // the lock engaged, and the next rAF settle tick would write
+        // `scrollTop = max` again — perceived as scroll-up resistance / jitter
+        // at the start of the gesture until the user accumulates enough delta
+        // to break past the relock threshold.
+        if (!isWithinBottomThreshold(scrollContainer, BOTTOM_LOCK_EPSILON_PX)) {
+          setAutoScrollEnabled(false);
+        }
+        return;
+      }
+
+      // Currently released. Re-engage the lock only when the user is scrolling
+      // toward the bottom and lands within the relock window. The direction
+      // check prevents a relock mid-gesture when the user is still scrolling
+      // up but happens to be ≤ USER_BOTTOM_RELOCK_THRESHOLD_PX from the bottom
+      // (e.g., the second small wheel tick after the first one already
+      // released the lock).
+      const userScrollingTowardBottom = currentScrollTop > previousScrollTop;
+      if (
+        userScrollingTowardBottom &&
+        isWithinBottomThreshold(scrollContainer, USER_BOTTOM_RELOCK_THRESHOLD_PX)
+      ) {
+        setAutoScrollEnabled(true);
         startBottomLockFrameLoop();
       }
     },
@@ -291,6 +351,7 @@ export function useAutoScroll() {
     jumpToBottom,
     handleScroll,
     markUserScrollIntent,
+    handleScrollContainerWheel,
     handleScrollContainerMouseDown,
     handleScrollContainerMouseMove,
     handleScrollContainerMouseUp,
