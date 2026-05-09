@@ -209,7 +209,7 @@ export const WorkspaceActivitySnapshotSchema = z.object({
   }),
   todoStatus: WorkspaceAgentStatusSchema.nullable().optional().meta({
     description:
-      "Status derived from the current todo list (preferred background progress surface in the sidebar).",
+      "Persistent sidebar status. Set by the small-model AgentStatusService when available, with a todo-derived fallback.",
   }),
   hasTodos: z.boolean().optional().meta({
     description: "Whether the workspace still had todos when streaming last stopped",

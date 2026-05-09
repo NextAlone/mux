@@ -1,4 +1,4 @@
-import { describe, expect, it, beforeEach, afterEach, mock, type Mock } from "bun:test";
+import { describe, expect, it, beforeEach, afterEach, mock, spyOn, type Mock } from "bun:test";
 import type { DisplayedMessage } from "@/common/types/message";
 import type { FrontendWorkspaceMetadata } from "@/common/types/workspace";
 import type { StreamStartEvent, ToolCallStartEvent } from "@/common/types/stream";
@@ -2591,6 +2591,60 @@ describe("WorkspaceStore", () => {
       expect(state.agentStatus).toEqual({ emoji: "🔄", message: "Run typecheck" });
     });
 
+    it("live todo derivation wins over aggregator getAgentStatus (status_set/heartbeat) for active workspaces", () => {
+      // Codex round 6: aggregator.getAgentStatus() conflates status_set and
+      // muxMeta.displayStatus into one field. A status_set value persisted
+      // from a previous turn could mask a fresh todo_write in the current
+      // turn. Live todo must win.
+      const workspaceId = "active-live-todo-beats-aggregator-status";
+      createAndAddWorkspace(store, workspaceId);
+      seedPinnedTodos(store, workspaceId, [{ content: "Run typecheck", status: "in_progress" }]);
+
+      // Simulate an aggregator that has a non-empty getAgentStatus()
+      // (e.g. an old status_set from a previous turn). The new precedence
+      // must ignore it because the live todo derivation is fresher.
+      const aggregator = store.getAggregator(workspaceId);
+      if (!aggregator) throw new Error("expected aggregator");
+      spyOn(aggregator, "getAgentStatus").mockReturnValue({
+        emoji: "🔍",
+        message: "Investigating crash",
+      });
+
+      const state = store.getWorkspaceState(workspaceId);
+      expect(state.agentStatus).toEqual({ emoji: "🔄", message: "Run typecheck" });
+    });
+
+    it("falls back to persisted AI status for active workspaces with no live todos", async () => {
+      // Live aggregator todos are the freshest signal for "what is the
+      // agent doing right now" because `todo_write` is processed
+      // synchronously, before the async setTodoStatus + activity-emit round
+      // trip. So when the workspace has live todos we prefer those (see
+      // the existing "derives active workspace status from the current todo
+      // list" test). When there are NO live todos, the AI-generated
+      // todoStatus from AgentStatusService still has to surface — that's
+      // the common "free-form chat without a todo list" case.
+      const workspaceId = "active-ai-no-live-todos";
+      const activitySnapshot: WorkspaceActivitySnapshot = {
+        recency: new Date("2024-01-04T13:00:00.000Z").getTime(),
+        streaming: true,
+        lastModel: "claude-sonnet-4",
+        lastThinkingLevel: null,
+        todoStatus: { emoji: "🛠️", message: "AI-generated summary" },
+      };
+
+      mockActivityList.mockResolvedValue({ [workspaceId]: activitySnapshot });
+      recreateStore();
+      await tick(0);
+
+      createAndAddWorkspace(store, workspaceId);
+      // Intentionally no seedPinnedTodos — the aggregator has no todos, so
+      // the live derivation returns undefined and the persisted AI status
+      // must surface through the fallback chain.
+
+      const state = store.getWorkspaceState(workspaceId);
+      expect(state.agentStatus).toEqual(activitySnapshot.todoStatus ?? undefined);
+    });
+
     it("prefers todo-derived activity status for inactive workspaces", async () => {
       const workspaceId = "activity-fallback-todo-status-workspace";
       const activitySnapshot: WorkspaceActivitySnapshot = {
@@ -2622,6 +2676,57 @@ describe("WorkspaceStore", () => {
         displayStatus: { emoji: "🤔", message: "Deciding execution strategy" },
         todoStatus: { emoji: "🔄", message: "Run typecheck" },
         hasTodos: true,
+      };
+
+      mockActivityList.mockResolvedValue({ [workspaceId]: activitySnapshot });
+      recreateStore();
+      await tick(0);
+
+      createAndAddWorkspace(store, workspaceId, { createdAt: "2020-01-01T00:00:00.000Z" }, false);
+
+      const state = store.getWorkspaceState(workspaceId);
+      expect(state.agentStatus).toEqual(activitySnapshot.displayStatus ?? undefined);
+    });
+
+    it("uses todoStatus from the activity snapshot for inactive workspaces", async () => {
+      // todoStatus is the persistent sidebar slot — written by both the
+      // small-model AgentStatusService and the todo-derivation path. Inactive
+      // workspaces don't run the aggregator, so the snapshot's todoStatus is
+      // what the sidebar must show.
+      const workspaceId = "activity-fallback-todo-status-workspace";
+      const activitySnapshot: WorkspaceActivitySnapshot = {
+        recency: new Date("2024-01-04T16:00:00.000Z").getTime(),
+        streaming: false,
+        lastModel: "claude-sonnet-4",
+        lastThinkingLevel: null,
+        todoStatus: { emoji: "🛠️", message: "Wiring sidebar precedence" },
+        hasTodos: true,
+      };
+
+      mockActivityList.mockResolvedValue({ [workspaceId]: activitySnapshot });
+      recreateStore();
+      await tick(0);
+
+      createAndAddWorkspace(store, workspaceId, { createdAt: "2020-01-01T00:00:00.000Z" }, false);
+
+      const state = store.getWorkspaceState(workspaceId);
+      expect(state.agentStatus).toEqual(activitySnapshot.todoStatus ?? undefined);
+    });
+
+    it("keeps displayStatus precedence over todoStatus so explicit system status still wins", async () => {
+      // displayStatus is a deliberate, system-driven signal (e.g. "Compacting
+      // idle workspace…"). It must outrank todoStatus — otherwise a periodic
+      // small-model rewrite of todoStatus would mask the explicit progress
+      // message the backend is trying to communicate.
+      const workspaceId = "activity-fallback-display-over-todo";
+      const activitySnapshot: WorkspaceActivitySnapshot = {
+        recency: new Date("2024-01-04T17:00:00.000Z").getTime(),
+        streaming: false,
+        lastModel: "claude-sonnet-4",
+        lastThinkingLevel: null,
+        displayStatus: { emoji: "💤", message: "Compacting idle workspace" },
+        todoStatus: { emoji: "🛠️", message: "Wiring sidebar precedence" },
+        hasTodos: false,
       };
 
       mockActivityList.mockResolvedValue({ [workspaceId]: activitySnapshot });

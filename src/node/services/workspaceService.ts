@@ -1543,7 +1543,12 @@ export class WorkspaceService extends EventEmitter {
     });
   }
 
-  private emitWorkspaceActivity(
+  /**
+   * Public so AgentStatusService can broadcast a snapshot it produced after
+   * a direct setX call. (Most callers use emitWorkspaceActivityUpdate, which
+   * couples persist + emit but swallows persist errors.)
+   */
+  public emitWorkspaceActivity(
     workspaceId: string,
     snapshot: WorkspaceActivitySnapshot | null
   ): void {
@@ -1614,7 +1619,13 @@ export class WorkspaceService extends EventEmitter {
         const sessionDir = this.config.getSessionDir(workspaceId);
         const todos = await readTodosForSessionDir(sessionDir);
         hasTodos ??= todos.length > 0;
-        todoStatus ??= deriveTodoStatus(todos) ?? null;
+        // When there are no todos to derive from, leave `todoStatus` undefined
+        // so setStreaming doesn't touch the slot. AgentStatusService writes
+        // its AI-generated summary into the same `todoStatus` field — passing
+        // `null` here would clobber a freshly generated summary every time a
+        // free-form (no-todo) turn ends. Explicit clears still happen via
+        // setTodoStatus(null) when the agent calls `todo_write([])`.
+        todoStatus ??= deriveTodoStatus(todos);
       }
       if (
         !streaming &&
@@ -3847,7 +3858,13 @@ export class WorkspaceService extends EventEmitter {
     }
   }
 
-  private async getWorkspaceTitleModelCandidates(workspaceId: string): Promise<string[]> {
+  /**
+   * Candidate list for "small model" callers (title + AI sidebar status).
+   * Global preferences first, then any workspace-configured model so a
+   * custom-model workspace still works when global preferences are
+   * unavailable. Public so AgentStatusService can share the precedence.
+   */
+  public async getWorkspaceTitleModelCandidates(workspaceId: string): Promise<string[]> {
     const candidates: string[] = [...NAME_GEN_PREFERRED_MODELS];
     const metadataResult = await this.aiService.getWorkspaceMetadata(workspaceId);
     if (!metadataResult.success) {

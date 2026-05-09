@@ -122,7 +122,6 @@ export function toWorkspaceActivitySnapshot(
           // agentStatus field. Project that forward into todoStatus until a fresh todo_write
           // or stream-stop snapshot rewrites the workspace metadata.
           coerceAgentStatus(metadata.agentStatus);
-
   return {
     recency: metadata.recency,
     streaming: metadata.streaming,
