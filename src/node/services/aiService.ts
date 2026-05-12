@@ -58,6 +58,11 @@ import { sumUsageHistory, getTotalCost } from "@/common/utils/tokens/usageAggreg
 import { createDisplayUsage } from "@/common/utils/tokens/displayUsage";
 import { normalizeToCanonical } from "@/common/utils/ai/models";
 import { readToolInstructions } from "./systemMessage";
+import {
+  effectiveAdditionalSystemContext,
+  mergeAdditionalSystemInstructions,
+  readAdditionalSystemContext,
+} from "./additionalSystemContext";
 import type { TelemetryService } from "@/node/services/telemetryService";
 import type { DevToolsService } from "@/node/services/devToolsService";
 import type { ExperimentsService } from "@/node/services/experimentsService";
@@ -122,6 +127,8 @@ export interface StreamMessageOptions {
   thinkingLevel?: ThinkingLevel;
   toolPolicy?: ToolPolicy;
   abortSignal?: AbortSignal;
+  /** Live workspace scratchpad snapshot from the renderer; when present it wins over disk. */
+  additionalSystemContext?: string;
   additionalSystemInstructions?: string;
   maxOutputTokens?: number;
   muxProviderOptions?: MuxProviderOptions;
@@ -737,6 +744,7 @@ export class AIService extends EventEmitter {
       thinkingLevel,
       toolPolicy,
       abortSignal,
+      additionalSystemContext,
       additionalSystemInstructions,
       maxOutputTokens,
       muxProviderOptions,
@@ -1159,6 +1167,34 @@ export class AIService extends EventEmitter {
         : undefined;
       recordStartupPhaseTiming("listMcpServersMs", listMcpServersStartedAt);
 
+      const loadAdditionalSystemContextStartedAt = Date.now();
+      let workspaceAdditionalSystemContext = additionalSystemContext;
+      if (workspaceAdditionalSystemContext == null) {
+        try {
+          // Fall back to disk only when the renderer did not send a live snapshot.
+          // `effectiveAdditionalSystemContext` honors the `enabled` toggle: when
+          // the user has disabled the scratchpad, the persisted content is
+          // intentionally not injected.
+          const record = await readAdditionalSystemContext(this.config, workspaceId);
+          workspaceAdditionalSystemContext = effectiveAdditionalSystemContext(record);
+        } catch (error) {
+          // The scratchpad is user-editable state, so a transient read failure should not block a send.
+          log.warn("Failed to load workspace additional system context; continuing without it", {
+            workspaceId,
+            error,
+          });
+          workspaceAdditionalSystemContext = "";
+        }
+      }
+      const scratchpadAdditionalSystemInstructions = mergeAdditionalSystemInstructions(
+        workspaceAdditionalSystemContext,
+        additionalSystemInstructions
+      );
+      recordStartupPhaseTiming(
+        "loadAdditionalSystemContextMs",
+        loadAdditionalSystemContextStartedAt
+      );
+
       // Build plan-aware instructions and determine plan→exec transition content.
       // IMPORTANT: Derive this from the same boundary-sliced message payload that is sent to
       // the model so plan hints/handoffs cannot be suppressed by pre-boundary history.
@@ -1173,7 +1209,7 @@ export class AIService extends EventEmitter {
           effectiveAgentId,
           agentIsPlanLike,
           agentDiscoveryPath,
-          additionalSystemInstructions,
+          additionalSystemInstructions: scratchpadAdditionalSystemInstructions,
           shouldDisableTaskToolsForDepth,
           taskDepth,
           taskSettings,

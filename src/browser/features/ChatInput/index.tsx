@@ -30,6 +30,10 @@ import { usePolicy } from "@/browser/contexts/PolicyContext";
 import { useAPI } from "@/browser/contexts/API";
 import { useThinkingLevel } from "@/browser/hooks/useThinkingLevel";
 import { normalizeSelectedModel } from "@/common/utils/ai/models";
+import {
+  useAdditionalSystemContextHydrated,
+  useAdditionalSystemContextSnapshot,
+} from "@/browser/utils/additionalSystemContextStore";
 import { useSendMessageOptions } from "@/browser/hooks/useSendMessageOptions";
 import { setWorkspaceModelWithOrigin } from "@/browser/utils/modelChange";
 import {
@@ -612,6 +616,12 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
   // For creation variant, use project-scoped key; for workspace, use workspace ID
   const sendMessageOptions = useSendMessageOptions(
     variant === "workspace" ? props.workspaceId : getProjectScopeId(creationParentProjectPath)
+  );
+  const additionalSystemContext = useAdditionalSystemContextSnapshot(
+    variant === "workspace" ? props.workspaceId : ""
+  );
+  const additionalSystemContextHydrated = useAdditionalSystemContextHydrated(
+    variant === "workspace" ? props.workspaceId : ""
   );
   // Extract models for convenience (don't create separate state - use hook as single source of truth)
   // - preferredModel: selected model used for backend routing, preserving explicit gateway choices
@@ -2297,6 +2307,16 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
           ...(modelOneShot ? { skipAiSettingsPersistence: true } : {}),
           ...(overrides?.queueDispatchMode
             ? { queueDispatchMode: overrides.queueDispatchMode }
+            : {}),
+          // Honor the per-workspace "Chat Instructions" toggle: when the user
+          // has disabled the scratchpad, send an empty string so the backend
+          // doesn't fall back to reading the durable content from disk.
+          ...(additionalSystemContextHydrated
+            ? {
+                additionalSystemContext: additionalSystemContext.enabled
+                  ? additionalSystemContext.content
+                  : "",
+              }
             : {}),
           additionalSystemInstructions,
           editMessageId: editMessageForSend?.id,

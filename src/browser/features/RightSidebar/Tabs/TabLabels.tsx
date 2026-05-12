@@ -11,7 +11,13 @@ import React from "react";
 import { BugPlay, ExternalLink, Monitor, Globe, Terminal as TerminalIcon, X } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/browser/components/Tooltip/Tooltip";
 import { type ReviewStats } from "./registry";
+import { useAPI } from "@/browser/contexts/API";
 import { formatKeybind, KEYBINDS } from "@/browser/utils/ui/keybinds";
+import { useAdditionalSystemContextSnapshot } from "@/browser/utils/additionalSystemContextStore";
+import {
+  ensureWorkspaceInstructionsFetched,
+  useWorkspaceInstructionsFileCount,
+} from "@/browser/utils/workspaceInstructionsStore";
 import { cn } from "@/common/lib/utils";
 import { useWorkspaceUsage } from "@/browser/stores/WorkspaceStore";
 import { sumUsageHistory, type ChatUsageDisplay } from "@/common/utils/tokens/usageAggregator";
@@ -23,6 +29,9 @@ interface StatsTabLabelProps {
 /**
  * Unified Stats tab label with a session cost badge.
  * Subscribes to workspace usage directly to avoid re-rendering parent components.
+ *
+ * Accepts a context-bag prop so it can be invoked through the generic
+ * `tabRegistry` Label slot (see `Tabs/tabRegistry.tsx`).
  */
 export const StatsTabLabel: React.FC<StatsTabLabelProps> = ({ workspaceId }) => {
   const usage = useWorkspaceUsage(workspaceId);
@@ -105,6 +114,66 @@ export const DebugTabLabel: React.FC = () => (
 export function OutputTabLabel() {
   return <>Output</>;
 }
+
+interface InstructionsTabLabelProps {
+  workspaceId: string;
+}
+
+/**
+ * Instructions tab label with a count badge consistent with Stats/Review.
+ *
+ * Subscribes to the shared instructions store so the count stays in sync with
+ * the panel's own fetches, and triggers a one-shot IPC fetch on first mount
+ * when the count is unknown (e.g. another tab is active in the same tabset).
+ *
+ * The badge picks up the accent color when the per-workspace scratchpad has
+ * any user content — a quick visual hint that this workspace is sending
+ * additional system context to the agent.
+ */
+export const InstructionsTabLabel: React.FC<InstructionsTabLabelProps> = ({ workspaceId }) => {
+  const { api } = useAPI();
+  const fileCount = useWorkspaceInstructionsFileCount(workspaceId);
+  const scratchpad = useAdditionalSystemContextSnapshot(workspaceId);
+  const chatInstructionsActive = scratchpad.enabled && scratchpad.content.trim().length > 0;
+
+  React.useEffect(() => {
+    if (!api) return;
+    ensureWorkspaceInstructionsFetched(api, workspaceId);
+  }, [api, workspaceId]);
+
+  // Chat Instructions, when active, contribute one additional "instruction
+  // source" to the badge count. We mark them with a trailing asterisk so
+  // users can tell ephemeral chat-scoped instructions apart from on-disk
+  // AGENTS.md files at a glance.
+  const baseCount = fileCount ?? 0;
+  const displayCount = baseCount + (chatInstructionsActive ? 1 : 0);
+  const showBadge = chatInstructionsActive || (fileCount != null && fileCount > 0);
+
+  return (
+    <>
+      Instructions
+      {showBadge && (
+        <span
+          className="text-muted text-[10px] tabular-nums"
+          aria-label={
+            chatInstructionsActive
+              ? `${baseCount} instruction files plus active Chat Instructions`
+              : `${baseCount} instruction files`
+          }
+        >
+          {displayCount}
+          {chatInstructionsActive && (
+            // Orange asterisk mirrors the "dirty / has unsaved changes" cue used
+            // by the git status indicator — a glanceable signal that the agent
+            // is receiving ephemeral chat-scoped instructions in addition to
+            // whatever AGENTS.md files contribute to this workspace.
+            <span className="text-warning">*</span>
+          )}
+        </span>
+      )}
+    </>
+  );
+};
 
 interface TerminalTabLabelProps {
   /** Dynamic title from OSC sequences, if available */

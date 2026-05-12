@@ -16,6 +16,11 @@ import { readPersistedState, updatePersistedState } from "@/browser/hooks/usePer
 import { CommandIds } from "@/browser/utils/commandIds";
 import { isTabType, type TabType } from "@/browser/types/rightSidebar";
 import {
+  getOrderedBaseTabIds,
+  getTabConfig,
+  type BaseTabType,
+} from "@/browser/features/RightSidebar/Tabs/tabConfig";
+import {
   getEffectiveSlotKeybind,
   getLayoutsConfigOrDefault,
   getPresetForSlot,
@@ -229,6 +234,36 @@ const findFirstTerminalSessionTab = (
     findFirstTerminalSessionTab(node.children[0]) ?? findFirstTerminalSessionTab(node.children[1])
   );
 };
+
+/**
+ * Build a "Hide/Show <Name>" command for a config-defined tab.
+ *
+ * Each command-source factory is re-invoked per palette render, so the
+ * Hide/Show title is up-to-date without any explicit subscription wiring.
+ *
+ * This is secondary discoverability only; default visibility is controlled by
+ * `inDefaultLayout` in `tabConfig.ts` and enforced by the layout migration.
+ */
+function buildToggleTabCommand(
+  workspaceId: string,
+  tabId: BaseTabType,
+  navigationSection: CommandAction["section"]
+): CommandAction {
+  const reg = getTabConfig(tabId);
+  const visible = hasTab(readRightSidebarLayout(workspaceId), tabId as TabType);
+  return {
+    id: `nav:toggle-tab:${tabId}`,
+    title: `${visible ? "Hide" : "Show"} ${reg.name}`,
+    section: navigationSection,
+    keywords: reg.paletteKeywords ?? [tabId],
+    run: () => {
+      updateRightSidebarLayout(workspaceId, (s) => toggleTab(s, tabId as TabType));
+      if (!visible) {
+        updatePersistedState<boolean>(RIGHT_SIDEBAR_COLLAPSED_KEY, false);
+      }
+    },
+  };
+}
 export function buildCoreSources(p: BuildSourcesParams): Array<() => CommandAction[]> {
   const actions: Array<() => CommandAction[]> = [];
 
@@ -538,19 +573,16 @@ export function buildCoreSources(p: BuildSourcesParams): Array<() => CommandActi
     const wsId = p.selectedWorkspace?.workspaceId;
     if (wsId) {
       list.push(
-        {
-          id: CommandIds.navToggleOutput(),
-          title: hasTab(readRightSidebarLayout(wsId), "output") ? "Hide Output" : "Show Output",
-          section: section.navigation,
-          keywords: ["log", "logs", "output"],
-          run: () => {
-            const isOutputVisible = hasTab(readRightSidebarLayout(wsId), "output");
-            updateRightSidebarLayout(wsId, (s) => toggleTab(s, "output"));
-            if (!isOutputVisible) {
-              updatePersistedState<boolean>(RIGHT_SIDEBAR_COLLAPSED_KEY, false);
-            }
-          },
-        },
+        // Generic per-tab "Hide/Show <Name>" commands are only for optional tabs.
+        // Default-layout tabs (Stats/Review/Instructions) are auto-restored by
+        // the layout migration, so exposing hide commands for them would be a
+        // no-op and obscure the fact that they are meant to be visible by default.
+        ...getOrderedBaseTabIds()
+          .filter((tabId) => {
+            const config = getTabConfig(tabId);
+            return config.inDefaultLayout !== true && config.featureFlag == null;
+          })
+          .map((tabId) => buildToggleTabCommand(wsId, tabId, section.navigation)),
         {
           id: CommandIds.navOpenLogFile(),
           title: "Open Log File",
@@ -604,21 +636,21 @@ export function buildCoreSources(p: BuildSourcesParams): Array<() => CommandActi
                 name: "tool",
                 label: "Tool",
                 placeholder: "Select a tool…",
-                getOptions: () =>
-                  (["costs", "review", "output", "debug", "terminal"] as TabType[]).map((tab) => ({
-                    id: tab,
-                    label:
-                      tab === "costs"
-                        ? "Costs"
-                        : tab === "review"
-                          ? "Review"
-                          : tab === "output"
-                            ? "Output"
-                            : tab === "debug"
-                              ? "Debug"
-                              : "Terminal",
-                    keywords: [tab],
-                  })),
+                // Static tabs come straight from the lightweight config (in default order).
+                // Terminal is appended manually because it lives outside the static registry.
+                getOptions: () => [
+                  ...getOrderedBaseTabIds()
+                    .filter((tabId) => getTabConfig(tabId).featureFlag == null)
+                    .map((tabId) => {
+                      const config = getTabConfig(tabId);
+                      return {
+                        id: tabId as TabType,
+                        label: config.name,
+                        keywords: config.paletteKeywords ?? [tabId],
+                      };
+                    }),
+                  { id: "terminal" as TabType, label: "Terminal", keywords: ["terminal"] },
+                ],
               },
             ],
             onSubmit: (vals) => {

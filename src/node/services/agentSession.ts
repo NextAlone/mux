@@ -3168,6 +3168,7 @@ export class AgentSession {
       abortSignal,
       thinkingLevel: effectiveThinkingLevel,
       toolPolicy: options?.toolPolicy,
+      additionalSystemContext: options?.additionalSystemContext,
       additionalSystemInstructions: options?.additionalSystemInstructions,
       maxOutputTokens: options?.maxOutputTokens,
       muxProviderOptions: options?.providerOptions,
