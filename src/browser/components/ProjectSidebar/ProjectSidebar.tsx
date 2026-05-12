@@ -100,8 +100,6 @@ import { PopoverError } from "../PopoverError/PopoverError";
 import { SectionHeader } from "../SectionHeader/SectionHeader";
 import { WorkspaceSectionDropZone } from "../WorkspaceSectionDropZone/WorkspaceSectionDropZone";
 import { WorkspaceDragLayer } from "../WorkspaceDragLayer/WorkspaceDragLayer";
-import { SectionDragLayer } from "../SectionDragLayer/SectionDragLayer";
-import { DraggableSection } from "../DraggableSection/DraggableSection";
 import { Separator } from "../Separator/Separator";
 import { ScrollArea } from "../ScrollArea/ScrollArea";
 import { getProjectDisplayName, getSubProjectsForParent } from "@/common/utils/subProjects";
@@ -310,7 +308,7 @@ type DraggableProjectItemProps = React.PropsWithChildren<{
   "data-project-path"?: string;
 }>;
 
-const DraggableProjectItemBase: React.FC<DraggableProjectItemProps> = ({
+const DraggableProjectItem: React.FC<DraggableProjectItemProps> = ({
   projectPath,
   onReorder,
   children,
@@ -359,7 +357,6 @@ const DraggableProjectItemBase: React.FC<DraggableProjectItemProps> = ({
   );
 };
 
-const DraggableProjectItem = DraggableProjectItemBase;
 /**
  * Wrapper that fetches draft data from localStorage and renders via unified AgentListItem.
  * Keeps data-fetching logic colocated with sidebar while delegating rendering to shared component.
@@ -472,13 +469,6 @@ interface ProjectDragItem {
   type: "PROJECT";
   projectPath: string;
 }
-interface SectionDragItemLocal {
-  type: "SECTION_REORDER";
-  sectionId: string;
-  projectPath: string;
-}
-type DragItem = ProjectDragItem | SectionDragItemLocal | null;
-
 const ProjectDragLayer: React.FC = () => {
   const dragState = useDragLayer<{
     isDragging: boolean;
@@ -490,7 +480,7 @@ const ProjectDragLayer: React.FC = () => {
     currentOffset: monitor.getClientOffset(),
   }));
   const isDragging = dragState.isDragging;
-  const item = dragState.item as DragItem;
+  const item = dragState.item as ProjectDragItem | null;
   const currentOffset = dragState.currentOffset;
 
   React.useEffect(() => {
@@ -505,7 +495,6 @@ const ProjectDragLayer: React.FC = () => {
     };
   }, [isDragging]);
 
-  // Only render for PROJECT type drags (not section reorder)
   if (!isDragging || !currentOffset || !item?.projectPath || item.type !== "PROJECT") return null;
 
   const abbrevPath = PlatformPaths.abbreviate(item.projectPath);
@@ -813,8 +802,8 @@ const ProjectSidebarInner: React.FC<ProjectSidebarProps> = ({
 
   // Wrapper to close sidebar on mobile after opening an existing draft
   const handleOpenWorkspaceDraft = useCallback(
-    (projectPath: string, draftId: string, sectionId?: string | null) => {
-      openWorkspaceDraft(projectPath, draftId, sectionId);
+    (projectPath: string, draftId: string) => {
+      openWorkspaceDraft(projectPath, draftId);
       if (window.innerWidth <= MOBILE_BREAKPOINT && !collapsed) {
         persistMobileSidebarScrollTop(mobileScrollTopRef.current);
         onToggleCollapsed();
@@ -1679,10 +1668,14 @@ const ProjectSidebarInner: React.FC<ProjectSidebarProps> = ({
   // Handle keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Create new workspace for the project of the selected workspace
+      // Sub-project workspaces share the parent worktree, so recover the child
+      // target from the live sidebar metadata before opening a sibling draft.
       if (matchesKeybind(e, KEYBINDS.NEW_WORKSPACE) && selectedWorkspace) {
         e.preventDefault();
-        handleAddWorkspace(selectedWorkspace.projectPath);
+        const subProjectPath = sortedWorkspacesByProject
+          .get(selectedWorkspace.projectPath)
+          ?.find((workspace) => workspace.id === selectedWorkspace.workspaceId)?.subProjectPath;
+        handleAddWorkspace(selectedWorkspace.projectPath, subProjectPath);
       } else if (matchesKeybind(e, KEYBINDS.ARCHIVE_WORKSPACE) && selectedWorkspace) {
         e.preventDefault();
         void handleArchiveWorkspace(selectedWorkspace.workspaceId);
@@ -1691,7 +1684,7 @@ const ProjectSidebarInner: React.FC<ProjectSidebarProps> = ({
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [selectedWorkspace, handleAddWorkspace, handleArchiveWorkspace]);
+  }, [selectedWorkspace, handleAddWorkspace, handleArchiveWorkspace, sortedWorkspacesByProject]);
 
   return (
     <TitleEditProvider onUpdateTitle={onUpdateTitle}>
@@ -1703,7 +1696,6 @@ const ProjectSidebarInner: React.FC<ProjectSidebarProps> = ({
       <DndProvider backend={HTML5Backend}>
         <ProjectDragLayer />
         <WorkspaceDragLayer />
-        <SectionDragLayer />
         <div
           className={cn(
             // The sidebar doubles as a drag surface, so keep copy selection disabled
@@ -2040,8 +2032,6 @@ const ProjectSidebarInner: React.FC<ProjectSidebarProps> = ({
                             {(() => {
                               // Archived workspaces are excluded from workspaceMetadata so won't appear here
 
-                              const allWorkspaces = projectWorkspaces;
-
                               const draftsForProject = workspaceDraftsByProject[projectPath] ?? [];
                               const activeDraftIds = new Set(
                                 draftsForProject.map((draft) => draft.draftId)
@@ -2056,7 +2046,7 @@ const ProjectSidebarInner: React.FC<ProjectSidebarProps> = ({
                               const promotedWorkspaceIds = new Set(
                                 Object.values(activeDraftPromotions).map((metadata) => metadata.id)
                               );
-                              const workspacesForNormalRendering = allWorkspaces.filter(
+                              const workspacesForNormalRendering = projectWorkspaces.filter(
                                 (workspace) => !promotedWorkspaceIds.has(workspace.id)
                               );
                               const sections: SectionConfig[] = getSubProjectsForParent(
@@ -2067,7 +2057,8 @@ const ProjectSidebarInner: React.FC<ProjectSidebarProps> = ({
                                 name: getProjectDisplayName(subProjectPath, subProjectConfig),
                                 color: subProjectConfig.color,
                               }));
-                              const depthByWorkspaceId = computeWorkspaceDepthMap(allWorkspaces);
+                              const depthByWorkspaceId =
+                                computeWorkspaceDepthMap(projectWorkspaces);
                               const visibleWorkspacesForNormalRendering = filterVisibleAgentRows(
                                 workspacesForNormalRendering,
                                 expandedCompletedParentIds
@@ -2095,22 +2086,21 @@ const ProjectSidebarInner: React.FC<ProjectSidebarProps> = ({
                                   (draft, index) => [draft.draftId, index + 1] as const
                                 )
                               );
-                              const sectionIds = new Set(sections.map((section) => section.id));
-                              const normalizeDraftSectionId = (
+                              const getDraftSectionId = (
                                 draft: (typeof sortedDrafts)[number]
-                              ): string | null => {
-                                return typeof draft.subProjectPath === "string" &&
-                                  sectionIds.has(draft.subProjectPath)
+                              ): string | null =>
+                                typeof draft.subProjectPath === "string" &&
+                                userProjects.get(draft.subProjectPath)?.parentProjectPath ===
+                                  projectPath
                                   ? draft.subProjectPath
                                   : null;
-                              };
 
                               // Drafts can reference a section that has since been deleted.
                               // Treat those as unsectioned so they remain accessible.
                               const unsectionedDrafts: typeof sortedDrafts = [];
                               const draftsBySectionId = new Map<string, typeof sortedDrafts>();
                               for (const draft of sortedDrafts) {
-                                const sectionId = normalizeDraftSectionId(draft);
+                                const sectionId = getDraftSectionId(draft);
                                 if (sectionId === null) {
                                   unsectionedDrafts.push(draft);
                                   continue;
@@ -2395,12 +2385,12 @@ const ProjectSidebarInner: React.FC<ProjectSidebarProps> = ({
                               const renderDraft = (
                                 draft: (typeof sortedDrafts)[number]
                               ): React.ReactNode => {
-                                const sectionId = normalizeDraftSectionId(draft);
+                                const sectionId = getDraftSectionId(draft);
                                 const promotedMetadata = activeDraftPromotions[draft.draftId];
 
                                 if (promotedMetadata) {
                                   const liveMetadata =
-                                    allWorkspaces.find(
+                                    projectWorkspaces.find(
                                       (workspace) => workspace.id === promotedMetadata.id
                                     ) ?? promotedMetadata;
                                   return renderWorkspace(liveMetadata, sectionId ?? undefined);
@@ -2427,11 +2417,7 @@ const ProjectSidebarInner: React.FC<ProjectSidebarProps> = ({
                                       );
                                     }}
                                     onOpen={() =>
-                                      handleOpenWorkspaceDraft(
-                                        projectPath,
-                                        draft.draftId,
-                                        sectionId
-                                      )
+                                      handleOpenWorkspaceDraft(projectPath, draft.draftId)
                                     }
                                     onDelete={() => {
                                       if (isSelected) {
@@ -2445,11 +2431,7 @@ const ProjectSidebarInner: React.FC<ProjectSidebarProps> = ({
                                             : undefined;
 
                                         if (fallback) {
-                                          openWorkspaceDraft(
-                                            projectPath,
-                                            fallback.draftId,
-                                            normalizeDraftSectionId(fallback)
-                                          );
+                                          openWorkspaceDraft(projectPath, fallback.draftId);
                                         } else {
                                           navigateToProject(sectionId ?? projectPath);
                                         }
@@ -2738,11 +2720,6 @@ const ProjectSidebarInner: React.FC<ProjectSidebarProps> = ({
                                 })();
                               };
 
-                              // Sub-project ordering is path/display-name derived in v1; no manual reorder.
-                              const handleSectionReorder = () => {
-                                // Sub-project ordering is alphabetical by display name in v1.
-                              };
-
                               // Render section with its workspaces
                               const renderSection = (section: SectionConfig) => {
                                 const sectionWorkspaces = bySectionId.get(section.id) ?? [];
@@ -2771,92 +2748,76 @@ const ProjectSidebarInner: React.FC<ProjectSidebarProps> = ({
                                   autoEditingSection?.sectionId === section.id;
 
                                 return (
-                                  <DraggableSection
+                                  <WorkspaceSectionDropZone
                                     key={section.id}
-                                    sectionId={section.id}
-                                    sectionName={section.name}
                                     projectPath={projectPath}
-                                    onReorder={handleSectionReorder}
+                                    sectionId={section.id}
+                                    onDrop={handleWorkspaceSectionDrop}
                                   >
-                                    <WorkspaceSectionDropZone
-                                      projectPath={projectPath}
-                                      sectionId={section.id}
-                                      onDrop={handleWorkspaceSectionDrop}
-                                    >
-                                      <SectionHeader
-                                        section={section}
-                                        isExpanded={isSectionExpanded}
-                                        workspaceCount={
-                                          sectionWorkspaces.length + sectionDrafts.length
+                                    <SectionHeader
+                                      section={section}
+                                      isExpanded={isSectionExpanded}
+                                      workspaceCount={
+                                        sectionWorkspaces.length + sectionDrafts.length
+                                      }
+                                      hasAttention={sectionHasAttention}
+                                      onToggleExpand={() => toggleSection(projectPath, section.id)}
+                                      onAddWorkspace={() => {
+                                        // Create workspace in this section
+                                        handleAddWorkspace(projectPath, section.id);
+                                      }}
+                                      onRename={(name) => {
+                                        if (shouldAutoEditSection) {
+                                          setAutoEditingSection(null);
                                         }
-                                        hasAttention={sectionHasAttention}
-                                        onToggleExpand={() =>
-                                          toggleSection(projectPath, section.id)
-                                        }
-                                        onAddWorkspace={() => {
-                                          // Create workspace in this section
-                                          handleAddWorkspace(projectPath, section.id);
-                                        }}
-                                        onRename={(name) => {
-                                          if (shouldAutoEditSection) {
-                                            setAutoEditingSection(null);
-                                          }
-                                          void updateDisplayName(section.id, name);
-                                        }}
-                                        onChangeColor={(color) => {
-                                          void updateProjectColor(section.id, color);
-                                        }}
-                                        autoStartEditing={shouldAutoEditSection}
-                                        onAutoCreateAbandon={
-                                          shouldAutoEditSection
-                                            ? () => {
-                                                void (async () => {
-                                                  setAutoEditingSection(null);
-                                                  await handleRemoveSection(
-                                                    projectPath,
-                                                    section.id
-                                                  );
-                                                })();
-                                              }
-                                            : undefined
-                                        }
-                                        onAutoCreateRenameCancel={
-                                          shouldAutoEditSection
-                                            ? () => {
+                                        void updateDisplayName(section.id, name);
+                                      }}
+                                      onChangeColor={(color) => {
+                                        void updateProjectColor(section.id, color);
+                                      }}
+                                      autoStartEditing={shouldAutoEditSection}
+                                      onAutoCreateAbandon={
+                                        shouldAutoEditSection
+                                          ? () => {
+                                              void (async () => {
                                                 setAutoEditingSection(null);
-                                              }
-                                            : undefined
-                                        }
-                                        onDelete={(anchorEl) => {
-                                          void handleRemoveSection(
-                                            projectPath,
+                                                await handleRemoveSection(projectPath, section.id);
+                                              })();
+                                            }
+                                          : undefined
+                                      }
+                                      onAutoCreateRenameCancel={
+                                        shouldAutoEditSection
+                                          ? () => {
+                                              setAutoEditingSection(null);
+                                            }
+                                          : undefined
+                                      }
+                                      onDelete={(anchorEl) => {
+                                        void handleRemoveSection(projectPath, section.id, anchorEl);
+                                      }}
+                                    />
+                                    {isSectionExpanded && (
+                                      <div className="pb-1">
+                                        {sectionDrafts.map((draft) => renderDraft(draft))}
+                                        {sectionWorkspaces.length > 0 ? (
+                                          renderAgeTiers(
+                                            sectionWorkspaces,
+                                            getSectionTierKey(projectPath, section.id, 0).replace(
+                                              ":tier:0",
+                                              ":tier"
+                                            ),
                                             section.id,
-                                            anchorEl
-                                          );
-                                        }}
-                                      />
-                                      {isSectionExpanded && (
-                                        <div className="pb-1">
-                                          {sectionDrafts.map((draft) => renderDraft(draft))}
-                                          {sectionWorkspaces.length > 0 ? (
-                                            renderAgeTiers(
-                                              sectionWorkspaces,
-                                              getSectionTierKey(projectPath, section.id, 0).replace(
-                                                ":tier:0",
-                                                ":tier"
-                                              ),
-                                              section.id,
-                                              sectionAllWorkspaces
-                                            )
-                                          ) : sectionDrafts.length === 0 ? (
-                                            <div className="text-muted px-3 py-2 text-center text-xs italic">
-                                              No chats in this sub-project
-                                            </div>
-                                          ) : null}
-                                        </div>
-                                      )}
-                                    </WorkspaceSectionDropZone>
-                                  </DraggableSection>
+                                            sectionAllWorkspaces
+                                          )
+                                        ) : sectionDrafts.length === 0 ? (
+                                          <div className="text-muted px-3 py-2 text-center text-xs italic">
+                                            No chats in this sub-project
+                                          </div>
+                                        ) : null}
+                                      </div>
+                                    )}
+                                  </WorkspaceSectionDropZone>
                                 );
                               };
 
