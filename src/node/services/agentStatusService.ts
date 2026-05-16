@@ -202,7 +202,11 @@ export class AgentStatusService {
       // Set lastRanAt at dispatch time (not after the async transcript
       // build) so cadence is anchored to tick boundaries — see runTick.
       state.lastRanAt = tickStartedAt;
-      const promise = this.runForWorkspace(id, recency).finally(() => {
+      // Forward the live streaming bit so the prompt can lock in
+      // present-progressive tense when the assistant is mid-response.
+      // Snapshots were already read once per tick above.
+      const streaming = snapshots.get(id)?.streaming === true;
+      const promise = this.runForWorkspace(id, recency, streaming).finally(() => {
         state.inFlight = false;
         this.inFlightPromises.delete(promise);
       });
@@ -212,11 +216,29 @@ export class AgentStatusService {
 
   private async runForWorkspace(
     workspaceId: string,
-    observedRecency: number | null = null
+    observedRecency: number | null = null,
+    streaming = false
   ): Promise<void> {
     try {
       const transcript = await this.buildTrailingTranscript(workspaceId);
-      const inputHash = computeInputHash(transcript);
+      // Two hashes, two purposes:
+      //
+      //   transcriptHash — keyed only on transcript bytes. Used by the
+      //     history-catch-up guard (`isRecentRecencyAheadOfHistory` +
+      //     `lastSeenInputHash`) to detect "transcript unchanged since the
+      //     last look." Folding `streaming` into this comparison would make
+      //     the common idle→streaming transition look like a transcript
+      //     change and bypass the wait-for-history guard, letting the
+      //     service persist a stale pre-pivot status and consume the
+      //     recency signal.
+      //
+      //   dedupHash — keyed on transcript + streaming. Used by the
+      //     "settled, skip regeneration" branch (`state.lastInputHash`)
+      //     because `streaming` now changes the prompt's tense guidance
+      //     and therefore the generated status; identical transcript bytes
+      //     with different streaming values must dedup independently.
+      const transcriptHash = computeTranscriptHash(transcript);
+      const dedupHash = computeDedupHash(transcriptHash, streaming);
       // dispatch() set lastRanAt to the tick start time before kicking us
       // off, so the scheduler won't reconsider this workspace until the next
       // interval boundary unless a newer user-recency timestamp indicates the
@@ -237,19 +259,19 @@ export class AgentStatusService {
       // transcript when conditions change.
       const settleOnTranscript = () => {
         markRecencyObserved();
-        state.lastInputHash = inputHash;
+        state.lastInputHash = dedupHash;
       };
 
       if (
         isRecentRecencyAheadOfHistory(
           state,
-          inputHash,
+          transcriptHash,
           observedRecency,
           this.clock(),
           AGENT_STATUS_TICK_INTERVAL_MS
         )
       ) {
-        state.lastSeenInputHash = inputHash;
+        state.lastSeenInputHash = transcriptHash;
         // We may be seeing WorkspaceService's recency update before the
         // corresponding user message is appended to history. If the transcript
         // is unchanged from the last one we examined (or we have no baseline
@@ -262,7 +284,7 @@ export class AgentStatusService {
         });
         return;
       }
-      state.lastSeenInputHash = inputHash;
+      state.lastSeenInputHash = transcriptHash;
 
       // Empty workspace: nothing to summarize. Don't blank an existing
       // todoStatus — that would clobber a status produced before compaction.
@@ -277,7 +299,10 @@ export class AgentStatusService {
       // recent race path above already handles recency that may be ahead of
       // history, so any recency reaching this dedup branch is stale/non-racy:
       // consume it to avoid permanent recency-advanced priority.
-      if (state.lastInputHash === inputHash) {
+      // dedupHash (transcript + streaming) is the right key here: flipping
+      // the streaming bit must force a re-generation so the new liveness
+      // hint actually applies.
+      if (state.lastInputHash === dedupHash) {
         markRecencyObserved();
         return;
       }
@@ -290,7 +315,9 @@ export class AgentStatusService {
       // can take seconds to a minute, so kicking it off after shutdown
       // would leak background LLM work past our lifecycle.
       if (this.stopped) return;
-      const result = await generateWorkspaceStatus(transcript, candidates, this.aiService);
+      const result = await generateWorkspaceStatus(transcript, candidates, this.aiService, {
+        streaming,
+      });
       // Re-check after the generator returns: the same hazard at a later
       // await boundary.
       if (this.stopped) return;
@@ -407,11 +434,17 @@ export class AgentStatusService {
     );
     if (!result.success) return "";
 
-    const messages: MuxMessage[] = [...result.data];
+    const committedMessages: MuxMessage[] = [...result.data];
     const partial = await this.historyService.readPartial(workspaceId);
-    if (partial) messages.push(partial);
 
-    const formatted = messages.map(formatMessageForTranscript).filter((s) => s.length > 0);
+    // Partial messages get an "(in progress)" role suffix so the model sees
+    // they aren't finalized; committed messages render with their normal
+    // role label. Doing this here keeps formatMessageForTranscript pure.
+    const formattedParts = [
+      ...committedMessages.map((m) => formatMessageForTranscript(m, { partial: false })),
+      ...(partial ? [formatMessageForTranscript(partial, { partial: true })] : []),
+    ];
+    const formatted = formattedParts.filter((s) => s.length > 0);
     if (formatted.length === 0) return "";
 
     // Trim from the front (oldest) until we fit the token budget. Trailing
@@ -444,7 +477,7 @@ function extractMessageText(message: MuxMessage): string {
 
 function summarizeToolPart(part: unknown): string | null {
   if (typeof part !== "object" || part === null) return null;
-  const record = part as { type?: unknown; toolName?: unknown };
+  const record = part as { type?: unknown; toolName?: unknown; state?: unknown };
   const type = typeof record.type === "string" ? record.type : null;
   if (!type) return null;
   // Tool calls have type "tool-<name>" or "dynamic-tool" with a toolName.
@@ -454,12 +487,38 @@ function summarizeToolPart(part: unknown): string | null {
       : type.startsWith("tool-")
         ? type.slice(5)
         : null;
-  return toolName ? `[tool ${toolName}]` : null;
+  if (!toolName) return null;
+  // The lifecycle phase is the single highest-signal datum the status model
+  // needs to distinguish "Deploying service" (in flight) from "Deployed
+  // service" (finished). AI SDK v5 tool parts carry a `state` field:
+  //   - "input-available"  → call sent, no result yet (running)
+  //   - "output-available" → result returned (done)
+  //   - "output-redacted"  → result returned but body stripped (still done)
+  // Without this marker the prompt was forced to guess from prose alone.
+  const state = typeof record.state === "string" ? record.state : null;
+  const phase =
+    state === "output-available" || state === "output-redacted"
+      ? "done"
+      : state === "input-available"
+        ? "running"
+        : null;
+  return phase ? `[tool ${toolName} ${phase}]` : `[tool ${toolName}]`;
 }
 
-function formatMessageForTranscript(message: MuxMessage): string {
-  const role = message.role === "user" ? "User" : message.role === "assistant" ? "Assistant" : null;
-  if (!role) return "";
+function formatMessageForTranscript(
+  message: MuxMessage,
+  opts: { partial: boolean } = { partial: false }
+): string {
+  const baseRole =
+    message.role === "user" ? "User" : message.role === "assistant" ? "Assistant" : null;
+  if (!baseRole) return "";
+
+  // Mark the in-flight partial assistant message so the model treats it as
+  // not-yet-finalized prose. Without this marker an assistant turn that has
+  // streamed "Deploying service" but isn't done looked identical to a
+  // committed turn that wrapped up with the same words — historically the
+  // root cause of stale past-tense statuses during long streams.
+  const role = opts.partial && baseRole === "Assistant" ? "Assistant (in progress)" : baseRole;
 
   const segments: string[] = [];
   const text = extractMessageText(message).slice(0, AGENT_STATUS_MAX_MESSAGE_CHARS);
@@ -467,15 +526,38 @@ function formatMessageForTranscript(message: MuxMessage): string {
 
   // Tool-call summaries let the model see what the agent is doing even when
   // the assistant has not emitted natural-language text yet. Args/output are
-  // intentionally omitted to keep cost predictable.
+  // intentionally omitted to keep cost predictable; the state-derived phase
+  // marker (running/done) carries the in-progress-vs-completed signal.
   const tools = (message.parts ?? []).map(summarizeToolPart).filter((s): s is string => s !== null);
   if (tools.length > 0) segments.push(tools.join(" "));
 
   return segments.length === 0 ? "" : `${role}: ${segments.join("\n")}`;
 }
 
-function computeInputHash(transcript: string): string {
+/**
+ * Stable hash of the transcript bytes alone. This is the input the
+ * history-catch-up guard uses to detect "transcript unchanged since the
+ * last look" so a freshly-bumped `observedRecency` can wait one tick for
+ * the corresponding history write to land. Folding `streaming` in here
+ * would make the common idle→streaming transition look like a transcript
+ * change and bypass the guard.
+ */
+function computeTranscriptHash(transcript: string): string {
   return createHash("sha256").update(transcript).digest("hex");
+}
+
+/**
+ * Dedup key for generation: combines the transcript hash with the
+ * streaming bit, because `streaming` changes the prompt's tense guidance
+ * (and therefore the generated status). Same transcript + different
+ * streaming → must regenerate. Cheap: hashes a 3-byte prefix + the
+ * already-computed transcript hash.
+ */
+function computeDedupHash(transcriptHash: string, streaming: boolean): string {
+  return createHash("sha256")
+    .update(streaming ? "S1\n" : "S0\n")
+    .update(transcriptHash)
+    .digest("hex");
 }
 
 /**
