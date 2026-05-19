@@ -686,6 +686,81 @@ export class WorkspaceGoalService {
     this.pendingContinuationCandidates.delete(workspaceId);
   }
 
+  /**
+   * Treat an agent's text-only `goal_continuation` turn as implicit
+   * completion. The continuation prompt asks the agent to call
+   * `complete_goal` explicitly, but real models sometimes finish with a
+   * plain text "looks done" reply instead. Without this fallback the
+   * continuation loop would re-fire on the same idle output until budget
+   * or cooldown gates intervene.
+   *
+   * AgentSession owns the "no tool calls + goalKind === continuation"
+   * predicate (it has the stream parts + activeStreamContext in scope);
+   * this method re-reads goal state and only acts when the goal is
+   * currently `active`. `budget_limited` is intentionally out-of-scope —
+   * its one-shot wrap-up flow owns terminal text turns. `paused` /
+   * `complete` / missing goals also fall through.
+   *
+   * Errors from the underlying `setGoal` (e.g. a concurrent clear/replace
+   * surfacing as `goal_conflict`, or a status flip racing with the read)
+   * are logged and swallowed so the stream-end handler never throws on
+   * this best-effort path.
+   *
+   * **Auto-promotion of upcoming goals.** When the workspace has queued
+   * upcoming goals, the inline `setGoal({ status: "complete" })` call
+   * triggers `maybeAutoPromoteOnComplete`, but that helper skips while
+   * `isWorkspaceStreaming` is still true — and at stream-end the
+   * `extensionMetadata.setStreaming(false)` update is asynchronous, so
+   * the skip is likely. We therefore re-run the deferred auto-promote
+   * pass (`runDeferredAutoPromoteAfterStreamEnd`) after a successful
+   * completion. This is the same hook `applyPendingAfterStreamEnd`
+   * already uses for the parallel "agent called `complete_goal`
+   * mid-stream" case (#3326 Codex P2 PRRT_kwDOPxxmWM6DMh9j); without
+   * it the next upcoming goal stays stuck in `upcoming` until some
+   * later manual mutation.
+   */
+  async completeGoalFromSilentContinuation(input: {
+    workspaceId: string;
+    completionSummary: string;
+  }): Promise<GoalRecordV1 | null> {
+    assert(
+      input.workspaceId.trim().length > 0,
+      "completeGoalFromSilentContinuation requires workspaceId"
+    );
+    const summary = input.completionSummary.trim();
+    if (summary.length === 0) {
+      return null;
+    }
+    const goal = await this.getGoal(input.workspaceId);
+    if (goal?.status !== "active") {
+      return null;
+    }
+    const result = await this.setGoal({
+      workspaceId: input.workspaceId,
+      status: "complete",
+      initiator: "model",
+      completionSummary: summary,
+      // Optimistic-concurrency guard so a goal that was cleared or
+      // replaced between the read above and the write below surfaces as
+      // a typed `goal_conflict` instead of a confusing validation error.
+      expectedGoalId: goal.goalId,
+    });
+    if (!result.success) {
+      log.info("completeGoalFromSilentContinuation: skipped", {
+        workspaceId: input.workspaceId,
+        error: result.error.type,
+      });
+      return null;
+    }
+    // Auto-promote any queued upcoming goal once streaming actually
+    // settles. See the JSDoc above for the race description; this
+    // mirrors `applyPendingAfterStreamEnd`'s tail so both completion
+    // paths (mid-stream tool call + silent text-only) converge on the
+    // same promotion behaviour.
+    await this.runDeferredAutoPromoteAfterStreamEnd(input.workspaceId);
+    return result.data;
+  }
+
   async recordUserStoppedStream(workspaceId: string, stoppedAtMs = Date.now()): Promise<void> {
     assert(workspaceId.trim().length > 0, "recordUserStoppedStream requires workspaceId");
     assert(Number.isFinite(stoppedAtMs) && stoppedAtMs >= 0, "user stop timestamp must be valid");
