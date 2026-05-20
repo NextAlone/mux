@@ -749,6 +749,155 @@ describe("buildProviderOptions - OpenAI", () => {
   });
 });
 
+describe("buildProviderOptions - Google", () => {
+  test("maps Gemini 3.5 Flash off to minimal thinking without thoughts", () => {
+    expect(buildProviderOptions("google:gemini-3.5-flash", "off")).toEqual({
+      google: {
+        thinkingConfig: {
+          thinkingLevel: "minimal",
+        },
+      },
+    });
+  });
+
+  test("maps gateway Gemini 3.5 Flash off to minimal thinking without thoughts", () => {
+    expect(buildProviderOptions("mux-gateway:google/gemini-3.5-flash", "off")).toEqual({
+      google: {
+        thinkingConfig: {
+          thinkingLevel: "minimal",
+        },
+      },
+    });
+  });
+
+  test("maps namespaced Gemini 3.5 Flash off to minimal thinking without thoughts", () => {
+    expect(buildProviderOptions("google:models/gemini-3.5-flash", "off")).toEqual({
+      google: {
+        thinkingConfig: {
+          thinkingLevel: "minimal",
+        },
+      },
+    });
+  });
+
+  test("maps versioned Gemini 3.5 Flash off to minimal thinking without thoughts", () => {
+    expect(buildProviderOptions("google:gemini-3.5-flash-001", "off")).toEqual({
+      google: {
+        thinkingConfig: {
+          thinkingLevel: "minimal",
+        },
+      },
+    });
+  });
+
+  test("maps Gemini 3.5 Flash medium to thinkingLevel medium with thoughts", () => {
+    expect(buildProviderOptions("mux-gateway:google/gemini-3.5-flash", "medium")).toEqual({
+      google: {
+        thinkingConfig: {
+          includeThoughts: true,
+          thinkingLevel: "medium",
+        },
+      },
+    });
+  });
+
+  test("uses mapped model capabilities for custom Gemini 3.5 Flash aliases", () => {
+    const providersConfig = createMockProvidersConfig({
+      "google:custom-flash": "google:gemini-3.5-flash",
+    });
+
+    expect(
+      buildProviderOptions(
+        "google:custom-flash",
+        "off",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        providersConfig
+      )
+    ).toEqual({
+      google: {
+        thinkingConfig: {
+          thinkingLevel: "minimal",
+        },
+      },
+    });
+  });
+
+  test("maps non-preview Gemini 3 Flash off to minimal thinking without thoughts", () => {
+    expect(buildProviderOptions("google:gemini-3-flash", "off")).toEqual({
+      google: {
+        thinkingConfig: {
+          thinkingLevel: "minimal",
+        },
+      },
+    });
+  });
+
+  test("maps Gemini 3 Flash Preview off to minimal thinking without thoughts", () => {
+    expect(buildProviderOptions("google:gemini-3-flash-preview", "off")).toEqual({
+      google: {
+        thinkingConfig: {
+          thinkingLevel: "minimal",
+        },
+      },
+    });
+  });
+
+  test("maps versioned Gemini 3 Flash Preview off to minimal thinking without thoughts", () => {
+    expect(buildProviderOptions("google:gemini-3-flash-preview-latest", "off")).toEqual({
+      google: {
+        thinkingConfig: {
+          thinkingLevel: "minimal",
+        },
+      },
+    });
+  });
+
+  test("defensively maps unsupported Gemini 3.5 Flash xhigh to high", () => {
+    expect(buildProviderOptions("google:gemini-3.5-flash", "xhigh")).toEqual({
+      google: {
+        thinkingConfig: {
+          includeThoughts: true,
+          thinkingLevel: "high",
+        },
+      },
+    });
+  });
+
+  test("passes Gemini 3.1 Pro low through as thinkingLevel low with thoughts", () => {
+    expect(buildProviderOptions("google:gemini-3.1-pro-preview", "low")).toEqual({
+      google: {
+        thinkingConfig: {
+          includeThoughts: true,
+          thinkingLevel: "low",
+        },
+      },
+    });
+  });
+
+  test("defensively maps unsupported Gemini 3.5 Flash max to high", () => {
+    expect(buildProviderOptions("google:gemini-3.5-flash", "max")).toEqual({
+      google: {
+        thinkingConfig: {
+          includeThoughts: true,
+          thinkingLevel: "high",
+        },
+      },
+    });
+  });
+
+  test("keeps Gemini 3.1 Pro off without provider thinking config", () => {
+    expect(buildProviderOptions("google:gemini-3.1-pro-preview", "off")).toEqual({
+      google: {
+        thinkingConfig: undefined,
+      },
+    });
+  });
+});
+
 describe("buildRequestHeaders", () => {
   for (const { name, model, options, expected } of [
     {
