@@ -24,11 +24,6 @@ import { useBashToolLiveOutput, useLatestStreamingBashId } from "@/browser/store
 import { useForegroundBashToolCallIds } from "@/browser/stores/BackgroundBashStore";
 import { useBackgroundBashActions } from "@/browser/contexts/BackgroundBashContext";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/browser/components/Tooltip/Tooltip";
-import { usePersistedState } from "@/browser/hooks/usePersistedState";
-import {
-  DEFAULT_TOOL_COLLAPSED_DISPLAY_MODE,
-  TOOL_COLLAPSED_DISPLAY_MODE_KEY,
-} from "@/common/constants/storage";
 import { buildBashCollapsedSummary } from "./bashCollapsedSummary";
 import { BackgroundBashOutputDialog } from "@/browser/components/BackgroundBashOutputDialog/BackgroundBashOutputDialog";
 
@@ -113,16 +108,10 @@ export const BashToolCall: React.FC<BashToolCallProps> = ({
     result && "backgroundProcessId" in result ? result.backgroundProcessId : null;
   const isBackground = args.run_in_background ?? Boolean(backgroundProcessId);
 
-  const [rawToolCollapsedDisplayMode] = usePersistedState<unknown>(
-    TOOL_COLLAPSED_DISPLAY_MODE_KEY,
-    DEFAULT_TOOL_COLLAPSED_DISPLAY_MODE,
-    { listener: true }
-  );
   const bashCollapsedSummary = buildBashCollapsedSummary({
     args,
     result,
     isBackground,
-    displayMode: rawToolCollapsedDisplayMode,
   });
   const isIntentCommandSummary = bashCollapsedSummary.kind === "intent-command";
 
@@ -169,33 +158,42 @@ export const BashToolCall: React.FC<BashToolCallProps> = ({
         <ExpandIcon expanded={expanded}>▶</ExpandIcon>
         <ToolIcon toolName="bash" />
         {bashCollapsedSummary.kind === "intent-command" ? (
-          <span className="text-text flex max-w-96 min-w-0 items-baseline gap-1">
-            <span className="max-w-48 min-w-0 truncate">{bashCollapsedSummary.intent}</span>
-            <span className="text-muted shrink-0">using</span>
-            <span className="font-monospace max-w-48 min-w-0 truncate">
-              {bashCollapsedSummary.command}
+          // Two lines: intent (primary) on top, command (muted mono) below.
+          // The duration chip sits on the command row so it inherits the same
+          // line-height and stays vertically centered on the command, not
+          // floating between the two lines.
+          <span className="flex max-w-[28rem] min-w-0 flex-col leading-tight">
+            <span className="text-text truncate">{bashCollapsedSummary.intent}</span>
+            <span className="flex min-w-0 items-center gap-2">
+              <span className="text-muted font-monospace min-w-0 truncate text-[10px]">
+                {bashCollapsedSummary.command}
+              </span>
+              {!isBackground && (
+                <span
+                  className={cn(
+                    "shrink-0 text-[10px] tabular-nums whitespace-nowrap [@container(max-width:500px)]:hidden",
+                    isPending ? "text-pending" : "text-text-secondary"
+                  )}
+                >
+                  {bashCollapsedSummary.durationLabel ? (
+                    <>for {bashCollapsedSummary.durationLabel}</>
+                  ) : (
+                    <>
+                      timeout: {args.timeout_secs ?? BASH_DEFAULT_TIMEOUT_SECS}s
+                      <ElapsedTimeDisplay
+                        startedAt={startedAt}
+                        isActive={isPending}
+                        prefix="for "
+                      />
+                    </>
+                  )}
+                </span>
+              )}
             </span>
           </span>
         ) : (
           <span className="text-text font-monospace max-w-96 truncate">
             {bashCollapsedSummary.command}
-          </span>
-        )}
-        {!isBackground && isIntentCommandSummary && (
-          <span
-            className={cn(
-              "ml-2 text-[10px] tabular-nums whitespace-nowrap [@container(max-width:500px)]:hidden",
-              isPending ? "text-pending" : "text-text-secondary"
-            )}
-          >
-            {bashCollapsedSummary.durationLabel ? (
-              <>for {bashCollapsedSummary.durationLabel}</>
-            ) : (
-              <>
-                timeout: {args.timeout_secs ?? BASH_DEFAULT_TIMEOUT_SECS}s
-                <ElapsedTimeDisplay startedAt={startedAt} isActive={isPending} prefix="for " />
-              </>
-            )}
           </span>
         )}
         {isBackground && backgroundProcessId && workspaceId && (
@@ -279,6 +277,14 @@ export const BashToolCall: React.FC<BashToolCallProps> = ({
 
       {expanded && (
         <ToolDetails>
+          {typeof args.model_intent === "string" && args.model_intent.trim().length > 0 && (
+            <DetailSection>
+              <DetailLabel>Intent</DetailLabel>
+              <DetailContent className="px-2 py-1.5 whitespace-pre-wrap">
+                {args.model_intent}
+              </DetailContent>
+            </DetailSection>
+          )}
           <DetailSection>
             <DetailLabel>Script</DetailLabel>
             <DetailContent className="px-2 py-1.5">{args.script}</DetailContent>
