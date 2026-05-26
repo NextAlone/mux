@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { cleanup, fireEvent, render } from "@testing-library/react";
+import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { GlobalWindow } from "happy-dom";
 import { useEffect, useState, type ComponentProps } from "react";
 
@@ -83,6 +83,10 @@ function createFileTreeForPaths(filePaths: string[]): FileTreeNode {
   return root;
 }
 
+function encodeFileReadOutput(content: string): string {
+  return `${Buffer.byteLength(content, "utf8")}\n${Buffer.from(content, "utf8").toString("base64")}`;
+}
+
 function renderImmersiveReview(
   overrides: Partial<ComponentProps<typeof ImmersiveReviewView>> = {}
 ) {
@@ -161,6 +165,150 @@ describe("ImmersiveReviewView", () => {
     globalThis.navigator = originalNavigator;
     globalThis.requestAnimationFrame = originalRequestAnimationFrame;
     globalThis.cancelAnimationFrame = originalCancelAnimationFrame;
+  });
+
+  test("renders the hunk overlay while full-file context is still pending", async () => {
+    type ExecuteBashValue = Awaited<ReturnType<MockApiClient["workspace"]["executeBash"]>>;
+    let resolveRead: ((value: ExecuteBashValue) => void) | undefined;
+    const pendingRead = new Promise<ExecuteBashValue>((resolve) => {
+      resolveRead = resolve;
+    });
+    mockApi.workspace.executeBash = mock(() => pendingRead);
+
+    const view = renderImmersiveReview();
+
+    expect(view.container.textContent ?? "").toContain("new line");
+    await waitFor(() => expect(mockApi.workspace.executeBash).toHaveBeenCalledTimes(1));
+
+    if (!resolveRead) {
+      throw new Error("Read promise resolver was not captured");
+    }
+    resolveRead({
+      success: true,
+      data: {
+        success: true,
+        output: "0",
+        exitCode: 0,
+      },
+    });
+  });
+
+  test("skips full-file reads when the selected hunk starts beyond the render budget", () => {
+    const farHunk = createHunk({
+      id: "hunk-far",
+      oldStart: 5000,
+      newStart: 5000,
+      header: "@@ -5000 +5000 @@",
+      content: "-old far line\n+new far line",
+    });
+
+    const view = renderImmersiveReview({
+      fileTree: createFileTree(farHunk.filePath),
+      hunks: [farHunk],
+      allHunks: [farHunk],
+      selectedHunkId: farHunk.id,
+    });
+
+    expect(view.container.textContent ?? "").toContain("new far line");
+    expect(mockApi.workspace.executeBash).not.toHaveBeenCalled();
+  });
+
+  test("loads full-file context for an in-budget selected hunk even when another hunk is far away", async () => {
+    const nearHunk = createHunk({
+      id: "hunk-near",
+      newStart: 40,
+      newLines: 1,
+      header: "@@ -40 +40 @@",
+      content: "-old near line\n+new near line",
+    });
+    const farHunk = createHunk({
+      id: "hunk-far",
+      newStart: 5000,
+      newLines: 1,
+      header: "@@ -5000 +5000 @@",
+      content: "-old far line\n+new far line",
+    });
+
+    renderImmersiveReview({
+      fileTree: createFileTree(nearHunk.filePath),
+      hunks: [nearHunk, farHunk],
+      allHunks: [nearHunk, farHunk],
+      selectedHunkId: nearHunk.id,
+    });
+
+    await waitFor(() => expect(mockApi.workspace.executeBash).toHaveBeenCalledTimes(1));
+  });
+
+  test("accepts full-file context at the line budget when the file ends with a newline", async () => {
+    const lineBudget = 1500;
+    const fileContent = `${[
+      "new line",
+      "context after selected hunk",
+      ...Array.from({ length: lineBudget - 2 }, (_, index) => `filler ${index}`),
+    ].join("\n")}\n`;
+    mockApi.workspace.executeBash = mock(() =>
+      Promise.resolve({
+        success: true as const,
+        data: {
+          success: true,
+          output: encodeFileReadOutput(fileContent),
+          exitCode: 0,
+        },
+      })
+    );
+
+    const view = renderImmersiveReview();
+
+    await waitFor(() =>
+      expect(view.container.textContent ?? "").toContain("context after selected hunk")
+    );
+  });
+
+  test("retries full-file context after a transient read failure", async () => {
+    const firstHunk = createHunk({ id: "hunk-first", filePath: "src/first.ts" });
+    const secondHunk = createHunk({ id: "hunk-second", filePath: "src/second.ts" });
+    const allHunks = [firstHunk, secondHunk];
+    const fileTree = createFileTreeForPaths(allHunks.map((hunk) => hunk.filePath));
+    const onSelectHunk = mock((_hunkId: string | null) => undefined);
+    mockApi.workspace.executeBash = mock(() =>
+      Promise.resolve({
+        success: true as const,
+        data: {
+          success: false,
+          output: "",
+          exitCode: 1,
+        },
+      })
+    );
+
+    const renderView = (selectedHunkId: string) => (
+      <ThemeProvider forcedTheme="dark">
+        <ImmersiveReviewView
+          workspaceId="workspace-1"
+          fileTree={fileTree}
+          hunks={allHunks}
+          allHunks={allHunks}
+          isRead={() => false}
+          onToggleRead={mock(() => undefined)}
+          onMarkFileAsRead={mock(() => undefined)}
+          selectedHunkId={selectedHunkId}
+          onSelectHunk={onSelectHunk}
+          onExit={mock(() => undefined)}
+          isTouchImmersive={true}
+          reviewsByFilePath={new Map()}
+          firstSeenMap={{}}
+        />
+      </ThemeProvider>
+    );
+
+    const view = render(renderView(firstHunk.id));
+    await waitFor(() => expect(mockApi.workspace.executeBash).toHaveBeenCalledTimes(1));
+
+    view.rerender(renderView(secondHunk.id));
+    await waitFor(() => expect(mockApi.workspace.executeBash).toHaveBeenCalledTimes(2));
+
+    view.rerender(renderView(firstHunk.id));
+    await waitFor(() => expect(mockApi.workspace.executeBash).toHaveBeenCalledTimes(3));
   });
 
   test("weights completion by changed lines instead of hunk count", () => {

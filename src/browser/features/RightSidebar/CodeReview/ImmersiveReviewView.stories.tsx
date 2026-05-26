@@ -436,7 +436,9 @@ export const ImmersiveNotesSidebarActionFooter: Story = {
     await waitFor(
       () => {
         canvas.getByTestId("immersive-review-view");
-        canvas.getByText(/Keep the formatter instance shared/i);
+        if (canvas.queryAllByText(/Keep the formatter instance shared/i).length === 0) {
+          throw new Error("Expected the immersive review formatter note to render.");
+        }
       },
       { timeout: 10_000 }
     );
