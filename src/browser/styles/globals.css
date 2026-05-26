@@ -1612,14 +1612,17 @@ code {
 .plan-toc-heading {
   /* The plan title sits at the top of the TOC, in place of a separate
      "CONTENTS" label. A light plan tint ties the side nav back to the plan
-     card without competing with the main content. */
+     card without competing with the main content. The title text sits flush
+     with the level-1 list rows below — no reserved gutter, no indent —
+     because the TOC carries no always-on chrome that would need to live
+     there. */
   font-size: 12px;
   font-weight: 600;
   color: color-mix(in srgb, var(--color-plan-mode) 58%, var(--color-foreground) 42%);
   margin: 0 0 6px 0;
   padding: 2px 0;
-  /* Let long plan titles wrap inside the gutter instead of wasting available
-     horizontal space and hiding useful context behind an ellipsis. */
+  /* Let long plan titles wrap instead of wasting available horizontal space
+     and hiding useful context behind an ellipsis. */
   white-space: normal;
   overflow-wrap: anywhere;
   /* Match the .plan-toc-link reset for the clickable variant. */
@@ -1635,19 +1638,33 @@ code {
   display: block;
   width: 100%;
   border-radius: 3px;
-  transition:
-    color 120ms ease,
-    background-color 120ms ease;
+  transition: color 120ms ease;
 }
 
 .plan-toc-heading-link:hover {
-  color: color-mix(in srgb, var(--color-plan-mode) 70%, var(--color-foreground) 30%);
-  background: var(--color-hover);
+  color: color-mix(in srgb, var(--color-plan-mode) 78%, var(--color-foreground) 22%);
 }
 
 .plan-toc-heading-link:focus-visible {
   outline: 2px solid color-mix(in srgb, var(--color-accent) 60%, transparent);
   outline-offset: 1px;
+}
+
+/* Active heading indicator. When the reader has scrolled into the plan's
+   title-level section (before any h2), the title gets a stronger plan tint
+   to signal "you are here". Color-only — no background, no weight change —
+   so the title's text occupies the exact same horizontal extents in both
+   states and never shifts vs the list rows below. */
+.plan-toc-heading-link-active {
+  color: color-mix(in srgb, var(--color-plan-mode) 88%, var(--color-foreground) 12%);
+}
+
+/* Source order matters: declared AFTER `.plan-toc-heading-link:hover` so
+   hovering an active title brightens (rather than dropping back to the
+   weaker inactive hover tint). Both rules have identical specificity so
+   later source wins. */
+.plan-toc-heading-link-active:hover {
+  color: var(--color-plan-mode-hover);
 }
 
 .plan-toc-list {
@@ -1656,7 +1673,6 @@ code {
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 2px;
 }
 
 .plan-toc-item {
@@ -1682,8 +1698,10 @@ code {
 }
 
 .plan-toc-link {
-  /* Render as a flush text link rather than a chunky button. Using the same
-     zero left padding as the title is what keeps h1 and h2 visually aligned. */
+  /* Render as a flush text link rather than a chunky button. Level-1 rows
+     anchor at column 0; deeper levels indent by `--plan-toc-indent`. No
+     reserved rail gutter — the active state is signalled by COLOR only,
+     not by chrome that would need its own column. */
   appearance: none;
   background: transparent;
   border: 0;
@@ -1693,28 +1711,49 @@ code {
   cursor: pointer;
   display: block;
   width: 100%;
-  padding: 2px 0 2px var(--plan-toc-indent);
+  padding: 3px 0 3px var(--plan-toc-indent);
   border-radius: 3px;
   white-space: normal;
   overflow-wrap: anywhere;
-  transition:
-    color 120ms ease,
-    background-color 120ms ease;
+  transition: color 120ms ease;
 }
 
 .plan-toc-item[data-level="1"] .plan-toc-link {
-  font-weight: 500;
+  /* Top-level items are the structural anchors of the plan; render them at
+     the full foreground color with a slight weight bump even when inactive
+     so the outline is legible at a glance. Nested levels remain at the
+     muted list color until hover or active.
+     This weight bump is keyed off level — NOT off the active state — so it
+     does not change between a row's inactive and active renders and cannot
+     cause horizontal text shift the way an active-only weight bump would. */
   color: var(--color-foreground);
+  font-weight: 500;
 }
 
 .plan-toc-link:hover {
   color: var(--color-foreground);
-  background: var(--color-hover);
 }
 
 .plan-toc-link:focus-visible {
   outline: 2px solid color-mix(in srgb, var(--color-accent) 60%, transparent);
   outline-offset: 1px;
+}
+
+/* Active section indicator: COLOR-ONLY.
+ *
+ * The active row's text shifts to the plan tint so the TOC inherits the
+ * plan's identity for its "you are here" cue. Every row retains identical
+ * horizontal extents in every state — no rail, no background pill, no
+ * weight bump, no inset shadow — so the active row cannot read as shifted
+ * vs its inactive siblings. The data-attribute selector outranks the
+ * level-1 color rule above so this color wins on level-1 active rows too.
+ */
+.plan-toc-item[data-active="true"] .plan-toc-link {
+  color: color-mix(in srgb, var(--color-plan-mode) 88%, var(--color-foreground) 12%);
+}
+
+.plan-toc-item[data-active="true"] .plan-toc-link:hover {
+  color: var(--color-plan-mode-hover);
 }
 
 /* Give plan headings breathing room so scrollIntoView({block:"start"}) lands
