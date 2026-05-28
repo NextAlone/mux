@@ -99,8 +99,6 @@ import {
 import {
   findActiveSideQuestionScrollHoldTarget,
   findSideQuestionScrollHoldTarget,
-  getSideQuestionScrollHoldScrollportStartTop,
-  isSideQuestionScrollHoldBottomClamped,
   type SideQuestionScrollHoldState,
 } from "./sideQuestionScrollHold";
 import {
@@ -565,23 +563,10 @@ const ChatPaneContent: React.FC<ChatPaneContentProps> = (props) => {
     };
 
     const currentHold = findActiveSideQuestionScrollHoldTarget(deferredMessages, targetHistoryId);
-    const releaseSettledHoldIfAligned = (targetElement: HTMLElement | undefined): void => {
+    const releaseSettledHold = (): void => {
       if (
         currentHold.keepActive ||
         activeSideQuestionScrollHoldTargetRef.current !== targetHistoryId
-      ) {
-        return;
-      }
-
-      // If the first settled-render alignment is still clamped to the transcript
-      // bottom, keep the /btw hold alive for later main-stream growth. Otherwise
-      // the side branch can sit on the viewport bottom forever with newer main
-      // content accumulating below it off-screen.
-      if (
-        targetElement &&
-        isSideQuestionScrollHoldBottomClamped(scrollContainer, targetElement, {
-          scrollportStartTop: getSideQuestionScrollHoldScrollportStartTop(scrollContainer),
-        })
       ) {
         return;
       }
@@ -592,15 +577,14 @@ const ChatPaneContent: React.FC<ChatPaneContentProps> = (props) => {
     // The main stream can now keep rendering below an active /btw branch. Once
     // that happens, bottom-lock would otherwise follow the main tail and yank
     // the user away from the aside they just requested. Release bottom-lock once
-    // per side branch and keep the side-question row readable. Keep re-aligning
-    // while the side answer grows and, after it settles, only while the attempted
-    // start alignment is still bottom-clamped. That prevents the side Q/A from
-    // becoming permanent visual clutter at the transcript bottom.
+    // per interrupted side branch, then let the finite hold expire as soon as
+    // both the side answer and interrupted main stream are settled.
     if (shouldStartHold) {
       activeSideQuestionScrollHoldTargetRef.current = targetHistoryId;
       disableAutoScroll();
     }
-    releaseSettledHoldIfAligned(alignSideBranchStart());
+    alignSideBranchStart();
+    releaseSettledHold();
 
     const win = typeof window !== "undefined" ? window : undefined;
     const raf = win?.requestAnimationFrame?.bind(win);
@@ -609,7 +593,10 @@ const ChatPaneContent: React.FC<ChatPaneContentProps> = (props) => {
       return;
     }
 
-    const frameId = raf(() => releaseSettledHoldIfAligned(alignSideBranchStart()));
+    const frameId = raf(() => {
+      alignSideBranchStart();
+      releaseSettledHold();
+    });
     return () => cancelRaf(frameId);
   }, [autoScroll, contentRef, deferredMessages, disableAutoScroll, isHydratingTranscript, loading]);
 

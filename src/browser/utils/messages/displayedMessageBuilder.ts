@@ -4,6 +4,7 @@ import type {
   InlineSkillSnapshotMap,
   MuxFilePart,
   MuxMessage,
+  SideQuestionDisplayBranch,
 } from "@/common/types/message";
 import { getCompactionFollowUpContent } from "@/common/types/message";
 import type { StreamErrorType } from "@/common/types/errors";
@@ -135,6 +136,27 @@ export function resolveRouteProvider(
   routedThroughGateway: boolean | undefined
 ): string | undefined {
   return routeProvider ?? (routedThroughGateway === true ? "mux-gateway" : undefined);
+}
+
+function getStandaloneSideQuestionBranch(
+  message: MuxMessage
+): SideQuestionDisplayBranch | undefined {
+  const muxMeta = message.metadata?.muxMetadata;
+  if (muxMeta?.type === "side-question") {
+    return {
+      branchId: message.id,
+      placement: "standalone",
+    };
+  }
+
+  if (muxMeta?.type === "side-question-answer") {
+    return {
+      branchId: muxMeta.questionMessageId ?? message.id,
+      placement: "standalone",
+    };
+  }
+
+  return undefined;
 }
 
 export function normalizeMessageRouteProvider(message: MuxMessage): MuxMessage {
@@ -351,6 +373,7 @@ function buildUserDisplayedMessages(options: {
       inlineSkillSnapshots,
       compactionRequest,
       reviews: muxMeta?.reviews,
+      sideQuestionBranch: getStandaloneSideQuestionBranch(message),
       isSideQuestion: isSideQuestionUserMessage(message) ? true : undefined,
     },
   ];
@@ -449,6 +472,7 @@ function appendAssistantTextRow(
     // Support both new enum ("user"|"idle") and legacy boolean (true).
     isCompacted: !!message.metadata?.compacted,
     isIdleCompacted: message.metadata?.compacted === "idle",
+    sideQuestionBranch: getStandaloneSideQuestionBranch(message),
     isSideAnswer: isSideQuestionAnswerMessage(message) ? true : undefined,
     model: message.metadata?.model,
     routedThroughGateway: message.metadata?.routedThroughGateway,
