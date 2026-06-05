@@ -52,6 +52,7 @@ import {
   isLayoutPresetsConfigEmpty,
   normalizeLayoutPresetsConfig,
 } from "@/common/types/uiLayouts";
+import { normalizeUserPreferences } from "@/common/config/schemas/userPreferences";
 import { normalizeAgentAiDefaults } from "@/common/types/agentAiDefaults";
 import { isValidModelFormat, normalizeSelectedModel } from "@/common/utils/ai/models";
 import {
@@ -816,6 +817,8 @@ export const router = (authToken?: string) => {
           const muxGovernorUrl = config.muxGovernorUrl ?? null;
           const muxGovernorEnrolled = Boolean(config.muxGovernorUrl && config.muxGovernorToken);
           return {
+            userPreferencesInitialized: config.migrations?.userPreferencesInitialized === true,
+            userPreferences: config.userPreferences,
             taskSettings: config.taskSettings ?? DEFAULT_TASK_SETTINGS,
             muxGatewayEnabled: config.muxGatewayEnabled,
             muxGatewayModels: config.muxGatewayModels,
@@ -1150,11 +1153,22 @@ export const router = (authToken?: string) => {
         .output(schemas.config.saveConfig.output)
         .handler(async ({ context, input }) => {
           await context.config.editConfig((config) => {
-            const normalizedTaskSettings = mergeTaskSettingsForConfigSave(
-              config.taskSettings,
-              input.taskSettings
-            );
-            const result = { ...config, taskSettings: normalizedTaskSettings };
+            const result = { ...config };
+
+            if (input.taskSettings != null) {
+              result.taskSettings = mergeTaskSettingsForConfigSave(
+                config.taskSettings,
+                input.taskSettings
+              );
+            }
+
+            if (input.userPreferences !== undefined) {
+              result.userPreferences = normalizeUserPreferences(input.userPreferences);
+              result.migrations = {
+                ...(result.migrations ?? {}),
+                userPreferencesInitialized: true,
+              };
+            }
 
             if (input.advisorModelString !== undefined) {
               result.advisorModelString = normalizeOptionalConfigString(input.advisorModelString);

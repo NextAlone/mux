@@ -32,6 +32,7 @@ import {
   normalizeTaskSettings,
   shouldMirrorAgentDefaultToLegacySubagent,
 } from "@/common/types/tasks";
+import { normalizeUserPreferences } from "@/common/config/schemas/userPreferences";
 import { isLayoutPresetsConfigEmpty, normalizeLayoutPresetsConfig } from "@/common/types/uiLayouts";
 import { normalizeAgentAiDefaults } from "@/common/types/agentAiDefaults";
 import {
@@ -338,6 +339,7 @@ function normalizeConfigMigrations(value: unknown): AppConfigMigrations {
   const record = value as Record<string, unknown>;
   return {
     ...(record.execSubagentDefaultsSplit === true ? { execSubagentDefaultsSplit: true } : {}),
+    ...(record.userPreferencesInitialized === true ? { userPreferencesInitialized: true } : {}),
   };
 }
 
@@ -884,6 +886,12 @@ export class Config {
         const runtimeEnablement = normalizeRuntimeEnablementOverrides(parsed.runtimeEnablement);
         const defaultRuntime = normalizeRuntimeEnablementId(parsed.defaultRuntime);
 
+        const userPreferences = normalizeUserPreferences(parsed.userPreferences);
+        const migrations = normalizeConfigMigrations(parsed.migrations);
+        if (parsed.userPreferences !== undefined) {
+          migrations.userPreferencesInitialized = true;
+        }
+
         const layoutPresetsRaw = normalizeLayoutPresetsConfig(parsed.layoutPresets);
         const layoutPresets = isLayoutPresetsConfigEmpty(layoutPresetsRaw)
           ? undefined
@@ -900,6 +908,7 @@ export class Config {
           serverAuthGithubOwner: parseOptionalNonEmptyString(parsed.serverAuthGithubOwner),
           defaultProjectDir: parseOptionalNonEmptyString(parsed.defaultProjectDir),
           viewedSplashScreens: parsed.viewedSplashScreens,
+          userPreferences,
           layoutPresets,
           taskSettings,
           chatTranscriptFullWidth: parseOptionalBoolean(parsed.chatTranscriptFullWidth),
@@ -924,7 +933,7 @@ export class Config {
           // Subagent defaults: exec is canonical active storage, non-exec entries
           // support legacy mirror compatibility.
           subagentAiDefaults: legacySubagentAiDefaults,
-          migrations: normalizeConfigMigrations(parsed.migrations),
+          migrations,
           featureFlagOverrides: parsed.featureFlagOverrides,
           useSSH2Transport: parseOptionalBoolean(parsed.useSSH2Transport),
           muxGovernorUrl: parseOptionalNonEmptyString(parsed.muxGovernorUrl),
@@ -1103,6 +1112,11 @@ export class Config {
       if (config.featureFlagOverrides) {
         data.featureFlagOverrides = config.featureFlagOverrides;
       }
+      const userPreferences = normalizeUserPreferences(config.userPreferences);
+      if (userPreferences) {
+        data.userPreferences = userPreferences;
+      }
+
       if (config.layoutPresets) {
         const normalized = normalizeLayoutPresetsConfig(config.layoutPresets);
         if (!isLayoutPresetsConfigEmpty(normalized)) {
@@ -1135,10 +1149,18 @@ export class Config {
       const migrations = normalizeConfigMigrations(config.migrations);
       if (
         migrations.execSubagentDefaultsSplit === true ||
+        migrations.userPreferencesInitialized === true ||
+        config.userPreferences !== undefined ||
         config.agentAiDefaults?.exec != null ||
         config.subagentAiDefaults?.exec != null
       ) {
-        data.migrations = { ...migrations, execSubagentDefaultsSplit: true };
+        data.migrations = {
+          ...migrations,
+          ...(config.userPreferences !== undefined ? { userPreferencesInitialized: true } : {}),
+          ...(config.agentAiDefaults?.exec != null || config.subagentAiDefaults?.exec != null
+            ? { execSubagentDefaultsSplit: true }
+            : {}),
+        };
       }
 
       if (config.useSSH2Transport !== undefined) {

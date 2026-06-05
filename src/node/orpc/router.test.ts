@@ -466,6 +466,82 @@ describe("router config.saveConfig", () => {
     expect(config.loadConfigOrDefault().chatTranscriptFullWidth).toBeUndefined();
   });
 
+  test("getConfig and saveConfig round trip user preferences", async () => {
+    const client = createRouterClient(router(), { context: createContext() });
+
+    await client.config.saveConfig({
+      taskSettings: DEFAULT_TASK_SETTINGS,
+      userPreferences: {
+        appearance: { theme: "dark" },
+        notifications: { notifyOnResponseByWorkspace: { "ws-1": true } },
+      },
+    });
+
+    expect((await client.config.getConfig()).userPreferencesInitialized).toBe(true);
+    expect((await client.config.getConfig()).userPreferences).toEqual({
+      appearance: { theme: "dark" },
+      notifications: { notifyOnResponseByWorkspace: { "ws-1": true } },
+    });
+    expect(config.loadConfigOrDefault().userPreferences).toEqual({
+      appearance: { theme: "dark" },
+      notifications: { notifyOnResponseByWorkspace: { "ws-1": true } },
+    });
+  });
+
+  test("saveConfig preserves task settings when user preference saves omit them", async () => {
+    await config.editConfig((current) => ({
+      ...current,
+      taskSettings: {
+        ...DEFAULT_TASK_SETTINGS,
+        maxParallelAgentTasks: 7,
+        preserveSubagentsUntilArchive: true,
+      },
+    }));
+    const client = createRouterClient(router(), { context: createContext() });
+
+    await client.config.saveConfig({
+      userPreferences: { appearance: { theme: "dark" } },
+    });
+
+    expect(config.loadConfigOrDefault().taskSettings).toEqual({
+      ...DEFAULT_TASK_SETTINGS,
+      maxParallelAgentTasks: 7,
+      preserveSubagentsUntilArchive: true,
+    });
+  });
+
+  test("saveConfig clears user preferences when explicitly set to null", async () => {
+    await config.editConfig((current) => ({
+      ...current,
+      userPreferences: { appearance: { theme: "flexoki-light" } },
+    }));
+    const client = createRouterClient(router(), { context: createContext() });
+
+    await client.config.saveConfig({
+      userPreferences: null,
+    });
+
+    expect((await client.config.getConfig()).userPreferencesInitialized).toBe(true);
+    expect(config.loadConfigOrDefault().userPreferences).toBeUndefined();
+  });
+
+  test("saveConfig preserves existing user preferences when omitted", async () => {
+    await config.editConfig((current) => ({
+      ...current,
+      userPreferences: { appearance: { theme: "flexoki-light" } },
+    }));
+    const client = createRouterClient(router(), { context: createContext() });
+
+    await client.config.saveConfig({
+      taskSettings: DEFAULT_TASK_SETTINGS,
+      advisorModelString: null,
+    });
+
+    expect(config.loadConfigOrDefault().userPreferences).toEqual({
+      appearance: { theme: "flexoki-light" },
+    });
+  });
+
   test("preserves optional task settings when a save omits them", async () => {
     await config.editConfig((current) => ({
       ...current,
