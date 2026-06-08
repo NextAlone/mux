@@ -134,6 +134,8 @@ describe("router workflow routes", () => {
         })),
       },
       workspaceService: {
+        waitForWorkspaceIdle: mock(async () => undefined),
+        prepareManualWorkflowInvocation: mock(async () => undefined),
         appendWorkflowRunInvocation: mock(async () => true),
         isWorkflowInvocationCurrent: mock(async () => false),
         getWorkflowContinuationSendOptions: mock(() => null),
@@ -411,6 +413,59 @@ describe("router workflow routes", () => {
         status: "running",
       })
     );
+    await waitForRouterWorkflowStatus(client, "workspace-1", result.runId, "completed");
+  });
+
+  test("waits for chat idle before starting slash workflow invocations", async () => {
+    const context = createContext({ enabled: true });
+    const workspaceService = context.workspaceService as unknown as {
+      waitForWorkspaceIdle: ReturnType<typeof mock>;
+      prepareManualWorkflowInvocation: ReturnType<typeof mock>;
+      appendWorkflowRunInvocation: ReturnType<typeof mock>;
+    };
+    let releaseIdle: (() => void) | undefined;
+    workspaceService.waitForWorkspaceIdle = mock(
+      () =>
+        new Promise<void>((resolve) => {
+          releaseIdle = resolve;
+        })
+    );
+    const runStore = new WorkflowRunStore({ sessionDir: config.getSessionDir("workspace-1") });
+    const client = createRouterClient(router(), { context });
+
+    const startPromise = client.workflows.start({
+      workspaceId: "workspace-1",
+      name: "demo",
+      runInBackground: true,
+      args: { topic: "queued until idle" },
+      rawCommand: "/demo queued until idle",
+    });
+
+    await waitForRouterCondition(
+      "slash workflow idle barrier",
+      () => workspaceService.waitForWorkspaceIdle.mock.calls.length === 1
+    );
+    expect(workspaceService.waitForWorkspaceIdle).toHaveBeenCalledWith(
+      "workspace-1",
+      expect.objectContaining({ manualFollowUp: true })
+    );
+    expect(workspaceService.prepareManualWorkflowInvocation).not.toHaveBeenCalled();
+    expect(await runStore.listRuns()).toEqual([]);
+    expect(workspaceService.appendWorkflowRunInvocation).not.toHaveBeenCalled();
+
+    releaseIdle?.();
+    const result = await startPromise;
+
+    expect(workspaceService.prepareManualWorkflowInvocation).toHaveBeenCalledWith("workspace-1");
+    expect(result).toMatchObject({ status: "running", invocationMessagePersisted: true });
+    expect(workspaceService.appendWorkflowRunInvocation).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workspaceId: "workspace-1",
+        rawCommand: "/demo queued until idle",
+        status: "running",
+      })
+    );
+    await waitForRouterWorkflowStatus(client, "workspace-1", result.runId, "completed");
   });
 
   test("waits for foreground slash invocation persistence before terminal continuation", async () => {
@@ -477,7 +532,12 @@ describe("router workflow routes", () => {
   });
 
   test("starts a workflow in the background when requested through the API", async () => {
-    const client = createRouterClient(router(), { context: createContext({ enabled: true }) });
+    const context = createContext({ enabled: true });
+    const workspaceService = context.workspaceService as unknown as {
+      waitForWorkspaceIdle: ReturnType<typeof mock>;
+      prepareManualWorkflowInvocation: ReturnType<typeof mock>;
+    };
+    const client = createRouterClient(router(), { context });
 
     const result = await client.workflows.start({
       workspaceId: "workspace-1",
@@ -486,6 +546,8 @@ describe("router workflow routes", () => {
       args: { topic: "background workflow routes" },
     });
 
+    expect(workspaceService.prepareManualWorkflowInvocation).not.toHaveBeenCalled();
+    expect(workspaceService.waitForWorkspaceIdle).not.toHaveBeenCalled();
     expect(result.status).toBe("running");
     expect(result.runId).toMatch(/^wfr_/);
     expect(result.result).toBeNull();

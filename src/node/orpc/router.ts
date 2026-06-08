@@ -1947,6 +1947,15 @@ export const router = (authToken?: string) => {
                   });
                 }
               : undefined;
+          if (input.rawCommand != null) {
+            // Slash workflow commands are user follow-ups, just like normal composer sends.
+            // Wait for the active chat turn (including compaction follow-ups and queued messages)
+            // to finish before starting the workflow or appending its invocation to history.
+            await context.workspaceService.waitForWorkspaceIdle(input.workspaceId, {
+              signal,
+              manualFollowUp: true,
+            });
+          }
           const { service, projectTrusted } = await resolveWorkflowContext(
             context,
             input.workspaceId,
@@ -1954,6 +1963,9 @@ export const router = (authToken?: string) => {
               ...(onBackgroundRunTerminal != null ? { onBackgroundRunTerminal } : {}),
             }
           );
+          if (input.rawCommand != null) {
+            await context.workspaceService.prepareManualWorkflowInvocation(input.workspaceId);
+          }
           const workflowStartArgs = {
             name: input.name,
             workspaceId: input.workspaceId,
