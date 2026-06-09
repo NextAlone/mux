@@ -2165,11 +2165,24 @@ function normalizeWorkflowResultForEvent(result: unknown): WorkflowResult {
 }
 
 function compileWorkflowSource(source: string): string {
-  const compiled = source.replace(
+  // Workflow definitions are evaluated as a script (not a module), so export
+  // syntax must be rewritten away. Top-level named export declarations are
+  // allowed so built-in workflows can expose pure helpers for direct unit
+  // tests; only the declaration forms below are supported (no `export {...}`
+  // lists). Like the default-export rewrite, this is a lexical transform: a
+  // template-literal line inside the workflow that starts with `export ` would
+  // also be rewritten. scripts/gen_builtin_workflows.ts guards built-in
+  // sources against that corruption at generation time; scratch/project
+  // authors must keep flush-left `export ` lines out of template literals.
+  const withoutNamedExports = source.replace(
+    /^export\s+(?=(?:async\s+)?function\s|class\s|const\s|let\s|var\s)/gmu,
+    ""
+  );
+  const compiled = withoutNamedExports.replace(
     /export\s+default\s+(async\s+)?function(?:\s+[A-Za-z_$][\w$]*)?\s*\(/u,
     (_match, asyncKeyword: string | undefined) => `${asyncKeyword ?? ""}function __muxWorkflow(`
   );
-  assert(compiled !== source, "Workflow definition must export a default function");
+  assert(compiled !== withoutNamedExports, "Workflow definition must export a default function");
 
   return `
 Date = undefined;

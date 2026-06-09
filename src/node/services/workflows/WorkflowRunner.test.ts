@@ -1674,6 +1674,41 @@ describe("WorkflowRunner", () => {
     await expect(runner.run("wfr_async")).resolves.toEqual({ reportMarkdown: "async ok" });
   });
 
+  test("supports top-level named export declarations alongside the default export", async () => {
+    using tmp = new DisposableTempDir("workflow-runner");
+    const store = new WorkflowRunStore({
+      sessionDir: tmp.path,
+      staleLeaseMs: WORKFLOW_RUNNER_TEST_STALE_LEASE_MS,
+    });
+    await store.createRun({
+      id: "wfr_named_exports",
+      workspaceId: "workspace-1",
+      definition,
+      // Built-in workflows export pure helpers for direct unit testing; the
+      // compiler must strip those export modifiers before script evaluation.
+      definitionSource: [
+        `export const GREETING = "named";`,
+        `export class Exclaimer {`,
+        `  render(value) { return value + "!"; }`,
+        `}`,
+        `export function exclaim(value) { return new Exclaimer().render(value); }`,
+        `export async function emphasize(value) { return value.toUpperCase(); }`,
+        `export default async function workflow() {`,
+        `  return { reportMarkdown: await emphasize(exclaim(GREETING)) };`,
+        `}`,
+      ].join("\n"),
+      args: {},
+      now: "2026-05-29T00:00:00.000Z",
+    });
+    const runner = createRunner(store, {
+      async runAgent() {
+        throw new Error("agent should not run");
+      },
+    });
+
+    await expect(runner.run("wfr_named_exports")).resolves.toEqual({ reportMarkdown: "NAMED!" });
+  });
+
   test("returns the normalized workflow result for JSON-serializable values", async () => {
     using tmp = new DisposableTempDir("workflow-runner");
     const store = new WorkflowRunStore({

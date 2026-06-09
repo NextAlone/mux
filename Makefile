@@ -161,12 +161,13 @@ dev: node_modules/.installed build-main ## Start development server (Vite + node
 	# https://github.com/oven-sh/bun/issues/18275
 	@NODE_OPTIONS="--max-old-space-size=4096" \
 		npm x concurrently -k --raw \
-		"bun x nodemon --watch src --watch tsconfig.main.json --watch tsconfig.json --ext ts,tsx,json --ignore dist --ignore node_modules --exec node scripts/build-main-watch.js" \
+		"bun x nodemon --watch src --watch tsconfig.main.json --watch tsconfig.json --ext ts,tsx,json,js --ignore dist --ignore node_modules --exec node scripts/build-main-watch.js" \
 		'npx esbuild src/cli/api.ts $(ESBUILD_CLI_FLAGS) --watch' \
 		"vite"
 else
 dev: node_modules/.installed build-main build-preload ## Start development server (Vite + tsgo watcher for 10x faster type checking)
 	@bun x concurrently -k \
+		"bun x nodemon --watch src/node/builtinWorkflows --ext js --exec ./scripts/generate-builtin-workflows.sh" \
 		"bun x concurrently \"$(TSGO) -w -p tsconfig.main.json\" \"bun x tsc-alias -w -p tsconfig.main.json\"" \
 		'bun x esbuild src/cli/api.ts $(ESBUILD_CLI_FLAGS) --watch' \
 		"vite"
@@ -181,7 +182,7 @@ dev-server: node_modules/.installed build-main ## Start server mode with hot rel
 	@echo "For remote access: make dev-server VITE_HOST=0.0.0.0 VITE_ALLOWED_HOSTS=<public-host>"
 	@# On Windows, use npm run because bunx doesn't correctly pass arguments
 	@npm x concurrently -k \
-		"nodemon --watch src --watch tsconfig.main.json --watch tsconfig.json --ext ts,tsx,json --ignore dist --ignore node_modules scripts/build-main-watch.js" \
+		"nodemon --watch src --watch tsconfig.main.json --watch tsconfig.json --ext ts,tsx,json,js --ignore dist --ignore node_modules scripts/build-main-watch.js" \
 		'npx esbuild src/cli/api.ts $(ESBUILD_CLI_FLAGS) --watch' \
 		"set NODE_ENV=development&& nodemon --watch dist/cli/index.js --watch dist/cli/server.js --delay 500ms dist/cli/index.js server --no-auth --host $(or $(BACKEND_HOST),127.0.0.1) --port $(or $(BACKEND_PORT),3000)" \
 		"set MUX_VITE_HOST=$(or $(VITE_HOST),127.0.0.1)&& set MUX_VITE_PORT=$(or $(VITE_PORT),5173)&& set MUX_VITE_ALLOWED_HOSTS=$(VITE_ALLOWED_HOSTS)&& set MUX_BACKEND_PORT=$(or $(BACKEND_PORT),3000)&& vite"
@@ -194,7 +195,7 @@ dev-server: node_modules/.installed build-main ## Start server mode with hot rel
 	@echo "For remote access: make dev-server VITE_HOST=0.0.0.0 VITE_ALLOWED_HOSTS=<public-host>"
 	@# Keep tsgo -> tsc-alias sequential to avoid transient unresolved @/ imports in dist during restarts.
 	@bun x concurrently -k \
-		"bun x nodemon --watch src --watch tsconfig.main.json --watch tsconfig.json --ext ts,tsx,json --ignore dist --ignore node_modules --exec 'node scripts/build-main-watch.js'" \
+		"bun x nodemon --watch src --watch tsconfig.main.json --watch tsconfig.json --ext ts,tsx,json,js --ignore dist --ignore node_modules --exec 'node scripts/build-main-watch.js'" \
 		'bun x esbuild src/cli/api.ts $(ESBUILD_CLI_FLAGS) --watch' \
 		"bun x nodemon --watch dist/.main-build-complete --delay 300ms --exec 'NODE_ENV=development node dist/cli/index.js server --no-auth --host $(or $(BACKEND_HOST),127.0.0.1) --port $(or $(BACKEND_PORT),3000)'" \
 		"MUX_VITE_HOST=$(or $(VITE_HOST),127.0.0.1) MUX_VITE_PORT=$(or $(VITE_PORT),5173) MUX_VITE_ALLOWED_HOSTS=$(VITE_ALLOWED_HOSTS) MUX_BACKEND_PORT=$(or $(BACKEND_PORT),3000) vite"
@@ -218,6 +219,7 @@ build-main: node_modules/.installed dist/cli/index.js dist/cli/api.mjs ## Build 
 
 BUILTIN_AGENTS_GENERATED := src/node/services/agentDefinitions/builtInAgentContent.generated.ts
 BUILTIN_SKILLS_GENERATED := src/node/services/agentSkills/builtInSkillContent.generated.ts
+BUILTIN_WORKFLOWS_GENERATED := src/node/services/workflows/builtInWorkflowContent.generated.ts
 
 $(BUILTIN_AGENTS_GENERATED): src/node/builtinAgents/*.md scripts/generate-builtin-agents.sh
 	@./scripts/generate-builtin-agents.sh
@@ -225,7 +227,10 @@ $(BUILTIN_AGENTS_GENERATED): src/node/builtinAgents/*.md scripts/generate-builti
 $(BUILTIN_SKILLS_GENERATED): $(BUILTIN_SKILL_SOURCES) $(DOCS_SOURCES) scripts/generate-builtin-skills.sh scripts/gen_builtin_skills.ts
 	@./scripts/generate-builtin-skills.sh
 
-dist/cli/index.js: src/cli/index.ts src/desktop/main.ts src/cli/server.ts src/version.ts tsconfig.main.json tsconfig.json $(TS_SOURCES) $(BUILTIN_AGENTS_GENERATED) $(BUILTIN_SKILLS_GENERATED)
+$(BUILTIN_WORKFLOWS_GENERATED): src/node/builtinWorkflows/*.js scripts/generate-builtin-workflows.sh scripts/gen_builtin_workflows.ts
+	@./scripts/generate-builtin-workflows.sh
+
+dist/cli/index.js: src/cli/index.ts src/desktop/main.ts src/cli/server.ts src/version.ts tsconfig.main.json tsconfig.json $(TS_SOURCES) $(BUILTIN_AGENTS_GENERATED) $(BUILTIN_SKILLS_GENERATED) $(BUILTIN_WORKFLOWS_GENERATED)
 	@echo "Building main process..."
 	@NODE_ENV=production $(TSGO) -p tsconfig.main.json
 	@NODE_ENV=production bun x tsc-alias -p tsconfig.main.json
@@ -338,13 +343,13 @@ static-check: lint typecheck fmt-check check-eager-imports check-code-docs-links
 
 static-check-full: static-check check-bench-agent check-docs-links ## Run the full CI static check suite
 
-check-bench-agent: node_modules/.installed src/version.ts $(BUILTIN_SKILLS_GENERATED) ## Verify terminal-bench agent configuration and imports
+check-bench-agent: node_modules/.installed src/version.ts $(BUILTIN_SKILLS_GENERATED) $(BUILTIN_WORKFLOWS_GENERATED) ## Verify terminal-bench agent configuration and imports
 	@./scripts/check-bench-agent.sh
 
-lint: node_modules/.installed src/version.ts $(BUILTIN_SKILLS_GENERATED) ## Run ESLint (typecheck runs in separate target)
+lint: node_modules/.installed src/version.ts $(BUILTIN_SKILLS_GENERATED) $(BUILTIN_WORKFLOWS_GENERATED) ## Run ESLint (typecheck runs in separate target)
 	@./scripts/lint.sh
 
-lint-fix: node_modules/.installed src/version.ts $(BUILTIN_SKILLS_GENERATED) ## Run linter with --fix
+lint-fix: node_modules/.installed src/version.ts $(BUILTIN_SKILLS_GENERATED) $(BUILTIN_WORKFLOWS_GENERATED) ## Run linter with --fix
 	@./scripts/lint.sh --fix
 
 lint-actions: lint-actionlint lint-zizmor ## Lint GitHub Actions workflows
@@ -373,13 +378,13 @@ pin-actions: ## Pin GitHub Actions to SHA hashes (requires GH_TOKEN or gh CLI)
 	./scripts/pin-actions.sh .github/workflows/*.yml .github/actions/*/action.yml
 
 ifeq ($(OS),Windows_NT)
-typecheck: node_modules/.installed src/version.ts $(BUILTIN_AGENTS_GENERATED) $(BUILTIN_SKILLS_GENERATED) ## Run TypeScript type checking (uses tsgo for 10x speedup)
+typecheck: node_modules/.installed src/version.ts $(BUILTIN_AGENTS_GENERATED) $(BUILTIN_SKILLS_GENERATED) $(BUILTIN_WORKFLOWS_GENERATED) ## Run TypeScript type checking (uses tsgo for 10x speedup)
 	@# On Windows, use npm run because bun x doesn't correctly pass arguments
 	@npm x concurrently -g \
 		"$(TSGO) --noEmit" \
 		"$(TSGO) --noEmit -p tsconfig.main.json"
 else
-typecheck: node_modules/.installed src/version.ts $(BUILTIN_AGENTS_GENERATED) $(BUILTIN_SKILLS_GENERATED)
+typecheck: node_modules/.installed src/version.ts $(BUILTIN_AGENTS_GENERATED) $(BUILTIN_SKILLS_GENERATED) $(BUILTIN_WORKFLOWS_GENERATED)
 	@bun x concurrently -g \
 		"$(TSGO) --noEmit" \
 		"$(TSGO) --noEmit -p tsconfig.main.json"
