@@ -653,6 +653,27 @@ export class WorkspaceStore {
   // abort/error transitions (streaming=false without recency advance).
   private activityStreamingStartRecency = new Map<string, number>();
   private activityAbortController: AbortController | null = null;
+  // True once the initial activity.list() snapshot has been applied (or the
+  // subscription failed and we self-healed). Until then, "no other workspace
+  // is streaming" is merely unknown — the chat view's first-paint barrier
+  // (useChatViewDataReady) waits on this so cross-workspace decorations like
+  // the concurrent-local warning can't pop in after the transcript reveals.
+  private activityHydrated = false;
+  private activityHydratedListeners = new Set<() => void>();
+  // Workspaces whose persisted session usage fetch has settled (success or
+  // failure). Distinguishes "usage unknown" from "no usage" for the same
+  // first-paint barrier (CompactionWarning derives from usage).
+  //
+  // Deliberately LATCHED per session: revisiting a workspace re-fetches usage
+  // (setActiveWorkspaceId), but the barrier keeps revealing with last-known
+  // usage rather than waiting for the refresh. Resetting this per refresh
+  // would flip useChatViewDataReady false on every workspace switch and
+  // unmount/remount the whole composer decoration lane (a guaranteed flash)
+  // to guard against a rare one (usage changed while inactive AND crossed the
+  // compaction threshold — a genuine live state change, allowed to move UI
+  // like any other live event). The barrier's contract is "never paint
+  // unknown as absent", not "freeze data that legitimately updates".
+  private sessionUsageKnown = new Set<string>();
 
   private activeGoalCount = 0;
   private activeGoalCountStore = new MapStore<string, void>();
@@ -1057,15 +1078,23 @@ export class WorkspaceStore {
     client.workspace
       .getSessionUsage({ workspaceId })
       .then((data) => {
-        if (!data) {
-          return;
-        }
-        // Stale-response guard: a newer refresh was issued while this one was in-flight.
+        // Stale-response guard: a newer refresh was issued while this one was
+        // in-flight. The newer request owns the "known" flip too — flipping it
+        // here would let the chat view reveal before the latest usage landed,
+        // re-opening the post-reveal pop-in this barrier exists to prevent.
         if ((this.sessionUsageRequestVersion.get(workspaceId) ?? 0) !== requestVersion) {
           return;
         }
         // Workspace may have been removed while the fetch was in-flight.
         if (!this.isWorkspaceRegistered(workspaceId)) {
+          return;
+        }
+        // The latest settled fetch makes the usage "known" (including a null
+        // response = known-empty) — the chat view's first-paint barrier
+        // distinguishes that from not-yet-loaded so usage-derived banners
+        // can't pop in after reveal.
+        this.markSessionUsageKnown(workspaceId);
+        if (!data) {
           return;
         }
 
@@ -1082,6 +1111,12 @@ export class WorkspaceStore {
       })
       .catch((error) => {
         console.warn(`Failed to fetch session usage for ${workspaceId}:`, error);
+        // Self-heal: a failed LATEST fetch must not hold the first-paint
+        // barrier. Stale failures defer to the newer in-flight request, same
+        // as the success path above.
+        if ((this.sessionUsageRequestVersion.get(workspaceId) ?? 0) === requestVersion) {
+          this.markSessionUsageKnown(workspaceId);
+        }
       });
   }
 
@@ -3090,6 +3125,38 @@ export class WorkspaceStore {
     }
   }
 
+  private markActivityHydrated(): void {
+    if (this.activityHydrated) {
+      return;
+    }
+    this.activityHydrated = true;
+    for (const listener of this.activityHydratedListeners) {
+      listener();
+    }
+  }
+
+  isActivityHydrated = (): boolean => this.activityHydrated;
+
+  subscribeActivityHydrated = (listener: () => void): (() => void) => {
+    this.activityHydratedListeners.add(listener);
+    return () => {
+      this.activityHydratedListeners.delete(listener);
+    };
+  };
+
+  isSessionUsageKnown(workspaceId: string): boolean {
+    return this.sessionUsageKnown.has(workspaceId);
+  }
+
+  private markSessionUsageKnown(workspaceId: string): void {
+    if (this.sessionUsageKnown.has(workspaceId)) {
+      return;
+    }
+    this.sessionUsageKnown.add(workspaceId);
+    // Reuse the usage channel so useSessionUsageKnown subscribers wake up.
+    this.usageStore.bump(workspaceId);
+  }
+
   private async runActivitySubscription(signal: AbortSignal): Promise<void> {
     let attempt = 0;
 
@@ -3126,6 +3193,7 @@ export class WorkspaceStore {
             return;
           }
           this.applyWorkspaceActivityList(snapshots);
+          this.markActivityHydrated();
         });
 
         // Start watchdog after bootstrap so slow list() doesn't trigger
@@ -3173,6 +3241,10 @@ export class WorkspaceStore {
           }
         } else if (!abortError) {
           console.warn("[WorkspaceStore] Error in activity subscription:", error);
+          // Self-heal: a failing activity subscription must not hold the chat
+          // view's first-paint barrier. Treat the (empty) activity map as
+          // known; the retry loop will deliver real data when it recovers.
+          this.markActivityHydrated();
         }
       } finally {
         releaseAttemptListeners();
@@ -4625,6 +4697,29 @@ export function useWorkspaceUsage(workspaceId: string): WorkspaceUsageState {
     (listener) => store.subscribeUsage(workspaceId, listener),
     () => store.getWorkspaceUsage(workspaceId)
   );
+}
+
+/**
+ * True once the workspace's persisted session-usage fetch has settled this
+ * app session (success or failure). Lets the chat view's first-paint barrier
+ * distinguish "usage unknown" from "no usage" so usage-derived banners
+ * (CompactionWarning) can't pop in after the transcript reveals.
+ */
+export function useSessionUsageKnown(workspaceId: string): boolean {
+  const store = getStoreInstance();
+  return useSyncExternalStore(
+    (listener) => store.subscribeUsage(workspaceId, listener),
+    () => store.isSessionUsageKnown(workspaceId)
+  );
+}
+
+/**
+ * True once the initial cross-workspace activity snapshot has been applied
+ * (or its subscription self-healed after failure). See activityHydrated.
+ */
+export function useWorkspaceActivityHydrated(): boolean {
+  const store = getStoreInstance();
+  return useSyncExternalStore(store.subscribeActivityHydrated, store.isActivityHydrated);
 }
 
 /**
