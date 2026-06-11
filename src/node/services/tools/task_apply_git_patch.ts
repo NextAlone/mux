@@ -392,6 +392,107 @@ async function findGitPatchArtifactInWorkspaceOrAncestors(params: {
   return null;
 }
 
+// A child task's report is delivered before its background `git format-patch`
+// generation finishes, so a freshly completed task can briefly expose a
+// "pending" patch artifact. Failing immediately misleads callers (e.g. workflow
+// applyPatch steps treat the failure as an apply problem and may spawn
+// conflict-resolution agents), so we wait for generation to settle instead.
+const PENDING_PATCH_GENERATION_WAIT_MS = 120_000;
+const PENDING_PATCH_GENERATION_POLL_INTERVAL_MS = 500;
+
+function listRelevantProjectArtifacts(
+  artifact: NonNullable<Awaited<ReturnType<typeof readSubagentGitPatchArtifact>>>,
+  requestedProjectPath: string | null | undefined
+): NonNullable<Awaited<ReturnType<typeof readSubagentGitPatchArtifact>>>["projectArtifacts"] {
+  return requestedProjectPath != null
+    ? artifact.projectArtifacts.filter((projectArtifact) =>
+        matchesProjectArtifactProjectPath(projectArtifact, requestedProjectPath)
+      )
+    : artifact.projectArtifacts;
+}
+
+// Unlike the shared sleepWithAbort in @/node/utils/abort (which REJECTS on
+// abort), this helper RESOLVES on abort so the wait loop can fall through to a
+// structured tool result instead of throwing out of applyTaskGitPatchArtifact.
+async function sleepResolvingOnAbort(delayMs: number, abortSignal?: AbortSignal): Promise<void> {
+  assert(delayMs > 0, "sleepResolvingOnAbort: delayMs must be positive");
+  if (abortSignal?.aborted === true) {
+    return;
+  }
+  await new Promise<void>((resolve) => {
+    const onAbort = () => {
+      clearTimeout(timer);
+      resolve();
+    };
+    const timer = setTimeout(() => {
+      abortSignal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, delayMs);
+    abortSignal?.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
+/**
+ * Re-read the artifact until no relevant project artifact is still "pending"
+ * (generation finished as ready/failed/skipped), the deadline passes, or the
+ * caller aborts. Returns the freshest artifact observed.
+ */
+async function waitForPendingPatchGeneration(params: {
+  artifact: NonNullable<Awaited<ReturnType<typeof readSubagentGitPatchArtifact>>>;
+  artifactSessionDir: string;
+  childTaskId: string;
+  requestedProjectPath: string | null | undefined;
+  waitMs: number;
+  pollIntervalMs: number;
+  abortSignal?: AbortSignal;
+  onPoll?: () => void;
+}): Promise<NonNullable<Awaited<ReturnType<typeof readSubagentGitPatchArtifact>>>> {
+  assert(params.waitMs >= 0, "waitForPendingPatchGeneration: waitMs must be non-negative");
+  assert(
+    params.pollIntervalMs > 0,
+    "waitForPendingPatchGeneration: pollIntervalMs must be positive"
+  );
+
+  let artifact = params.artifact;
+  const deadlineMs = Date.now() + params.waitMs;
+  const startedAtMs = Date.now();
+  let waited = false;
+
+  while (
+    listRelevantProjectArtifacts(artifact, params.requestedProjectPath).some(
+      (projectArtifact) => projectArtifact.status === "pending"
+    ) &&
+    Date.now() < deadlineMs &&
+    params.abortSignal?.aborted !== true
+  ) {
+    waited = true;
+    params.onPoll?.();
+    await sleepResolvingOnAbort(params.pollIntervalMs, params.abortSignal);
+    const refreshed = await readSubagentGitPatchArtifact(
+      params.artifactSessionDir,
+      params.childTaskId
+    );
+    if (refreshed != null) {
+      artifact = refreshed;
+    }
+  }
+
+  if (waited) {
+    log.debug("task_apply_git_patch: waited for pending patch generation", {
+      childTaskId: params.childTaskId,
+      waitedMs: Date.now() - startedAtMs,
+      // Log the statuses the loop actually waited on; the artifact-level
+      // summary stays "pending" while filtered-out sibling projects generate.
+      settledStatuses: listRelevantProjectArtifacts(artifact, params.requestedProjectPath).map(
+        (projectArtifact) => projectArtifact.status
+      ),
+      requestedProjectPath: params.requestedProjectPath ?? null,
+    });
+  }
+
+  return artifact;
+}
+
 function toLegacyFields(projectResults: TaskApplyGitPatchProjectResult[]): {
   appliedCommits?: AppliedCommit[];
   headCommitSha?: string;
@@ -1073,7 +1174,14 @@ async function cleanupRuntimePatchFile(params: {
 export async function applyTaskGitPatchArtifact(
   config: TaskApplyGitPatchConfiguration,
   args: TaskApplyGitPatchArgs,
-  options: { abortSignal?: AbortSignal; allowAlreadyApplied?: boolean } = {}
+  options: {
+    abortSignal?: AbortSignal;
+    allowAlreadyApplied?: boolean;
+    // Test seams for the pending-generation wait; production callers use defaults.
+    pendingGenerationWaitMs?: number;
+    pendingGenerationPollIntervalMs?: number;
+    pendingGenerationOnPoll?: () => void;
+  } = {}
 ): Promise<TaskApplyGitPatchResult> {
   const workspaceId = requireWorkspaceId(config, "task_apply_git_patch");
   assert(config.cwd, "task_apply_git_patch requires cwd");
@@ -1123,7 +1231,7 @@ export async function applyTaskGitPatchArtifact(
     );
   }
 
-  const artifact = artifactLookup.artifact;
+  let artifact = artifactLookup.artifact;
   const artifactWorkspaceId = artifactLookup.artifactWorkspaceId;
   const artifactSessionDir = artifactLookup.artifactSessionDir;
   const isReplay = artifactWorkspaceId !== workspaceId;
@@ -1147,12 +1255,40 @@ export async function applyTaskGitPatchArtifact(
   }
 
   const requestedProjectPath = parsedArgs.project_path;
-  const projectArtifacts =
-    requestedProjectPath != null
-      ? artifact.projectArtifacts.filter((projectArtifact) =>
-          matchesProjectArtifactProjectPath(projectArtifact, requestedProjectPath)
-        )
-      : artifact.projectArtifacts;
+
+  // Patch generation runs in the background after the child task reports, so
+  // the artifact may still be "pending" when apply is requested right after
+  // task completion. Wait for it to settle before deciding success/failure.
+  artifact = await waitForPendingPatchGeneration({
+    artifact,
+    artifactSessionDir,
+    childTaskId: taskId,
+    requestedProjectPath,
+    waitMs: options.pendingGenerationWaitMs ?? PENDING_PATCH_GENERATION_WAIT_MS,
+    pollIntervalMs:
+      options.pendingGenerationPollIntervalMs ?? PENDING_PATCH_GENERATION_POLL_INTERVAL_MS,
+    abortSignal: options.abortSignal,
+    onPoll: options.pendingGenerationOnPoll,
+  });
+
+  // The wait exits when aborted, but the artifact may have settled to "ready"
+  // on its final re-read. Never start a (destructive) apply for a cancelled
+  // call — bail before any repo mutation.
+  if (options.abortSignal?.aborted === true) {
+    return parseToolResult(
+      TaskApplyGitPatchToolResultSchema,
+      {
+        success: false as const,
+        taskId,
+        dryRun,
+        error: "Aborted while waiting for patch generation; the patch was not applied.",
+        note: artifactLookupNote,
+      },
+      "task_apply_git_patch"
+    );
+  }
+
+  const projectArtifacts = listRelevantProjectArtifacts(artifact, requestedProjectPath);
 
   if (parsedArgs.project_path != null && projectArtifacts.length === 0) {
     return parseToolResult(
@@ -1175,6 +1311,38 @@ export async function applyTaskGitPatchArtifact(
         taskId,
         dryRun,
         error: "This task has no project patch artifacts.",
+      },
+      "task_apply_git_patch"
+    );
+  }
+
+  // Still-pending here means generation outlived the wait above. Do not
+  // partially apply (ready siblings would land while the pending project's
+  // commits silently drop, and workflows would checkpoint the step as
+  // applied); fail atomically with a retryable, non-conflict error instead.
+  if (projectArtifacts.some((projectArtifact) => projectArtifact.status === "pending")) {
+    const pendingProjectResults = projectArtifacts.map((projectArtifact) =>
+      projectArtifact.status === "ready"
+        ? {
+            projectPath: projectArtifact.projectPath,
+            projectName: projectArtifact.projectName,
+            status: "skipped" as const,
+            error:
+              "Not attempted because patch generation has not finished for another project in this task.",
+          }
+        : summarizeNonReadyProjectArtifact({ projectArtifact })
+    );
+    return parseToolResult(
+      TaskApplyGitPatchToolResultSchema,
+      {
+        success: false as const,
+        taskId,
+        dryRun,
+        projectResults: pendingProjectResults,
+        error:
+          "Patch generation has not finished for this task yet. This is not an apply conflict; retry task_apply_git_patch shortly.",
+        note: artifactLookupNote,
+        ...toLegacyFields(pendingProjectResults),
       },
       "task_apply_git_patch"
     );
