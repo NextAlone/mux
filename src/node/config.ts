@@ -26,7 +26,7 @@ import type {
   ModelFallbacks,
   ProvidersConfig as CanonicalProvidersConfig,
 } from "@/common/config/schemas";
-import { sanitizeModelFallbacks } from "@/common/utils/ai/modelFallbacks";
+import { DEFAULT_MODEL_FALLBACKS, sanitizeModelFallbacks } from "@/common/utils/ai/modelFallbacks";
 import {
   DEFAULT_TASK_SETTINGS,
   deriveLegacySubagentAiDefaultsFromAgentDefaults,
@@ -371,10 +371,17 @@ function normalizeConfigMigrations(value: unknown): AppConfigMigrations {
   }
 
   const record = value as Record<string, unknown>;
-  return {
-    ...(record.execSubagentDefaultsSplit === true ? { execSubagentDefaultsSplit: true } : {}),
-    ...(record.userPreferencesInitialized === true ? { userPreferencesInitialized: true } : {}),
-  };
+  // Pass through every true-valued flag, including ones this version does not
+  // know about. Migration flags from newer app versions must survive a
+  // downgrade-to-here + save, otherwise their one-time migrations re-run after
+  // re-upgrade (e.g. re-seeding defaults a user deleted).
+  const migrations: AppConfigMigrations = {};
+  for (const [flag, flagValue] of Object.entries(record)) {
+    if (flagValue === true) {
+      migrations[flag] = true;
+    }
+  }
+  return migrations;
 }
 
 function extractAgentDefaultsFromLegacySubagents(
@@ -819,6 +826,45 @@ export class Config {
         const minThinkingLevelByModel = normalizeMinThinkingLevelByModel(
           parsed.minThinkingLevelByModel
         );
+        // One-time seed of the default refusal-fallback chains (e.g. Fable 5 →
+        // Opus 4.8). Guarded by migrations.defaultModelFallbacksSeeded so the
+        // seed is applied exactly once: users who later edit or delete the
+        // default chains are not overridden on subsequent loads/updates.
+        const migrationsBeforeSeed = normalizeConfigMigrations(parsed.migrations);
+        if (migrationsBeforeSeed.defaultModelFallbacksSeeded !== true) {
+          // Gap-check against the RAW on-disk map with canonicalized keys, not
+          // the sanitized map: a hand-edited entry whose chain sanitizes away
+          // (e.g. {enabled:false, models:[]}) is still user intent and must not
+          // be overwritten. Merging into the raw map also keeps unrelated
+          // chains byte-identical on disk (lenient-on-read preserved).
+          const rawFallbacks =
+            typeof parsed.modelFallbacks === "object" &&
+            parsed.modelFallbacks !== null &&
+            !Array.isArray(parsed.modelFallbacks)
+              ? (parsed.modelFallbacks as Record<string, unknown>)
+              : {};
+          const existingCanonicalKeys = new Set(
+            Object.keys(rawFallbacks).map((key) => normalizeToCanonical(key).trim())
+          );
+          const missingDefaults = Object.fromEntries(
+            Object.entries(DEFAULT_MODEL_FALLBACKS).filter(
+              ([sourceModel]) => !existingCanonicalKeys.has(sourceModel)
+            )
+          );
+          if (Object.keys(missingDefaults).length > 0) {
+            // Write through the raw-record view: user entries are deliberately
+            // kept unvalidated on disk (normalizeModelFallbacks sanitizes on
+            // every read), so the merged map is not a ModelFallbacks yet.
+            const rawParsed: Record<string, unknown> = parsed;
+            rawParsed.modelFallbacks = { ...rawFallbacks, ...missingDefaults };
+          }
+          parsed.migrations = {
+            ...migrationsBeforeSeed,
+            defaultModelFallbacksSeeded: true,
+          };
+          configModified = true;
+        }
+
         const modelFallbacks = normalizeModelFallbacks(parsed.modelFallbacks);
 
         const defaultModel = normalizeOptionalModelString(parsed.defaultModel);
@@ -999,6 +1045,11 @@ export class Config {
       coderWorkspaceArchiveBehavior: DEFAULT_CODER_ARCHIVE_BEHAVIOR,
       worktreeArchiveBehavior: DEFAULT_WORKTREE_ARCHIVE_BEHAVIOR,
       deleteWorktreeOnArchive: false,
+      // Fresh installs get the default refusal-fallback chains immediately; the
+      // migration flag rides along so the first save locks in seed-once
+      // semantics (later loads never re-apply the defaults).
+      modelFallbacks: { ...DEFAULT_MODEL_FALLBACKS },
+      migrations: { defaultModelFallbacksSeeded: true },
     };
   }
 
@@ -1188,9 +1239,10 @@ export class Config {
       }
 
       const migrations = normalizeConfigMigrations(config.migrations);
+      // Any true flag (known or from a newer version) must persist; the spread
+      // below writes them all, so gate only on presence.
       if (
-        migrations.execSubagentDefaultsSplit === true ||
-        migrations.userPreferencesInitialized === true ||
+        Object.keys(migrations).length > 0 ||
         config.userPreferences !== undefined ||
         config.agentAiDefaults?.exec != null ||
         config.subagentAiDefaults?.exec != null
