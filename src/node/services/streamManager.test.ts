@@ -5,7 +5,11 @@ import { KNOWN_MODELS } from "@/common/constants/knownModels";
 import { StreamEndEventSchema } from "@/common/orpc/schemas/stream";
 import { Ok, Err } from "@/common/types/result";
 import type { ToolPolicy } from "@/common/utils/tools/toolPolicy";
-import { StreamManager, stripEncryptedContent } from "./streamManager";
+import {
+  StreamManager,
+  stripEncryptedContent,
+  type ModelFallbackPrepareOptions,
+} from "./streamManager";
 import * as aiSdk from "ai";
 import {
   APICallError,
@@ -17,6 +21,7 @@ import {
 } from "ai";
 import { z } from "zod";
 import * as modelStatsModule from "@/common/utils/tokens/modelStats";
+import type { SessionUsageService } from "./sessionUsageService";
 import type { HistoryService } from "./historyService";
 import { createTestHistoryService } from "./testHistoryService";
 import { createAnthropic } from "@ai-sdk/anthropic";
@@ -1786,7 +1791,7 @@ describe("StreamManager - empty stream completions", () => {
   test("classifies zero-output refusal finish as terminal model_refusal without empty-stream retry", async () => {
     // The AI SDK's Anthropic adapter maps stop_reason "refusal" to the unified
     // finish reason "content-filter" with rawFinishReason "refusal" (pinned
-    // against @ai-sdk/anthropic 3.0.75). A refusal with zero output is a
+    // against @ai-sdk/anthropic 3.0.82). A refusal with zero output is a
     // deliberate terminal outcome: it must NOT take the empty-output recovery
     // path (in-stream retry + retryable empty_output), which previously looped
     // auto-retries on the same refusal forever.
@@ -1851,25 +1856,98 @@ describe("StreamManager - empty stream completions", () => {
       messageId,
       errorType: "model_refusal",
     });
-    expect(errorEvents[0]?.error).toContain("refused to respond");
+    expect(errorEvents[0]?.error).toContain("refused to continue");
 
     const partial = await historyService.readPartial(workspaceId);
     expect(partial?.metadata?.errorType).toBe("model_refusal");
+    expect(partial?.metadata?.finishReason).toBe("content-filter");
+    expect(partial?.metadata?.usage).toMatchObject({ inputTokens: 30000, outputTokens: 0 });
+
+    const commitResult = await historyService.commitPartial(workspaceId);
+    expect(commitResult.success).toBe(true);
+    const historyResult = await historyService.getHistoryFromLatestBoundary(workspaceId);
+    expect(historyResult.success).toBe(true);
+    if (!historyResult.success) {
+      throw new Error(historyResult.error);
+    }
+    const committed = historyResult.data.find((message) => message.id === messageId);
+    expect(committed?.parts).toEqual([]);
+    expect(committed?.metadata?.error).toBeUndefined();
+    expect(committed?.metadata?.errorType).toBeUndefined();
+    expect(committed?.metadata?.finishReason).toBe("content-filter");
+    expect(committed?.metadata?.usage).toMatchObject({ inputTokens: 30000, outputTokens: 0 });
   });
 
-  test("refusal finish after partial output keeps the normal stream-end path", async () => {
-    // Scope guard: only the zero-output refusal case is reclassified as a
-    // terminal error. Refusal with partial assistant text completes normally
-    // (the finish reason lands in message metadata).
+  test("zero-output refusal finishReason survives commit when usage is unavailable", async () => {
     const streamManager = new StreamManager(historyService);
+    streamManager.on("error", () => undefined);
+
+    Reflect.set(streamManager, "tokenTracker", {
+      setModel: () => Promise.resolve(undefined),
+      countTokens: () => Promise.resolve(0),
+    });
+
+    const workspaceId = "refusal-no-usage-workspace";
+    const messageId = "refusal-no-usage-message";
+    const historySequence = 1;
+
+    await appendPartialAssistantForTests(workspaceId, messageId, historySequence);
+    const processStreamWithCleanup = getProcessStreamWithCleanupForTests(streamManager);
+    const startTime = Date.now() - 250;
+    const streamInfo = createStreamInfoForTests({
+      streamResult: createStreamResultForTests(
+        (async function* () {
+          await Promise.resolve();
+          yield { type: "finish", finishReason: "content-filter", rawFinishReason: "refusal" };
+        })(),
+        { inputTokens: 0, outputTokens: 0, totalTokens: 0 }
+      ),
+      messageId,
+      startTime,
+      lastPartTimestamp: startTime,
+      model: KNOWN_MODELS.SONNET.id,
+      metadataModel: KNOWN_MODELS.SONNET.id,
+      historySequence,
+      initialMetadata: { agentId: "plan" },
+      runtime,
+    });
+
+    await processStreamWithCleanup.call(streamManager, workspaceId, streamInfo, historySequence);
+
+    const partial = await historyService.readPartial(workspaceId);
+    expect(partial?.metadata?.errorType).toBe("model_refusal");
+    expect(partial?.metadata?.finishReason).toBe("content-filter");
+    expect(partial?.metadata?.usage).toBeUndefined();
+
+    const commitResult = await historyService.commitPartial(workspaceId);
+    expect(commitResult.success).toBe(true);
+    const historyResult = await historyService.getHistoryFromLatestBoundary(workspaceId);
+    expect(historyResult.success).toBe(true);
+    if (!historyResult.success) {
+      throw new Error(historyResult.error);
+    }
+    const committed = historyResult.data.find((message) => message.id === messageId);
+    expect(committed?.parts).toEqual([]);
+    expect(committed?.metadata?.finishReason).toBe("content-filter");
+    expect(committed?.metadata?.usage).toBeUndefined();
+    expect(committed?.metadata?.error).toBeUndefined();
+    expect(committed?.metadata?.errorType).toBeUndefined();
+  });
+
+  test("refusal finish after partial output fails visibly when no fallback is configured", async () => {
+    const recordUsage = mock((_workspaceId: string, _model: string, _usage: unknown) =>
+      Promise.resolve(undefined)
+    );
+    const sessionUsageService = { recordUsage } as unknown as SessionUsageService;
+    const streamManager = new StreamManager(historyService, sessionUsageService);
     const errorEvents: Array<{ messageId: string; error: string; errorType?: string }> = [];
-    const streamEndEvents: Array<{ metadata?: { finishReason?: string } }> = [];
+    const streamEndEvents: unknown[] = [];
 
     streamManager.on("error", (data) => {
       errorEvents.push(data as { messageId: string; error: string; errorType?: string });
     });
     streamManager.on("stream-end", (data) => {
-      streamEndEvents.push(data as { metadata?: { finishReason?: string } });
+      streamEndEvents.push(data);
     });
 
     Reflect.set(streamManager, "tokenTracker", {
@@ -1905,9 +1983,37 @@ describe("StreamManager - empty stream completions", () => {
 
     await processStreamWithCleanup.call(streamManager, workspaceId, streamInfo, historySequence);
 
-    expect(errorEvents).toHaveLength(0);
-    expect(streamEndEvents).toHaveLength(1);
-    expect(streamEndEvents[0]?.metadata?.finishReason).toBe("content-filter");
+    expect(streamEndEvents).toHaveLength(0);
+    expect(errorEvents).toHaveLength(1);
+    expect(errorEvents[0]).toMatchObject({ messageId, errorType: "model_refusal" });
+
+    const partial = await historyService.readPartial(workspaceId);
+    expect(partial?.metadata?.errorType).toBe("model_refusal");
+    expect(partial?.parts).toHaveLength(1);
+    const preservedPart = partial?.parts[0];
+    expect(preservedPart?.type).toBe("text");
+    if (preservedPart?.type === "text") {
+      expect(preservedPart.text).toBe("partial answer before refusing");
+      expect(typeof preservedPart.timestamp).toBe("number");
+    }
+    expect(recordUsage).toHaveBeenCalledTimes(1);
+    expect(recordUsage.mock.calls[0]?.[0]).toBe(workspaceId);
+    expect(recordUsage.mock.calls[0]?.[1]).toBe(KNOWN_MODELS.SONNET.id);
+    expect(partial?.metadata?.finishReason).toBe("content-filter");
+    expect(partial?.metadata?.usage).toMatchObject({ inputTokens: 3, outputTokens: 2 });
+
+    const commitResult = await historyService.commitPartial(workspaceId);
+    expect(commitResult.success).toBe(true);
+    const historyResult = await historyService.getHistoryFromLatestBoundary(workspaceId);
+    expect(historyResult.success).toBe(true);
+    if (!historyResult.success) {
+      throw new Error(historyResult.error);
+    }
+    const committed = historyResult.data.find((message) => message.id === messageId);
+    expect(committed?.metadata?.error).toBeUndefined();
+    expect(committed?.metadata?.errorType).toBeUndefined();
+    expect(committed?.metadata?.finishReason).toBe("content-filter");
+    expect(committed?.metadata?.usage).toMatchObject({ inputTokens: 3, outputTokens: 2 });
   });
 
   test("zero-output refusal with a configured fallback chain swaps models without any error event", async () => {
@@ -1967,7 +2073,7 @@ describe("StreamManager - empty stream completions", () => {
     // fallback model (provider-specific web tools / MCP sanitization), not the
     // refused model's toolset.
     const fallbackTools = { fallback_only_tool: { description: "rebuilt for fallback" } };
-    const prepare = mock((nextModelString: string) =>
+    const prepare = mock((nextModelString: string, _options?: ModelFallbackPrepareOptions) =>
       Promise.resolve(
         Ok({
           model: fallbackLanguageModel,
@@ -2020,7 +2126,8 @@ describe("StreamManager - empty stream completions", () => {
     // No terminal failure: TaskService and waiters never observe the refusal.
     expect(errorEvents).toHaveLength(0);
     expect(prepare).toHaveBeenCalledTimes(1);
-    expect(prepare).toHaveBeenCalledWith(fallbackModel);
+    expect(prepare.mock.calls[0]?.[0]).toBe(fallbackModel);
+    expect(prepare.mock.calls[0]?.[1]).toBeUndefined();
     expect(createStreamResult).toHaveBeenCalledTimes(1);
 
     expect(streamEndEvents).toHaveLength(1);
@@ -2058,6 +2165,320 @@ describe("StreamManager - empty stream completions", () => {
     };
     expect(Object.keys(swappedRequest.tools ?? {})).toEqual(Object.keys(fallbackTools));
     expect(swappedRequest.system).toBe("fallback system");
+  });
+
+  test("partial refusal with a configured fallback continues from cloned partial output", async () => {
+    const streamManager = new StreamManager(historyService);
+    const errorEvents: unknown[] = [];
+    const streamEndEvents: Array<{
+      metadata?: {
+        model?: string;
+        modelFallback?: { requestedModel: string; refusedModels: string[] };
+        toolModelUsages?: Array<{
+          toolName: string;
+          model: string;
+          usage?: { inputTokens?: number; outputTokens?: number };
+        }>;
+      };
+      parts?: Array<{ type: string; text?: string; toolName?: string }>;
+    }> = [];
+
+    streamManager.on("error", (data) => errorEvents.push(data));
+    streamManager.on("stream-end", (data) => {
+      streamEndEvents.push(data as (typeof streamEndEvents)[number]);
+    });
+
+    Reflect.set(streamManager, "tokenTracker", {
+      setModel: () => Promise.resolve(undefined),
+      countTokens: () => Promise.resolve(0),
+    });
+
+    const workspaceId = "fallback-partial-workspace";
+    const messageId = "fallback-partial-message";
+    const historySequence = 1;
+    const fallbackModel = KNOWN_MODELS.GPT.id;
+
+    await appendPartialAssistantForTests(workspaceId, messageId, historySequence);
+    const processStreamWithCleanup = getProcessStreamWithCleanupForTests(streamManager);
+
+    const createStreamResult = mock(() =>
+      createStreamResultForTests(
+        (async function* () {
+          await Promise.resolve();
+          yield { type: "text-delta", text: "fallback continuation" };
+          yield { type: "finish", finishReason: "stop" };
+        })(),
+        { inputTokens: 7, outputTokens: 4, totalTokens: 11 }
+      )
+    );
+    expect(Reflect.set(streamManager, "createStreamResult", createStreamResult)).toBe(true);
+
+    const prepareCalls: Array<{
+      nextModelString: string;
+      options?: ModelFallbackPrepareOptions;
+    }> = [];
+    const fallbackLanguageModel = createTestLanguageModel("fallback-partial-model");
+    const prepare = mock((nextModelString: string, options?: ModelFallbackPrepareOptions) => {
+      prepareCalls.push({ nextModelString, options });
+      return Promise.resolve(
+        Ok({
+          model: fallbackLanguageModel,
+          modelString: nextModelString,
+          messages: [],
+          system: "fallback system",
+          tools: {},
+          thinkingLevel: "off",
+        })
+      );
+    });
+
+    const startTime = Date.now() - 250;
+    const streamInfo = createStreamInfoForTests({
+      streamResult: createStreamResultForTests(
+        (async function* () {
+          await Promise.resolve();
+          yield { type: "text-delta", text: "partial answer" };
+          yield {
+            type: "tool-call",
+            toolCallId: "tool-call-1",
+            toolName: "bash",
+            input: { script: "printf ok" },
+          };
+          yield {
+            type: "tool-result",
+            toolCallId: "tool-call-1",
+            toolName: "bash",
+            output: { success: true, output: "ok" },
+          };
+          yield {
+            type: "finish-step",
+            usage: { inputTokens: 12, outputTokens: 5, totalTokens: 17 },
+          };
+          yield { type: "finish", finishReason: "content-filter", rawFinishReason: "refusal" };
+        })(),
+        { inputTokens: 12, outputTokens: 5, totalTokens: 17 }
+      ),
+      messageId,
+      startTime,
+      lastPartTimestamp: startTime,
+      model: KNOWN_MODELS.SONNET.id,
+      metadataModel: KNOWN_MODELS.SONNET.id,
+      historySequence,
+      initialMetadata: { agentId: "plan" },
+      runtime,
+      stepTracker: {
+        latestMessages: [{ role: "user", content: "stale source-step transcript" }],
+      },
+      modelFallback: {
+        options: { chain: [fallbackModel], prepare },
+        requestedModel: KNOWN_MODELS.SONNET.id,
+        refusedModels: [],
+        original: { maxOutputTokens: undefined },
+      },
+    });
+
+    await processStreamWithCleanup.call(streamManager, workspaceId, streamInfo, historySequence);
+
+    expect(errorEvents).toHaveLength(0);
+    expect((streamInfo.stepTracker as { latestMessages?: unknown }).latestMessages).toBeUndefined();
+    expect(prepareCalls).toHaveLength(1);
+    expect(prepareCalls[0]?.nextModelString).toBe(fallbackModel);
+
+    const continuationMessage = prepareCalls[0]?.options?.continuation?.assistantMessage;
+    expect(continuationMessage?.metadata?.partial).toBe(true);
+    expect(continuationMessage?.metadata?.finishReason).toBe("content-filter");
+    expect(continuationMessage?.parts.map((part) => part.type)).toEqual(["text", "dynamic-tool"]);
+    expect(continuationMessage?.parts).not.toBe(streamInfo.parts);
+
+    expect(streamEndEvents).toHaveLength(1);
+    const streamEnd = streamEndEvents[0];
+    expect(streamEnd?.metadata?.model).toBe(fallbackModel);
+    expect(streamEnd?.metadata?.modelFallback).toEqual({
+      requestedModel: KNOWN_MODELS.SONNET.id,
+      refusedModels: [KNOWN_MODELS.SONNET.id],
+    });
+    expect(streamEnd?.metadata?.toolModelUsages?.[0]).toMatchObject({
+      toolName: "model_fallback_refusal",
+      model: KNOWN_MODELS.SONNET.id,
+      usage: { inputTokens: 12, outputTokens: 5 },
+    });
+    expect(
+      streamEnd?.parts?.map((part) => (part.type === "text" ? part.text : part.toolName))
+    ).toEqual(["partial answer", "bash", "fallback continuation"]);
+  });
+
+  test("partial refusal backfills refused-hop reasoning usage before fallback swap", async () => {
+    const streamManager = new StreamManager(historyService);
+    const errorEvents: unknown[] = [];
+    const streamEndEvents: Array<{
+      metadata?: {
+        usage?: { reasoningTokens?: number };
+        toolModelUsages?: Array<{
+          model: string;
+          usage?: { reasoningTokens?: number };
+        }>;
+      };
+    }> = [];
+
+    streamManager.on("error", (data) => errorEvents.push(data));
+    streamManager.on("stream-end", (data) => {
+      streamEndEvents.push(data as (typeof streamEndEvents)[number]);
+    });
+
+    Reflect.set(streamManager, "tokenTracker", {
+      setModel: () => Promise.resolve(undefined),
+      countTokens: () => Promise.resolve(0),
+    });
+
+    const workspaceId = "fallback-reasoning-refusal-workspace";
+    const messageId = "fallback-reasoning-refusal-message";
+    const historySequence = 1;
+    const fallbackModel = KNOWN_MODELS.GPT.id;
+    const refusedReasoning = "Reasoning before refusal";
+    const expectedReasoningTokens = await countTokens(KNOWN_MODELS.SONNET.id, refusedReasoning);
+
+    await appendPartialAssistantForTests(workspaceId, messageId, historySequence);
+    const processStreamWithCleanup = getProcessStreamWithCleanupForTests(streamManager);
+
+    const createStreamResult = mock(() =>
+      createStreamResultForTests(
+        (async function* () {
+          await Promise.resolve();
+          yield { type: "text-delta", text: "fallback answer" };
+          yield { type: "finish", finishReason: "stop" };
+        })(),
+        { inputTokens: 7, outputTokens: 4, totalTokens: 11 }
+      )
+    );
+    expect(Reflect.set(streamManager, "createStreamResult", createStreamResult)).toBe(true);
+
+    const prepare = mock((nextModelString: string, _options?: ModelFallbackPrepareOptions) =>
+      Promise.resolve(
+        Ok({
+          model: createTestLanguageModel("fallback-reasoning-refusal-model"),
+          modelString: nextModelString,
+          messages: [],
+          system: "fallback system",
+          tools: {},
+          thinkingLevel: "off",
+        })
+      )
+    );
+
+    const startTime = Date.now() - 250;
+    const streamInfo = createStreamInfoForTests({
+      streamResult: createStreamResultForTests(
+        (async function* () {
+          await Promise.resolve();
+          yield { type: "reasoning-delta", text: refusedReasoning };
+          yield { type: "text-delta", text: "partial answer" };
+          yield {
+            type: "finish-step",
+            usage: { inputTokens: 12, outputTokens: 5, totalTokens: 17 },
+          };
+          yield { type: "finish", finishReason: "content-filter", rawFinishReason: "refusal" };
+        })(),
+        { inputTokens: 12, outputTokens: 5, totalTokens: 17 }
+      ),
+      messageId,
+      startTime,
+      lastPartTimestamp: startTime,
+      model: KNOWN_MODELS.SONNET.id,
+      metadataModel: KNOWN_MODELS.SONNET.id,
+      historySequence,
+      initialMetadata: { agentId: "plan" },
+      runtime,
+      modelFallback: {
+        options: { chain: [fallbackModel], prepare },
+        requestedModel: KNOWN_MODELS.SONNET.id,
+        refusedModels: [],
+        original: { maxOutputTokens: undefined },
+      },
+    });
+
+    await processStreamWithCleanup.call(streamManager, workspaceId, streamInfo, historySequence);
+
+    expect(errorEvents).toHaveLength(0);
+    expect(streamEndEvents).toHaveLength(1);
+    const metadata = streamEndEvents[0]?.metadata;
+    expect(metadata?.toolModelUsages?.[0]).toMatchObject({
+      model: KNOWN_MODELS.SONNET.id,
+      usage: { reasoningTokens: expectedReasoningTokens },
+    });
+    expect(metadata?.usage?.reasoningTokens).toBeUndefined();
+  });
+
+  test("partial refusal skips fallback when a tool call is still incomplete", async () => {
+    const streamManager = new StreamManager(historyService);
+    const errorEvents: Array<{ messageId: string; error: string; errorType?: string }> = [];
+    const streamEndEvents: unknown[] = [];
+
+    streamManager.on("error", (data) => {
+      errorEvents.push(data as { messageId: string; error: string; errorType?: string });
+    });
+    streamManager.on("stream-end", (data) => streamEndEvents.push(data));
+
+    Reflect.set(streamManager, "tokenTracker", {
+      setModel: () => Promise.resolve(undefined),
+      countTokens: () => Promise.resolve(0),
+    });
+
+    const workspaceId = "fallback-incomplete-tool-workspace";
+    const messageId = "fallback-incomplete-tool-message";
+    const historySequence = 1;
+    const fallbackModel = KNOWN_MODELS.GPT.id;
+    const prepare = mock((_nextModelString: string) =>
+      Promise.resolve(
+        Ok({
+          model: createTestLanguageModel("fallback-incomplete-tool"),
+          modelString: fallbackModel,
+          messages: [],
+          system: "fallback system",
+          tools: {},
+        })
+      )
+    );
+
+    await appendPartialAssistantForTests(workspaceId, messageId, historySequence);
+    const processStreamWithCleanup = getProcessStreamWithCleanupForTests(streamManager);
+    const startTime = Date.now() - 250;
+    const streamInfo = createStreamInfoForTests({
+      streamResult: createStreamResultForTests(
+        (async function* () {
+          await Promise.resolve();
+          yield {
+            type: "tool-call",
+            toolCallId: "tool-call-1",
+            toolName: "bash",
+            input: { script: "printf ok" },
+          };
+          yield { type: "finish", finishReason: "content-filter", rawFinishReason: "refusal" };
+        })(),
+        { inputTokens: 12, outputTokens: 1, totalTokens: 13 }
+      ),
+      messageId,
+      startTime,
+      lastPartTimestamp: startTime,
+      model: KNOWN_MODELS.SONNET.id,
+      metadataModel: KNOWN_MODELS.SONNET.id,
+      historySequence,
+      initialMetadata: { agentId: "plan" },
+      runtime,
+      modelFallback: {
+        options: { chain: [fallbackModel], prepare },
+        requestedModel: KNOWN_MODELS.SONNET.id,
+        refusedModels: [],
+        original: { maxOutputTokens: undefined },
+      },
+    });
+
+    await processStreamWithCleanup.call(streamManager, workspaceId, streamInfo, historySequence);
+
+    expect(prepare).not.toHaveBeenCalled();
+    expect(streamEndEvents).toHaveLength(0);
+    expect(errorEvents).toHaveLength(1);
+    expect(errorEvents[0]).toMatchObject({ messageId, errorType: "model_refusal" });
+    expect(errorEvents[0]?.error).toContain("incomplete tool call");
   });
 
   test("multi-hop fallback chain walks entries in order and attributes usage per refusing model", async () => {
@@ -2122,7 +2543,7 @@ describe("StreamManager - empty stream completions", () => {
       );
     expect(Reflect.set(streamManager, "createStreamResult", createStreamResult)).toBe(true);
 
-    const prepare = mock((nextModelString: string) =>
+    const prepare = mock((nextModelString: string, _options?: ModelFallbackPrepareOptions) =>
       Promise.resolve(
         Ok({
           model: createTestLanguageModel(`fallback-${nextModelString}`),
@@ -2171,6 +2592,7 @@ describe("StreamManager - empty stream completions", () => {
       firstFallbackModel,
       secondFallbackModel,
     ]);
+    expect(prepare.mock.calls.map((call) => call[1])).toEqual([undefined, undefined]);
     expect(createStreamResult).toHaveBeenCalledTimes(2);
 
     expect(streamEndEvents).toHaveLength(1);
@@ -2196,6 +2618,165 @@ describe("StreamManager - empty stream completions", () => {
     // Final turn usage reflects only the answering attempt (refused attempts
     // live in their toolModelUsages rows, not the headline usage).
     expect(metadata?.usage).toMatchObject({ inputTokens: 5, outputTokens: 3 });
+  });
+
+  test("multi-hop fallback continues preserved partial output when a later hop refuses", async () => {
+    const streamManager = new StreamManager(historyService);
+    const errorEvents: unknown[] = [];
+    const streamEndEvents: Array<{
+      metadata?: {
+        model?: string;
+        usage?: { inputTokens?: number; outputTokens?: number };
+        modelFallback?: { requestedModel: string; refusedModels: string[] };
+        toolModelUsages?: Array<{
+          toolName: string;
+          model: string;
+          usage?: { inputTokens?: number; outputTokens?: number };
+        }>;
+      };
+      parts?: Array<{ type: string; text?: string; toolName?: string }>;
+    }> = [];
+
+    streamManager.on("error", (data) => errorEvents.push(data));
+    streamManager.on("stream-end", (data) => {
+      streamEndEvents.push(data as (typeof streamEndEvents)[number]);
+    });
+
+    Reflect.set(streamManager, "tokenTracker", {
+      setModel: () => Promise.resolve(undefined),
+      countTokens: () => Promise.resolve(0),
+    });
+
+    const workspaceId = "fallback-multihop-partial-workspace";
+    const messageId = "fallback-multihop-partial-message";
+    const historySequence = 1;
+    const firstFallbackModel = KNOWN_MODELS.GPT.id;
+    const secondFallbackModel = KNOWN_MODELS.GEMINI_FLASH.id;
+
+    await appendPartialAssistantForTests(workspaceId, messageId, historySequence);
+    const processStreamWithCleanup = getProcessStreamWithCleanupForTests(streamManager);
+
+    const createStreamResult = mock()
+      .mockImplementationOnce(() =>
+        createStreamResultForTests(
+          (async function* () {
+            await Promise.resolve();
+            yield {
+              type: "finish-step",
+              usage: { inputTokens: 20, outputTokens: 0, totalTokens: 20 },
+            };
+            yield { type: "finish", finishReason: "content-filter", rawFinishReason: "refusal" };
+          })(),
+          { inputTokens: 20, outputTokens: 0, totalTokens: 20 }
+        )
+      )
+      .mockImplementationOnce(() =>
+        createStreamResultForTests(
+          (async function* () {
+            await Promise.resolve();
+            yield { type: "text-delta", text: "second fallback answer" };
+            yield { type: "finish", finishReason: "stop" };
+          })(),
+          { inputTokens: 5, outputTokens: 3, totalTokens: 8 }
+        )
+      );
+    expect(Reflect.set(streamManager, "createStreamResult", createStreamResult)).toBe(true);
+
+    const prepareCalls: Array<{
+      nextModelString: string;
+      options?: ModelFallbackPrepareOptions;
+    }> = [];
+    const prepare = mock((nextModelString: string, options?: ModelFallbackPrepareOptions) => {
+      prepareCalls.push({ nextModelString, options });
+      return Promise.resolve(
+        Ok({
+          model: createTestLanguageModel(`fallback-${nextModelString}`),
+          modelString: nextModelString,
+          messages: [],
+          system: "fallback system",
+          tools: {},
+        })
+      );
+    });
+
+    const startTime = Date.now() - 250;
+    const streamInfo = createStreamInfoForTests({
+      streamResult: createStreamResultForTests(
+        (async function* () {
+          await Promise.resolve();
+          yield { type: "text-delta", text: "partial answer" };
+          yield {
+            type: "tool-call",
+            toolCallId: "tool-call-1",
+            toolName: "bash",
+            input: { script: "printf ok" },
+          };
+          yield {
+            type: "tool-result",
+            toolCallId: "tool-call-1",
+            toolName: "bash",
+            output: { success: true, output: "ok" },
+          };
+          yield {
+            type: "finish-step",
+            usage: { inputTokens: 12, outputTokens: 5, totalTokens: 17 },
+          };
+          yield { type: "finish", finishReason: "content-filter", rawFinishReason: "refusal" };
+        })(),
+        { inputTokens: 12, outputTokens: 5, totalTokens: 17 }
+      ),
+      messageId,
+      startTime,
+      lastPartTimestamp: startTime,
+      model: KNOWN_MODELS.SONNET.id,
+      metadataModel: KNOWN_MODELS.SONNET.id,
+      historySequence,
+      initialMetadata: { agentId: "plan" },
+      runtime,
+      modelFallback: {
+        options: { chain: [firstFallbackModel, secondFallbackModel], prepare },
+        requestedModel: KNOWN_MODELS.SONNET.id,
+        refusedModels: [],
+        original: { maxOutputTokens: undefined },
+      },
+    });
+
+    await processStreamWithCleanup.call(streamManager, workspaceId, streamInfo, historySequence);
+
+    expect(errorEvents).toHaveLength(0);
+    expect(prepareCalls.map((call) => call.nextModelString)).toEqual([
+      firstFallbackModel,
+      secondFallbackModel,
+    ]);
+    const firstContinuation = prepareCalls[0]?.options?.continuation?.assistantMessage;
+    const secondContinuation = prepareCalls[1]?.options?.continuation?.assistantMessage;
+    expect(firstContinuation?.metadata?.model).toBe(KNOWN_MODELS.SONNET.id);
+    expect(secondContinuation?.metadata?.model).toBe(firstFallbackModel);
+    expect(firstContinuation?.parts.map((part) => part.type)).toEqual(["text", "dynamic-tool"]);
+    expect(secondContinuation?.parts.map((part) => part.type)).toEqual(["text", "dynamic-tool"]);
+
+    expect(streamEndEvents).toHaveLength(1);
+    const streamEnd = streamEndEvents[0];
+    expect(streamEnd?.metadata?.model).toBe(secondFallbackModel);
+    expect(streamEnd?.metadata?.modelFallback).toEqual({
+      requestedModel: KNOWN_MODELS.SONNET.id,
+      refusedModels: [KNOWN_MODELS.SONNET.id, firstFallbackModel],
+    });
+    expect(streamEnd?.metadata?.toolModelUsages).toHaveLength(2);
+    expect(streamEnd?.metadata?.toolModelUsages?.[0]).toMatchObject({
+      toolName: "model_fallback_refusal",
+      model: KNOWN_MODELS.SONNET.id,
+      usage: { inputTokens: 12, outputTokens: 5 },
+    });
+    expect(streamEnd?.metadata?.toolModelUsages?.[1]).toMatchObject({
+      toolName: "model_fallback_refusal",
+      model: firstFallbackModel,
+      usage: { inputTokens: 20, outputTokens: 0 },
+    });
+    expect(streamEnd?.metadata?.usage).toMatchObject({ inputTokens: 5, outputTokens: 3 });
+    expect(
+      streamEnd?.parts?.map((part) => (part.type === "text" ? part.text : part.toolName))
+    ).toEqual(["partial answer", "bash", "second fallback answer"]);
   });
 
   test("refusal fallback chain exhaustion fails terminally as model_refusal", async () => {
@@ -2925,6 +3506,49 @@ describe("StreamManager - TTFT metadata persistence", () => {
             timestamp: startTime + 200,
           },
         ],
+      });
+
+      expect(updatedMessage.metadata?.usage?.reasoningTokens).toBe(expectedReasoningTokens);
+    });
+
+    test("does not backfill refused-model reasoning under the fallback model", async () => {
+      const startTime = Date.now() - 1000;
+      const fallbackReasoning = "Fallback-only reasoning";
+      const expectedReasoningTokens = await countTokens(KNOWN_MODELS.GPT.id, fallbackReasoning);
+
+      const updatedMessage = await finalizeStreamAndReadMessage({
+        workspaceId: "reasoning-fallback-boundary-workspace",
+        messageId: "reasoning-fallback-boundary-message",
+        historySequence: 1,
+        startTime,
+        model: KNOWN_MODELS.GPT.id,
+        metadataModel: KNOWN_MODELS.GPT.id,
+        usage: { inputTokens: 100, outputTokens: 50, totalTokens: 150 },
+        parts: [
+          {
+            type: "reasoning",
+            text: "Refused-model reasoning",
+            timestamp: startTime + 100,
+          },
+          {
+            type: "reasoning",
+            text: fallbackReasoning,
+            timestamp: startTime + 150,
+          },
+          {
+            type: "text",
+            text: "Final answer",
+            timestamp: startTime + 200,
+          },
+        ],
+        beforeProcess: ({ streamManager, workspaceId }) => {
+          const streamInfo = getWorkspaceStreamsForTests(streamManager).get(workspaceId);
+          expect(streamInfo && typeof streamInfo === "object").toBe(true);
+          if (!streamInfo || typeof streamInfo !== "object") {
+            throw new Error("Expected stream info for reasoning fallback boundary test");
+          }
+          (streamInfo as { reasoningBackfillStartIndex?: number }).reasoningBackfillStartIndex = 1;
+        },
       });
 
       expect(updatedMessage.metadata?.usage?.reasoningTokens).toBe(expectedReasoningTokens);

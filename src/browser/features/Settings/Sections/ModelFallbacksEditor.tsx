@@ -20,8 +20,8 @@ const SELECT_TRIGGER_CLASS =
 /**
  * Per-model refusal-fallback chain editor (Settings → Models).
  *
- * When a model refuses to respond with zero output (model_refusal), the turn
- * transparently retries on the next model in its chain instead of failing
+ * When a model refuses to respond (model_refusal), the turn transparently
+ * retries or continues on the next model in its chain instead of failing
  * terminally. Chains are refusal-only by design: quota/auth/network errors
  * never trigger fallback.
  */
@@ -160,9 +160,9 @@ export function ModelFallbacksEditor() {
     <div className="space-y-3">
       <div className="text-muted text-xs font-medium tracking-wide uppercase">Model Fallbacks</div>
       <p className="text-muted text-xs">
-        When a model refuses to respond (no output), retry the turn on the next model in its
-        fallback chain. Applies only to refusals — never to quota, auth, or network errors. Up to{" "}
-        {MODEL_FALLBACK_CHAIN_LIMIT} fallback models per chain.
+        When a model refuses to respond, retry the turn — or continue from partial output — on the
+        next model in its fallback chain. Applies only to refusals — never to quota, auth, or
+        network errors. Up to {MODEL_FALLBACK_CHAIN_LIMIT} fallback models per chain.
       </p>
 
       {entries.map(([source, entry]) => renderChainRow(source, entry.models))}
