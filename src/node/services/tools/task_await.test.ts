@@ -704,7 +704,6 @@ describe("task_await tool", () => {
           structuredOutput: { ok: true },
           title: "demo",
           elapsed_ms: 5000,
-          run: completedRun,
           note: COMPLETED_REPORT_REFETCH_NOTE,
         },
       ],
@@ -765,7 +764,7 @@ describe("task_await tool", () => {
       status: "error",
       taskId: "wfr_demo",
       elapsed_ms: 5000,
-      run: failedRun,
+      workflow: { name: "demo", steps: [] },
     });
     expect(workflowResult.results[0]?.error).toContain(WORKFLOW_CHECKPOINT_RETRY_ERROR_MESSAGE);
     expect(workflowResult.results[0]?.error).toContain("workflow_resume");
@@ -775,26 +774,45 @@ describe("task_await tool", () => {
   it("does not show checkpoint retry guidance for ordinary failed workflow runs", async () => {
     using tempDir = new TestTempDir("test-task-await-tool-workflow-ordinary-failed");
     const baseConfig = createTestToolConfig(tempDir.path, { workspaceId: "parent-workspace" });
-    const failedRun = createWorkflowRun("failed", [
-      {
-        sequence: 1,
-        type: "status",
-        at: "2026-01-01T00:00:01.000Z",
-        status: "running",
-      },
-      {
-        sequence: 2,
-        type: "error",
-        at: "2026-01-01T00:00:04.000Z",
-        message: "boom",
-      },
-      {
-        sequence: 3,
-        type: "status",
-        at: "2026-01-01T00:00:05.000Z",
-        status: "failed",
-      },
-    ]);
+    const failedRun = {
+      ...createWorkflowRun("failed", [
+        {
+          sequence: 1,
+          type: "status" as const,
+          at: "2026-01-01T00:00:01.000Z",
+          status: "running" as const,
+        },
+        {
+          sequence: 2,
+          type: "error" as const,
+          at: "2026-01-01T00:00:04.000Z",
+          message: "boom",
+        },
+        {
+          sequence: 3,
+          type: "status" as const,
+          at: "2026-01-01T00:00:05.000Z",
+          status: "failed" as const,
+        },
+      ]),
+      steps: [
+        {
+          stepId: "step-one",
+          inputHash: "sha256:one",
+          status: "completed" as const,
+          taskId: "child-task-1",
+          startedAt: "2026-01-01T00:00:01.000Z",
+          completedAt: "2026-01-01T00:00:02.000Z",
+        },
+        {
+          stepId: "step-two",
+          inputHash: "sha256:two",
+          status: "failed" as const,
+          startedAt: "2026-01-01T00:00:03.000Z",
+          error: "boom",
+        },
+      ],
+    };
 
     const taskService = {
       listActiveDescendantAgentTaskIds: mock(() => []),
@@ -816,6 +834,8 @@ describe("task_await tool", () => {
       tool.execute!({ task_ids: ["wfr_demo"] }, mockToolCallOptions)
     );
 
+    // The compact failure state replaces the full run record: per-step outcomes (with
+    // completed steps' taskIds for report re-fetching) instead of the event log/source.
     expect(result).toEqual({
       results: [
         {
@@ -823,7 +843,13 @@ describe("task_await tool", () => {
           taskId: "wfr_demo",
           error: "boom",
           elapsed_ms: 5000,
-          run: failedRun,
+          workflow: {
+            name: "demo",
+            steps: [
+              { stepId: "step-one", status: "completed", taskId: "child-task-1" },
+              { stepId: "step-two", status: "failed", error: "boom" },
+            ],
+          },
         },
       ],
     });
@@ -882,8 +908,7 @@ describe("task_await tool", () => {
           status: "backgrounded",
           taskId: "wfr_backgrounded",
           elapsed_ms: workflowResult.results[0]?.elapsed_ms,
-          note: "Workflow run is backgrounded. Use task_await to monitor progress.",
-          run: backgroundedRun,
+          note: "Workflow demo is backgrounded. Use task_await to monitor progress.",
         },
       ],
     });
@@ -945,7 +970,6 @@ describe("task_await tool", () => {
           reportMarkdown: "poll complete",
           title: "demo",
           elapsed_ms: 5000,
-          run: completedRun,
           note: COMPLETED_REPORT_REFETCH_NOTE,
         },
       ],
@@ -998,7 +1022,6 @@ describe("task_await tool", () => {
     expect(interruptedResult.results[0]).toMatchObject({
       status: "interrupted",
       taskId: "wfr_demo",
-      run: interruptedRun,
     });
     expect(interruptedResult.results[0]?.note).toContain("workflow_resume");
   });

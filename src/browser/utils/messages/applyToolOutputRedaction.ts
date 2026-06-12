@@ -5,6 +5,7 @@
 import type { MuxMessage } from "@/common/types/message";
 import { sanitizeUnknownForProviderOutput } from "@/common/utils/providerOutputSanitization";
 import { stripToolOutputUiOnly } from "@/common/utils/tools/toolOutputUiOnly";
+import { stripWorkflowRunRecordForModel } from "@/common/utils/workflowRunMessages";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -74,7 +75,10 @@ export function applyToolOutputRedaction(messages: MuxMessage[]): MuxMessage[] {
       if (part.type !== "dynamic-tool") return part;
       if (part.state !== "output-available") return part;
 
-      const outputWithoutUiOnly = stripToolOutputUiOnly(part.output);
+      const outputWithoutUiOnly = stripWorkflowRunRecordForModel(
+        part.toolName,
+        stripToolOutputUiOnly(part.output)
+      );
       const sanitizedOutput = sanitizeUnknownForProviderOutput(
         stripLegacyImageToolOutputForModel(outputWithoutUiOnly)
       );
@@ -82,7 +86,10 @@ export function applyToolOutputRedaction(messages: MuxMessage[]): MuxMessage[] {
         if (nestedCall.state !== "output-available") {
           return nestedCall;
         }
-        const nestedOutputWithoutUiOnly = stripToolOutputUiOnly(nestedCall.output);
+        const nestedOutputWithoutUiOnly = stripWorkflowRunRecordForModel(
+          nestedCall.toolName,
+          stripToolOutputUiOnly(nestedCall.output)
+        );
         return {
           ...nestedCall,
           output: sanitizeUnknownForProviderOutput(

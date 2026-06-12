@@ -133,10 +133,28 @@ function getWorkflowRunError(run: WorkflowRunRecord): string {
   return message;
 }
 
+// Failure is the one case where workflow state helps the model decide between
+// workflow_resume (retry_from_checkpoint) and a fresh workflow_run. Per-step outcomes are
+// enough: completed steps keep their taskId so their durable reports stay re-fetchable via
+// task_await without re-running anything.
+function buildWorkflowFailureState(run: WorkflowRunRecord) {
+  return {
+    name: run.definition.name,
+    steps: run.steps.map((step) => ({
+      stepId: step.stepId,
+      status: step.status,
+      ...(step.taskId != null ? { taskId: step.taskId } : {}),
+      ...(step.error != null ? { error: step.error } : {}),
+    })),
+  };
+}
+
 function buildWorkflowAwaitResult(run: WorkflowRunRecord) {
+  // Deliberately omit the full run record (definition source, event log, step snapshots):
+  // it is huge and model-facing only. In-progress events may never materialize in the final
+  // result, so the model only needs the status plus the final report/error.
   const base = {
     taskId: run.id,
-    run,
     ...withElapsedMs(getWorkflowRunElapsedMs(run)),
   };
 
@@ -159,6 +177,7 @@ function buildWorkflowAwaitResult(run: WorkflowRunRecord) {
         status: "error" as const,
         ...base,
         error: getWorkflowRunError(run),
+        workflow: buildWorkflowFailureState(run),
       };
     case "interrupted":
       return {
@@ -170,17 +189,19 @@ function buildWorkflowAwaitResult(run: WorkflowRunRecord) {
       return {
         status: "queued" as const,
         ...base,
+        note: `Workflow ${run.definition.name} is queued.`,
       };
     case "backgrounded":
       return {
         status: "backgrounded" as const,
         ...base,
-        note: "Workflow run is backgrounded. Use task_await to monitor progress.",
+        note: `Workflow ${run.definition.name} is backgrounded. Use task_await to monitor progress.`,
       };
     case "running":
       return {
         status: "running" as const,
         ...base,
+        note: `Workflow ${run.definition.name} is still running.`,
       };
   }
 }
@@ -362,7 +383,7 @@ export const createTaskAwaitTool: ToolFactory = (config: ToolConfiguration) => {
         const deadline = Date.now() + (timeoutMs ?? DEFAULT_TASK_AWAIT_TIMEOUT_MS);
         while (!isWorkflowRunTerminalStatus(run.status)) {
           if (abortSignal?.aborted) {
-            return { status: "error" as const, taskId: runId, error: "Interrupted", run };
+            return { status: "error" as const, taskId: runId, error: "Interrupted" };
           }
           if (taskSignal.aborted || Date.now() >= deadline) {
             return buildWorkflowAwaitResult(run);

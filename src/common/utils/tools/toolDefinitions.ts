@@ -36,6 +36,7 @@ import {
   WorkflowNameSchema,
   WorkflowRunRecordSchema,
   WorkflowRunStatusSchema,
+  WorkflowStepStatusSchema,
 } from "@/common/orpc/schemas";
 import { RUNTIME_MODE, type RuntimeMode } from "@/common/types/runtime";
 import {
@@ -570,7 +571,6 @@ export const TaskAwaitToolCompletedResultSchema = z
     elapsed_ms: z.number().optional(),
     exitCode: z.number().optional(),
     note: z.string().optional(),
-    run: WorkflowRunRecordSchema.optional(),
     artifacts: TaskAwaitToolArtifactsSchema.optional(),
   })
   .strict();
@@ -589,7 +589,6 @@ export const TaskAwaitToolActiveResultSchema = z
     output: z.string().optional(),
     elapsed_ms: z.number().optional(),
     note: z.string().optional(),
-    run: WorkflowRunRecordSchema.optional(),
   })
   .strict();
 
@@ -609,13 +608,32 @@ export const TaskAwaitToolInvalidScopeResultSchema = z
   })
   .strict();
 
+// Failure is the one case where workflow state must reach the model: it has to decide between
+// workflow_resume (retry_from_checkpoint) and a fresh workflow_run. Surface per-step outcomes
+// compactly — never the full run record (definition source / event log).
+export const TaskAwaitWorkflowFailureStateSchema = z
+  .object({
+    name: z.string().min(1),
+    steps: z.array(
+      z
+        .object({
+          stepId: z.string().min(1),
+          status: WorkflowStepStatusSchema,
+          taskId: z.string().optional(),
+          error: z.string().optional(),
+        })
+        .strict()
+    ),
+  })
+  .strict();
+
 export const TaskAwaitToolErrorResultSchema = z
   .object({
     status: z.literal("error"),
     taskId: z.string(),
     error: z.string(),
     elapsed_ms: z.number().optional(),
-    run: WorkflowRunRecordSchema.optional(),
+    workflow: TaskAwaitWorkflowFailureStateSchema.optional(),
   })
   .strict();
 
