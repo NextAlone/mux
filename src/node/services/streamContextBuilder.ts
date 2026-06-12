@@ -233,6 +233,12 @@ export interface BuildStreamSystemContextOptions {
   workspaceId: string;
   /** Agent definition (may have fallen back to exec). Use `.id` for resolution. */
   agentDefinition: { id: string; scope: AgentDefinitionScope };
+  /**
+   * Effective mode for the stream. Custom plan-like agents run with
+   * effectiveMode "plan" while keeping their own agent id, so "Mode: <mode>"
+   * scoped instructions match against both this and the agent id.
+   */
+  effectiveMode: "plan" | "exec" | "compact";
   /** Runtime that resolved the active agent definition. May be the parent workspace runtime for subagents. */
   agentDiscoveryRuntime: Runtime;
   agentDiscoveryPath: string;
@@ -252,8 +258,13 @@ export interface BuildStreamSystemContextOptions {
 
 /** Result of system context assembly. */
 export interface StreamSystemContextResult {
-  /** Resolved agent body (with inheritance + subagent append). */
-  agentSystemPrompt: string;
+  /**
+   * Resolved agent prompt as independently-authored sections (agent body with
+   * inheritance, optional subagent append_prompt, optional advisor guidance).
+   * Kept per-section so scoped Model:/Mode:/Tool: extraction never lets a
+   * trailing scoped heading in one section swallow the next section's text.
+   */
+  agentSystemPromptSections: string[];
   /** Full system message string. */
   systemMessage: string;
   /** Token count of the system message. */
@@ -460,6 +471,7 @@ export async function buildStreamSystemContext(
     workspacePath,
     workspaceId,
     agentDefinition,
+    effectiveMode,
     agentDiscoveryRuntime,
     agentDiscoveryPath,
     isSubagentWorkspace,
@@ -507,15 +519,14 @@ export async function buildStreamSystemContext(
     }
   }
 
-  const agentPromptSections = [resolvedBody];
+  const agentSystemPromptSections = [resolvedBody];
   if (isSubagentWorkspace && subagentAppendPrompt) {
-    agentPromptSections.push(subagentAppendPrompt);
+    agentSystemPromptSections.push(subagentAppendPrompt);
   }
   if (advisorToolAvailable) {
     // Keep prompt guidance in lockstep with actual tool availability for the agent.
-    agentPromptSections.push(buildAdvisorGuidanceSection());
+    agentSystemPromptSections.push(buildAdvisorGuidanceSection());
   }
-  const agentSystemPrompt = agentPromptSections.join("\n\n");
 
   // Discover available agent definitions for sub-agent context (only for top-level workspaces).
   //
@@ -570,7 +581,12 @@ export async function buildStreamSystemContext(
     mergedAdditionalInstructions,
     modelString,
     mcpServers,
-    { agentSystemPrompt }
+    // "Mode: <mode>" sections in Mux-dedicated instruction sources match the
+    // effective mode (so "Mode: plan" also covers custom plan-like agents)
+    // and the agent id (so per-agent sections work). The effective mode names
+    // the injected <mode-...> tag; agentDefinition.id (may have fallen back
+    // to exec) is the prompt actually in effect.
+    { agentSystemPromptSections, modes: [effectiveMode, agentDefinition.id] }
   );
 
   // Count system message tokens for cost tracking
@@ -579,7 +595,7 @@ export async function buildStreamSystemContext(
   const systemMessageTokens = await tokenizer.countTokens(systemMessage);
 
   return {
-    agentSystemPrompt,
+    agentSystemPromptSections,
     systemMessage,
     systemMessageTokens,
     agentDefinitions,

@@ -21,17 +21,23 @@ describe("extractToolInstructions", () => {
   const modelString = "anthropic:claude-sonnet-4-20250514";
 
   test("extracts tool section from agentInstructions first", () => {
-    const globalInstructions = `## Tool: bash
+    const globalContents = [
+      `## Tool: bash
 From global: Use rg for searching.
-`;
-    const contextInstructions = `## Tool: bash
+`,
+    ];
+    const contextContents = [
+      `## Tool: bash
 From context: Use fd for finding.
-`;
-    const agentInstructions = `## Tool: bash
+`,
+    ];
+    const agentInstructions = [
+      `## Tool: bash
 From agent: Use ripgrep alias.
-`;
+`,
+    ];
 
-    const result = extractToolInstructions(globalInstructions, contextInstructions, modelString, {
+    const result = extractToolInstructions(globalContents, contextContents, modelString, {
       agentInstructions,
     });
 
@@ -45,17 +51,23 @@ From agent: Use ripgrep alias.
   });
 
   test("falls back to context when agentInstructions has no matching tool section", () => {
-    const globalInstructions = `## Tool: bash
+    const globalContents = [
+      `## Tool: bash
 From global: Use rg for searching.
-`;
-    const contextInstructions = `## Tool: bash
+`,
+    ];
+    const contextContents = [
+      `## Tool: bash
 From context: Use fd for finding.
-`;
-    const agentInstructions = `## Tool: file_read
+`,
+    ];
+    const agentInstructions = [
+      `## Tool: file_read
 From agent: Read files carefully.
-`;
+`,
+    ];
 
-    const result = extractToolInstructions(globalInstructions, contextInstructions, modelString, {
+    const result = extractToolInstructions(globalContents, contextContents, modelString, {
       agentInstructions,
     });
 
@@ -65,17 +77,21 @@ From agent: Read files carefully.
   });
 
   test("keeps every matching context tool section before falling back to global", () => {
-    const globalInstructions = `## Tool: bash
+    const globalContents = [
+      `## Tool: bash
 From global: Use rg for searching.
-`;
-    const contextInstructions = `## Tool: bash
+`,
+    ];
+    const contextContents = [
+      `## Tool: bash
 From primary repo: Prefer git status --short.
-
-## Tool: bash
+`,
+      `## Tool: bash
 From secondary repo: Prefer rg --files before find.
-`;
+`,
+    ];
 
-    const result = extractToolInstructions(globalInstructions, contextInstructions, modelString);
+    const result = extractToolInstructions(globalContents, contextContents, modelString);
 
     expect(result.bash).toBe(
       [
@@ -87,13 +103,15 @@ From secondary repo: Prefer rg --files before find.
   });
 
   test("falls back to global when neither agentInstructions nor context has tool section", () => {
-    const globalInstructions = `## Tool: bash
+    const globalContents = [
+      `## Tool: bash
 From global: Use rg for searching.
-`;
-    const contextInstructions = `General context instructions.`;
-    const agentInstructions = `General agent instructions.`;
+`,
+    ];
+    const contextContents = [`General context instructions.`];
+    const agentInstructions = [`General agent instructions.`];
 
-    const result = extractToolInstructions(globalInstructions, contextInstructions, modelString, {
+    const result = extractToolInstructions(globalContents, contextContents, modelString, {
       agentInstructions,
     });
 
@@ -101,11 +119,30 @@ From global: Use rg for searching.
   });
 
   test("returns empty object when no tool sections found", () => {
-    const result = extractToolInstructions("No tool sections here.", "Nor here.", modelString, {
-      agentInstructions: "Or here.",
+    const result = extractToolInstructions(["No tool sections here."], ["Nor here."], modelString, {
+      agentInstructions: ["Or here."],
     });
 
     expect(result.bash).toBeUndefined();
+  });
+
+  test("a trailing Tool: section does not swallow the next file's unscoped content", () => {
+    // Per-file extraction: file A ends with a Tool: section, file B starts
+    // with plain text. Concatenating before extraction would pull file B's
+    // unscoped content into the bash tool description.
+    const contextContents = [
+      `General guidance A.
+
+## Tool: bash
+Use rg for searching.
+`,
+      `Unscoped guidance B.
+`,
+    ];
+
+    const result = extractToolInstructions([], contextContents, modelString);
+
+    expect(result.bash).toBe("Use rg for searching.");
   });
 });
 
@@ -326,9 +363,10 @@ From secondary repo: prefer rg --files before find.
     );
   });
 
-  test("includes model-specific section when regex matches active model", async () => {
+  test("includes model-specific section from workspace .mux/AGENTS.md when regex matches active model", async () => {
+    await fs.mkdir(path.join(workspaceDir, ".mux"), { recursive: true });
     await fs.writeFile(
-      path.join(workspaceDir, "AGENTS.md"),
+      path.join(workspaceDir, ".mux", "AGENTS.md"),
       `# Instructions
 ## Model: sonnet
 Respond to Sonnet tickets in two sentences max.
@@ -357,6 +395,203 @@ Respond to Sonnet tickets in two sentences max.
     expect(systemMessage).toContain("<model-anthropic-claude-3-5-sonnet>");
     expect(systemMessage).toContain("Respond to Sonnet tickets in two sentences max.");
     expect(systemMessage).toContain("</model-anthropic-claude-3-5-sonnet>");
+  });
+
+  test("ignores Model sections in shared workspace AGENTS.md (breaking change)", async () => {
+    // Shared AGENTS.md is read by non-Mux agents too, so "Model:" headings
+    // there are no longer parsed as Mux directives — they stay plain markdown
+    // inside <custom-instructions>.
+    await fs.writeFile(
+      path.join(workspaceDir, "AGENTS.md"),
+      `# Instructions
+## Model: sonnet
+Respond to Sonnet tickets in two sentences max.
+`
+    );
+
+    const metadata: WorkspaceMetadata = {
+      id: "test-workspace",
+      name: "test-workspace",
+      projectName: "test-project",
+      projectPath: projectDir,
+      runtimeConfig: DEFAULT_RUNTIME_CONFIG,
+    };
+
+    const systemMessage = await buildSystemMessage(
+      metadata,
+      runtime,
+      workspaceDir,
+      undefined,
+      "anthropic:claude-3.5-sonnet"
+    );
+
+    expect(systemMessage).not.toContain("<model-anthropic-claude-3-5-sonnet>");
+
+    const customInstructions = extractTagContent(systemMessage, "custom-instructions") ?? "";
+    expect(customInstructions).toContain("Model: sonnet");
+    expect(customInstructions).toContain("Respond to Sonnet tickets in two sentences max.");
+  });
+
+  test("includes mode-specific section from workspace .mux/AGENTS.md", async () => {
+    await fs.mkdir(path.join(workspaceDir, ".mux"), { recursive: true });
+    await fs.writeFile(
+      path.join(workspaceDir, ".mux", "AGENTS.md"),
+      `# Instructions
+## Mode: plan
+Plan thoroughly before proposing.
+`
+    );
+
+    const metadata: WorkspaceMetadata = {
+      id: "test-workspace",
+      name: "test-workspace",
+      projectName: "test-project",
+      projectPath: projectDir,
+      runtimeConfig: DEFAULT_RUNTIME_CONFIG,
+    };
+
+    const systemMessage = await buildSystemMessage(
+      metadata,
+      runtime,
+      workspaceDir,
+      undefined,
+      undefined,
+      undefined,
+      { modes: ["plan"] }
+    );
+
+    const customInstructions = extractTagContent(systemMessage, "custom-instructions") ?? "";
+    expect(customInstructions).not.toContain("Plan thoroughly before proposing.");
+
+    expect(systemMessage).toContain("<mode-plan>");
+    expect(systemMessage).toContain("Plan thoroughly before proposing.");
+    expect(systemMessage).toContain("</mode-plan>");
+  });
+
+  test("Mode: plan matches custom plan-like agents via the effective mode candidate", async () => {
+    // A custom plan-like agent runs with effectiveMode "plan" but keeps its
+    // own agent id; both candidates are checked so "Mode: plan" guidance
+    // still applies (and per-agent sections also match).
+    await fs.mkdir(path.join(workspaceDir, ".mux"), { recursive: true });
+    await fs.writeFile(
+      path.join(workspaceDir, ".mux", "AGENTS.md"),
+      `## Mode: plan
+Shared plan-mode guidance.
+
+## Mode: my-planner
+Planner-specific guidance.
+`
+    );
+
+    const metadata: WorkspaceMetadata = {
+      id: "test-workspace",
+      name: "test-workspace",
+      projectName: "test-project",
+      projectPath: projectDir,
+      runtimeConfig: DEFAULT_RUNTIME_CONFIG,
+    };
+
+    const systemMessage = await buildSystemMessage(
+      metadata,
+      runtime,
+      workspaceDir,
+      undefined,
+      undefined,
+      undefined,
+      { modes: ["plan", "my-planner"] }
+    );
+
+    const modeSection = extractTagContent(systemMessage, "mode-plan") ?? "";
+    expect(modeSection).toContain("Shared plan-mode guidance.");
+    expect(modeSection).toContain("Planner-specific guidance.");
+  });
+
+  test("ignores Mode sections in shared workspace AGENTS.md and non-matching modes", async () => {
+    await fs.writeFile(
+      path.join(workspaceDir, "AGENTS.md"),
+      `# Instructions
+## Mode: plan
+Shared plan guidance.
+`
+    );
+    await fs.mkdir(path.join(workspaceDir, ".mux"), { recursive: true });
+    await fs.writeFile(
+      path.join(workspaceDir, ".mux", "AGENTS.md"),
+      `## Mode: exec
+Exec-only guidance.
+`
+    );
+
+    const metadata: WorkspaceMetadata = {
+      id: "test-workspace",
+      name: "test-workspace",
+      projectName: "test-project",
+      projectPath: projectDir,
+      runtimeConfig: DEFAULT_RUNTIME_CONFIG,
+    };
+
+    const systemMessage = await buildSystemMessage(
+      metadata,
+      runtime,
+      workspaceDir,
+      undefined,
+      undefined,
+      undefined,
+      { modes: ["plan"] }
+    );
+
+    // Shared AGENTS.md Mode: headings stay plain markdown; no mode tag is built
+    // from them, and the .mux/AGENTS.md exec section does not match plan mode.
+    expect(systemMessage).not.toContain("<mode-plan>");
+    expect(systemMessage).not.toContain("Exec-only guidance.");
+
+    const customInstructions = extractTagContent(systemMessage, "custom-instructions") ?? "";
+    expect(customInstructions).toContain("Shared plan guidance.");
+  });
+
+  test("scoped sections do not swallow the next mux file's unscoped content", async () => {
+    // .mux/AGENTS.md ends with a Mode: section; .mux/AGENTS.local.md starts
+    // with plain text. Extraction must run per file — concatenating first
+    // would pull the local file's unscoped content into <mode-plan>.
+    await fs.mkdir(path.join(workspaceDir, ".mux"), { recursive: true });
+    await fs.writeFile(
+      path.join(workspaceDir, ".mux", "AGENTS.md"),
+      `General mux guidance.
+
+## Mode: plan
+Plan-only guidance.
+`
+    );
+    await fs.writeFile(
+      path.join(workspaceDir, ".mux", "AGENTS.local.md"),
+      `Local unscoped guidance.
+`
+    );
+
+    const metadata: WorkspaceMetadata = {
+      id: "test-workspace",
+      name: "test-workspace",
+      projectName: "test-project",
+      projectPath: projectDir,
+      runtimeConfig: DEFAULT_RUNTIME_CONFIG,
+    };
+
+    const systemMessage = await buildSystemMessage(
+      metadata,
+      runtime,
+      workspaceDir,
+      undefined,
+      undefined,
+      undefined,
+      { modes: ["plan"] }
+    );
+
+    const modeSection = extractTagContent(systemMessage, "mode-plan") ?? "";
+    expect(modeSection).toContain("Plan-only guidance.");
+    expect(modeSection).not.toContain("Local unscoped guidance.");
+
+    const customInstructions = extractTagContent(systemMessage, "custom-instructions") ?? "";
+    expect(customInstructions).toContain("Local unscoped guidance.");
   });
 
   test("falls back to global model section when project lacks a match", async () => {
@@ -426,7 +661,7 @@ Be extra concise when using Sonnet.
         undefined,
         "anthropic:claude-3.5-sonnet",
         undefined,
-        { agentSystemPrompt }
+        { agentSystemPromptSections: [agentSystemPrompt] }
       );
 
       // Agent instructions should have scoped sections stripped
@@ -439,9 +674,10 @@ Be extra concise when using Sonnet.
       expect(systemMessage).toContain("Be extra concise when using Sonnet.");
     });
 
-    test("agentSystemPrompt model section takes precedence over AGENTS.md", async () => {
+    test("agentSystemPrompt model section takes precedence over .mux/AGENTS.md", async () => {
+      await fs.mkdir(path.join(workspaceDir, ".mux"), { recursive: true });
       await fs.writeFile(
-        path.join(workspaceDir, "AGENTS.md"),
+        path.join(workspaceDir, ".mux", "AGENTS.md"),
         `## Model: sonnet
 From AGENTS.md: Be verbose.
 `
@@ -466,7 +702,7 @@ From agent: Be terse.
         undefined,
         "anthropic:claude-3.5-sonnet",
         undefined,
-        { agentSystemPrompt }
+        { agentSystemPromptSections: [agentSystemPrompt] }
       );
 
       expect(systemMessage).toContain("From agent: Be terse.");
@@ -476,9 +712,10 @@ From agent: Be terse.
       );
     });
 
-    test("falls back to AGENTS.md when agentSystemPrompt has no matching model section", async () => {
+    test("falls back to .mux/AGENTS.md when agentSystemPrompt has no matching model section", async () => {
+      await fs.mkdir(path.join(workspaceDir, ".mux"), { recursive: true });
       await fs.writeFile(
-        path.join(workspaceDir, "AGENTS.md"),
+        path.join(workspaceDir, ".mux", "AGENTS.md"),
         `## Model: sonnet
 From AGENTS.md: Sonnet instructions.
 `
@@ -503,7 +740,7 @@ From agent: Opus instructions.
         undefined,
         "anthropic:claude-3.5-sonnet",
         undefined,
-        { agentSystemPrompt }
+        { agentSystemPromptSections: [agentSystemPrompt] }
       );
 
       // Falls back to AGENTS.md since agent has no sonnet section
@@ -563,7 +800,9 @@ OpenAI-only instructions.
 
     for (const scenario of scopingScenarios) {
       test(scenario.name, async () => {
-        await fs.writeFile(path.join(workspaceDir, "AGENTS.md"), scenario.mdContent);
+        // Scoped Model: sections only activate in Mux-dedicated files.
+        await fs.mkdir(path.join(workspaceDir, ".mux"), { recursive: true });
+        await fs.writeFile(path.join(workspaceDir, ".mux", "AGENTS.md"), scenario.mdContent);
 
         const metadata: WorkspaceMetadata = {
           id: "test-workspace",

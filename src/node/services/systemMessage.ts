@@ -7,7 +7,8 @@ import { RUNTIME_MODE } from "@/common/types/runtime";
 import { getProjects, isMultiProject } from "@/common/utils/multiProject";
 import {
   INSTRUCTION_SCOPE,
-  joinInstructionSets,
+  collectInstructionContents,
+  collectMuxOnlyInstructionContents,
   type InstructionSet,
   type InstructionSources,
 } from "@/common/types/instructions";
@@ -16,9 +17,11 @@ import {
   readInstructionSetFromRuntime,
 } from "@/node/utils/main/instructionFiles";
 import {
+  extractModeSection,
   extractModelSection,
   extractToolSection,
   stripScopedInstructionSections,
+  type InstructionSourceKind,
 } from "@/node/utils/main/markdown";
 import type { Runtime } from "@/node/runtime/Runtime";
 import { resolveWorkspaceRootPath } from "@/node/runtime/runtimeHelpers";
@@ -233,34 +236,36 @@ function getSystemDirectory(): string {
  * Extract tool-specific instructions from instruction sources.
  * Searches agent instructions first, then context (workspace/project), then global.
  *
- * @param globalInstructions Global instructions from ~/.mux/AGENTS.md
- * @param contextInstructions Context instructions from workspace/project AGENTS.md
+ * Sources are per-file content strings (not concatenated blobs): a `Tool:`
+ * section at the end of one file must not swallow the next file's unscoped
+ * content, because markdown section bounds only stop at another
+ * same-or-higher heading.
+ *
+ * @param globalContents Per-file contents from the ~/.mux/AGENTS.md set
+ * @param contextContents Per-file contents from workspace/project instruction sets
  * @param modelString Active model identifier to determine available tools
  * @param options.enableAgentReport Whether to include agent_report in available tools
  * @param options.agentInstructions Optional agent definition body (searched first)
  * @returns Map of tool names to their additional instructions
  */
 export function extractToolInstructions(
-  globalInstructions: string | null,
-  contextInstructions: string | null,
+  globalContents: readonly string[],
+  contextContents: readonly string[],
   modelString: string,
   options?: {
     enableAgentReport?: boolean;
     enableReviewPane?: boolean;
     enableMuxGlobalAgentsTools?: boolean;
-    agentInstructions?: string;
+    /** Agent prompt sections, searched first (see buildSystemMessage options). */
+    agentInstructions?: readonly string[];
   }
 ): Record<string, string> {
   const availableTools = getAvailableTools(modelString, options);
   const toolInstructions: Record<string, string> = {};
-  const sources = {
-    agent: options?.agentInstructions ?? null,
-    context: contextInstructions,
-    global: globalInstructions,
-  };
+  const sources = [...(options?.agentInstructions ?? []), ...contextContents, ...globalContents];
 
   for (const toolName of availableTools) {
-    const segments = [sources.agent, sources.context, sources.global]
+    const segments = sources
       .map((src) => (src ? extractToolSection(src, toolName) : null))
       .filter((content): content is string => content != null && content.trim().length > 0);
     if (segments.length > 0) {
@@ -287,17 +292,17 @@ export async function readToolInstructions(
   runtime: Runtime,
   workspacePath: string,
   modelString: string,
-  agentInstructions?: string
+  agentInstructions?: readonly string[]
 ): Promise<Record<string, string>> {
   // Tool instructions read the same `AGENTS.md` files as the system prompt;
   // anchor at the workspace root so sub-project workspaces still see parent
   // project tool sections (see `loadInstructionSources` doc).
   const workspaceRootPath = subProjectAwareWorkspaceRoot(metadata, runtime, workspacePath);
   const sources = await loadInstructionSources(metadata, runtime, workspaceRootPath);
-  const globalInstructions = sources.global?.combinedContent ?? null;
-  const contextInstructions = joinInstructionSets(sources.context) || null;
+  const globalContents = collectInstructionContents([sources.global]);
+  const contextContents = collectInstructionContents(sources.context);
 
-  return extractToolInstructions(globalInstructions, contextInstructions, modelString, {
+  return extractToolInstructions(globalContents, contextContents, modelString, {
     ...getToolAvailabilityOptions({
       workspaceId: metadata.id,
       parentWorkspaceId: metadata.parentWorkspaceId,
@@ -466,10 +471,16 @@ export async function loadInstructionSources(
  * Builds a system message for the AI model by combining instruction sources.
  *
  * Instruction layers:
- * 1. Global: ~/.mux/AGENTS.md (always included)
- * 2. Context: workspace/AGENTS.md plus project repo instructions for multi-project workspaces,
- *    or workspace/AGENTS.md OR project/AGENTS.md for single-project workspaces
- * 3. Model: Extracts "Model: <regex>" section from context then global (if modelString provided)
+ * 1. Global: ~/.mux/AGENTS.md (always included; Mux-dedicated)
+ * 2. Context: workspace/AGENTS.md (+ workspace/.mux/AGENTS.md) plus project repo instructions
+ *    for multi-project workspaces, or workspace/AGENTS.md OR project/AGENTS.md for
+ *    single-project workspaces
+ * 3. Model: Extracts "Model: <regex>" sections from Mux-dedicated sources only
+ *    (agent definition → .mux/AGENTS.md context files → ~/.mux/AGENTS.md), if modelString provided
+ * 4. Mode: Extracts "Mode: <mode>" sections from the same Mux-dedicated sources for every
+ *    options.modes candidate (effective mode + agent id). Shared AGENTS.md files never contribute
+ *    Model:/Mode: sections — non-Mux agents read those files too, so the headings stay ordinary
+ *    markdown there.
  *
  * File search order: AGENTS.md → AGENT.md → CLAUDE.md
  * Local variants: AGENTS.local.md appended if found (for .gitignored personal preferences)
@@ -490,7 +501,20 @@ export async function buildSystemMessage(
   modelString?: string,
   mcpServers?: MCPServerMap,
   options?: {
-    agentSystemPrompt?: string;
+    /**
+     * Resolved agent prompt as independently-authored sections (agent body,
+     * subagent append_prompt, advisor guidance, …). Per-section so a trailing
+     * scoped heading in one section cannot swallow the next section's text.
+     */
+    agentSystemPromptSections?: readonly string[];
+    /**
+     * Active mode identifiers used to extract "Mode: <mode>" sections from
+     * Mux-dedicated instruction sources: the effective mode (plan/exec/compact)
+     * plus the agent id, so "Mode: plan" covers custom plan-like agents and
+     * "Mode: <agent>" covers per-agent sections. The first entry names the
+     * injected <mode-...> tag. Duplicates are ignored.
+     */
+    modes?: readonly string[];
   }
 ): Promise<string> {
   if (!metadata) throw new Error("Invalid workspace metadata: metadata is required");
@@ -522,40 +546,79 @@ export async function buildSystemMessage(
   // For non-sub-project workspaces this is a no-op (root === execution path).
   const workspaceRootPath = subProjectAwareWorkspaceRoot(metadata, runtime, workspacePath);
   const instructionSources = await loadInstructionSources(metadata, runtime, workspaceRootPath);
-  const globalInstructions = instructionSources.global?.combinedContent ?? null;
-  // Concatenated context content for downstream string-based helpers
-  // (`stripScopedInstructionSections`, `extractModelSection`, …). The structured
-  // form lives in `instructionSources` for consumers that need per-file metadata.
-  const contextInstructions = joinInstructionSets(instructionSources.context) || null;
+  // Mux-dedicated per-file contents (<dir>/.mux/AGENTS.md context files, then
+  // the global ~/.mux/AGENTS.md set, which is Mux-dedicated by construction).
+  // Scoped Model:/Mode: directives are honored ONLY in Mux-dedicated sources
+  // so a "Model: …" heading in a shared AGENTS.md (read by non-Mux agents too)
+  // stays ordinary markdown. Extraction runs per file: a scoped section at the
+  // end of one file must not swallow the next file's unscoped content.
+  const muxContextContents = collectMuxOnlyInstructionContents(instructionSources.context);
+  const muxGlobalContents = collectMuxOnlyInstructionContents([instructionSources.global]);
 
-  const agentPrompt = options?.agentSystemPrompt?.trim() ?? null;
+  const agentPromptSections = (options?.agentSystemPromptSections ?? [])
+    .map((section) => section.trim())
+    .filter((section) => section.length > 0);
+  const modeCandidates = Array.from(
+    new Set((options?.modes ?? []).map((m) => m.trim()).filter((m) => m.length > 0))
+  );
 
-  // Combine: global + concatenated project/sub-project/workspace after stripping scoped sections.
-  // Also strip scoped sections from agent prompt for consistency
-  const sanitizeScopedInstructions = (input?: string | null): string | undefined => {
+  // Strip the scoped sections a source honors before injecting its plain text:
+  // Mux-dedicated sources honor Model:/Mode:/Tool:, shared files only Tool:.
+  const sanitizeScopedInstructions = (
+    input: string | null | undefined,
+    sourceKind: InstructionSourceKind
+  ): string | undefined => {
     if (!input) return undefined;
-    const stripped = stripScopedInstructionSections(input);
+    const stripped = stripScopedInstructionSections(input, sourceKind);
     return stripped.trim().length > 0 ? stripped : undefined;
   };
 
-  const sanitizedAgentPrompt = sanitizeScopedInstructions(agentPrompt);
-  if (sanitizedAgentPrompt) {
-    systemMessage += `\n<agent-instructions>\n${sanitizedAgentPrompt}\n</agent-instructions>`;
+  const sanitizedAgentSections = agentPromptSections
+    .map((section) => sanitizeScopedInstructions(section, "mux"))
+    .filter((value): value is string => Boolean(value));
+  if (sanitizedAgentSections.length > 0) {
+    systemMessage += `\n<agent-instructions>\n${sanitizedAgentSections.join("\n\n")}\n</agent-instructions>`;
   }
 
-  const customInstructionSources = [
-    sanitizeScopedInstructions(globalInstructions),
-    sanitizeScopedInstructions(contextInstructions),
-  ].filter((value): value is string => Boolean(value));
+  // Combine global + context sets, sanitizing each file by its source kind so
+  // shared and Mux-dedicated files in the same set keep their own rules.
+  const sanitizeSet = (set: InstructionSet | null): string | undefined => {
+    if (!set) return undefined;
+    const parts = set.files
+      .map((file) => sanitizeScopedInstructions(file.content, file.muxOnly ? "mux" : "shared"))
+      .filter((value): value is string => Boolean(value));
+    return parts.length > 0 ? parts.join("\n\n") : undefined;
+  };
+
+  const customInstructionSources = [instructionSources.global, ...instructionSources.context]
+    .map(sanitizeSet)
+    .filter((value): value is string => Boolean(value));
   const customInstructions = customInstructionSources.join("\n\n");
+
+  // Scoped directive sources in priority order: agent definition → workspace
+  // .mux/AGENTS.md files → global ~/.mux/AGENTS.md. All matches are joined.
+  const muxScopedSources = [...agentPromptSections, ...muxContextContents, ...muxGlobalContents];
 
   // Extract model-specific section based on active model identifier
   const modelContent = modelString
-    ? [agentPrompt, contextInstructions, globalInstructions]
+    ? muxScopedSources
         .map((src) => (src ? extractModelSection(src, modelString) : null))
         .filter((content): content is string => content != null && content.trim().length > 0)
         .join("\n\n")
     : null;
+
+  // Extract mode-specific sections for every candidate (effective mode +
+  // agent id). Source priority dominates: all candidates are checked within a
+  // source before moving to the next source.
+  const modeContent =
+    modeCandidates.length > 0
+      ? muxScopedSources
+          .flatMap((src) =>
+            src ? modeCandidates.map((candidate) => extractModeSection(src, candidate)) : []
+          )
+          .filter((content): content is string => content != null && content.trim().length > 0)
+          .join("\n\n")
+      : null;
 
   if (customInstructions) {
     systemMessage += `\n<custom-instructions>\n${customInstructions}\n</custom-instructions>`;
@@ -565,6 +628,13 @@ export async function buildSystemMessage(
     const modelSection = buildTaggedSection(modelContent, `model-${modelString}`, "model");
     if (modelSection) {
       systemMessage += modelSection;
+    }
+  }
+
+  if (modeContent && modeCandidates.length > 0) {
+    const modeSection = buildTaggedSection(modeContent, `mode-${modeCandidates[0]}`, "mode");
+    if (modeSection) {
+      systemMessage += modeSection;
     }
   }
 

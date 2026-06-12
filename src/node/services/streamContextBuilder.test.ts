@@ -88,6 +88,7 @@ async function buildSystemContextForTest(args: {
     workspacePath: args.workspacePath,
     workspaceId: args.metadata.id,
     agentDefinition: { id: "exec", scope: "built-in" },
+    effectiveMode: "exec",
     agentDiscoveryRuntime: args.runtime,
     agentDiscoveryPath: args.workspacePath,
     isSubagentWorkspace: args.isSubagentWorkspace,
@@ -304,6 +305,7 @@ describe("buildStreamSystemContext", () => {
       workspacePath: childPath,
       workspaceId: metadata.id,
       agentDefinition: { id: customAgentId, scope: "project" },
+      effectiveMode: "exec",
       agentDiscoveryRuntime: new RestrictedTestRuntime(parentPath, muxHome, parentPath),
       agentDiscoveryPath: parentPath,
       isSubagentWorkspace: true,
@@ -314,7 +316,9 @@ describe("buildStreamSystemContext", () => {
       mcpServers: {},
     });
 
-    expect(result.agentSystemPrompt).toContain("Parent-only reviewer prompt body.");
+    expect(result.agentSystemPromptSections.join("\n\n")).toContain(
+      "Parent-only reviewer prompt body."
+    );
   });
 
   test("includes the direct parent plan path ahead of caller instructions", async () => {

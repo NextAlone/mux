@@ -63,19 +63,25 @@ function extractSectionsByHeading(markdown: string, headingMatcher: HeadingMatch
     .filter((slice) => slice.length > 0);
 }
 
-function extractSectionByHeading(markdown: string, headingMatcher: HeadingMatcher): string | null {
-  const [firstMatch] = extractSectionsByHeading(markdown, headingMatcher);
-  return firstMatch ?? null;
-}
-
 function removeSectionsByHeading(markdown: string, headingMatcher: HeadingMatcher): string {
   if (!markdown) return markdown;
 
   const { bounds, lines } = collectSectionBounds(markdown, headingMatcher);
   if (bounds.length === 0) return markdown;
 
+  // Keep only outermost matched bounds. A matched heading nested inside
+  // another matched section (e.g. "## Tool: bash" inside "# Mode: plan") is
+  // already removed by the outer splice; splicing both would shift line
+  // offsets and delete unrelated content that follows the outer section.
+  const outermostBounds = bounds.filter(
+    (bound) =>
+      !bounds.some(
+        (other) => other.headingStartLine < bound.headingStartLine && other.endLine >= bound.endLine
+      )
+  );
+
   const updatedLines = [...lines];
-  const sortedBounds = [...bounds].sort((a, b) => b.headingStartLine - a.headingStartLine);
+  const sortedBounds = [...outermostBounds].sort((a, b) => b.headingStartLine - a.headingStartLine);
   for (const { headingStartLine, endLine } of sortedBounds) {
     updatedLines.splice(headingStartLine, endLine - headingStartLine);
   }
@@ -84,11 +90,36 @@ function removeSectionsByHeading(markdown: string, headingMatcher: HeadingMatche
 }
 
 /**
- * Extract the first section whose heading matches "Model: <regex>" and whose regex matches
- * the provided model identifier. Matching is case-insensitive by default unless the regex
- * heading explicitly specifies flags via /pattern/flags syntax.
+ * Extract the content under every heading titled "Mode: <mode>" (case-insensitive),
+ * where <mode> is the active agent/mode id (e.g. "plan", "exec", or a custom
+ * agent name). Mode sections are only honored in Mux-dedicated sources (agent
+ * definitions and Mux instruction files) — never in shared AGENTS.md files.
+ *
+ * All matching sections are joined in source order so a concatenated
+ * multi-file blob (e.g. parent + sub-project .mux/AGENTS.md) keeps every
+ * file's mode guidance.
  */
+export function extractModeSection(markdown: string, mode: string): string | null {
+  if (!markdown || !mode) return null;
 
+  const expectedHeading = `mode: ${mode}`.toLowerCase();
+  const matches = extractSectionsByHeading(
+    markdown,
+    (headingText) => headingText.toLowerCase() === expectedHeading
+  );
+  return matches.length > 0 ? matches.join("\n\n") : null;
+}
+
+/**
+ * Extract every section whose heading matches "Model: <regex>" and whose regex matches
+ * the provided model identifier, joined in source order (matching multi-file
+ * concatenation semantics — see extractModeSection). Matching is case-insensitive by
+ * default unless the regex heading explicitly specifies flags via /pattern/flags syntax.
+ *
+ * Like Mode sections, Model sections are only honored in Mux-dedicated sources —
+ * shared AGENTS.md files are read by non-Mux agents too, where a "Model:" heading
+ * would be misleading.
+ */
 export function extractModelSection(markdown: string, modelId: string): string | null {
   if (!markdown || !modelId) return null;
 
@@ -116,12 +147,13 @@ export function extractModelSection(markdown: string, modelId: string): string |
     }
   };
 
-  return extractSectionByHeading(markdown, (headingText) => {
+  const matches = extractSectionsByHeading(markdown, (headingText) => {
     const match = headingPattern.exec(headingText);
     if (!match) return false;
     const regex = compileRegex(match[1] ?? "");
     return Boolean(regex?.test(modelId));
   });
+  return matches.length > 0 ? matches.join("\n\n") : null;
 }
 
 /**
@@ -139,11 +171,30 @@ export function extractToolSection(markdown: string, toolName: string): string |
   return matches.length > 0 ? matches.join("\n\n") : null;
 }
 
-export function stripScopedInstructionSections(markdown: string): string {
+/**
+ * Kind of instruction source for scoped-section handling:
+ * - "mux": Mux-dedicated sources (agent definitions, `~/.mux/AGENTS.md`,
+ *   `<dir>/.mux/AGENTS.md`). All scoped directives (`Model:`, `Mode:`, `Tool:`)
+ *   are honored and therefore stripped from the plain instruction text.
+ * - "shared": shared AGENTS.md/AGENT.md/CLAUDE.md files read by non-Mux agents
+ *   too. Only `Tool:` sections are honored/stripped; `Model:`/`Mode:` headings
+ *   are left untouched as ordinary markdown (breaking change — they used to be
+ *   parsed here).
+ */
+export type InstructionSourceKind = "mux" | "shared";
+
+export function stripScopedInstructionSections(
+  markdown: string,
+  sourceKind: InstructionSourceKind
+): string {
   if (!markdown) return markdown;
 
   return removeSectionsByHeading(markdown, (headingText) => {
     const normalized = headingText.trim().toLowerCase();
-    return normalized.startsWith("model:") || normalized.startsWith("tool:");
+    if (normalized.startsWith("tool:")) return true;
+    if (sourceKind === "mux") {
+      return normalized.startsWith("model:") || normalized.startsWith("mode:");
+    }
+    return false;
   });
 }

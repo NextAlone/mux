@@ -1362,6 +1362,7 @@ export class AIService extends EventEmitter {
           workspacePath,
           workspaceId,
           agentDefinition,
+          effectiveMode,
           agentDiscoveryRuntime,
           agentDiscoveryPath,
           isSubagentWorkspace,
@@ -1383,8 +1384,12 @@ export class AIService extends EventEmitter {
       const prePolicyStreamSystemContext =
         await buildStreamSystemContextForAdvisor(advisorToolEligible);
       recordStartupPhaseTiming("buildStreamSystemContextMs", buildStreamSystemContextStartedAt);
-      const { agentSystemPrompt, agentDefinitions, availableSkills, ancestorPlanFilePaths } =
-        prePolicyStreamSystemContext;
+      const {
+        agentSystemPromptSections,
+        agentDefinitions,
+        availableSkills,
+        ancestorPlanFilePaths,
+      } = prePolicyStreamSystemContext;
       let systemMessageTokens = prePolicyStreamSystemContext.systemMessageTokens;
       let systemMessage = prePolicyStreamSystemContext.systemMessage;
 
@@ -1434,7 +1439,7 @@ export class AIService extends EventEmitter {
         runtime,
         workspacePath,
         modelString,
-        agentSystemPrompt
+        agentSystemPromptSections
       );
       recordStartupPhaseTiming("readToolInstructionsMs", readToolInstructionsStartedAt);
 
