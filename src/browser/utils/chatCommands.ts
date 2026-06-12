@@ -736,6 +736,50 @@ export async function processSlashCommand(
           api: client,
           workspaceId: context.workspaceId,
         } as CommandHandlerContext);
+      case "dream": {
+        if (!context.workspaceId) throw new Error("Workspace ID required");
+        const dreamClient = requireClient();
+        if (!dreamClient) {
+          return { clearInput: false, toastShown: true };
+        }
+        // Fire-and-forget by design (PRD #3534): the dream run is background
+        // housekeeping; results surface in the Memory tab, not the chat. The
+        // only toast is the settle toast — an optimistic "started" success
+        // toast would flash green-then-red whenever the backend rejects
+        // immediately (experiment off, debounced, run already in flight).
+        const dreamWorkspaceId = context.workspaceId;
+        void dreamClient.memory
+          .consolidate({ workspaceId: dreamWorkspaceId })
+          .then((result) => {
+            // "Changes" counts applied ops only; the journal also records
+            // rejected/failed commands, which are not changes.
+            const applied = result.success ? result.data.ops.filter((op) => op.applied).length : 0;
+            context.setToast(
+              result.success
+                ? {
+                    id: Date.now().toString(),
+                    type: "success",
+                    message:
+                      applied === 0
+                        ? "Memory consolidation: no changes needed"
+                        : `Memory consolidated: ${applied} change(s)`,
+                  }
+                : {
+                    id: Date.now().toString(),
+                    type: "error",
+                    message: `Memory consolidation failed: ${result.error}`,
+                  }
+            );
+          })
+          .catch((error: unknown) => {
+            context.setToast({
+              id: Date.now().toString(),
+              type: "error",
+              message: `Memory consolidation failed: ${String(error)}`,
+            });
+          });
+        return { clearInput: true, toastShown: true };
+      }
       case "fork":
         if (!requireClient()) {
           return { clearInput: false, toastShown: true };

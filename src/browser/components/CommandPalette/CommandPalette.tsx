@@ -63,6 +63,10 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ getSlashContext 
   const workspaceHeartbeatsExperimentEnabled = useExperimentValue(
     EXPERIMENT_IDS.WORKSPACE_HEARTBEATS
   );
+  const memoryExperimentEnabled = useExperimentValue(EXPERIMENT_IDS.MEMORY);
+  const memoryConsolidationExperimentEnabled = useExperimentValue(
+    EXPERIMENT_IDS.MEMORY_CONSOLIDATION
+  );
   const slashContext = getSlashContext?.();
   const slashWorkspaceId = slashContext?.workspaceId;
 
@@ -293,6 +297,8 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ getSlashContext 
         isExperimentEnabled: (experimentId) =>
           resolveSlashCommandExperimentValue(experimentId, {
             workspaceHeartbeats: workspaceHeartbeatsExperimentEnabled,
+            memory: memoryExperimentEnabled,
+            memoryConsolidation: memoryConsolidationExperimentEnabled,
           }),
       });
       const section = "Slash Commands";
@@ -367,6 +373,8 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ getSlashContext 
     getSlashContext,
     agentSkills,
     workspaceHeartbeatsExperimentEnabled,
+    memoryExperimentEnabled,
+    memoryConsolidationExperimentEnabled,
   ]);
 
   useEffect(() => {

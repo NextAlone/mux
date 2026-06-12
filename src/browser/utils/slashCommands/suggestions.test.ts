@@ -2,6 +2,27 @@
 import { describe, it, expect } from "bun:test";
 import { EXPERIMENT_IDS, type ExperimentId } from "@/common/constants/experiments";
 import { getSlashCommandSuggestions } from "./suggestions";
+import { resolveSlashCommandExperimentValue } from "./experimentVisibility";
+
+describe("resolveSlashCommandExperimentValue", () => {
+  it("requires the parent memory experiment for memory-consolidation", () => {
+    // The backend rejects /dream unless BOTH flags are on, so the sub-flag
+    // alone must not surface the command.
+    expect(
+      resolveSlashCommandExperimentValue(EXPERIMENT_IDS.MEMORY_CONSOLIDATION, {
+        workspaceHeartbeats: false,
+        memoryConsolidation: true,
+      })
+    ).toBe(false);
+    expect(
+      resolveSlashCommandExperimentValue(EXPERIMENT_IDS.MEMORY_CONSOLIDATION, {
+        workspaceHeartbeats: false,
+        memory: true,
+        memoryConsolidation: true,
+      })
+    ).toBe(true);
+  });
+});
 
 describe("getSlashCommandSuggestions", () => {
   it("returns empty suggestions for non-commands", () => {
@@ -28,18 +49,23 @@ describe("getSlashCommandSuggestions", () => {
     const labels = suggestions.map((s) => s.display);
 
     expect(labels).not.toContain("/heartbeat");
+    expect(labels).not.toContain("/dream");
     // `/goal` graduated to GA — it must surface regardless of experiment state.
     expect(labels).toContain("/goal");
   });
 
   it("shows experiment-gated commands when their experiments are enabled", () => {
-    const enabledExperiments = new Set<ExperimentId>([EXPERIMENT_IDS.WORKSPACE_HEARTBEATS]);
+    const enabledExperiments = new Set<ExperimentId>([
+      EXPERIMENT_IDS.WORKSPACE_HEARTBEATS,
+      EXPERIMENT_IDS.MEMORY_CONSOLIDATION,
+    ]);
     const suggestions = getSlashCommandSuggestions("/", {
       isExperimentEnabled: (experimentId) => enabledExperiments.has(experimentId),
     });
     const labels = suggestions.map((s) => s.display);
 
     expect(labels).toContain("/heartbeat");
+    expect(labels).toContain("/dream");
     // `/goal` is always available post-GA.
     expect(labels).toContain("/goal");
   });

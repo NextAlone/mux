@@ -114,6 +114,14 @@ const clearCommandDefinition: SlashCommandDefinition = {
   },
 };
 
+const dreamCommandDefinition: SlashCommandDefinition = {
+  key: "dream",
+  experimentGate: EXPERIMENT_IDS.MEMORY_CONSOLIDATION,
+  description:
+    "Consolidate this workspace's agent memory now (merge duplicates, prune stale facts)",
+  handler: (): ParsedCommand => ({ type: "dream" }),
+};
+
 const compactCommandDefinition: SlashCommandDefinition = {
   key: "compact",
   description:
@@ -705,6 +713,7 @@ const debugLlmRequestCommandDefinition: SlashCommandDefinition = {
 export const SLASH_COMMAND_DEFINITIONS: readonly SlashCommandDefinition[] = [
   clearCommandDefinition,
   compactCommandDefinition,
+  dreamCommandDefinition,
   modelCommandDefinition,
   planCommandDefinition,
 

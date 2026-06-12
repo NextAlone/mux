@@ -66,3 +66,27 @@ export const MEMORY_HOT_SET_MAX_ITEM_BYTES = 16 * 1024;
 export const MEMORY_HOT_SET_MAX_TOTAL_BYTES = 48 * 1024;
 /** Half-life of the recency decay applied to access counts when ranking auto-hot files. */
 export const MEMORY_HOT_SET_DECAY_HALF_LIFE_MS = 7 * 24 * 60 * 60 * 1000;
+
+/**
+ * Memory consolidation ("dream" agent, issue #3534): maximum mutating memory
+ * commands per consolidation run. Reads are unlimited; the budget bounds churn
+ * from a misbehaving model.
+ */
+export const MEMORY_CONSOLIDATION_OP_BUDGET = 8;
+/** Generous step ceiling for the consolidation stream (reads + budgeted mutations). */
+export const MEMORY_CONSOLIDATION_MAX_STEPS = 32;
+/** Minimum gap between consolidation runs for one workspace (debounce across triggers). */
+export const MEMORY_CONSOLIDATION_DEBOUNCE_MS = 6 * 60 * 60 * 1000;
+/** Launch sweep: a workspace qualifies after this much user inactivity. */
+export const MEMORY_CONSOLIDATION_IDLE_MS = 24 * 60 * 60 * 1000;
+/**
+ * Launch sweep: at most this many workspaces consolidate per app launch, so a
+ * backlog of idle workspaces can never stampede the provider on startup.
+ */
+export const MEMORY_CONSOLIDATION_LAUNCH_SWEEP_CAP = 3;
+/**
+ * Hard wall-clock ceiling per consolidation run. Without it a half-alive
+ * provider stream (keepalives but no progress) would hold the workspace's
+ * in-flight lock forever and block every future trigger.
+ */
+export const MEMORY_CONSOLIDATION_TIMEOUT_MS = 5 * 60 * 1000;
