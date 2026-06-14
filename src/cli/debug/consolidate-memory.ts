@@ -1,5 +1,6 @@
 import { defaultConfig } from "@/node/config";
 import {
+  resolveConsolidationProjectPath,
   resolveDreamAgentBody,
   resolveDreamModelString,
 } from "@/node/services/memoryConsolidationService";
@@ -13,9 +14,9 @@ import { ProviderService } from "@/node/services/providerService";
  * Debug command: run a memory-consolidation ("dream") pass for a workspace.
  * Usage: bun debug consolidate-memory <workspace-id> [--dry-run]
  *
- * Phase 1 of issue #3534 — consolidates workspace + global scopes only (both
- * host-local), so no workspace runtime is required. --dry-run prints the
- * proposed op table without touching disk.
+ * Consolidates workspace + global scopes, plus project scope for single-project
+ * workspaces. All are host-local, so no workspace runtime is required. --dry-run
+ * prints the proposed op table without touching disk.
  */
 export async function consolidateMemoryCommand(
   workspaceId: string,
@@ -54,15 +55,12 @@ export async function consolidateMemoryCommand(
 
   const metaService = new MemoryMetaService(defaultConfig.rootDir);
   const memoryService = new MemoryService(defaultConfig, metaService);
-  // projectPath: "" structurally disables project memory — the v1 scope
-  // restriction by construction, covering reads too so project-private notes never reach the
-  // provider (the runner's guard also rejects mutations explicitly for a
-  // clearer model-facing error).
+  const projectPath = resolveConsolidationProjectPath(workspace);
   const ctx: MemoryScopeContext = {
     runtime: null,
     checkoutCwd: "",
     workspaceId,
-    projectPath: "",
+    projectPath,
   };
 
   console.log(`\n=== Memory Consolidation (dream) ===\n`);

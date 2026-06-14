@@ -10,6 +10,7 @@
  * failed run logs and waits for the next trigger. Nothing here may block a
  * stream, compaction, archival, or app launch.
  */
+import { EventEmitter } from "events";
 import * as fsPromises from "node:fs/promises";
 import * as path from "node:path";
 import writeFileAtomic from "write-file-atomic";
@@ -17,6 +18,7 @@ import { z } from "zod";
 import type { LanguageModel } from "ai";
 import type { Result } from "@/common/types/result";
 
+import { MULTI_PROJECT_CONFIG_KEY } from "@/common/constants/multiProject";
 import {
   MEMORY_CONSOLIDATION_DEBOUNCE_MS,
   MEMORY_CONSOLIDATION_IDLE_MS,
@@ -27,6 +29,8 @@ import { EXPERIMENT_IDS } from "@/common/constants/experiments";
 import {
   MemoryConsolidationRecordSchema,
   type MemoryConsolidationRecordPayload,
+  type MemoryConsolidationStatusChangeEventPayload,
+  type MemoryConsolidationStatusPayload,
   type MemoryConsolidationTrigger,
 } from "@/common/orpc/schemas/memory";
 import { defaultModel } from "@/common/utils/ai/models";
@@ -54,8 +58,20 @@ export type MemoryConsolidationRecord = MemoryConsolidationRecordPayload;
  */
 const ConsolidationSidecarFileSchema = z.object({
   workspaces: z.record(z.string(), MemoryConsolidationRecordSchema),
+  projects: z.record(z.string(), MemoryConsolidationRecordSchema).optional(),
 });
-type ConsolidationSidecarFile = z.infer<typeof ConsolidationSidecarFileSchema>;
+interface ConsolidationSidecarFile {
+  workspaces: Record<string, MemoryConsolidationRecord>;
+  projects: Record<string, MemoryConsolidationRecord>;
+}
+
+interface MemoryConsolidationRunOptions {
+  /**
+   * Launch sweep sets this only after a scope-specific coverage check says the
+   * project sidecar record, not the workspace record, is the debounce anchor.
+   */
+  skipWorkspaceDebounce?: boolean;
+}
 
 interface ExperimentsCheck {
   isExperimentEnabled(experimentId: string): boolean;
@@ -93,9 +109,9 @@ export function resolveDreamModelString(config: Config, workspaceId: string): st
  * (global agent scope) shadows the built-in definition, like any other agent.
  * `muxRoot` is Config.rootDir — NOT a hardcoded ~/.mux — so dev builds
  * (~/.mux-dev), MUX_ROOT sandboxes, and tests all stay isolated.
- * Host-side read only — dream runs are runtime-independent in v1, so project
- * scope overrides (which need a live checkout) are deferred with project
- * memories. Shared with the debug CLI.
+ * Host-side read only — dream runs are runtime-independent, so project-scope
+ * agent overrides (which need a live checkout) are intentionally not resolved.
+ * Shared with the debug CLI.
  */
 export async function resolveDreamAgentBody(muxRoot: string): Promise<string | null> {
   const overridePath = path.join(muxRoot, "agents", "dream.md");
@@ -125,7 +141,23 @@ export async function resolveDreamAgentBody(muxRoot: string): Promise<string | n
   return dream?.body ?? null;
 }
 
-export class MemoryConsolidationService {
+export function resolveConsolidationProjectPath(workspace: {
+  projectPath: string;
+  attributionProjectPath?: string;
+  projects?: ReadonlyArray<{ projectPath: string }>;
+}): string {
+  // Task/fork multi-project workspaces can live under a real project bucket;
+  // only the workspace's actual project refs prove a single stable identity.
+  if (workspace.projectPath === MULTI_PROJECT_CONFIG_KEY) return "";
+  if ((workspace.projects?.length ?? 0) > 1) return "";
+  return (
+    workspace.projects?.[0]?.projectPath ??
+    workspace.attributionProjectPath ??
+    workspace.projectPath
+  );
+}
+
+export class MemoryConsolidationService extends EventEmitter {
   private readonly sidecarPath: string;
   /** Serializes sidecar read-modify-write cycles (journal persistence only). */
   private readonly locks = new MutexMap<string>();
@@ -144,6 +176,7 @@ export class MemoryConsolidationService {
     private readonly modelFactory: ModelFactoryLike,
     private readonly experiments: ExperimentsCheck
   ) {
+    super();
     this.sidecarPath = path.join(config.rootDir, "memory-consolidation.json");
   }
 
@@ -159,11 +192,12 @@ export class MemoryConsolidationService {
     try {
       const raw = await fsPromises.readFile(this.sidecarPath, "utf-8");
       const parsed = ConsolidationSidecarFileSchema.safeParse(JSON.parse(raw));
-      if (parsed.success) return parsed.data;
+      if (parsed.success)
+        return { workspaces: parsed.data.workspaces, projects: parsed.data.projects ?? {} };
     } catch {
       // Missing or corrupt — start fresh (the next save overwrites the file).
     }
-    return { workspaces: {} };
+    return { workspaces: {}, projects: {} };
   }
 
   async getRecord(workspaceId: string): Promise<MemoryConsolidationRecord | null> {
@@ -171,12 +205,48 @@ export class MemoryConsolidationService {
     return file.workspaces[workspaceId] ?? null;
   }
 
-  private async saveRecord(workspaceId: string, record: MemoryConsolidationRecord): Promise<void> {
+  async getStatus(workspaceId: string): Promise<MemoryConsolidationStatusPayload> {
+    const file = await this.load();
+    const workspace = this.config.findWorkspace(workspaceId);
+    const projectPath = workspace == null ? "" : resolveConsolidationProjectPath(workspace);
+    const globalRecord = Object.values(file.workspaces).reduce<MemoryConsolidationRecord | null>(
+      (latest, record) =>
+        latest === null || record.lastRunAt > latest.lastRunAt ? record : latest,
+      null
+    );
+    return {
+      workspaceRecord: file.workspaces[workspaceId] ?? null,
+      projectRecord: projectPath === "" ? null : (file.projects[projectPath] ?? null),
+      globalRecord,
+      projectAvailable: projectPath !== "",
+    };
+  }
+
+  private emitStatusChange(workspaceId: string, projectPath: string): void {
+    const event: MemoryConsolidationStatusChangeEventPayload = {
+      kind: "consolidation_status",
+      workspaceId,
+      projectPath,
+    };
+    this.emit("statusChange", event);
+  }
+
+  private async saveRecord(
+    workspaceId: string,
+    projectPath: string,
+    record: MemoryConsolidationRecord
+  ): Promise<void> {
     await this.locks.withLock(this.sidecarPath, async () => {
       const file = await this.load();
       file.workspaces[workspaceId] = record;
+      if (projectPath !== "") {
+        file.projects[projectPath] = record;
+      }
       await writeFileAtomic(this.sidecarPath, JSON.stringify(file, null, 2));
     });
+    // The sidecar write does not touch memory files, so open Memory tabs need
+    // this explicit status invalidation even when a run made zero mutations.
+    this.emitStatusChange(workspaceId, projectPath);
   }
 
   /**
@@ -185,7 +255,8 @@ export class MemoryConsolidationService {
    */
   async maybeRun(
     workspaceId: string,
-    trigger: MemoryConsolidationTrigger
+    trigger: MemoryConsolidationTrigger,
+    options: MemoryConsolidationRunOptions = {}
   ): Promise<Result<MemoryConsolidationRecord, string>> {
     if (!this.enabled()) return Err("memory-consolidation experiment is disabled");
     const active = this.inFlight.get(workspaceId);
@@ -196,7 +267,7 @@ export class MemoryConsolidationService {
       // housekeeping and may be dropped.
       if (trigger !== "archive") return Err("a consolidation run is already in flight");
       await active.catch(() => undefined);
-      return this.maybeRun(workspaceId, trigger);
+      return this.maybeRun(workspaceId, trigger, options);
     }
     // Reserve the run lock in the same synchronous frame as the check above:
     // the awaits in runLocked (sidecar read, agent body, model creation) are
@@ -204,7 +275,7 @@ export class MemoryConsolidationService {
     // check and start a second concurrent run over the same directories.
     // runLocked executes synchronously up to its first await, so the map is
     // populated before any other caller can observe it.
-    const run = this.runLocked(workspaceId, trigger);
+    const run = this.runLocked(workspaceId, trigger, options);
     this.inFlight.set(workspaceId, run);
     try {
       return await run;
@@ -216,13 +287,14 @@ export class MemoryConsolidationService {
   /** The actual run; only ever invoked by maybeRun while holding the lock. */
   private async runLocked(
     workspaceId: string,
-    trigger: MemoryConsolidationTrigger
+    trigger: MemoryConsolidationTrigger,
+    options: MemoryConsolidationRunOptions
   ): Promise<Result<MemoryConsolidationRecord, string>> {
     // Manual runs bypass debounce (an explicit /dream is explicit intent).
     // Archive too: it is the workspace's one-shot final pass — the only
     // chance to promote durable lessons to global scope — and archival
     // typically follows a compaction-triggered run within the window.
-    if (trigger !== "manual" && trigger !== "archive") {
+    if (trigger !== "manual" && trigger !== "archive" && options.skipWorkspaceDebounce !== true) {
       const record = await this.getRecord(workspaceId);
       if (record !== null && Date.now() - record.lastRunAt < MEMORY_CONSOLIDATION_DEBOUNCE_MS) {
         return Err("debounced: a recent consolidation run already covered this workspace");
@@ -244,16 +316,12 @@ export class MemoryConsolidationService {
       return Err(`could not create model ${modelString}: ${modelResult.error.type}`);
     }
 
-    // v1 consolidation scopes are workspace + global: projectPath stays "" so
-    // project memory is structurally disabled — including for reads, which
-    // bypass the tool's mutation guard. A dream pass must never ship
-    // project-private notes to the provider (PRD #3534). The stopped-runtime
-    // case also works: no live checkout is needed.
+    const projectPath = resolveConsolidationProjectPath(workspace);
     const ctx: MemoryScopeContext = {
       runtime: null,
       checkoutCwd: "",
       workspaceId,
-      projectPath: "",
+      projectPath,
     };
 
     const result = await runMemoryConsolidation({
@@ -283,7 +351,7 @@ export class MemoryConsolidationService {
       ops: result.ops,
       usage: result.usage,
     };
-    await this.saveRecord(workspaceId, record);
+    await this.saveRecord(workspaceId, projectPath, record);
     log.debug("[MemoryConsolidation] run complete", {
       workspaceId,
       trigger,
@@ -346,15 +414,29 @@ export class MemoryConsolidationService {
       ...Object.values(sidecar.workspaces).map((record) => record.lastRunAt)
     );
     const archivedById = new Map<string, boolean>();
-    for (const project of this.config.loadConfigOrDefault().projects.values()) {
+    const projectPathByWorkspace = new Map<string, string>();
+    for (const [configProjectPath, project] of this.config.loadConfigOrDefault().projects) {
       for (const workspace of project.workspaces) {
         if (workspace.id === undefined) continue;
         archivedById.set(
           workspace.id,
           isWorkspaceArchived(workspace.archivedAt, workspace.unarchivedAt)
         );
+        projectPathByWorkspace.set(
+          workspace.id,
+          resolveConsolidationProjectPath({
+            projectPath: configProjectPath,
+            projects: workspace.projects,
+          })
+        );
       }
     }
+    const projectLastRunAt = new Map<string, number>(
+      Object.entries(sidecar.projects).map(([projectPath, record]) => [
+        projectPath,
+        record.lastRunAt,
+      ])
+    );
 
     let started = 0;
     for (const [workspaceId, recency] of recencyByWorkspace) {
@@ -362,33 +444,69 @@ export class MemoryConsolidationService {
       if (now - recency < MEMORY_CONSOLIDATION_IDLE_MS) continue;
       if (archivedById.get(workspaceId) === true) continue;
       const lastRunAt = sidecar.workspaces[workspaceId]?.lastRunAt ?? 0;
-      // "Writes since last run": any workspace-scope entry for this workspace
-      // (or any global entry newer than the newest run anywhere) qualifies.
-      // Prefix is derived via memoryLogicalKey (relPath "" =>
-      // "workspace:<id>:") so the encoding always matches the meta key scheme.
+      const projectPath = projectPathByWorkspace.get(workspaceId) ?? "";
+      const projectRunAt = projectPath === "" ? 0 : (projectLastRunAt.get(projectPath) ?? 0);
+      // "Writes since last run": any workspace-scope entry for this workspace,
+      // project-scope entry for its single-project identity, or global entry
+      // newer than the newest run anywhere qualifies.
+      // Prefixes are derived via memoryLogicalKey (relPath "" =>
+      // "<scope>:<id>:") so the encoding always matches the meta key scheme.
       const workspaceKeyPrefix = memoryLogicalKey("workspace", "", {
         projectPath: "",
         workspaceId,
       });
-      let hasNewWrites = false;
+      const projectKeyPrefix =
+        projectPath === ""
+          ? null
+          : memoryLogicalKey("project", "", {
+              projectPath,
+              workspaceId,
+            });
+      let hasWorkspaceWrites = false;
+      let hasProjectWrites = false;
+      let hasGlobalWrites = false;
       for (const [key, entry] of meta) {
         if (entry.lastWriteAt === null) continue;
         if (key.startsWith(workspaceKeyPrefix) && entry.lastWriteAt > lastRunAt) {
-          hasNewWrites = true;
-          break;
+          hasWorkspaceWrites = true;
+          continue;
+        }
+        if (
+          projectKeyPrefix !== null &&
+          key.startsWith(projectKeyPrefix) &&
+          entry.lastWriteAt > projectRunAt
+        ) {
+          hasProjectWrites = true;
+          continue;
         }
         if (key.startsWith("global:") && entry.lastWriteAt > globalLastRunAt) {
-          hasNewWrites = true;
-          break;
+          hasGlobalWrites = true;
         }
       }
-      if (!hasNewWrites) continue;
+      if (!hasWorkspaceWrites && !hasProjectWrites && !hasGlobalWrites) continue;
+      // Project coverage is anchored separately from workspace coverage. Recent
+      // legacy workspace-only records must not debounce away the first project
+      // pass, but once project coverage exists, project-only writes obey the
+      // project debounce anchor before another sibling spends a provider run.
+      const projectDebounceAllowsRun =
+        hasProjectWrites && now - projectRunAt >= MEMORY_CONSOLIDATION_DEBOUNCE_MS;
+      const projectDebounceWouldSkip =
+        hasProjectWrites &&
+        !hasWorkspaceWrites &&
+        !hasGlobalWrites &&
+        projectRunAt !== 0 &&
+        now - projectRunAt < MEMORY_CONSOLIDATION_DEBOUNCE_MS;
+      if (projectDebounceWouldSkip) continue;
+      const workspaceDebounceWouldSkip =
+        lastRunAt !== 0 && now - lastRunAt < MEMORY_CONSOLIDATION_DEBOUNCE_MS;
+      const skipWorkspaceDebounce = workspaceDebounceWouldSkip && projectDebounceAllowsRun;
+      if (workspaceDebounceWouldSkip && !skipWorkspaceDebounce) continue;
       started++;
       // Sequential, not parallel: the sweep is background housekeeping and
       // must not stampede the provider on launch.
-      const result = await this.maybeRun(workspaceId, "launch").catch((error: unknown) =>
-        Err(getErrorMessage(error))
-      );
+      const result = await this.maybeRun(workspaceId, "launch", {
+        skipWorkspaceDebounce,
+      }).catch((error: unknown) => Err(getErrorMessage(error)));
       if (!result.success) {
         log.debug("[MemoryConsolidation] launch sweep skipped workspace", {
           workspaceId,
@@ -398,6 +516,9 @@ export class MemoryConsolidationService {
       }
       // This run covered global scope; later candidates in this sweep only
       // qualify via their own workspace writes or genuinely newer global ones.
+      if (projectPath !== "") {
+        projectLastRunAt.set(projectPath, result.data.lastRunAt);
+      }
       globalLastRunAt = Math.max(globalLastRunAt, result.data.lastRunAt);
     }
   }

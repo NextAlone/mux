@@ -3,10 +3,15 @@ import { describe, expect, it } from "bun:test";
 import * as fsPromises from "node:fs/promises";
 import * as path from "node:path";
 import { MockLanguageModelV3, simulateReadableStream } from "ai/test";
-import type { LanguageModelV3StreamPart } from "@ai-sdk/provider";
+import type { LanguageModelV3CallOptions, LanguageModelV3StreamPart } from "@ai-sdk/provider";
 
+import type { MemoryConsolidationStatusChangeEventPayload } from "@/common/orpc/schemas/memory";
+import { MULTI_PROJECT_CONFIG_KEY } from "@/common/constants/multiProject";
 import { EXPERIMENT_IDS } from "@/common/constants/experiments";
-import { MEMORY_CONSOLIDATION_LAUNCH_SWEEP_CAP } from "@/common/constants/memory";
+import {
+  MEMORY_CONSOLIDATION_DEBOUNCE_MS,
+  MEMORY_CONSOLIDATION_LAUNCH_SWEEP_CAP,
+} from "@/common/constants/memory";
 import { Ok } from "@/common/types/result";
 import { Config } from "@/node/config";
 import {
@@ -25,7 +30,18 @@ import { TestTempDir } from "./tools/testHelpers";
  * finishes without tool calls ("no changes needed" run).
  */
 
-function scriptedModel(): MockLanguageModelV3 {
+function userPromptText(options: LanguageModelV3CallOptions): string {
+  const parts: string[] = [];
+  for (const message of options.prompt) {
+    if (message.role !== "user") continue;
+    for (const part of message.content) {
+      if (part.type === "text") parts.push(part.text);
+    }
+  }
+  return parts.join("\n");
+}
+
+function scriptedModel(capturePrompt?: (prompt: string) => void): MockLanguageModelV3 {
   // Chunk list typed explicitly: simulateReadableStream's inferred union
   // otherwise collapses optional fields and fails LanguageModelV3 assignment.
   const chunks: LanguageModelV3StreamPart[] = [
@@ -42,7 +58,10 @@ function scriptedModel(): MockLanguageModelV3 {
     },
   ];
   return new MockLanguageModelV3({
-    doStream: () => Promise.resolve({ stream: simulateReadableStream({ chunks }) }),
+    doStream: (options) => {
+      capturePrompt?.(userPromptText(options));
+      return Promise.resolve({ stream: simulateReadableStream({ chunks }) });
+    },
   });
 }
 
@@ -51,16 +70,63 @@ function scriptedModel(): MockLanguageModelV3 {
  * mid-flight (an `error` chunk part alone would not reach consumeStream's
  * onError — real connection failures reject the stream).
  */
-function failingScriptedModel(): MockLanguageModelV3 {
+function failingScriptedModel(capturePrompt?: (prompt: string) => void): MockLanguageModelV3 {
   return new MockLanguageModelV3({
-    doStream: () =>
-      Promise.resolve({
+    doStream: (options) => {
+      capturePrompt?.(userPromptText(options));
+      return Promise.resolve({
         stream: new ReadableStream<LanguageModelV3StreamPart>({
           pull(controller) {
             controller.error(new Error("provider exploded"));
           },
         }),
-      }),
+      });
+    },
+  });
+}
+
+function projectMutationModel(): MockLanguageModelV3 {
+  let streamCount = 0;
+  return new MockLanguageModelV3({
+    doStream: () => {
+      streamCount++;
+      const chunks: LanguageModelV3StreamPart[] =
+        streamCount === 1
+          ? [
+              {
+                type: "tool-call",
+                toolCallId: "project-write",
+                toolName: "memory",
+                input: JSON.stringify({
+                  command: "create",
+                  path: "/memories/project/should-not-exist.md",
+                  file_text: "must not be written\n",
+                }),
+              },
+              {
+                type: "finish",
+                finishReason: { unified: "tool-calls", raw: "tool-calls" },
+                usage: {
+                  inputTokens: { total: 1, noCache: 1, cacheRead: 0, cacheWrite: 0 },
+                  outputTokens: { total: 1, text: 0, reasoning: 0 },
+                },
+              },
+            ]
+          : [
+              { type: "text-start", id: "t1" },
+              { type: "text-delta", id: "t1", delta: "project write attempted" },
+              { type: "text-end", id: "t1" },
+              {
+                type: "finish",
+                finishReason: { unified: "stop", raw: "stop" },
+                usage: {
+                  inputTokens: { total: 1, noCache: 1, cacheRead: 0, cacheWrite: 0 },
+                  outputTokens: { total: 1, text: 1, reasoning: 0 },
+                },
+              },
+            ];
+      return Promise.resolve({ stream: simulateReadableStream({ chunks }) });
+    },
   });
 }
 
@@ -70,15 +136,18 @@ interface Fixture extends Disposable {
   service: MemoryConsolidationService;
   metaService: MemoryMetaService;
   modelCalls: number[];
+  modelPrompts: string[];
   setEnabled: (enabled: boolean) => void;
   /** When true, scripted runs emit a fatal stream error instead of finishing. */
   setStreamFailing: (failing: boolean) => void;
   addWorkspace: (id: string, opts?: { archivedAt?: string }) => Promise<void>;
+  addMultiProjectWorkspace: (id: string, opts?: { bucket?: string }) => Promise<void>;
 }
 
 async function createFixture(options?: {
   /** Holds every model run open until resolved (for in-flight race tests). */
   modelGate?: Promise<void>;
+  modelFactory?: () => MockLanguageModelV3;
 }): Promise<Fixture> {
   const tempDir = new TestTempDir("test-memory-consolidation-service");
   const muxHome = path.join(tempDir.path, "mux-home");
@@ -99,6 +168,8 @@ async function createFixture(options?: {
   let enabled = true;
   let streamFailing = false;
   const modelCalls: number[] = [];
+  const modelPrompts: string[] = [];
+  const capturePrompt = (prompt: string) => modelPrompts.push(prompt);
   const service = new MemoryConsolidationService(
     config,
     memoryService,
@@ -107,7 +178,10 @@ async function createFixture(options?: {
       createModel: async () => {
         modelCalls.push(Date.now());
         if (options?.modelGate) await options.modelGate;
-        return Ok(streamFailing ? failingScriptedModel() : scriptedModel());
+        return Ok(
+          options?.modelFactory?.() ??
+            (streamFailing ? failingScriptedModel(capturePrompt) : scriptedModel(capturePrompt))
+        );
       },
     },
     {
@@ -122,6 +196,7 @@ async function createFixture(options?: {
     service,
     metaService,
     modelCalls,
+    modelPrompts,
     setEnabled: (value) => {
       enabled = value;
     },
@@ -135,6 +210,26 @@ async function createFixture(options?: {
           name: id,
           path: `/projects/demo/${id}`,
           archivedAt: opts?.archivedAt,
+        });
+        return cfg;
+      });
+    },
+    addMultiProjectWorkspace: async (id, opts) => {
+      await config.editConfig((cfg) => {
+        const bucket = opts?.bucket ?? MULTI_PROJECT_CONFIG_KEY;
+        let project = cfg.projects.get(bucket);
+        if (project === undefined) {
+          project = { workspaces: [] };
+          cfg.projects.set(bucket, project);
+        }
+        project.workspaces.push({
+          id,
+          name: id,
+          path: `/projects/multi/${id}`,
+          projects: [
+            { projectName: "demo", projectPath: "/projects/demo" },
+            { projectName: "other", projectPath: "/projects/other" },
+          ],
         });
         return cfg;
       });
@@ -165,6 +260,111 @@ describe("MemoryConsolidationService", () => {
     expect(raw).toContain("ws-dream");
   });
 
+  it("emits status invalidation for successful no-op runs", async () => {
+    using fixture = await createFixture();
+    const events: MemoryConsolidationStatusChangeEventPayload[] = [];
+    fixture.service.on("statusChange", (event: MemoryConsolidationStatusChangeEventPayload) => {
+      events.push(event);
+    });
+
+    const result = await fixture.service.maybeRun("ws-dream", "manual");
+
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.ops).toHaveLength(0);
+    expect(events).toEqual([
+      {
+        kind: "consolidation_status",
+        workspaceId: "ws-dream",
+        projectPath: "/projects/demo",
+      },
+    ]);
+  });
+
+  it("records project coverage for single-project workspace runs", async () => {
+    using fixture = await createFixture();
+
+    const result = await fixture.service.maybeRun("ws-dream", "manual");
+    expect(result.success).toBe(true);
+
+    const raw = JSON.parse(
+      await fsPromises.readFile(path.join(fixture.muxHome, "memory-consolidation.json"), "utf-8")
+    ) as { projects?: Record<string, unknown> };
+    expect(raw.projects?.["/projects/demo"]).toBeDefined();
+  });
+
+  it("does not record project coverage for multi-project workspace runs", async () => {
+    using fixture = await createFixture();
+    await fixture.addMultiProjectWorkspace("ws-multi");
+
+    const result = await fixture.service.maybeRun("ws-multi", "manual");
+    expect(result.success).toBe(true);
+
+    const raw = JSON.parse(
+      await fsPromises.readFile(path.join(fixture.muxHome, "memory-consolidation.json"), "utf-8")
+    ) as { projects?: Record<string, unknown>; workspaces?: Record<string, unknown> };
+    expect(raw.workspaces?.["ws-multi"]).toBeDefined();
+    expect(raw.projects?.["/projects/demo"]).toBeUndefined();
+    expect(raw.projects?.["/projects/other"]).toBeUndefined();
+  });
+
+  it("disables project memory for multi-project workspace runs stored under a project bucket", async () => {
+    using fixture = await createFixture({ modelFactory: projectMutationModel });
+    await fixture.addMultiProjectWorkspace("ws-task", { bucket: "/projects/demo" });
+
+    const result = await fixture.service.maybeRun("ws-task", "manual");
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.ops).toHaveLength(1);
+      expect(result.data.ops[0]?.applied).toBe(false);
+      expect(result.data.ops[0]?.note).toContain("single-project");
+    }
+
+    const raw = JSON.parse(
+      await fsPromises.readFile(path.join(fixture.muxHome, "memory-consolidation.json"), "utf-8")
+    ) as { projects?: Record<string, unknown>; workspaces?: Record<string, unknown> };
+    expect(raw.workspaces?.["ws-task"]).toBeDefined();
+    expect(raw.projects?.["/projects/demo"]).toBeUndefined();
+
+    const status = await fixture.service.getStatus("ws-task");
+    expect(status.projectAvailable).toBe(false);
+    expect(status.projectRecord).toBeNull();
+  });
+
+  it("reports workspace, project, and global coverage separately", async () => {
+    using fixture = await createFixture();
+    await fixture.addWorkspace("ws-sibling");
+    expect((await fixture.service.maybeRun("ws-dream", "manual")).success).toBe(true);
+
+    const siblingStatus = await fixture.service.getStatus("ws-sibling");
+    expect(siblingStatus.workspaceRecord).toBeNull();
+    expect(siblingStatus.projectAvailable).toBe(true);
+    expect(siblingStatus.projectRecord?.trigger).toBe("manual");
+    expect(siblingStatus.globalRecord?.trigger).toBe("manual");
+  });
+
+  it("does not treat older workspace-only records as project coverage", async () => {
+    using fixture = await createFixture();
+    await fsPromises.writeFile(
+      path.join(fixture.muxHome, "memory-consolidation.json"),
+      JSON.stringify({
+        workspaces: {
+          "ws-dream": {
+            lastRunAt: Date.now(),
+            trigger: "manual",
+            summary: "old record",
+            ops: [],
+          },
+        },
+      })
+    );
+
+    const status = await fixture.service.getStatus("ws-dream");
+    expect(status.workspaceRecord?.summary).toBe("old record");
+    expect(status.projectAvailable).toBe(true);
+    expect(status.projectRecord).toBeNull();
+    expect(status.globalRecord?.summary).toBe("old record");
+  });
+
   it("debounces automatic triggers but lets manual and archive runs through", async () => {
     using fixture = await createFixture();
     expect((await fixture.service.maybeRun("ws-dream", "compaction")).success).toBe(true);
@@ -174,14 +374,41 @@ describe("MemoryConsolidationService", () => {
     if (!debounced.success) expect(debounced.error).toContain("debounced");
 
     // Archive bypasses debounce: it is the workspace's one-shot final pass
-    // (workspace→global promotion) and typically lands right after a
-    // compaction-triggered run anchored the debounce window.
+    // for promoting durable lessons to the narrowest available scope and
+    // typically lands right after a compaction-triggered run anchored the debounce window.
     const archive = await fixture.service.maybeRun("ws-dream", "archive");
     expect(archive.success).toBe(true);
 
     const manual = await fixture.service.maybeRun("ws-dream", "manual");
     expect(manual.success).toBe(true);
     expect(fixture.modelCalls).toHaveLength(3);
+  });
+
+  it("routes project-specific archive final-pass promotions to project memory when available", async () => {
+    using fixture = await createFixture();
+
+    const result = await fixture.service.maybeRun("ws-dream", "archive");
+    expect(result.success).toBe(true);
+
+    const prompt = fixture.modelPrompts.at(-1) ?? "";
+    expect(prompt).toMatch(/repo-specific[\s\S]*\/memories\/project\//);
+    expect(prompt).toMatch(/cross-project[\s\S]*\/memories\/global\//);
+    expect(prompt).not.toMatch(
+      /durable lessons from \/memories\/workspace\/\.\.\. to \/memories\/global\//
+    );
+  });
+
+  it("does not advertise project-scope promotion in archive final-pass prompts when unavailable", async () => {
+    using fixture = await createFixture();
+    await fixture.addMultiProjectWorkspace("ws-multi");
+
+    const result = await fixture.service.maybeRun("ws-multi", "archive");
+    expect(result.success).toBe(true);
+
+    const prompt = fixture.modelPrompts.at(-1) ?? "";
+    expect(prompt).not.toContain("/memories/project/");
+    expect(prompt).toMatch(/cross-project[\s\S]*\/memories\/global\//);
+    expect(prompt).toMatch(/not promote[\s\S]*project-specific[\s\S]*global/);
   });
 
   it("rejects a second trigger while a run is still in flight", async () => {
@@ -212,7 +439,7 @@ describe("MemoryConsolidationService", () => {
 
     const first = fixture.service.maybeRun("ws-dream", "compaction");
     // The archive caller never retries and only archive sets finalPass, so
-    // dropping it here would silently skip workspace→global promotion.
+    // dropping it here would silently skip final-scope promotion.
     const archive = fixture.service.maybeRun("ws-dream", "archive");
     const dropped = await fixture.service.maybeRun("ws-dream", "manual");
     expect(dropped.success).toBe(false);
@@ -340,6 +567,165 @@ describe("MemoryConsolidationService", () => {
     expect(
       await fixture.service.getRecord(`ws-extra-${MEMORY_CONSOLIDATION_LAUNCH_SWEEP_CAP}`)
     ).toBeNull();
+  });
+
+  it("a project-only write qualifies one sibling workspace per sweep", async () => {
+    using fixture = await createFixture();
+    await fixture.addWorkspace("ws-other");
+    const dayAgo = Date.now() - 25 * 60 * 60 * 1000;
+    await fixture.metaService.recordAccess(
+      memoryLogicalKey("project", "lesson.md", {
+        projectPath: "/projects/demo",
+        workspaceId: "ws-dream",
+      }),
+      { write: true }
+    );
+
+    await fixture.service.runLaunchSweep(
+      new Map([
+        ["ws-dream", dayAgo],
+        ["ws-other", dayAgo],
+      ])
+    );
+
+    expect(fixture.modelCalls).toHaveLength(1);
+  });
+
+  it("debounces project-only launch writes against recent project coverage", async () => {
+    using fixture = await createFixture();
+    await fixture.addWorkspace("ws-other");
+    const dayAgo = Date.now() - 25 * 60 * 60 * 1000;
+    const recentProjectRunAt = Date.now() - 60_000;
+    await fsPromises.writeFile(
+      path.join(fixture.muxHome, "memory-consolidation.json"),
+      JSON.stringify({
+        workspaces: {},
+        projects: {
+          "/projects/demo": {
+            lastRunAt: recentProjectRunAt,
+            trigger: "launch",
+            summary: "recent project coverage",
+            ops: [],
+          },
+        },
+      })
+    );
+    await fixture.metaService.recordAccess(
+      memoryLogicalKey("project", "new.md", {
+        projectPath: "/projects/demo",
+        workspaceId: "ws-dream",
+      }),
+      { write: true }
+    );
+
+    await fixture.service.runLaunchSweep(new Map([["ws-other", dayAgo]]));
+
+    expect(fixture.modelCalls).toHaveLength(0);
+  });
+
+  it("does not qualify real-bucket multi-project workspaces from project-only writes", async () => {
+    using fixture = await createFixture();
+    await fixture.addMultiProjectWorkspace("ws-task", { bucket: "/projects/demo" });
+    const dayAgo = Date.now() - 25 * 60 * 60 * 1000;
+    await fixture.metaService.recordAccess(
+      memoryLogicalKey("project", "lesson.md", {
+        projectPath: "/projects/demo",
+        workspaceId: "ws-task",
+      }),
+      { write: true }
+    );
+
+    await fixture.service.runLaunchSweep(new Map([["ws-task", dayAgo]]));
+
+    expect(fixture.modelCalls).toHaveLength(0);
+  });
+
+  it("recent legacy workspace-only records do not suppress first project launch coverage", async () => {
+    using fixture = await createFixture();
+    const recentWorkspaceRunAt = Date.now() - 60_000;
+    // Pre-project-memory sidecars only proved workspace/global coverage. Even a
+    // project write older than that legacy run still needs one project pass.
+    const projectWriteAt = recentWorkspaceRunAt - 1_000;
+    await fsPromises.writeFile(
+      path.join(fixture.muxHome, "memory-consolidation.json"),
+      JSON.stringify({
+        workspaces: {
+          "ws-dream": {
+            lastRunAt: recentWorkspaceRunAt,
+            trigger: "manual",
+            summary: "pre-project-memory record",
+            ops: [],
+          },
+        },
+      })
+    );
+    const logicalKey = memoryLogicalKey("project", "lesson.md", {
+      projectPath: "/projects/demo",
+      workspaceId: "ws-dream",
+    });
+    await fsPromises.writeFile(
+      path.join(fixture.muxHome, "memory-meta.json"),
+      JSON.stringify({
+        entries: {
+          [logicalKey]: {
+            pinned: false,
+            accessCount: 1,
+            lastAccessedAt: projectWriteAt,
+            lastWriteAt: projectWriteAt,
+          },
+        },
+      })
+    );
+
+    await fixture.service.runLaunchSweep(new Map([["ws-dream", Date.now() - 25 * 60 * 60 * 1000]]));
+
+    expect(fixture.modelCalls).toHaveLength(1);
+    const raw = JSON.parse(
+      await fsPromises.readFile(path.join(fixture.muxHome, "memory-consolidation.json"), "utf-8")
+    ) as { projects?: Record<string, unknown> };
+    expect(raw.projects?.["/projects/demo"]).toBeDefined();
+  });
+
+  it("does not spend the launch cap on candidates skipped by workspace debounce", async () => {
+    using fixture = await createFixture();
+    const dayAgo = Date.now() - 25 * 60 * 60 * 1000;
+    const recentRunAt = Date.now() - MEMORY_CONSOLIDATION_DEBOUNCE_MS + 60_000;
+    const debouncedIds = Array.from(
+      { length: MEMORY_CONSOLIDATION_LAUNCH_SWEEP_CAP },
+      (_, index) => `ws-debounced-${index}`
+    );
+    const sidecarWorkspaces: Record<string, unknown> = {};
+    const recency = new Map<string, number>();
+
+    for (const id of debouncedIds) {
+      await fixture.addWorkspace(id);
+      sidecarWorkspaces[id] = {
+        lastRunAt: recentRunAt,
+        trigger: "manual",
+        summary: "recent run",
+        ops: [],
+      };
+      await fixture.metaService.recordAccess(
+        memoryLogicalKey("workspace", "lesson.md", { projectPath: "", workspaceId: id }),
+        { write: true }
+      );
+      recency.set(id, dayAgo);
+    }
+    await fixture.addWorkspace("ws-eligible");
+    await fixture.metaService.recordAccess(
+      memoryLogicalKey("workspace", "lesson.md", { projectPath: "", workspaceId: "ws-eligible" }),
+      { write: true }
+    );
+    recency.set("ws-eligible", dayAgo);
+    await fsPromises.writeFile(
+      path.join(fixture.muxHome, "memory-consolidation.json"),
+      JSON.stringify({ workspaces: sidecarWorkspaces })
+    );
+
+    await fixture.service.runLaunchSweep(recency);
+
+    expect(fixture.modelCalls).toHaveLength(1);
+    expect((await fixture.service.getRecord("ws-eligible"))?.trigger).toBe("launch");
   });
 
   it("a global-only write qualifies a single covering run per sweep, not one per workspace", async () => {

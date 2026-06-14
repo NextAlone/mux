@@ -6,8 +6,8 @@
  * no chat history, no UI events) whose only tool is a guarded memory tool.
  *
  * Rails live HERE in code, not in the agent prompt:
- * - scope restriction: v1 consolidates workspace + global only (host-local,
- *   runtime-independent); project-scope mutations are rejected
+ * - scope restriction: consolidates workspace + global, plus project when the
+ *   run has a single stable project identity
  * - pin protection: pinned files may be edited, never deleted or renamed —
  *   including via a delete/rename of an ancestor directory (subtree check)
  * - op budget: at most MEMORY_CONSOLIDATION_OP_BUDGET mutating commands per
@@ -99,16 +99,14 @@ export function createConsolidationMemoryTool(args: {
   let mutationCount = 0;
 
   const guard = async (target: MutationTarget): Promise<string | null> => {
-    // v1 scope restriction — whitelist, not blacklist, so scopes added later
-    // stay out of bounds by default. Project memory is private project state
-    // this background pass has no business rewriting. Defer it to a later phase
-    // if product semantics call for it.
+    // Whitelist, not blacklist, so scopes added later stay out of bounds by default.
+    // Project memory is available only when the workspace has one stable project identity.
     for (const virtualPath of [target.path, target.newPath]) {
       if (virtualPath == null) continue;
       const { scope } = parseMemoryPath(virtualPath);
-      if (scope !== "workspace" && scope !== "global") {
-        return `Consolidation may not modify ${virtualPath}: only /memories/workspace/... and /memories/global/... are in scope for this run.`;
-      }
+      if (scope === "workspace" || scope === "global") continue;
+      if (scope === "project" && ctx.projectPath !== "") continue;
+      return `Consolidation may not modify ${virtualPath}: project memory is available only for single-project runs; this run can modify /memories/workspace/... and /memories/global/....`;
     }
     // Pin protection: pinned files are editable but never deleted/renamed.
     // Deletes/renames may target a directory (MemoryService removes
@@ -116,7 +114,10 @@ export function createConsolidationMemoryTool(args: {
     // pinned — otherwise `delete dir/` would silently destroy dir/pinned.md.
     if (target.command === "delete" || target.command === "rename") {
       const { scope, relPath } = parseMemoryPath(target.path);
-      assert(scope === "workspace" || scope === "global", "guard scope check must run first");
+      assert(
+        scope === "workspace" || scope === "project" || scope === "global",
+        "guard scope check must run first"
+      );
       const entries = await metaService.getEntries();
       const key = memoryLogicalKey(scope, relPath, {
         projectPath: ctx.projectPath,
@@ -201,7 +202,8 @@ export async function runMemoryConsolidation(args: {
   dryRun: boolean;
   /**
    * Archive trigger: instructs the agent that this is the workspace's final
-   * pass, unlocking workspace→global promotion of durable lessons (PRD #3534).
+   * pass, so durable lessons must be moved to the narrowest available scope
+   * before workspace memory is deleted (PRD #3534).
    */
   finalPass?: boolean;
   abortSignal?: AbortSignal;
@@ -216,14 +218,19 @@ export async function runMemoryConsolidation(args: {
     journal,
   });
 
+  const finalPassPrompt =
+    args.finalPass !== true
+      ? ""
+      : args.ctx.projectPath === ""
+        ? " This is the FINAL pass for an archived workspace: preserve only cross-project user preferences or environment facts in /memories/global/... before workspace memory is deleted. Project memory is unavailable for this run; do not promote project-specific lessons to global memory."
+        : " This is the FINAL pass for an archived workspace: promote durable workspace lessons before workspace memory is deleted. Move repo-specific lessons to /memories/project/... and only cross-project user preferences or environment facts to /memories/global/....";
+
   const stream = streamText({
     model: args.model,
     system: args.agentBody,
     prompt:
       "Run a memory-consolidation pass now. Survey the memory directories, then apply the highest-value cleanups within budget." +
-      (args.finalPass === true
-        ? " This is the FINAL pass for an archived workspace: promote durable lessons from /memories/workspace/... to /memories/global/... before they are lost."
-        : ""),
+      finalPassPrompt,
     tools: { memory: memoryTool },
     stopWhen: stepCountIs(MEMORY_CONSOLIDATION_MAX_STEPS),
     abortSignal: args.abortSignal,
