@@ -101,7 +101,10 @@ import type {
 } from "@/common/orpc/types";
 
 import type { z } from "zod";
-import type { SendMessageError } from "@/common/types/errors";
+import type { SendMessageError, StreamErrorType } from "@/common/types/errors";
+// Aliased to avoid clashing with the private `formatSendMessageError` string formatter below.
+import { formatSendMessageError as classifySendMessageError } from "@/node/services/utils/sendMessageError";
+import type { IdleCompactionOutcome } from "@/node/services/idleCompactionService";
 import type {
   FrontendWorkspaceMetadata,
   GitStatus,
@@ -488,6 +491,11 @@ function isArchiveLossyUntrackedFilesConfirmation(
 
 const WORKSPACE_IDLE_WAIT_CANCELED_MESSAGE =
   "Workflow start canceled while waiting for workspace to become idle.";
+
+// Returned by sendMessage when an idle-only (requireIdle) send is skipped because the
+// workspace became active. This is an expected race, not a compaction failure, so the
+// idle-compaction loop must not count it toward suppression.
+const IDLE_ONLY_BUSY_SKIP_MESSAGE = "Workspace is busy; idle-only send was skipped.";
 
 async function waitForAgentSessionIdle(session: AgentSession, signal?: AbortSignal): Promise<void> {
   assert(session instanceof AgentSession, "waitForAgentSessionIdle requires an AgentSession");
@@ -1480,6 +1488,13 @@ export class WorkspaceService extends EventEmitter {
   // can tag the stream, letting the frontend suppress notifications for maintenance work.
   private readonly idleCompactingWorkspaces = new Set<string>();
 
+  // Reports the terminal outcome of an idle compaction (success or failure, including
+  // mid-stream failures like model_not_found) back to IdleCompactionService so it can
+  // stop re-attempting a persistently failing workspace. Wired in ServiceContainer.
+  private idleCompactionOutcomeListener:
+    | ((workspaceId: string, outcome: IdleCompactionOutcome) => void)
+    | undefined;
+
   // Blocks new sends while a context reset is committing its durable boundary and cleanup.
   private readonly resettingContextWorkspaces = new Set<string>();
 
@@ -1765,7 +1780,9 @@ export class WorkspaceService extends EventEmitter {
       isWorkspaceEvent(v) &&
       (!("metadata" in (v as Record<string, unknown>)) || isObj((v as StreamEndEvent).metadata));
     const isStreamAbortEvent = (v: unknown): v is StreamAbortEvent => isWorkspaceEvent(v);
-    const isErrorEvent = (v: unknown): v is { workspaceId: string; error: string } =>
+    const isErrorEvent = (
+      v: unknown
+    ): v is { workspaceId: string; error: string; errorType?: StreamErrorType } =>
       isWorkspaceEvent(v) && "error" in v && typeof (v as { error: unknown }).error === "string";
     const isToolCallEndEvent = (v: unknown): v is ToolCallEndEvent =>
       isWorkspaceEvent(v) &&
@@ -1813,6 +1830,14 @@ export class WorkspaceService extends EventEmitter {
 
     this.aiService.on("error", (data: unknown) => {
       if (isErrorEvent(data)) {
+        // Read the idle-compaction marker before stopStreamingStatus clears it, so a
+        // mid-stream failure (e.g. provider rejecting the compaction model) stops the loop.
+        if (this.idleCompactingWorkspaces.has(data.workspaceId)) {
+          this.reportIdleCompactionOutcome(data.workspaceId, {
+            success: false,
+            modelNotFound: data.errorType === "model_not_found",
+          });
+        }
         void this.stopStreamingStatus(data.workspaceId);
         void this.workspaceGoalService?.applyPendingAfterStreamEnd(data.workspaceId);
       }
@@ -1998,6 +2023,10 @@ export class WorkspaceService extends EventEmitter {
     const generation = this.streamingGenerations.get(workspaceId) ?? 0;
     const isIdleCompaction = this.idleCompactingWorkspaces.has(workspaceId);
 
+    // Note: idle-compaction success/failure is reported from onIdleCompactionOutcome
+    // (after the summary is actually persisted), not here — a clean provider stream-end
+    // does not guarantee the post-stream history compaction succeeded.
+
     // Idle compaction is maintenance work, so preserve the pre-existing recency.
     // That keeps the workspace from jumping to the top of the sidebar and also
     // prevents the background activity path from treating compaction as a fresh response.
@@ -2171,6 +2200,16 @@ export class WorkspaceService extends EventEmitter {
         // Compaction marks a long session with accumulated learnings: harvest
         // the compacted epoch first, then let Dream sweep/merge the candidates.
         this.memoryConsolidationService?.triggerHarvestThenSweepInBackground(metadata);
+      },
+      onIdleCompactionOutcome: (success) => {
+        // Reports the *persisted* idle-compaction outcome (success only after the summary
+        // is written; failure on post-stream persistence errors). Reporting on actual
+        // persistence — not the provider stream-end — keeps the idle loop's failure streak
+        // accurate. A persistence failure is not a model error, so modelNotFound is false.
+        this.reportIdleCompactionOutcome(
+          workspaceId,
+          success ? { success: true } : { success: false, modelNotFound: false }
+        );
       },
       onPostCompactionStateChange: () => {
         this.schedulePostCompactionMetadataRefresh(workspaceId);
@@ -6602,7 +6641,7 @@ export class WorkspaceService extends EventEmitter {
         if (internal?.requireIdle) {
           return Err({
             type: "unknown",
-            raw: "Workspace is busy; idle-only send was skipped.",
+            raw: IDLE_ONLY_BUSY_SKIP_MESSAGE,
           });
         }
 
@@ -8392,6 +8431,21 @@ export class WorkspaceService extends EventEmitter {
   }
 
   /**
+   * Register the callback that receives terminal idle-compaction outcomes.
+   * Wired by ServiceContainer to forward outcomes to IdleCompactionService so the
+   * idle loop can stop re-attempting a persistently failing workspace.
+   */
+  setIdleCompactionOutcomeListener(
+    listener: (workspaceId: string, outcome: IdleCompactionOutcome) => void
+  ): void {
+    this.idleCompactionOutcomeListener = listener;
+  }
+
+  private reportIdleCompactionOutcome(workspaceId: string, outcome: IdleCompactionOutcome): void {
+    this.idleCompactionOutcomeListener?.(workspaceId, outcome);
+  }
+
+  /**
    * Execute idle compaction for a workspace directly from the backend.
    *
    * This path is frontend-independent: compaction still runs even if no UI is open.
@@ -8416,9 +8470,8 @@ export class WorkspaceService extends EventEmitter {
 
     const session = this.getOrCreateSession(workspaceId);
     if (session.isBusy()) {
-      throw new Error(
-        "Failed to execute idle compaction: Workspace is busy; idle-only send was skipped."
-      );
+      // Expected race (workspace became active), not a failure — do not report an outcome.
+      throw new Error(`Failed to execute idle compaction: ${IDLE_ONLY_BUSY_SKIP_MESSAGE}`);
     }
 
     const sendResult = await this.sendMessage(
@@ -8451,6 +8504,18 @@ export class WorkspaceService extends EventEmitter {
                 ? rawError.type
                 : JSON.stringify(rawError)
           : String(rawError);
+      // Report genuine pre-stream failures (e.g. invalid/unavailable compaction model) so the
+      // idle loop can stop re-attempting this workspace. Mid-stream failures are reported
+      // separately from the stream error/completion listeners. The requireIdle busy-skip is an
+      // expected race (workspace became active), so it must NOT count toward suppression.
+      const isBusySkip =
+        sendResult.error.type === "unknown" && sendResult.error.raw === IDLE_ONLY_BUSY_SKIP_MESSAGE;
+      if (!isBusySkip) {
+        this.reportIdleCompactionOutcome(workspaceId, {
+          success: false,
+          modelNotFound: classifySendMessageError(sendResult.error).errorType === "model_not_found",
+        });
+      }
       throw new Error(`Failed to execute idle compaction: ${formattedError}`);
     }
 
