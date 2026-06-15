@@ -9,8 +9,64 @@ import { getErrorMessage } from "@/common/utils/errors";
 import { createDisplayUsage } from "@/common/utils/tokens/displayUsage";
 import { log } from "@/node/services/log";
 import { toUtcDateString } from "@/node/services/analytics/dateUtils";
+import { CHAT_ARCHIVE_FILE_NAME } from "@/common/constants/paths";
 
 export const CHAT_FILE_NAME = "chat.jsonl";
+
+/**
+ * Sealed pre-boundary history rotates from chat.jsonl into chat-archive.jsonl
+ * (see HistoryService). Analytics must consider both files or pre-compaction
+ * usage/events would silently disappear after the first rotation.
+ *
+ * Returns null only when NEITHER file exists (no workspace history) — an
+ * archive-only session must keep its analytics state.
+ *
+ * - `mtimeMs` is the max across both files; use it for "which copy is newer"
+ *   recency comparisons (rebuild dedup winners).
+ * - `changeSignal` additionally folds in each file's size and presence, so the
+ *   watermark staleness check still fires when a file disappears even if the
+ *   surviving file's mtime equals the previously stored max (e.g. same-tick
+ *   writes followed by deleting chat.jsonl).
+ */
+async function statSessionChatHistory(
+  sessionDir: string
+): Promise<{ mtimeMs: number; changeSignal: number } | null> {
+  let mtimeMs: number | null = null;
+  let changeSignal = 0;
+  for (const fileName of [CHAT_FILE_NAME, CHAT_ARCHIVE_FILE_NAME]) {
+    try {
+      const stat = await fs.stat(path.join(sessionDir, fileName));
+      mtimeMs = mtimeMs === null ? stat.mtimeMs : Math.max(mtimeMs, stat.mtimeMs);
+      changeSignal += stat.mtimeMs + stat.size;
+    } catch (error) {
+      if (!(isRecord(error) && error.code === "ENOENT")) {
+        throw error;
+      }
+      changeSignal -= 1; // presence marker: distinguishes a missing file
+    }
+  }
+
+  return mtimeMs === null ? null : { mtimeMs, changeSignal };
+}
+
+/**
+ * Read full workspace history: sealed archive (older) followed by chat.jsonl.
+ * Either file may be missing (uncompacted or archive-only sessions).
+ */
+async function readSessionChatHistoryContents(sessionDir: string): Promise<string> {
+  let contents = "";
+  for (const fileName of [CHAT_ARCHIVE_FILE_NAME, CHAT_FILE_NAME]) {
+    try {
+      contents += await fs.readFile(path.join(sessionDir, fileName), "utf-8");
+    } catch (error) {
+      if (!(isRecord(error) && error.code === "ENOENT")) {
+        throw error;
+      }
+    }
+  }
+
+  return contents;
+}
 const METADATA_FILE_NAME = "metadata.json";
 const SUBAGENT_TRANSCRIPTS_DIR_NAME = "subagent-transcripts";
 const SESSION_USAGE_FILE_NAME = "session-usage.json";
@@ -269,7 +325,7 @@ interface ParsedWorkspaceData {
   workspaceId: string;
   sessionDir: string;
   events: IngestEvent[];
-  stat: { mtimeMs: number };
+  stat: { mtimeMs: number; changeSignal: number };
   workspaceMeta: WorkspaceMeta;
   delegationRollupRaw: DelegationRollupRaw;
   archivedTranscripts: ParsedWorkspaceData[];
@@ -1009,19 +1065,11 @@ export async function ingestWorkspace(
   assert(workspaceId.trim().length > 0, "ingestWorkspace: workspaceId is required");
   assert(sessionDir.trim().length > 0, "ingestWorkspace: sessionDir is required");
 
-  const chatPath = path.join(sessionDir, CHAT_FILE_NAME);
-
-  let stat: Awaited<ReturnType<typeof fs.stat>>;
-  try {
-    stat = await fs.stat(chatPath);
-  } catch (error) {
-    if (isRecord(error) && error.code === "ENOENT") {
-      // Remove stale analytics state when the workspace history file no longer exists.
-      await clearWorkspaceAnalyticsState(conn, workspaceId);
-      return;
-    }
-
-    throw error;
+  const stat = await statSessionChatHistory(sessionDir);
+  if (stat === null) {
+    // Remove stale analytics state when the workspace history file no longer exists.
+    await clearWorkspaceAnalyticsState(conn, workspaceId);
+    return;
   }
 
   const watermark = await readWatermark(conn, workspaceId);
@@ -1031,11 +1079,15 @@ export async function ingestWorkspace(
   // Keep delegation rollups fresh even when chat.jsonl is unchanged.
   await ingestDelegationRollups(conn, workspaceId, sessionDir, workspaceMeta);
 
-  if (stat.mtimeMs <= watermark.lastModified) {
+  // Skip only when the combined change signal (mtimes + sizes + presence) is
+  // unchanged. Any append/rewrite/rotation/file-deletion changes the signal, so
+  // ingestion re-runs and the rebuild path can drop stale rows — even when the
+  // surviving file's mtime equals the previously stored value.
+  if (stat.changeSignal === watermark.lastModified) {
     return;
   }
 
-  const chatContents = await fs.readFile(chatPath, "utf-8");
+  const chatContents = await readSessionChatHistoryContents(sessionDir);
   const lines = chatContents.split("\n").filter((line) => line.trim().length > 0);
 
   let responseIndex = 0;
@@ -1104,7 +1156,7 @@ export async function ingestWorkspace(
 
     await writeWatermark(conn, workspaceId, {
       lastSequence: parsedMaxSequence ?? -1,
-      lastModified: stat.mtimeMs,
+      lastModified: stat.changeSignal,
     });
   } else {
     let maxSequence = watermark.lastSequence;
@@ -1125,7 +1177,7 @@ export async function ingestWorkspace(
 
     await writeWatermark(conn, workspaceId, {
       lastSequence: maxSequence,
-      lastModified: stat.mtimeMs,
+      lastModified: stat.changeSignal,
     });
   }
 
@@ -1450,22 +1502,15 @@ export async function parseWorkspaceFromDisk(
   assert(workspaceId.trim().length > 0, "parseWorkspaceFromDisk: workspaceId is required");
   assert(sessionDir.trim().length > 0, "parseWorkspaceFromDisk: sessionDir is required");
 
-  const chatPath = path.join(sessionDir, CHAT_FILE_NAME);
-
-  let stat: Awaited<ReturnType<typeof fs.stat>>;
-  try {
-    stat = await fs.stat(chatPath);
-  } catch (error) {
-    if (isRecord(error) && error.code === "ENOENT") {
-      return null;
-    }
-    throw error;
+  const stat = await statSessionChatHistory(sessionDir);
+  if (stat === null) {
+    return null;
   }
 
   const persistedMeta = await readWorkspaceMetaFromDisk(sessionDir);
   const workspaceMeta = mergeWorkspaceMeta(persistedMeta, suppliedMeta);
 
-  const chatContents = await fs.readFile(chatPath, "utf-8");
+  const chatContents = await readSessionChatHistoryContents(sessionDir);
   const lines = chatContents.split("\n").filter((line) => line.trim().length > 0);
 
   let responseIndex = 0;
@@ -1504,7 +1549,7 @@ export async function parseWorkspaceFromDisk(
     workspaceId,
     sessionDir,
     events,
-    stat: { mtimeMs: stat.mtimeMs },
+    stat: { mtimeMs: stat.mtimeMs, changeSignal: stat.changeSignal },
     workspaceMeta,
     delegationRollupRaw,
     archivedTranscripts,
@@ -1650,7 +1695,9 @@ export async function rebuildAll(
           const maxSequence = getMaxSequence(workspace.events) ?? -1;
           await writeWatermark(conn, workspace.workspaceId, {
             lastSequence: maxSequence,
-            lastModified: workspace.stat.mtimeMs,
+            // Watermark staleness compares against the combined change signal,
+            // not the raw mtime (which is only used for dedup-winner recency).
+            lastModified: workspace.stat.changeSignal,
           });
 
           await writeDelegationRollupsFromParsed(

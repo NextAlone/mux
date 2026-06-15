@@ -867,6 +867,120 @@ describe("ingestWorkspace", () => {
     expect(refreshedHeadRows[0].tool_name).toBe("bash");
     expect(Number(refreshedHeadRows[0].total_cost_usd)).toBeCloseTo(originalHeadTotalCostUsd, 12);
   });
+
+  test("ingests sealed pre-boundary rows from chat-archive.jsonl", async () => {
+    const conn = await createTestConn();
+    const sessionDir = await createTempSessionDir();
+    const workspaceId = "ws-with-archive";
+
+    // HistoryService rotation moves pre-boundary rows into chat-archive.jsonl;
+    // analytics must read both files or pre-compaction usage disappears.
+    await fs.writeFile(
+      path.join(sessionDir, "chat-archive.jsonl"),
+      [makeUserLine(), makeAssistantLine({ sequence: 1, inputTokens: 11 })].join("\n") + "\n"
+    );
+    await writeChatJsonl(sessionDir, [
+      makeUserLine(),
+      makeAssistantLine({ sequence: 3, inputTokens: 33 }),
+    ]);
+
+    await ingestWorkspace(conn, workspaceId, sessionDir, { projectPath: "/proj" });
+
+    expect(await queryEventCount(conn, workspaceId)).toBe(2);
+    const rows = await queryRows(
+      conn,
+      "SELECT input_tokens FROM events WHERE workspace_id = ? ORDER BY input_tokens",
+      [workspaceId]
+    );
+    expect(rows.map((row) => Number(row.input_tokens))).toEqual([11, 33]);
+  });
+
+  test("reingests when the active file disappears leaving an older archive", async () => {
+    const conn = await createTestConn();
+    const sessionDir = await createTempSessionDir();
+    const workspaceId = "ws-mtime-regression";
+
+    const archivePath = path.join(sessionDir, "chat-archive.jsonl");
+    await fs.writeFile(
+      archivePath,
+      [makeUserLine(), makeAssistantLine({ sequence: 1, inputTokens: 11 })].join("\n") + "\n"
+    );
+    // Make the archive strictly older than chat.jsonl so the watermark is based
+    // on the active file's mtime.
+    const olderTime = new Date(Date.now() - 60_000);
+    await fs.utimes(archivePath, olderTime, olderTime);
+    await writeChatJsonl(sessionDir, [
+      makeUserLine(),
+      makeAssistantLine({ sequence: 3, inputTokens: 33 }),
+    ]);
+
+    await ingestWorkspace(conn, workspaceId, sessionDir, { projectPath: "/proj" });
+    expect(await queryEventCount(conn, workspaceId)).toBe(2);
+
+    // Deleting chat.jsonl regresses the combined mtime to the older archive's.
+    // Ingestion must still re-run and drop the removed active epoch's rows.
+    await fs.rm(path.join(sessionDir, CHAT_FILE_NAME));
+    await ingestWorkspace(conn, workspaceId, sessionDir, { projectPath: "/proj" });
+
+    const rows = await queryRows(
+      conn,
+      "SELECT input_tokens FROM events WHERE workspace_id = ? ORDER BY input_tokens",
+      [workspaceId]
+    );
+    expect(rows.map((row) => Number(row.input_tokens))).toEqual([11]);
+  });
+
+  test("reingests when chat.jsonl disappears even if the archive mtime matches the stored max", async () => {
+    const conn = await createTestConn();
+    const sessionDir = await createTempSessionDir();
+    const workspaceId = "ws-same-tick-deletion";
+
+    const archivePath = path.join(sessionDir, "chat-archive.jsonl");
+    const chatPath = path.join(sessionDir, CHAT_FILE_NAME);
+    await fs.writeFile(
+      archivePath,
+      [makeUserLine(), makeAssistantLine({ sequence: 1, inputTokens: 11 })].join("\n") + "\n"
+    );
+    await writeChatJsonl(sessionDir, [
+      makeUserLine(),
+      makeAssistantLine({ sequence: 3, inputTokens: 33 }),
+    ]);
+    // Same-tick rotation: both files share an identical mtime, so the max mtime
+    // alone cannot detect the active file's later disappearance.
+    const sharedTime = new Date(Date.now() - 60_000);
+    await fs.utimes(archivePath, sharedTime, sharedTime);
+    await fs.utimes(chatPath, sharedTime, sharedTime);
+
+    await ingestWorkspace(conn, workspaceId, sessionDir, { projectPath: "/proj" });
+    expect(await queryEventCount(conn, workspaceId)).toBe(2);
+
+    await fs.rm(chatPath);
+    await ingestWorkspace(conn, workspaceId, sessionDir, { projectPath: "/proj" });
+
+    const rows = await queryRows(
+      conn,
+      "SELECT input_tokens FROM events WHERE workspace_id = ? ORDER BY input_tokens",
+      [workspaceId]
+    );
+    expect(rows.map((row) => Number(row.input_tokens))).toEqual([11]);
+  });
+
+  test("keeps analytics for archive-only sessions (missing chat.jsonl)", async () => {
+    const conn = await createTestConn();
+    const sessionDir = await createTempSessionDir();
+    const workspaceId = "ws-archive-only";
+
+    // An archive-only session (active file deleted/truncated) still has history;
+    // it must be ingested rather than treated as a removed workspace.
+    await fs.writeFile(
+      path.join(sessionDir, "chat-archive.jsonl"),
+      [makeUserLine(), makeAssistantLine({ sequence: 1, inputTokens: 11 })].join("\n") + "\n"
+    );
+
+    await ingestWorkspace(conn, workspaceId, sessionDir, { projectPath: "/proj" });
+
+    expect(await queryEventCount(conn, workspaceId)).toBe(1);
+  });
 });
 
 describe("readPersistedWorkspaceHeadSignature", () => {
