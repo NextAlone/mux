@@ -39,6 +39,7 @@ const DEFAULT_CONSOLIDATION_STATUS: MemoryConsolidationStatusPayload = {
   workspaceRecord: null,
   projectRecord: null,
   globalRecord: null,
+  latestHarvestRecord: null,
   projectAvailable: true,
 };
 
@@ -277,6 +278,7 @@ describe("MemoryTab", () => {
         },
         projectRecord: null,
         globalRecord: null,
+        latestHarvestRecord: null,
         projectAvailable: true,
       },
     });
@@ -288,6 +290,33 @@ describe("MemoryTab", () => {
     // Native title tooltips are rendered by the OS and appear in addition to our
     // portaled app tooltip, so this block must not expose one.
     expect(statusBlock!.getAttribute("title")).toBeNull();
+  });
+
+  test("renders failed harvest errors inline for keyboard and screen reader access", async () => {
+    fake = createFakeMemoryApi([], {
+      consolidationStatus: {
+        workspaceRecord: null,
+        projectRecord: null,
+        globalRecord: null,
+        projectAvailable: true,
+        latestHarvestRecord: {
+          status: "failed",
+          startedAt: Date.now(),
+          completedAt: Date.now(),
+          attemptCount: 1,
+          boundaryKey: "summary-1",
+          compactionEpoch: 1,
+          acceptedCandidates: 0,
+          skippedCandidates: 0,
+          error: "harvest provider failed",
+        },
+      },
+    });
+    const { findByRole } = render(<MemoryTab workspaceId="ws-1" />);
+
+    expect((await findByRole("alert")).textContent).toContain(
+      "Harvest error: harvest provider failed"
+    );
   });
 
   test("shows usage stats for used files and omits them for never-used files", async () => {

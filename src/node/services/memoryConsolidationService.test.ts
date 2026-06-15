@@ -5,6 +5,8 @@ import * as path from "node:path";
 import { MockLanguageModelV3, simulateReadableStream } from "ai/test";
 import type { LanguageModelV3CallOptions, LanguageModelV3StreamPart } from "@ai-sdk/provider";
 
+import type { CompactionCompletionMetadata } from "@/common/types/compaction";
+import { createMuxMessage } from "@/common/types/message";
 import type { MemoryConsolidationStatusChangeEventPayload } from "@/common/orpc/schemas/memory";
 import { MULTI_PROJECT_CONFIG_KEY } from "@/common/constants/multiProject";
 import { EXPERIMENT_IDS } from "@/common/constants/experiments";
@@ -20,6 +22,7 @@ import {
   resolveDreamModelString,
 } from "./memoryConsolidationService";
 import { memoryLogicalKey, MemoryMetaService } from "./memoryMeta";
+import { HistoryService } from "./historyService";
 import { MemoryService } from "./memoryService";
 import { TestTempDir } from "./tools/testHelpers";
 
@@ -60,6 +63,59 @@ function scriptedModel(capturePrompt?: (prompt: string) => void): MockLanguageMo
   return new MockLanguageModelV3({
     doStream: (options) => {
       capturePrompt?.(userPromptText(options));
+      return Promise.resolve({ stream: simulateReadableStream({ chunks }) });
+    },
+  });
+}
+
+function harvestCandidateModel(): MockLanguageModelV3 {
+  let streamCount = 0;
+  return new MockLanguageModelV3({
+    doStream: (options) => {
+      streamCount++;
+      const prompt = userPromptText(options);
+      const isHarvest = prompt.includes("just-compacted transcript epoch");
+      const chunks: LanguageModelV3StreamPart[] =
+        isHarvest && streamCount === 1
+          ? [
+              {
+                type: "tool-call",
+                toolCallId: "harvest-candidate",
+                toolName: "submit_memory_candidates",
+                input: JSON.stringify({
+                  candidates: [
+                    {
+                      category: "preference",
+                      memoryText: "The user prefers concise tests.",
+                      evidenceMessageIds: ["pref-1"],
+                      confidence: 0.95,
+                      rationale: "Explicit preference in the compacted epoch.",
+                    },
+                  ],
+                }),
+              },
+              {
+                type: "finish",
+                finishReason: { unified: "tool-calls", raw: "tool-calls" },
+                usage: {
+                  inputTokens: { total: 1, noCache: 1, cacheRead: 0, cacheWrite: 0 },
+                  outputTokens: { total: 1, text: 0, reasoning: 0 },
+                },
+              },
+            ]
+          : [
+              { type: "text-start", id: "t1" },
+              { type: "text-delta", id: "t1", delta: "no changes needed" },
+              { type: "text-end", id: "t1" },
+              {
+                type: "finish",
+                finishReason: { unified: "stop", raw: "stop" },
+                usage: {
+                  inputTokens: { total: 1, noCache: 1, cacheRead: 0, cacheWrite: 0 },
+                  outputTokens: { total: 1, text: 1, reasoning: 0 },
+                },
+              },
+            ];
       return Promise.resolve({ stream: simulateReadableStream({ chunks }) });
     },
   });
@@ -134,6 +190,8 @@ interface Fixture extends Disposable {
   muxHome: string;
   config: Config;
   service: MemoryConsolidationService;
+  historyService: HistoryService;
+  memoryService: MemoryService;
   metaService: MemoryMetaService;
   modelCalls: number[];
   modelPrompts: string[];
@@ -162,6 +220,7 @@ async function createFixture(options?: {
     return cfg;
   });
 
+  const historyService = new HistoryService(config);
   const metaService = new MemoryMetaService(muxHome);
   const memoryService = new MemoryService(config, metaService);
 
@@ -174,6 +233,7 @@ async function createFixture(options?: {
     config,
     memoryService,
     metaService,
+    historyService,
     {
       createModel: async () => {
         modelCalls.push(Date.now());
@@ -194,6 +254,8 @@ async function createFixture(options?: {
     muxHome,
     config,
     service,
+    historyService,
+    memoryService,
     metaService,
     modelCalls,
     modelPrompts,
@@ -237,6 +299,38 @@ async function createFixture(options?: {
     [Symbol.dispose]() {
       tempDir[Symbol.dispose]();
     },
+  };
+}
+
+async function seedCompactionEpoch(
+  fixture: Fixture,
+  workspaceId = "ws-dream"
+): Promise<CompactionCompletionMetadata> {
+  await fixture.historyService.appendToHistory(
+    workspaceId,
+    createMuxMessage("pref-1", "user", "Please remember that I prefer concise tests.")
+  );
+  await fixture.historyService.appendToHistory(
+    workspaceId,
+    createMuxMessage("compact-request", "user", "Please compact", {
+      muxMetadata: { type: "compaction-request", rawCommand: "/compact", parsed: {} },
+    })
+  );
+  const summary = createMuxMessage("summary-1", "assistant", "The user prefers concise tests.", {
+    compactionBoundary: true,
+    compacted: "user",
+    compactionEpoch: 1,
+  });
+  await fixture.historyService.appendToHistory(workspaceId, summary);
+
+  const summaryHistorySequence = summary.metadata?.historySequence;
+  expect(typeof summaryHistorySequence).toBe("number");
+  return {
+    workspaceId,
+    summaryMessageId: "summary-1",
+    summaryHistorySequence: summaryHistorySequence ?? -1,
+    compactionEpoch: 1,
+    compactionRequestMessageId: "compact-request",
   };
 }
 
@@ -363,6 +457,562 @@ describe("MemoryConsolidationService", () => {
     expect(status.projectAvailable).toBe(true);
     expect(status.projectRecord).toBeNull();
     expect(status.globalRecord?.summary).toBe("old record");
+  });
+
+  it("preserves consolidation status when a harvest sidecar record is malformed", async () => {
+    using fixture = await createFixture();
+    await fsPromises.writeFile(
+      path.join(fixture.muxHome, "memory-consolidation.json"),
+      JSON.stringify({
+        workspaces: {
+          "ws-dream": {
+            lastRunAt: 123,
+            trigger: "manual",
+            summary: "valid workspace record",
+            ops: [],
+          },
+        },
+        projects: {
+          "/projects/demo": {
+            lastRunAt: 124,
+            trigger: "manual",
+            summary: "valid project record",
+            ops: [],
+          },
+        },
+        harvestsByWorkspace: {
+          "ws-dream": {
+            broken: { status: "bogus" },
+          },
+        },
+      })
+    );
+
+    const status = await fixture.service.getStatus("ws-dream");
+
+    expect(status.workspaceRecord?.summary).toBe("valid workspace record");
+    expect(status.projectRecord?.summary).toBe("valid project record");
+    expect(status.latestHarvestRecord).toBeNull();
+  });
+
+  it("harvests a compaction boundary before running the dream sweep", async () => {
+    using fixture = await createFixture({ modelFactory: harvestCandidateModel });
+    const metadata = await seedCompactionEpoch(fixture);
+
+    const result = await fixture.service.maybeHarvestThenSweep(metadata);
+
+    expect(result.success).toBe(true);
+    expect(fixture.modelCalls).toHaveLength(2);
+    const file = await fixture.memoryService.readFileWithSha(
+      { runtime: null, checkoutCwd: "", workspaceId: "ws-dream", projectPath: "/projects/demo" },
+      "/memories/workspace/harvest/summary-1.md"
+    );
+    expect(file.success).toBe(true);
+    if (file.success) expect(file.data.content).toContain("concise tests");
+
+    const status = await fixture.service.getStatus("ws-dream");
+    expect(status.workspaceRecord?.trigger).toBe("compaction");
+    expect(status.latestHarvestRecord?.status).toBe("completed");
+  });
+
+  it("prunes old harvest sidecar records while preserving the newest status", async () => {
+    using fixture = await createFixture({ modelFactory: harvestCandidateModel });
+    const metadata = await seedCompactionEpoch(fixture);
+    const oldRecords = Object.fromEntries(
+      Array.from({ length: 25 }, (_, index) => [
+        `old-${index}`,
+        {
+          status: "completed",
+          startedAt: index,
+          completedAt: index,
+          attemptCount: 1,
+          boundaryKey: `old-${index}`,
+          compactionEpoch: index,
+          acceptedCandidates: 0,
+          skippedCandidates: 0,
+        },
+      ])
+    );
+    await fsPromises.writeFile(
+      path.join(fixture.muxHome, "memory-consolidation.json"),
+      JSON.stringify({ workspaces: {}, harvestsByWorkspace: { "ws-dream": oldRecords } })
+    );
+
+    expect((await fixture.service.maybeHarvestThenSweep(metadata)).success).toBe(true);
+
+    const raw = JSON.parse(
+      await fsPromises.readFile(path.join(fixture.muxHome, "memory-consolidation.json"), "utf-8")
+    ) as { harvestsByWorkspace?: Record<string, Record<string, unknown>> };
+    const records = raw.harvestsByWorkspace?.["ws-dream"] ?? {};
+    expect(Object.keys(records).length).toBeLessThanOrEqual(20);
+    expect(records[metadata.summaryMessageId]).toBeDefined();
+    expect((await fixture.service.getStatus("ws-dream")).latestHarvestRecord?.boundaryKey).toBe(
+      metadata.summaryMessageId
+    );
+  });
+
+  it("coalesces duplicate harvest requests for the same compaction boundary", async () => {
+    let releaseHarvest!: () => void;
+    const harvestReleased = new Promise<void>((resolve) => {
+      releaseHarvest = resolve;
+    });
+    let markHarvestStarted!: () => void;
+    const harvestStarted = new Promise<void>((resolve) => {
+      markHarvestStarted = resolve;
+    });
+    let harvestStreamCount = 0;
+    using fixture = await createFixture({
+      modelFactory: () =>
+        new MockLanguageModelV3({
+          doStream: (options) => {
+            const isHarvest = userPromptText(options).includes("just-compacted transcript epoch");
+            if (isHarvest) {
+              harvestStreamCount++;
+              markHarvestStarted();
+              return Promise.resolve({
+                stream: new ReadableStream<LanguageModelV3StreamPart>({
+                  async pull(controller) {
+                    await harvestReleased;
+                    controller.enqueue({
+                      type: "finish",
+                      finishReason: { unified: "stop", raw: "stop" },
+                      usage: {
+                        inputTokens: { total: 1, noCache: 1, cacheRead: 0, cacheWrite: 0 },
+                        outputTokens: { total: 0, text: 0, reasoning: 0 },
+                      },
+                    });
+                    controller.close();
+                  },
+                }),
+              });
+            }
+            return Promise.resolve({
+              stream: simulateReadableStream({
+                chunks: [
+                  { type: "text-start", id: "t1" },
+                  { type: "text-delta", id: "t1", delta: "no changes needed" },
+                  { type: "text-end", id: "t1" },
+                  {
+                    type: "finish",
+                    finishReason: { unified: "stop", raw: "stop" },
+                    usage: {
+                      inputTokens: { total: 1, noCache: 1, cacheRead: 0, cacheWrite: 0 },
+                      outputTokens: { total: 1, text: 1, reasoning: 0 },
+                    },
+                  },
+                ],
+              }),
+            });
+          },
+        }),
+    });
+    const metadata = await seedCompactionEpoch(fixture);
+
+    const first = fixture.service.maybeHarvestThenSweep(metadata);
+    await harvestStarted;
+    const second = fixture.service.maybeHarvestThenSweep(metadata);
+    expect(harvestStreamCount).toBe(1);
+
+    releaseHarvest();
+    expect((await first).success).toBe(true);
+    expect((await second).success).toBe(true);
+    expect(fixture.modelCalls).toHaveLength(2);
+  });
+
+  it("queues the post-harvest compaction sweep behind an active sweep", async () => {
+    let releaseFirstSweep!: () => void;
+    const firstSweepReleased = new Promise<void>((resolve) => {
+      releaseFirstSweep = resolve;
+    });
+    let markFirstSweepStarted!: () => void;
+    const firstSweepStarted = new Promise<void>((resolve) => {
+      markFirstSweepStarted = resolve;
+    });
+    let sweepStreamCount = 0;
+    using fixture = await createFixture({
+      modelFactory: () =>
+        new MockLanguageModelV3({
+          doStream: (options) => {
+            const prompt = userPromptText(options);
+            if (!prompt.includes("just-compacted transcript epoch")) {
+              sweepStreamCount++;
+              if (sweepStreamCount === 1) {
+                markFirstSweepStarted();
+                return Promise.resolve({
+                  stream: new ReadableStream<LanguageModelV3StreamPart>({
+                    async pull(controller) {
+                      await firstSweepReleased;
+                      controller.enqueue({ type: "text-start", id: "t1" });
+                      controller.enqueue({ type: "text-delta", id: "t1", delta: "first sweep" });
+                      controller.enqueue({ type: "text-end", id: "t1" });
+                      controller.enqueue({
+                        type: "finish",
+                        finishReason: { unified: "stop", raw: "stop" },
+                        usage: {
+                          inputTokens: { total: 1, noCache: 1, cacheRead: 0, cacheWrite: 0 },
+                          outputTokens: { total: 1, text: 1, reasoning: 0 },
+                        },
+                      });
+                      controller.close();
+                    },
+                  }),
+                });
+              }
+            }
+            const chunks: LanguageModelV3StreamPart[] = prompt.includes(
+              "just-compacted transcript epoch"
+            )
+              ? [
+                  {
+                    type: "tool-call",
+                    toolCallId: "harvest-candidate",
+                    toolName: "submit_memory_candidates",
+                    input: JSON.stringify({
+                      candidates: [
+                        {
+                          category: "preference",
+                          memoryText: "The user prefers concise tests.",
+                          evidenceMessageIds: ["pref-1"],
+                          confidence: 0.95,
+                          rationale: "Explicit preference in the compacted epoch.",
+                        },
+                      ],
+                    }),
+                  },
+                  {
+                    type: "finish",
+                    finishReason: { unified: "tool-calls", raw: "tool-calls" },
+                    usage: {
+                      inputTokens: { total: 1, noCache: 1, cacheRead: 0, cacheWrite: 0 },
+                      outputTokens: { total: 1, text: 0, reasoning: 0 },
+                    },
+                  },
+                ]
+              : [
+                  { type: "text-start", id: "t1" },
+                  { type: "text-delta", id: "t1", delta: "second sweep" },
+                  { type: "text-end", id: "t1" },
+                  {
+                    type: "finish",
+                    finishReason: { unified: "stop", raw: "stop" },
+                    usage: {
+                      inputTokens: { total: 1, noCache: 1, cacheRead: 0, cacheWrite: 0 },
+                      outputTokens: { total: 1, text: 1, reasoning: 0 },
+                    },
+                  },
+                ];
+            return Promise.resolve({ stream: simulateReadableStream({ chunks }) });
+          },
+        }),
+    });
+    const metadata = await seedCompactionEpoch(fixture);
+
+    const activeSweep = fixture.service.maybeRun("ws-dream", "manual");
+    await firstSweepStarted;
+    const harvestThenSweep = fixture.service.maybeHarvestThenSweep(metadata);
+
+    releaseFirstSweep();
+    expect((await activeSweep).success).toBe(true);
+    expect((await harvestThenSweep).success).toBe(true);
+    expect(sweepStreamCount).toBe(2);
+    expect(fixture.modelCalls).toHaveLength(3);
+  });
+
+  it("runs an archive final pass after harvest if the workspace is archived mid-harvest", async () => {
+    let releaseHarvest!: () => void;
+    const harvestReleased = new Promise<void>((resolve) => {
+      releaseHarvest = resolve;
+    });
+    let markHarvestStarted!: () => void;
+    const harvestStarted = new Promise<void>((resolve) => {
+      markHarvestStarted = resolve;
+    });
+    using fixture = await createFixture({
+      modelFactory: () =>
+        new MockLanguageModelV3({
+          doStream: (options) => {
+            const isHarvest = userPromptText(options).includes("just-compacted transcript epoch");
+            if (isHarvest) {
+              markHarvestStarted();
+              return Promise.resolve({
+                stream: new ReadableStream<LanguageModelV3StreamPart>({
+                  async pull(controller) {
+                    await harvestReleased;
+                    controller.enqueue({
+                      type: "finish",
+                      finishReason: { unified: "stop", raw: "stop" },
+                      usage: {
+                        inputTokens: { total: 1, noCache: 1, cacheRead: 0, cacheWrite: 0 },
+                        outputTokens: { total: 0, text: 0, reasoning: 0 },
+                      },
+                    });
+                    controller.close();
+                  },
+                }),
+              });
+            }
+            return Promise.resolve({
+              stream: simulateReadableStream({
+                chunks: [
+                  { type: "text-start", id: "t1" },
+                  { type: "text-delta", id: "t1", delta: "sweep" },
+                  { type: "text-end", id: "t1" },
+                  {
+                    type: "finish",
+                    finishReason: { unified: "stop", raw: "stop" },
+                    usage: {
+                      inputTokens: { total: 1, noCache: 1, cacheRead: 0, cacheWrite: 0 },
+                      outputTokens: { total: 1, text: 1, reasoning: 0 },
+                    },
+                  },
+                ],
+              }),
+            });
+          },
+        }),
+    });
+    const metadata = await seedCompactionEpoch(fixture);
+
+    const harvestThenSweep = fixture.service.maybeHarvestThenSweep(metadata);
+    await harvestStarted;
+    await fixture.config.editConfig((cfg) => {
+      const workspace = cfg.projects
+        .get("/projects/demo")
+        ?.workspaces.find((entry) => entry.id === "ws-dream");
+      if (workspace === undefined) throw new Error("missing test workspace");
+      workspace.archivedAt = new Date().toISOString();
+      return cfg;
+    });
+    const archive = fixture.service.maybeRun("ws-dream", "archive");
+
+    releaseHarvest();
+    expect((await archive).success).toBe(true);
+    const result = await harvestThenSweep;
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.trigger).toBe("archive");
+  });
+
+  it("does not re-harvest a completed compaction boundary on a later trigger", async () => {
+    let harvestStreamCount = 0;
+    using fixture = await createFixture({
+      modelFactory: () => {
+        let harvestResponded = false;
+        return new MockLanguageModelV3({
+          doStream: (options) => {
+            const isHarvest = userPromptText(options).includes("just-compacted transcript epoch");
+            if (isHarvest && !harvestResponded) {
+              harvestResponded = true;
+              harvestStreamCount++;
+              return Promise.resolve({
+                stream: simulateReadableStream({
+                  chunks: [
+                    {
+                      type: "tool-call",
+                      toolCallId: "harvest-candidate",
+                      toolName: "submit_memory_candidates",
+                      input: JSON.stringify({
+                        candidates: [
+                          {
+                            category: "preference",
+                            memoryText: "The user prefers concise tests.",
+                            evidenceMessageIds: ["pref-1"],
+                            confidence: 0.95,
+                            rationale: "Explicit preference in the compacted epoch.",
+                          },
+                        ],
+                      }),
+                    },
+                    {
+                      type: "finish",
+                      finishReason: { unified: "tool-calls", raw: "tool-calls" },
+                      usage: {
+                        inputTokens: { total: 1, noCache: 1, cacheRead: 0, cacheWrite: 0 },
+                        outputTokens: { total: 1, text: 0, reasoning: 0 },
+                      },
+                    },
+                  ],
+                }),
+              });
+            }
+            return Promise.resolve({
+              stream: simulateReadableStream({
+                chunks: [
+                  { type: "text-start", id: "t1" },
+                  { type: "text-delta", id: "t1", delta: "sweep still ran" },
+                  { type: "text-end", id: "t1" },
+                  {
+                    type: "finish",
+                    finishReason: { unified: "stop", raw: "stop" },
+                    usage: {
+                      inputTokens: { total: 1, noCache: 1, cacheRead: 0, cacheWrite: 0 },
+                      outputTokens: { total: 1, text: 1, reasoning: 0 },
+                    },
+                  },
+                ],
+              }),
+            });
+          },
+        });
+      },
+    });
+    const metadata = await seedCompactionEpoch(fixture);
+
+    expect((await fixture.service.maybeHarvestThenSweep(metadata)).success).toBe(true);
+    expect((await fixture.service.maybeHarvestThenSweep(metadata)).success).toBe(true);
+
+    expect(harvestStreamCount).toBe(1);
+    expect(fixture.modelCalls).toHaveLength(3);
+  });
+
+  it("retries a failed harvest record without marking the boundary completed", async () => {
+    let harvestAttempts = 0;
+    using fixture = await createFixture({
+      modelFactory: () => {
+        let harvestResponded = false;
+        return new MockLanguageModelV3({
+          doStream: (options) => {
+            const isHarvest = userPromptText(options).includes("just-compacted transcript epoch");
+            if (isHarvest && !harvestResponded) {
+              harvestResponded = true;
+              harvestAttempts++;
+              if (harvestAttempts === 1) {
+                return Promise.resolve({
+                  stream: new ReadableStream<LanguageModelV3StreamPart>({
+                    pull(controller) {
+                      controller.error(new Error("harvest failed"));
+                    },
+                  }),
+                });
+              }
+              return Promise.resolve({
+                stream: simulateReadableStream({
+                  chunks: [
+                    {
+                      type: "tool-call",
+                      toolCallId: "harvest-candidate",
+                      toolName: "submit_memory_candidates",
+                      input: JSON.stringify({
+                        candidates: [
+                          {
+                            category: "preference",
+                            memoryText: "The user prefers concise tests.",
+                            evidenceMessageIds: ["pref-1"],
+                            confidence: 0.95,
+                            rationale: "Explicit preference in the compacted epoch.",
+                          },
+                        ],
+                      }),
+                    },
+                    {
+                      type: "finish",
+                      finishReason: { unified: "tool-calls", raw: "tool-calls" },
+                      usage: {
+                        inputTokens: { total: 1, noCache: 1, cacheRead: 0, cacheWrite: 0 },
+                        outputTokens: { total: 1, text: 0, reasoning: 0 },
+                      },
+                    },
+                  ],
+                }),
+              });
+            }
+            return Promise.resolve({
+              stream: simulateReadableStream({
+                chunks: [
+                  { type: "text-start", id: "t1" },
+                  { type: "text-delta", id: "t1", delta: "sweep still ran" },
+                  { type: "text-end", id: "t1" },
+                  {
+                    type: "finish",
+                    finishReason: { unified: "stop", raw: "stop" },
+                    usage: {
+                      inputTokens: { total: 1, noCache: 1, cacheRead: 0, cacheWrite: 0 },
+                      outputTokens: { total: 1, text: 1, reasoning: 0 },
+                    },
+                  },
+                ],
+              }),
+            });
+          },
+        });
+      },
+    });
+    const metadata = await seedCompactionEpoch(fixture);
+
+    expect((await fixture.service.maybeHarvestThenSweep(metadata)).success).toBe(true);
+    let status = await fixture.service.getStatus("ws-dream");
+    expect(status.latestHarvestRecord?.status).toBe("failed");
+    expect(status.latestHarvestRecord?.attemptCount).toBe(1);
+
+    expect((await fixture.service.maybeHarvestThenSweep(metadata)).success).toBe(true);
+    status = await fixture.service.getStatus("ws-dream");
+    expect(status.latestHarvestRecord?.status).toBe("completed");
+    expect(status.latestHarvestRecord?.attemptCount).toBe(2);
+    expect(harvestAttempts).toBe(2);
+  });
+
+  it("recovers retryable failed harvest records before a production sweep trigger", async () => {
+    using fixture = await createFixture({ modelFactory: harvestCandidateModel });
+    const metadata = await seedCompactionEpoch(fixture);
+    await fsPromises.writeFile(
+      path.join(fixture.muxHome, "memory-consolidation.json"),
+      JSON.stringify({
+        workspaces: {},
+        harvestsByWorkspace: {
+          "ws-dream": {
+            [metadata.summaryMessageId]: {
+              status: "failed",
+              startedAt: Date.now() - 10_000,
+              completedAt: Date.now() - 9_000,
+              attemptCount: 1,
+              boundaryKey: metadata.summaryMessageId,
+              compactionEpoch: metadata.compactionEpoch,
+              acceptedCandidates: 0,
+              skippedCandidates: 0,
+              error: "transient provider error",
+              completionMetadata: metadata,
+            },
+          },
+        },
+      })
+    );
+
+    expect((await fixture.service.maybeRun("ws-dream", "manual")).success).toBe(true);
+
+    const status = await fixture.service.getStatus("ws-dream");
+    expect(status.latestHarvestRecord?.status).toBe("completed");
+    expect(status.latestHarvestRecord?.attemptCount).toBe(2);
+    expect(fixture.modelCalls).toHaveLength(3);
+  });
+
+  it("normalizes stale max-attempt pending harvest records to failed", async () => {
+    using fixture = await createFixture({ modelFactory: harvestCandidateModel });
+    const metadata = await seedCompactionEpoch(fixture);
+    await fsPromises.writeFile(
+      path.join(fixture.muxHome, "memory-consolidation.json"),
+      JSON.stringify({
+        workspaces: {},
+        harvestsByWorkspace: {
+          "ws-dream": {
+            [metadata.summaryMessageId]: {
+              status: "pending",
+              startedAt: Date.now() - 10 * 60 * 1000,
+              attemptCount: 3,
+              boundaryKey: metadata.summaryMessageId,
+              compactionEpoch: metadata.compactionEpoch,
+              acceptedCandidates: 0,
+              skippedCandidates: 0,
+              completionMetadata: metadata,
+            },
+          },
+        },
+      })
+    );
+
+    expect((await fixture.service.maybeHarvestThenSweep(metadata)).success).toBe(true);
+
+    const status = await fixture.service.getStatus("ws-dream");
+    expect(status.latestHarvestRecord?.status).toBe("failed");
+    expect(status.latestHarvestRecord?.attemptCount).toBe(3);
   });
 
   it("debounces automatic triggers but lets manual and archive runs through", async () => {
