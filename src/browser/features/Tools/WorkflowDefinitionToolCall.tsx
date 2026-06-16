@@ -27,7 +27,7 @@ import {
   getStatusDisplay,
   isToolErrorResult,
   type ToolStatus,
-  useToolExpansion,
+  useAutoCollapsingToolExpansion,
 } from "./Shared/toolUtils";
 import { HighlightedCode, JsonHighlight } from "./Shared/HighlightedCode";
 
@@ -222,6 +222,18 @@ function isWorkflowReadSuccessResult(
   return value != null && !isToolErrorResult(value);
 }
 
+const AUTO_COLLAPSE_WORKFLOW_LOOKUP_STATUSES = new Set<ToolStatus>(["completed"]);
+
+export function useAutoCollapsingWorkflowLookup(status: ToolStatus) {
+  // Completed workflow lookup/action payloads can be bulky, so collapse them for
+  // transcript scanability without writing that automatic presentation choice to
+  // the user's sticky expansion preference. Header clicks still persist intent.
+  return useAutoCollapsingToolExpansion(true, {
+    autoCollapsed: AUTO_COLLAPSE_WORKFLOW_LOOKUP_STATUSES.has(status),
+    resetKey: undefined,
+  });
+}
+
 export function WorkflowLoadingState() {
   return (
     <div className="text-muted text-[11px] italic">
@@ -235,7 +247,7 @@ export const WorkflowListToolCall: React.FC<WorkflowListToolCallProps> = ({
   result,
   status = "pending",
 }) => {
-  const { expanded, toggleExpanded } = useToolExpansion(true);
+  const { expanded, toggleExpanded } = useAutoCollapsingWorkflowLookup(status);
   const errorResult = isToolErrorResult(result) ? result : null;
   const successResult = isWorkflowListSuccessResult(result) ? result : null;
   const workflows = successResult?.workflows ?? [];
@@ -276,7 +288,7 @@ export const WorkflowReadToolCall: React.FC<WorkflowReadToolCallProps> = ({
   result,
   status = "pending",
 }) => {
-  const { expanded, toggleExpanded } = useToolExpansion(true);
+  const { expanded, toggleExpanded } = useAutoCollapsingWorkflowLookup(status);
   const errorResult = isToolErrorResult(result) ? result : null;
   const successResult = isWorkflowReadSuccessResult(result) ? result : null;
 
