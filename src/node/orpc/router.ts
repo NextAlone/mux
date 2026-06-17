@@ -129,6 +129,7 @@ import {
   type WorkflowBackgroundRunTerminalEvent,
 } from "@/node/services/workflows/WorkflowService";
 import { WorkflowTaskServiceAdapter } from "@/node/services/workflows/WorkflowTaskServiceAdapter";
+import { WorkflowArgsValidationError } from "@/node/services/workflows/workflowArgs";
 import { resolveWorkflowScratchRoots } from "@/node/services/workflows/workflowScratchRoots";
 import { WORKFLOW_SCHEDULE_DEFAULT_CONTEXT_MODE } from "@/constants/workflowSchedule";
 import { validateWorkspaceName } from "@/common/utils/validation/workspaceValidation";
@@ -297,6 +298,13 @@ function assertDynamicWorkflowsEnabled(context: ORPCContext): void {
   }
 }
 
+function throwWorkflowStartOrpcError(error: unknown): never {
+  if (error instanceof WorkflowArgsValidationError) {
+    throw new ORPCError("BAD_REQUEST", { message: error.message });
+  }
+  throw error;
+}
+
 /** Server-side enforcement: memory.* routes reject while the experiment is off. */
 function assertMemoryEnabled(context: ORPCContext): void {
   if (!context.experimentsService.isExperimentEnabled(EXPERIMENT_IDS.MEMORY)) {
@@ -350,7 +358,11 @@ export async function resolveWorkflowContext(
     notifyInterruptedBackgroundRunTerminal?: boolean;
     projectPath?: string;
   } = {}
-): Promise<{ service: WorkflowService; projectTrusted: boolean }> {
+): Promise<{
+  service: WorkflowService;
+  projectTrusted: boolean;
+  workflowExecutionProjectPath: string;
+}> {
   assert(workspaceId.length > 0, "resolveWorkflowContext: workspaceId is required");
   assertDynamicWorkflowsEnabled(context);
   await context.aiService.waitForInit(workspaceId);
@@ -360,21 +372,24 @@ export async function resolveWorkflowContext(
   }
   const metadata = metadataResult.data;
   const requestedWorkflowProjectPath = options.projectPath?.trim();
-  const workflowProjectPath =
-    requestedWorkflowProjectPath != null && requestedWorkflowProjectPath.length > 0
-      ? requestedWorkflowProjectPath
-      : metadata.projectPath;
+  const hasRequestedWorkflowProjectPath =
+    requestedWorkflowProjectPath != null && requestedWorkflowProjectPath.length > 0;
+  const workflowProjectPath = hasRequestedWorkflowProjectPath
+    ? requestedWorkflowProjectPath
+    : metadata.projectPath;
   const projectTrusted = isTrustedProjectPath(context, workflowProjectPath);
   const runtime = createRuntimeForWorkspace(metadata);
   const workspaceRootPath = resolveWorkspaceRootPath(metadata, runtime);
-  const workspacePath =
-    options.projectPath != null
-      ? appendSubProjectRelativePath(
-          { ...metadata, subProjectPath: workflowProjectPath },
-          runtime,
-          workspaceRootPath
-        )
-      : workspaceRootPath;
+  const workflowExecutionProjectPath = hasRequestedWorkflowProjectPath
+    ? appendSubProjectRelativePath(
+        { ...metadata, subProjectPath: workflowProjectPath },
+        runtime,
+        workspaceRootPath
+      )
+    : appendSubProjectRelativePath(metadata, runtime, workspaceRootPath);
+  const workspacePath = hasRequestedWorkflowProjectPath
+    ? workflowExecutionProjectPath
+    : workspaceRootPath;
   const runtimeType = getRuntimeType(metadata.runtimeConfig);
   const useRuntimeProjectIO = shouldUseRuntimeWorkflowProjectIO(runtimeType);
   const disableHostWorkflowActions = shouldDisableHostWorkflowActions(runtimeType);
@@ -390,6 +405,7 @@ export async function resolveWorkflowContext(
   const workflowRuntimeTempDir = runtime.normalizePath(".mux/tmp", workspacePath);
 
   return {
+    workflowExecutionProjectPath,
     projectTrusted,
     service: new WorkflowService({
       definitionStore: new WorkflowDefinitionStore({
@@ -2136,21 +2152,22 @@ export const router = (authToken?: string) => {
               manualFollowUp: true,
             });
           }
-          const { service, projectTrusted } = await resolveWorkflowContext(
-            context,
-            input.workspaceId,
-            {
-              ...(onBackgroundRunTerminal != null ? { onBackgroundRunTerminal } : {}),
-            }
-          );
+          const { service, workflowExecutionProjectPath, projectTrusted } =
+            await resolveWorkflowContext(context, input.workspaceId, { onBackgroundRunTerminal });
           if (input.rawCommand != null) {
             await context.workspaceService.prepareManualWorkflowInvocation(input.workspaceId);
           }
+          // Slash workflow commands run from the active project/sub-project; expose that
+          // server-resolved context as schema defaults without adding hidden fields to
+          // persisted command args.
           const workflowStartArgs = {
             name: input.name,
             workspaceId: input.workspaceId,
             projectTrusted,
             args: input.args ?? {},
+            ...(input.rawCommand != null
+              ? { defaultArgs: { projectPath: workflowExecutionProjectPath } }
+              : {}),
           };
           const persistInvocation = async (details: {
             runId: string;
@@ -2175,15 +2192,20 @@ export const router = (authToken?: string) => {
               resolveInvocationPersistence(invocationMessagePersisted === true);
             }
           };
-          const result =
-            input.runInBackground === true
-              ? await service.startNamedWorkflowInBackground({
-                  ...workflowStartArgs,
-                  ...(input.rawCommand != null
-                    ? { onBackgroundRunCreated: persistInvocation }
-                    : {}),
-                })
-              : await service.startNamedWorkflow({ ...workflowStartArgs, abortSignal: signal });
+          let result: Awaited<ReturnType<typeof service.startNamedWorkflow>>;
+          try {
+            result =
+              input.runInBackground === true
+                ? await service.startNamedWorkflowInBackground({
+                    ...workflowStartArgs,
+                    ...(input.rawCommand != null
+                      ? { onBackgroundRunCreated: persistInvocation }
+                      : {}),
+                  })
+                : await service.startNamedWorkflow({ ...workflowStartArgs, abortSignal: signal });
+          } catch (error) {
+            throwWorkflowStartOrpcError(error);
+          }
           if (input.rawCommand == null) {
             return result;
           }

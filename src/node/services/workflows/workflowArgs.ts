@@ -6,6 +6,17 @@ export interface WorkflowArgsNormalizationResult {
   metadata: WorkflowMetadata | null;
 }
 
+export class WorkflowArgsValidationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "WorkflowArgsValidationError";
+  }
+}
+
+export interface WorkflowArgsNormalizationOptions {
+  defaultArgs?: Record<string, unknown>;
+}
+
 interface WorkflowMetadata {
   argsSchema?: Record<string, unknown>;
 }
@@ -31,14 +42,18 @@ const RAW_INPUT_FIELD = "input";
 
 export function normalizeWorkflowArgsForSource(
   definitionSource: string,
-  rawArgs: unknown
+  rawArgs: unknown,
+  options: WorkflowArgsNormalizationOptions = {}
 ): WorkflowArgsNormalizationResult {
   const metadata = parseWorkflowMetadata(definitionSource);
   if (metadata?.argsSchema == null) {
     return { args: rawArgs, metadata };
   }
 
-  return { args: normalizeWorkflowArgs(metadata.argsSchema, rawArgs), metadata };
+  return {
+    args: normalizeWorkflowArgs(metadata.argsSchema, rawArgs, options.defaultArgs ?? {}),
+    metadata,
+  };
 }
 
 function parseWorkflowMetadata(source: string): WorkflowMetadata | null {
@@ -49,21 +64,26 @@ function parseWorkflowMetadata(source: string): WorkflowMetadata | null {
     return null;
   }
   if (!isPlainObject(rawMetadata)) {
-    throw new Error("Workflow metadata must be a static object literal");
+    throw validationError("Workflow metadata must be a static object literal");
   }
   const metadata: WorkflowMetadata = {};
   if (rawMetadata.argsSchema !== undefined) {
     if (!isPlainObject(rawMetadata.argsSchema)) {
-      throw new Error("Workflow metadata.argsSchema must be an object schema");
+      throw validationError("Workflow metadata.argsSchema must be an object schema");
     }
     metadata.argsSchema = rawMetadata.argsSchema;
   }
   return metadata;
 }
 
+function validationError(message: string): WorkflowArgsValidationError {
+  return new WorkflowArgsValidationError(message);
+}
+
 function normalizeWorkflowArgs(
   schema: Record<string, unknown>,
-  rawArgs: unknown
+  rawArgs: unknown,
+  defaultArgs: Record<string, unknown>
 ): Record<string, unknown> {
   assertObjectSchema(schema);
   const properties = propertySchemas(schema);
@@ -73,6 +93,9 @@ function normalizeWorkflowArgs(
   for (const property of properties) {
     if (property.defaultValue !== undefined) {
       normalized[property.name] = property.defaultValue;
+    } else if (property.name in defaultArgs) {
+      // Invocation context should help only workflows that explicitly declare the field.
+      normalized[property.name] = defaultArgs[property.name];
     }
   }
 
@@ -120,22 +143,22 @@ function normalizeWorkflowArgs(
 
 function assertObjectSchema(schema: Record<string, unknown>): void {
   if (schema.type !== "object") {
-    throw new Error('Workflow metadata.argsSchema must have type "object"');
+    throw validationError('Workflow metadata.argsSchema must have type "object"');
   }
   if (!isPlainObject(schema.properties)) {
-    throw new Error("Workflow metadata.argsSchema.properties must be an object");
+    throw validationError("Workflow metadata.argsSchema.properties must be an object");
   }
 }
 
 function propertySchemas(schema: Record<string, unknown>): ArgsPropertySchema[] {
   const rawProperties = schema.properties;
   if (!isPlainObject(rawProperties)) {
-    throw new Error("Workflow metadata.argsSchema.properties must be an object");
+    throw validationError("Workflow metadata.argsSchema.properties must be an object");
   }
 
   return Object.entries(rawProperties).map(([name, rawProperty]) => {
     if (!isPlainObject(rawProperty)) {
-      throw new Error(`Workflow args property ${name} must be an object schema`);
+      throw validationError(`Workflow args property ${name} must be an object schema`);
     }
     return {
       name,
@@ -188,7 +211,7 @@ function parseWorkflowInputString(
 ): Record<string, unknown> {
   const tokenized = tokenize(input);
   if (tokenized.error.length > 0) {
-    throw new Error(tokenized.error);
+    throw validationError(tokenized.error);
   }
 
   const parsed: Record<string, unknown> = {};
@@ -218,7 +241,7 @@ function parseWorkflowInputString(
       }
       const value = tokenized.tokens[index + 1];
       if (value == null || value.startsWith("--")) {
-        throw new Error(`${token} requires a value`);
+        throw validationError(`${token} requires a value`);
       }
       parsed[exactAliasProperty.name] = value;
       index += 2;
@@ -239,7 +262,7 @@ function parseWorkflowInputString(
         index += 1;
         continue;
       }
-      throw new Error(`Unknown workflow argument flag: ${flag.name}`);
+      throw validationError(`Unknown workflow argument flag: ${flag.name}`);
     }
 
     if (propertyAllowsType(property, "boolean")) {
@@ -252,7 +275,7 @@ function parseWorkflowInputString(
     const hasInlineValue = flag.inlineValue != null;
     const value = hasInlineValue ? flag.inlineValue : tokenized.tokens[index + 1];
     if (value == null || value.length === 0 || (!hasInlineValue && value.startsWith("--"))) {
-      throw new Error(`${flag.name} requires a value`);
+      throw validationError(`${flag.name} requires a value`);
     }
     parsed[property.name] = value;
     index += hasInlineValue ? 1 : 2;
@@ -262,7 +285,7 @@ function parseWorkflowInputString(
   if (positionalProperty != null && positional.length > 0) {
     parsed[positionalProperty.name] = positional.join(" ");
   } else if (positional.length > 0) {
-    throw new Error(`Unexpected workflow positional argument: ${positional[0]}`);
+    throw validationError(`Unexpected workflow positional argument: ${positional[0]}`);
   }
 
   return parsed;
@@ -316,14 +339,14 @@ function defaultNegatedFlagName(name: string): string {
 
 function assertBooleanProperty(property: ArgsPropertySchema, flagName: string): void {
   if (!propertyAllowsType(property, "boolean")) {
-    throw new Error(`${flagName} can only negate a boolean workflow argument`);
+    throw validationError(`${flagName} can only negate a boolean workflow argument`);
   }
 }
 
 function coerceProperty(property: ArgsPropertySchema, value: unknown): unknown {
   if (value === null) {
     if (propertyAllowsType(property, "null")) return null;
-    throw new Error(`Workflow argument ${property.name} must not be null`);
+    throw validationError(`Workflow argument ${property.name} must not be null`);
   }
 
   let lastError: Error | null = null;
@@ -341,7 +364,9 @@ function coerceProperty(property: ArgsPropertySchema, value: unknown): unknown {
 
   throw (
     lastError ??
-    new Error(`Unsupported workflow args type for ${property.name}: ${property.types.join(", ")}`)
+    validationError(
+      `Unsupported workflow args type for ${property.name}: ${property.types.join(", ")}`
+    )
   );
 }
 
@@ -358,13 +383,13 @@ function coercePropertyType(property: ArgsPropertySchema, value: unknown, type: 
     case "array":
       return coerceArray(value, property.name);
     default:
-      throw new Error(`Unsupported workflow args type for ${property.name}: ${type}`);
+      throw validationError(`Unsupported workflow args type for ${property.name}: ${type}`);
   }
 }
 
 function coerceString(value: unknown, name: string): string {
   if (typeof value !== "string") {
-    throw new Error(`Workflow argument ${name} must be a string`);
+    throw validationError(`Workflow argument ${name} must be a string`);
   }
   return value.trim();
 }
@@ -378,13 +403,13 @@ function coerceBoolean(value: unknown, name: string): boolean {
     if (["true", "1", "yes", "on"].includes(normalized)) return true;
     if (["false", "0", "no", "off"].includes(normalized)) return false;
   }
-  throw new Error(`Workflow argument ${name} must be a boolean`);
+  throw validationError(`Workflow argument ${name} must be a boolean`);
 }
 
 function coerceInteger(value: unknown, name: string): number {
   const number = coerceNumber(value, name);
   if (!Number.isInteger(number)) {
-    throw new Error(`Workflow argument ${name} must be an integer`);
+    throw validationError(`Workflow argument ${name} must be an integer`);
   }
   return number;
 }
@@ -393,14 +418,14 @@ function coerceNumber(value: unknown, name: string): number {
   const number =
     typeof value === "number" ? value : typeof value === "string" ? Number(value) : NaN;
   if (!Number.isFinite(number)) {
-    throw new Error(`Workflow argument ${name} must be a number`);
+    throw validationError(`Workflow argument ${name} must be a number`);
   }
   return number;
 }
 
 function coerceArray(value: unknown, name: string): unknown[] {
   if (!Array.isArray(value)) {
-    throw new Error(`Workflow argument ${name} must be an array`);
+    throw validationError(`Workflow argument ${name} must be an array`);
   }
   return value;
 }
@@ -410,10 +435,10 @@ function validateBounds(property: ArgsPropertySchema, value: unknown): void {
     return;
   }
   if (property.minimum != null && value < property.minimum) {
-    throw new Error(`Workflow argument ${property.name} must be >= ${property.minimum}`);
+    throw validationError(`Workflow argument ${property.name} must be >= ${property.minimum}`);
   }
   if (property.maximum != null && value > property.maximum) {
-    throw new Error(`Workflow argument ${property.name} must be <= ${property.maximum}`);
+    throw validationError(`Workflow argument ${property.name} must be <= ${property.maximum}`);
   }
 }
 
@@ -422,7 +447,7 @@ function validateEnum(property: ArgsPropertySchema, value: unknown): void {
     return;
   }
   if (!property.enumValues.some((candidate) => Object.is(candidate, value))) {
-    throw new Error(
+    throw validationError(
       `Workflow argument ${property.name} must be one of: ${property.enumValues.join(", ")}`
     );
   }
@@ -432,10 +457,10 @@ function validateRequired(schema: Record<string, unknown>, value: Record<string,
   const required = Array.isArray(schema.required) ? schema.required : [];
   for (const property of required) {
     if (typeof property !== "string") {
-      throw new Error("Workflow metadata.argsSchema.required entries must be strings");
+      throw validationError("Workflow metadata.argsSchema.required entries must be strings");
     }
     if (!(property in value)) {
-      throw new Error(`Workflow argument ${property} is required`);
+      throw validationError(`Workflow argument ${property} is required`);
     }
   }
 }

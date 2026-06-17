@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/await-thenable, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/require-await, @typescript-eslint/restrict-template-expressions, local/no-sync-fs-methods */
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { createRouterClient } from "@orpc/server";
+import { ORPCError, createRouterClient } from "@orpc/server";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
@@ -116,7 +116,11 @@ describe("router workflow routes", () => {
     fs.rmSync(tempDir, { recursive: true, force: true });
   });
 
-  function createContext(options: { enabled: boolean; workspacePath?: string }): ORPCContext {
+  function createContext(options: {
+    enabled: boolean;
+    workspacePath?: string;
+    subProjectPath?: string;
+  }): ORPCContext {
     const workspacePath = options.workspacePath ?? projectPath;
     return {
       workflowSchedulerService: {
@@ -139,6 +143,7 @@ describe("router workflow routes", () => {
             name: "workspace-1",
             projectPath,
             namedWorkspacePath: workspacePath,
+            ...(options.subProjectPath != null ? { subProjectPath: options.subProjectPath } : {}),
             runtimeConfig: { type: "local", srcBaseDir: tempDir },
           },
         })),
@@ -756,6 +761,135 @@ describe("router workflow routes", () => {
       })
     );
     await waitForRouterWorkflowStatus(client, "workspace-1", result.runId, "completed");
+  });
+
+  test("fills projectPath defaults for slash workflow arg schemas", async () => {
+    fs.writeFileSync(
+      path.join(projectPath, ".mux", "workflows", "needs-project-path.js"),
+      `const s = mux.schema;
+export const metadata = {
+  description: "Needs project path",
+  argsSchema: s.object({
+    projectPath: s.string(),
+    input: s.optional(s.string()),
+  }),
+};
+export default function workflow({ args }) { return { reportMarkdown: args.projectPath + ":" + args.input }; }
+`
+    );
+    const context = createContext({ enabled: true });
+    const workspaceService = context.workspaceService as unknown as {
+      appendWorkflowRunInvocation: ReturnType<typeof mock>;
+    };
+    const client = createRouterClient(router(), { context });
+
+    const result = await client.workflows.start({
+      workspaceId: "workspace-1",
+      name: "needs-project-path",
+      runInBackground: true,
+      args: { input: "hello" },
+      rawCommand: "/workflow needs-project-path hello",
+    });
+
+    const run = await client.workflows.getRun({ workspaceId: "workspace-1", runId: result.runId });
+    expect(run?.args).toEqual({ projectPath, input: "hello" });
+    expect(workspaceService.appendWorkflowRunInvocation).toHaveBeenCalledWith(
+      expect.objectContaining({
+        args: { input: "hello" },
+        rawCommand: "/workflow needs-project-path hello",
+      })
+    );
+  });
+
+  test("fills slash projectPath defaults from the active sub-project checkout", async () => {
+    const workspacePath = path.join(tempDir, "workspace-checkout");
+    const subProjectPath = path.join(projectPath, "packages", "api");
+    const workspaceSubProjectPath = path.join(workspacePath, "packages", "api");
+    fs.mkdirSync(path.join(workspacePath, ".mux", "workflows"), { recursive: true });
+    fs.writeFileSync(
+      path.join(workspacePath, ".mux", "workflows", "needs-active-project.js"),
+      `const s = mux.schema;
+export const metadata = {
+  description: "Needs active project",
+  argsSchema: s.object({ projectPath: s.string() }),
+};
+export default function workflow({ args }) { return { reportMarkdown: args.projectPath }; }
+`
+    );
+    const client = createRouterClient(router(), {
+      context: createContext({ enabled: true, workspacePath, subProjectPath }),
+    });
+
+    const result = await client.workflows.start({
+      workspaceId: "workspace-1",
+      name: "needs-active-project",
+      runInBackground: true,
+      args: {},
+      rawCommand: "/workflow needs-active-project",
+    });
+
+    const run = await client.workflows.getRun({ workspaceId: "workspace-1", runId: result.runId });
+    expect(run?.args).toEqual({ projectPath: workspaceSubProjectPath });
+  });
+
+  test("reports workflow argument validation as a bad request", async () => {
+    fs.writeFileSync(
+      path.join(projectPath, ".mux", "workflows", "needs-topic.js"),
+      `const s = mux.schema;
+export const metadata = {
+  description: "Needs topic",
+  argsSchema: s.object({ topic: s.string() }),
+};
+export default function workflow({ args }) { return { reportMarkdown: args.topic }; }
+`
+    );
+    const client = createRouterClient(router(), { context: createContext({ enabled: true }) });
+
+    let thrown: unknown;
+    try {
+      await client.workflows.start({
+        workspaceId: "workspace-1",
+        name: "needs-topic",
+        args: {},
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(ORPCError);
+    expect((thrown as { code?: string }).code).toBe("BAD_REQUEST");
+    expect(thrown).toHaveProperty("message", "Workflow argument topic is required");
+  });
+
+  test("reports malformed workflow argument schemas as a bad request", async () => {
+    fs.writeFileSync(
+      path.join(projectPath, ".mux", "workflows", "bad-args-schema.js"),
+      `export const metadata = {
+  description: "Bad args schema",
+  argsSchema: { type: "object", properties: { topic: "bad" } },
+};
+export default function workflow() { return { reportMarkdown: "should not run" }; }
+`
+    );
+    const client = createRouterClient(router(), { context: createContext({ enabled: true }) });
+
+    let thrown: unknown;
+    try {
+      await client.workflows.start({
+        workspaceId: "workspace-1",
+        name: "bad-args-schema",
+        args: { topic: "hello" },
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(ORPCError);
+    expect((thrown as { code?: string }).code).toBe("BAD_REQUEST");
+    expect(thrown).toHaveProperty(
+      "message",
+      "Workflow args property topic must be an object schema"
+    );
   });
 
   test("waits for chat idle before starting slash workflow invocations", async () => {
