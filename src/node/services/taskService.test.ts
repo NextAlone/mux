@@ -5599,6 +5599,281 @@ describe("TaskService", () => {
     expect(childTask?.reportedAt).toBeUndefined();
   });
 
+  test("initialize interrupts workflow-owned tasks instead of recovering them after owning workflow interrupt", async () => {
+    const config = await createTestConfig(rootDir);
+
+    const projectPath = path.join(rootDir, "repo");
+    const runtimeConfig = { type: "local" as const };
+    const parentId = "parent-workflow-interrupted";
+    const queuedChildId = "child-workflow-queued";
+    const runningChildId = "child-workflow-running";
+    const awaitingChildId = "child-workflow-awaiting";
+    const nestedRunningChildId = "child-workflow-nested-running";
+    const workflowRunId = "wfr_interrupted_owner";
+    const innerWorkflowRunId = "wfr_active_inner_owner";
+
+    await saveWorkspaces(
+      config,
+      projectPath,
+      [
+        projectWorkspace(projectPath, "parent", parentId, { runtimeConfig }),
+        projectWorkspace(projectPath, "queued", queuedChildId, {
+          name: "agent_explore_queued",
+          parentWorkspaceId: parentId,
+          agentId: "explore",
+          agentType: "explore",
+          taskStatus: "queued",
+          taskPrompt: "queued work",
+          taskModelString: defaultModel,
+          runtimeConfig,
+          workflowTask: { runId: workflowRunId, stepId: "queued" },
+        }),
+        projectWorkspace(projectPath, "running", runningChildId, {
+          name: "agent_explore_running",
+          parentWorkspaceId: parentId,
+          agentId: "explore",
+          agentType: "explore",
+          taskStatus: "running",
+          taskModelString: defaultModel,
+          runtimeConfig,
+          workflowTask: { runId: workflowRunId, stepId: "running" },
+        }),
+        projectWorkspace(projectPath, "awaiting", awaitingChildId, {
+          name: "agent_explore_awaiting",
+          parentWorkspaceId: parentId,
+          agentId: "explore",
+          agentType: "explore",
+          taskStatus: "awaiting_report",
+          taskModelString: defaultModel,
+          runtimeConfig,
+          workflowTask: { runId: workflowRunId, stepId: "awaiting" },
+        }),
+        projectWorkspace(projectPath, "nested-running", nestedRunningChildId, {
+          name: "agent_explore_nested_running",
+          parentWorkspaceId: runningChildId,
+          agentId: "explore",
+          agentType: "explore",
+          taskStatus: "running",
+          taskModelString: defaultModel,
+          runtimeConfig,
+          workflowTask: { runId: innerWorkflowRunId, stepId: "nested" },
+        }),
+      ],
+      testTaskSettings(10, 3)
+    );
+    const runStore = new WorkflowRunStore({ sessionDir: config.getSessionDir(parentId) });
+    await runStore.createRun({
+      id: workflowRunId,
+      workspaceId: parentId,
+      definition: {
+        name: "interrupted",
+        description: "Interrupted",
+        scope: "built-in",
+        executable: true,
+      },
+      definitionSource: "export default function workflow() { return {}; }\n",
+      args: {},
+      now: "2026-05-29T00:00:00.000Z",
+    });
+    await runStore.appendStatus(workflowRunId, "interrupted", "2026-05-29T00:00:01.000Z");
+    const innerRunStore = new WorkflowRunStore({
+      sessionDir: config.getSessionDir(runningChildId),
+    });
+    await innerRunStore.createRun({
+      id: innerWorkflowRunId,
+      workspaceId: runningChildId,
+      definition: {
+        name: "inner-running",
+        description: "Inner running",
+        scope: "built-in",
+        executable: true,
+      },
+      definitionSource: "export default function workflow() { return {}; }\n",
+      args: {},
+      now: "2026-05-29T00:00:00.000Z",
+    });
+    await innerRunStore.appendStatus(innerWorkflowRunId, "running", "2026-05-29T00:00:01.000Z");
+
+    const { aiService } = createAIServiceMocks(config, { isStreaming: mock(() => false) });
+    const { workspaceService, sendMessage, resumeStream } = createWorkspaceServiceMocks();
+    const { taskService } = createTaskServiceHarness(config, { aiService, workspaceService });
+
+    await taskService.initialize();
+
+    expect(sendMessage).not.toHaveBeenCalled();
+    expect(resumeStream).not.toHaveBeenCalled();
+    for (const taskId of [queuedChildId, runningChildId, awaitingChildId, nestedRunningChildId]) {
+      expect(findWorkspaceInConfig(config, taskId)?.taskStatus).toBe("interrupted");
+    }
+    expect(findWorkspaceInConfig(config, queuedChildId)?.taskPrompt).toBe("queued work");
+  });
+
+  test("initialize recovers parent tasks after interrupting inactive workflow children", async () => {
+    const config = await createTestConfig(rootDir);
+
+    const projectPath = path.join(rootDir, "repo");
+    const rootId = "root-workflow-child-interrupted";
+    const parentTaskId = "parent-awaiting-after-child-interrupt";
+    const childTaskId = "child-running-inactive-workflow";
+    const workflowRunId = "wfr_child_inactive_owner";
+
+    await saveWorkspaces(
+      config,
+      projectPath,
+      [
+        projectWorkspace(projectPath, "root", rootId),
+        projectWorkspace(projectPath, "parent", parentTaskId, {
+          name: "agent_explore_parent",
+          parentWorkspaceId: rootId,
+          agentId: "explore",
+          agentType: "explore",
+          taskStatus: "awaiting_report",
+          taskModelString: defaultModel,
+        }),
+        projectWorkspace(projectPath, "child", childTaskId, {
+          name: "agent_explore_child",
+          parentWorkspaceId: parentTaskId,
+          agentId: "explore",
+          agentType: "explore",
+          taskStatus: "running",
+          taskModelString: defaultModel,
+          workflowTask: { runId: workflowRunId, stepId: "child" },
+        }),
+      ],
+      testTaskSettings(10, 3)
+    );
+    const runStore = new WorkflowRunStore({ sessionDir: config.getSessionDir(parentTaskId) });
+    await runStore.createRun({
+      id: workflowRunId,
+      workspaceId: parentTaskId,
+      definition: {
+        name: "interrupted",
+        description: "Interrupted",
+        scope: "built-in",
+        executable: true,
+      },
+      definitionSource: "export default function workflow() { return {}; }\n",
+      args: {},
+      now: "2026-05-29T00:00:00.000Z",
+    });
+    await runStore.appendStatus(workflowRunId, "interrupted", "2026-05-29T00:00:01.000Z");
+
+    const { aiService } = createAIServiceMocks(config, { isStreaming: mock(() => false) });
+    const { workspaceService, sendMessage } = createWorkspaceServiceMocks();
+    const { taskService } = createTaskServiceHarness(config, { aiService, workspaceService });
+
+    await taskService.initialize();
+
+    expect(findWorkspaceInConfig(config, childTaskId)?.taskStatus).toBe("interrupted");
+    expect(sendMessage).toHaveBeenCalledWith(
+      parentTaskId,
+      expect.stringContaining("awaiting its final agent_report"),
+      expect.objectContaining({
+        toolPolicy: [{ regex_match: "^agent_report$", action: "require" }],
+      }),
+      expect.objectContaining({ synthetic: true })
+    );
+  });
+
+  test("initialize drains queued tasks after interrupting inactive workflow children", async () => {
+    const config = await createTestConfig(rootDir);
+
+    const projectPath = await createTestProject(rootDir, "repo-queue-after-interrupt");
+    const runtimeConfig = { type: "worktree" as const, srcBaseDir: config.srcDir };
+    const runtime = createRuntime(runtimeConfig, { projectPath });
+    const rootName = "root";
+    await runtime.createWorkspace({
+      projectPath,
+      branchName: rootName,
+      trunkBranch: "main",
+      directoryName: rootName,
+      initLogger: createNullInitLogger(),
+    });
+
+    const rootId = "root-queue-after-interrupt";
+    const runningTaskId = "running-inactive-workflow-occupies-slot";
+    const queuedWorkflowTaskId = "queued-inactive-workflow";
+    const queuedTaskId = "queued-starts-after-interrupt";
+    const workflowRunId = "wfr_queue_after_interrupt";
+
+    await saveWorkspaces(
+      config,
+      projectPath,
+      [
+        {
+          path: runtime.getWorkspacePath(projectPath, rootName),
+          id: rootId,
+          name: rootName,
+          createdAt: new Date().toISOString(),
+          runtimeConfig,
+        },
+        projectWorkspace(projectPath, "running", runningTaskId, {
+          name: "agent_explore_running",
+          parentWorkspaceId: rootId,
+          agentId: "explore",
+          agentType: "explore",
+          taskStatus: "running",
+          taskModelString: defaultModel,
+          runtimeConfig,
+          workflowTask: { runId: workflowRunId, stepId: "running" },
+        }),
+        projectWorkspace(projectPath, "queued-workflow", queuedWorkflowTaskId, {
+          name: "agent_explore_queued_workflow",
+          parentWorkspaceId: rootId,
+          agentId: "explore",
+          agentType: "explore",
+          taskStatus: "queued",
+          taskPrompt: "abandoned workflow queued work",
+          taskModelString: defaultModel,
+          runtimeConfig,
+          workflowTask: { runId: workflowRunId, stepId: "queued" },
+        }),
+        projectWorkspace(projectPath, "queued", queuedTaskId, {
+          name: "agent_explore_queued",
+          parentWorkspaceId: rootId,
+          agentId: "explore",
+          agentType: "explore",
+          taskStatus: "queued",
+          taskPrompt: "queued work",
+          taskModelString: defaultModel,
+          runtimeConfig,
+        }),
+      ],
+      testTaskSettings(1, 3)
+    );
+    const runStore = new WorkflowRunStore({ sessionDir: config.getSessionDir(rootId) });
+    await runStore.createRun({
+      id: workflowRunId,
+      workspaceId: rootId,
+      definition: {
+        name: "interrupted",
+        description: "Interrupted",
+        scope: "built-in",
+        executable: true,
+      },
+      definitionSource: "export default function workflow() { return {}; }\n",
+      args: {},
+      now: "2026-05-29T00:00:00.000Z",
+    });
+    await runStore.appendStatus(workflowRunId, "interrupted", "2026-05-29T00:00:01.000Z");
+
+    const { aiService } = createAIServiceMocks(config, { isStreaming: mock(() => false) });
+    const { workspaceService, sendMessage } = createWorkspaceServiceMocks();
+    const { taskService } = createTaskServiceHarness(config, { aiService, workspaceService });
+
+    await taskService.initialize();
+
+    expect(findWorkspaceInConfig(config, runningTaskId)?.taskStatus).toBe("interrupted");
+    expect(findWorkspaceInConfig(config, queuedWorkflowTaskId)?.taskStatus).toBe("interrupted");
+    expect(findWorkspaceInConfig(config, queuedTaskId)?.taskStatus).toBe("running");
+    expect(sendMessage).toHaveBeenCalledWith(
+      queuedTaskId,
+      "queued work",
+      expect.objectContaining({ agentId: "explore" }),
+      expect.objectContaining({ allowQueuedAgentTask: true })
+    );
+  });
+
   test("initialize resumes awaiting_report tasks after restart", async () => {
     const config = await createTestConfig(rootDir);
 
@@ -8726,6 +9001,67 @@ describe("TaskService", () => {
       expect(waiterError.message).toMatch(/Task interrupted/);
       expect(waiterError.message).not.toMatch(/Timed out/);
     }
+  });
+
+  test("handleStreamEnd interrupts workflow-owned tasks when owning workflow is already interrupted", async () => {
+    const config = await createTestConfig(rootDir);
+
+    const projectPath = path.join(rootDir, "repo");
+    const parentId = "parent-stream-workflow-interrupted";
+    const childId = "child-stream-workflow-interrupted";
+    const workflowRunId = "wfr_stream_interrupted_owner";
+
+    await saveWorkspaces(
+      config,
+      projectPath,
+      [
+        projectWorkspace(projectPath, "parent", parentId),
+        projectWorkspace(projectPath, "child", childId, {
+          name: "agent_explore_child",
+          parentWorkspaceId: parentId,
+          agentId: "explore",
+          agentType: "explore",
+          taskStatus: "running",
+          taskModelString: "openai:gpt-4o-mini",
+          workflowTask: { runId: workflowRunId, stepId: "slow-step" },
+        }),
+      ],
+      testTaskSettings()
+    );
+    const runStore = new WorkflowRunStore({ sessionDir: config.getSessionDir(parentId) });
+    await runStore.createRun({
+      id: workflowRunId,
+      workspaceId: parentId,
+      definition: {
+        name: "interrupted",
+        description: "Interrupted",
+        scope: "built-in",
+        executable: true,
+      },
+      definitionSource: "export default function workflow() { return {}; }\n",
+      args: {},
+      now: "2026-05-29T00:00:00.000Z",
+    });
+    await runStore.appendStatus(workflowRunId, "interrupted", "2026-05-29T00:00:01.000Z");
+
+    const { workspaceService, sendMessage } = createWorkspaceServiceMocks();
+    const { taskService } = createTaskServiceHarness(config, { workspaceService });
+    const maybeStartQueuedTasks = spyOn(
+      taskService as unknown as { maybeStartQueuedTasks: () => Promise<void> },
+      "maybeStartQueuedTasks"
+    ).mockResolvedValue(undefined);
+
+    await handleTaskServiceStreamEndForTest(taskService, {
+      type: "stream-end",
+      workspaceId: childId,
+      messageId: "assistant-child-output",
+      metadata: { model: "openai:gpt-4o-mini" },
+      parts: [],
+    });
+
+    expect(sendMessage).not.toHaveBeenCalled();
+    expect(findWorkspaceInConfig(config, childId)?.taskStatus).toBe("interrupted");
+    expect(maybeStartQueuedTasks).toHaveBeenCalledTimes(1);
   });
 
   test("non-plan subagent stream-end with final assistant text finalizes an implicit report", async () => {
