@@ -13,7 +13,11 @@ import type {
 } from "@/common/types/workflow";
 import assert from "@/common/utils/assert";
 import { getErrorMessage } from "@/common/utils/errors";
-import { validateJsonSchemaSubset } from "@/common/utils/jsonSchemaSubset";
+import {
+  formatJsonSchemaValidationErrors,
+  validateJsonSchemaSubset,
+  validateJsonSchemaSubsetSchema,
+} from "@/common/utils/jsonSchemaSubset";
 import { removeCommonJsWorkflowMetadataDeclaration } from "./staticWorkflowMetadata";
 import { WORKFLOW_RUNTIME_STDLIB_SOURCE } from "./workflowRuntimeSources.generated";
 import type { IJSRuntime, IJSRuntimeFactory } from "@/node/services/ptc/runtime";
@@ -67,6 +71,11 @@ export interface WorkflowAgentWaitOptions {
 }
 
 export type WorkflowAgentResult = StructuredTaskOutput & { taskId: string };
+
+interface WorkflowAgentRunResult {
+  rawResult: WorkflowAgentResult;
+  resultSpec: WorkflowAgentSpec;
+}
 
 export type WorkflowApplyPatchStatus = "applied" | "conflict" | "failed";
 
@@ -291,8 +300,7 @@ function buildRetryAgentSpec(
     prompt:
       `${spec.prompt}\n\n` +
       `Previous workflow attempt ${attempt} failed output validation: ${validationMessage}\n` +
-      "Rerun the task from scratch and submit a final report whose structured output satisfies the requested schema. " +
-      "In file-backed report mode, rewrite structured-output.json and call agent_report with reportMarkdownPath, structuredOutputPath, and title all set to null.",
+      "Rerun the task from scratch and submit a final agent_report whose structured output satisfies the requested schema.",
   };
 }
 
@@ -441,6 +449,7 @@ export class WorkflowRunner {
         throw new Error(`Workflow run failed: ${runId}`);
       }
       const ignoreStartedTaskIds = resumingInterruptedRun;
+      const allowLegacyMissingOutputSchema = run.agentOutputSchemaRequired !== true;
       let backgrounded: Promise<void> | null = null;
       const markBackgrounded = async () => {
         leaseGuard.throwIfLost();
@@ -510,6 +519,7 @@ export class WorkflowRunner {
           try {
             return await this.runAgentStep(runId, sequence, rawSpec, {
               ignoreStartedTaskIds,
+              allowLegacyMissingOutputSchema,
               waitOptions: getWorkflowAgentWaitOptions(setupRuntime, options),
               leaseGuard,
             });
@@ -572,6 +582,7 @@ export class WorkflowRunner {
           try {
             return await this.runAgentStepsInParallel(runId, sequence, rawSpecs, {
               ignoreStartedTaskIds,
+              allowLegacyMissingOutputSchema,
               waitOptions: getWorkflowAgentWaitOptions(setupRuntime, options),
               leaseGuard,
               rawOptions,
@@ -1651,6 +1662,7 @@ export class WorkflowRunner {
     rawSpec: unknown,
     options: {
       ignoreStartedTaskIds: boolean;
+      allowLegacyMissingOutputSchema: boolean;
       waitOptions?: WorkflowAgentWaitOptions;
       leaseGuard: WorkflowRunnerLeaseGuard;
     }
@@ -1672,15 +1684,15 @@ export class WorkflowRunner {
       return existingStep.result;
     }
 
+    const resumableStartedTask =
+      !options.ignoreStartedTaskIds && existingStep?.status === "started";
     options.leaseGuard.throwIfLost();
     return await this.runAndRecordAgentStepWithRetries(runId, sequence, {
       spec,
+      allowMissingOutputSchema: options.allowLegacyMissingOutputSchema,
       inputHash,
       startedAt: existingStep?.startedAt ?? this.clock.nowIso(),
-      taskId:
-        !options.ignoreStartedTaskIds && existingStep?.status === "started"
-          ? existingStep.taskId
-          : undefined,
+      taskId: resumableStartedTask ? existingStep.taskId : undefined,
       leaseGuard: options.leaseGuard,
       waitOptions: options.waitOptions,
     });
@@ -1692,6 +1704,7 @@ export class WorkflowRunner {
     rawSpecs: unknown,
     options: {
       ignoreStartedTaskIds: boolean;
+      allowLegacyMissingOutputSchema: boolean;
       waitOptions?: WorkflowAgentWaitOptions;
       leaseGuard: WorkflowRunnerLeaseGuard;
       rawOptions?: unknown;
@@ -1718,6 +1731,7 @@ export class WorkflowRunner {
       inputHash: string;
       startedAt: string;
       taskId?: string;
+      allowMissingOutputSchema: boolean;
       attempt: number;
       retryMessage?: string;
     }> = [];
@@ -1735,15 +1749,15 @@ export class WorkflowRunner {
         results[index] = existingStep.result;
         continue;
       }
+      const resumableStartedTask =
+        !options.ignoreStartedTaskIds && existingStep?.status === "started";
       pending.push({
         index,
         spec: step.spec,
+        allowMissingOutputSchema: options.allowLegacyMissingOutputSchema,
         inputHash: step.inputHash,
         startedAt: existingStep?.startedAt ?? this.clock.nowIso(),
-        taskId:
-          !options.ignoreStartedTaskIds && existingStep?.status === "started"
-            ? existingStep.taskId
-            : undefined,
+        taskId: resumableStartedTask ? existingStep.taskId : undefined,
         attempt: 1,
       });
     }
@@ -1810,7 +1824,7 @@ export class WorkflowRunner {
           | {
               runIndex: number;
               step: (typeof queued)[number];
-              rawResult: WorkflowAgentResult;
+              runResult: WorkflowAgentRunResult;
             }
           | { runIndex: number; step: (typeof queued)[number]; error: unknown }
         >
@@ -1834,15 +1848,16 @@ export class WorkflowRunner {
                 `parallelAgents step ${step.spec.id} canceled before it started: a sibling task failed or the batch was aborted`
               );
             }
-            const rawResult = await this.runOrResumeAgentStep(runId, sequence, {
+            const runResult = await this.runOrResumeAgentStep(runId, sequence, {
               spec: runSpec,
+              allowMissingOutputSchema: step.allowMissingOutputSchema,
               inputHash: step.inputHash,
               startedAt: step.startedAt,
               taskId: step.taskId,
               leaseGuard: options.leaseGuard,
               waitOptions: batchWaitOptions,
             });
-            return { runIndex, step, rawResult };
+            return { runIndex, step, runResult };
           } catch (error) {
             batchFailed = true;
             if (isForegroundWaitBackgroundedError(error)) {
@@ -1875,7 +1890,11 @@ export class WorkflowRunner {
         if (createAgentTasks != null && bulkCreatableSteps.length > 0) {
           try {
             const createdTasks = await createAgentTasks(
-              bulkCreatableSteps.map((step) => step.spec),
+              bulkCreatableSteps.map((step) =>
+                getWorkflowAgentSpawnSpec(step.spec, {
+                  allowMissingOutputSchema: step.allowMissingOutputSchema,
+                })
+              ),
               {
                 onTaskCreated: async (index, taskId) => {
                   const step = bulkCreatableSteps[index];
@@ -1940,11 +1959,11 @@ export class WorkflowRunner {
           }
           try {
             results[settled.step.index] = await this.recordAgentResult(runId, sequence, {
-              spec: settled.step.spec,
+              spec: settled.runResult.resultSpec,
               inputHash: settled.step.inputHash,
               startedAt: settled.step.startedAt,
               leaseGuard: options.leaseGuard,
-              rawResult: settled.rawResult,
+              rawResult: settled.runResult.rawResult,
             });
           } catch (error) {
             if (
@@ -1987,6 +2006,7 @@ export class WorkflowRunner {
     sequence: WorkflowEventSequence,
     step: {
       spec: WorkflowAgentSpec;
+      allowMissingOutputSchema: boolean;
       inputHash: string;
       startedAt: string;
       taskId?: string;
@@ -1999,8 +2019,9 @@ export class WorkflowRunner {
     let taskId = step.taskId;
     let spec = step.spec;
     while (attempt <= WORKFLOW_AGENT_MAX_ATTEMPTS) {
-      const rawResult = await this.runOrResumeAgentStep(runId, sequence, {
+      const runResult = await this.runOrResumeAgentStep(runId, sequence, {
         spec,
+        allowMissingOutputSchema: step.allowMissingOutputSchema,
         inputHash: step.inputHash,
         startedAt,
         taskId,
@@ -2009,11 +2030,11 @@ export class WorkflowRunner {
       });
       try {
         return await this.recordAgentResult(runId, sequence, {
-          spec: step.spec,
+          spec: runResult.resultSpec,
           inputHash: step.inputHash,
           startedAt,
           leaseGuard: step.leaseGuard,
-          rawResult,
+          rawResult: runResult.rawResult,
         });
       } catch (error) {
         if (!isRetryableAgentOutputError(error) || attempt >= WORKFLOW_AGENT_MAX_ATTEMPTS) {
@@ -2055,13 +2076,14 @@ export class WorkflowRunner {
     sequence: WorkflowEventSequence,
     step: {
       spec: WorkflowAgentSpec;
+      allowMissingOutputSchema: boolean;
       inputHash: string;
       startedAt: string;
       taskId?: string;
       waitOptions?: WorkflowAgentWaitOptions;
       leaseGuard: WorkflowRunnerLeaseGuard;
     }
-  ): Promise<WorkflowAgentResult> {
+  ): Promise<WorkflowAgentRunResult> {
     step.leaseGuard.throwIfLost();
     if (step.taskId != null && this.taskAdapter.waitForAgentTask != null) {
       await this.recordTaskStartedEventIfMissing(runId, sequence, {
@@ -2070,7 +2092,16 @@ export class WorkflowRunner {
         title: step.spec.title,
       });
       try {
-        return await this.taskAdapter.waitForAgentTask(step.taskId, step.spec, step.waitOptions);
+        return {
+          rawResult: await this.taskAdapter.waitForAgentTask(
+            step.taskId,
+            step.spec,
+            step.waitOptions
+          ),
+          resultSpec: getWorkflowAgentResumedResultSpec(step.spec, {
+            allowLegacyInvalidOutputSchema: step.allowMissingOutputSchema,
+          }),
+        };
       } catch (error) {
         if (!isForegroundWaitBackgroundedError(error)) {
           step.leaseGuard.throwIfLost();
@@ -2087,26 +2118,30 @@ export class WorkflowRunner {
       }
     }
 
+    const spawnSpec = getWorkflowAgentSpawnSpec(step.spec, {
+      allowMissingOutputSchema: step.allowMissingOutputSchema,
+    });
+
     step.leaseGuard.throwIfLost();
     let recordedTaskId: string | undefined;
     let rawResult: WorkflowAgentResult;
     try {
       rawResult = await this.taskAdapter.runAgent(
-        step.spec,
+        spawnSpec,
         {
           onTaskCreated: async (taskId) => {
             step.leaseGuard.throwIfLost();
             recordedTaskId = taskId;
             await this.recordStepStarted(runId, {
-              stepId: step.spec.id,
+              stepId: spawnSpec.id,
               inputHash: step.inputHash,
               taskId,
               startedAt: step.startedAt,
             });
             await this.recordTaskStartedEventIfMissing(runId, sequence, {
-              stepId: step.spec.id,
+              stepId: spawnSpec.id,
               taskId,
-              title: step.spec.title,
+              title: spawnSpec.title,
             });
           },
         },
@@ -2116,9 +2151,9 @@ export class WorkflowRunner {
       if (recordedTaskId != null && !isForegroundWaitBackgroundedError(error)) {
         step.leaseGuard.throwIfLost();
         await this.recordTaskTerminalEventIfMissing(runId, sequence, {
-          stepId: step.spec.id,
+          stepId: spawnSpec.id,
           taskId: recordedTaskId,
-          title: step.spec.title,
+          title: spawnSpec.title,
           status: getTaskTerminalStatusForError(error, step.waitOptions?.abortSignal),
         });
       }
@@ -2127,18 +2162,18 @@ export class WorkflowRunner {
     step.leaseGuard.throwIfLost();
     if (recordedTaskId == null) {
       await this.recordStepStarted(runId, {
-        stepId: step.spec.id,
+        stepId: spawnSpec.id,
         inputHash: step.inputHash,
         taskId: rawResult.taskId,
         startedAt: step.startedAt,
       });
       await this.recordTaskStartedEventIfMissing(runId, sequence, {
-        stepId: step.spec.id,
+        stepId: spawnSpec.id,
         taskId: rawResult.taskId,
-        title: step.spec.title,
+        title: spawnSpec.title,
       });
     }
-    return rawResult;
+    return { rawResult, resultSpec: spawnSpec };
   }
 
   private async recordTaskStartedEventIfMissing(
@@ -2243,11 +2278,14 @@ export class WorkflowRunner {
     }
 
     if (step.spec.outputSchema !== undefined) {
+      if (!Object.hasOwn(result, "structuredOutput") || result.structuredOutput === undefined) {
+        const message = `agent ${step.spec.id} structured output failed schema validation: $.structuredOutput: Required property is missing`;
+        await this.recordFailedAgentAttempt(runId, sequence, step, message);
+        throw new WorkflowAgentOutputValidationError(message);
+      }
       const validation = validateJsonSchemaSubset(step.spec.outputSchema, result.structuredOutput);
       if (!validation.success) {
-        const message = `agent ${step.spec.id} structured output failed schema validation: ${validation.errors
-          .map((error) => `${error.path}: ${error.message}`)
-          .join("; ")}`;
+        const message = `agent ${step.spec.id} structured output failed schema validation: ${formatJsonSchemaValidationErrors(validation.errors)}`;
         await this.recordFailedAgentAttempt(runId, sequence, step, message);
         throw new WorkflowAgentOutputValidationError(message);
       }
@@ -2435,9 +2473,7 @@ function assertWorkflowActionInput(
   const validation = validateJsonSchemaSubset(metadata.inputSchema, input);
   if (!validation.success) {
     throw new Error(
-      `action ${actionName} input failed schema validation: ${validation.errors
-        .map((error) => `${error.path}: ${error.message}`)
-        .join("; ")}`
+      `action ${actionName} input failed schema validation: ${formatJsonSchemaValidationErrors(validation.errors)}`
     );
   }
 }
@@ -2453,9 +2489,7 @@ function assertWorkflowActionOutput(
   const validation = validateJsonSchemaSubset(metadata.outputSchema, output);
   if (!validation.success) {
     throw new Error(
-      `action ${actionName} output failed schema validation: ${validation.errors
-        .map((error) => `${error.path}: ${error.message}`)
-        .join("; ")}`
+      `action ${actionName} output failed schema validation: ${formatJsonSchemaValidationErrors(validation.errors)}`
     );
   }
 }
@@ -2780,6 +2814,79 @@ function parseWorkflowAgentSpec(rawSpec: unknown): WorkflowAgentSpec {
     parsed.onRefusal = spec.onRefusal;
   }
   return parsed;
+}
+
+function getWorkflowAgentResumedResultSpec(
+  spec: WorkflowAgentSpec,
+  options: { allowLegacyInvalidOutputSchema: boolean }
+): WorkflowAgentSpec {
+  if (!options.allowLegacyInvalidOutputSchema || spec.outputSchema === undefined) {
+    return spec;
+  }
+  if (validateJsonSchemaSubsetSchema(spec.outputSchema).success) {
+    return spec;
+  }
+
+  // Pre-upgrade runs may have already-started children with schemas that were
+  // accepted before strict subset validation. Let those children finish instead
+  // of rejecting their report with a schema-authoring error during resume.
+  return omitWorkflowAgentOutputSchema(spec);
+}
+
+function omitWorkflowAgentOutputSchema(spec: WorkflowAgentSpec): WorkflowAgentSpec {
+  const schemaLessSpec: WorkflowAgentSpec = { id: spec.id, prompt: spec.prompt };
+  if (spec.title !== undefined) {
+    schemaLessSpec.title = spec.title;
+  }
+  if (spec.agentId !== undefined) {
+    schemaLessSpec.agentId = spec.agentId;
+  }
+  if (spec.onRefusal !== undefined) {
+    schemaLessSpec.onRefusal = spec.onRefusal;
+  }
+  return schemaLessSpec;
+}
+
+function formatWorkflowAgentOutputSchemaError(spec: WorkflowAgentSpec): string {
+  const outputSchemaValidation = validateJsonSchemaSubsetSchema(spec.outputSchema);
+  assert(!outputSchemaValidation.success, "WorkflowRunner expected an invalid outputSchema");
+  return `Workflow agent step ${spec.id} has invalid outputSchema: ${formatJsonSchemaValidationErrors(
+    outputSchemaValidation.errors
+  )}`;
+}
+
+function getWorkflowAgentSpawnSpec(
+  spec: WorkflowAgentSpec,
+  options: { allowMissingOutputSchema: boolean }
+): WorkflowAgentSpec {
+  if (spec.outputSchema !== undefined) {
+    const outputSchemaValidation = validateJsonSchemaSubsetSchema(spec.outputSchema);
+    if (outputSchemaValidation.success) {
+      return spec;
+    }
+    if (options.allowMissingOutputSchema) {
+      // Pre-upgrade runs may carry schemas with now-unsupported descriptive
+      // keywords. Spawn replacement children without that stale schema so they
+      // can report markdown-only instead of failing before task creation.
+      return omitWorkflowAgentOutputSchema(spec);
+    }
+    throw new Error(formatWorkflowAgentOutputSchemaError(spec));
+  }
+  if (options.allowMissingOutputSchema) {
+    // Preserve resume/recovery for workflow runs captured before workflow agent
+    // schemas became mandatory. The original spec is still used for the replay
+    // hash so completed/started legacy steps remain addressable.
+    return { ...spec, outputSchema: {} };
+  }
+  assertWorkflowAgentSpecHasOutputSchema(spec);
+  return spec;
+}
+
+function assertWorkflowAgentSpecHasOutputSchema(spec: WorkflowAgentSpec): void {
+  assert(
+    spec.outputSchema !== undefined,
+    `Workflow agent step ${spec.id} must declare outputSchema for structured agent_report output`
+  );
 }
 
 function normalizeWorkflowResultForEvent(result: unknown): WorkflowResult {
