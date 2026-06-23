@@ -16,7 +16,7 @@ import {
 } from "@/common/orpc/schemas";
 import {
   type StructuredTaskOutput,
-  type WorkflowDefinitionDescriptor,
+  type WorkflowScriptDescriptor,
   type WorkflowRunEvent,
   type WorkflowRunParent,
   type WorkflowRunRecord,
@@ -46,8 +46,8 @@ export interface WorkflowRunStoreOptions {
 export interface CreateWorkflowRunInput {
   id: string;
   workspaceId: string;
-  definition: WorkflowDefinitionDescriptor;
-  definitionSource: string;
+  workflow: WorkflowScriptDescriptor;
+  source: string;
   args: unknown;
   agentOutputSchemaRequired?: boolean;
   parentWorkflow?: WorkflowRunParent;
@@ -72,6 +72,9 @@ type WorkflowRunEventDraft = WorkflowRunEvent extends infer Event
     : never
   : never;
 
+const WORKFLOW_SOURCE_FILENAME = "source.js";
+const LEGACY_WORKFLOW_SOURCE_FILENAME = "definition.js";
+
 interface LeaseRecord {
   ownerId: string;
   acquiredAtMs: number;
@@ -95,23 +98,20 @@ export class WorkflowRunStore {
   async createRun(input: CreateWorkflowRunInput): Promise<WorkflowRunRecord> {
     assert(input.id.length > 0, "WorkflowRunStore.createRun: id is required");
     assert(input.workspaceId.length > 0, "WorkflowRunStore.createRun: workspaceId is required");
-    assert(
-      input.definitionSource.length > 0,
-      "WorkflowRunStore.createRun: definitionSource is required"
-    );
+    assert(input.source.length > 0, "WorkflowRunStore.createRun: source is required");
 
     const runDir = this.runDir(input.id);
     await fs.mkdir(runDir, { recursive: true });
-    await fs.writeFile(path.join(runDir, "definition.js"), input.definitionSource, "utf-8");
+    await fs.writeFile(path.join(runDir, WORKFLOW_SOURCE_FILENAME), input.source, "utf-8");
     await fs.writeFile(path.join(runDir, "events.jsonl"), "", { flag: "a" });
     await fs.writeFile(path.join(runDir, "steps.jsonl"), "", { flag: "a" });
 
     const run = WorkflowRunRecordSchema.parse({
       id: input.id,
       workspaceId: input.workspaceId,
-      definition: input.definition,
-      definitionSource: input.definitionSource,
-      definitionHash: hashSource(input.definitionSource),
+      workflow: input.workflow,
+      source: input.source,
+      sourceHash: hashSource(input.source),
       args: input.args,
       agentOutputSchemaRequired: input.agentOutputSchemaRequired ?? true,
       ...(input.parentWorkflow != null ? { parentWorkflow: input.parentWorkflow } : {}),
@@ -132,10 +132,7 @@ export class WorkflowRunStore {
       input.workspaceId.length > 0,
       "WorkflowRunStore.createRunIfAbsent: workspaceId is required"
     );
-    assert(
-      input.definitionSource.length > 0,
-      "WorkflowRunStore.createRunIfAbsent: definitionSource is required"
-    );
+    assert(input.source.length > 0, "WorkflowRunStore.createRunIfAbsent: source is required");
 
     const runDir = this.runDir(input.id);
     await fs.mkdir(this.workflowsDir(), { recursive: true });
@@ -157,16 +154,16 @@ export class WorkflowRunStore {
       await fs.rm(runDir, { recursive: true, force: true });
       await fs.mkdir(runDir, { recursive: false });
       try {
-        await fs.writeFile(path.join(runDir, "definition.js"), input.definitionSource, "utf-8");
+        await fs.writeFile(path.join(runDir, WORKFLOW_SOURCE_FILENAME), input.source, "utf-8");
         await fs.writeFile(path.join(runDir, "events.jsonl"), "", { flag: "a" });
         await fs.writeFile(path.join(runDir, "steps.jsonl"), "", { flag: "a" });
 
         const run = WorkflowRunRecordSchema.parse({
           id: input.id,
           workspaceId: input.workspaceId,
-          definition: input.definition,
-          definitionSource: input.definitionSource,
-          definitionHash: hashSource(input.definitionSource),
+          workflow: input.workflow,
+          source: input.source,
+          sourceHash: hashSource(input.source),
           args: input.args,
           agentOutputSchemaRequired: input.agentOutputSchemaRequired ?? true,
           ...(input.parentWorkflow != null ? { parentWorkflow: input.parentWorkflow } : {}),
@@ -782,27 +779,35 @@ export class WorkflowRunStore {
     }
   }
 
+  private async readWorkflowSource(runId: string): Promise<string> {
+    const runDir = this.runDir(runId);
+    try {
+      return await fs.readFile(path.join(runDir, WORKFLOW_SOURCE_FILENAME), "utf-8");
+    } catch (error) {
+      if (!isErrno(error, "ENOENT")) {
+        throw error;
+      }
+      return await fs.readFile(path.join(runDir, LEGACY_WORKFLOW_SOURCE_FILENAME), "utf-8");
+    }
+  }
+
   private async getRunFileSnapshot(runId: string): Promise<WorkflowRunRecord> {
     const rawRun = JSON.parse(await fs.readFile(this.runFile(runId), "utf-8")) as unknown;
-    const run = WorkflowRunRecordSchema.parse(rawRun);
-    const definitionSource = await fs.readFile(
-      path.join(this.runDir(runId), "definition.js"),
-      "utf-8"
-    );
+    const run = WorkflowRunRecordSchema.parse(normalizeWorkflowRunRecord(rawRun));
+    const source = await this.readWorkflowSource(runId);
     return WorkflowRunRecordSchema.parse({
       ...run,
-      definitionSource,
-      definitionHash: hashSource(definitionSource),
+      source,
+      sourceHash: hashSource(source),
     });
   }
 
   private async getRunUnlocked(runId: string): Promise<WorkflowRunRecord> {
     const rawRun = JSON.parse(await fs.readFile(this.runFile(runId), "utf-8")) as unknown;
-    const partial = WorkflowRunRecordSchema.omit({ events: true, steps: true }).parse(rawRun);
-    const definitionSource = await fs.readFile(
-      path.join(this.runDir(runId), "definition.js"),
-      "utf-8"
+    const partial = WorkflowRunRecordSchema.omit({ events: true, steps: true }).parse(
+      normalizeWorkflowRunRecord(rawRun)
     );
+    const source = await this.readWorkflowSource(runId);
     const events = await this.readEvents(runId);
     const steps = await this.readSteps(runId);
 
@@ -810,8 +815,8 @@ export class WorkflowRunStore {
     const status = getRunStatusFromEvents(events) ?? partial.status;
     return WorkflowRunRecordSchema.parse({
       ...partial,
-      definitionSource,
-      definitionHash: hashSource(definitionSource),
+      source,
+      sourceHash: hashSource(source),
       status,
       updatedAt: latestEvent?.at ?? partial.updatedAt,
       events,
@@ -979,6 +984,35 @@ export class WorkflowRunStore {
   }
 }
 
+function normalizeWorkflowRunRecord(rawRun: unknown): unknown {
+  if (!isRecord(rawRun)) {
+    return rawRun;
+  }
+  if (rawRun.workflow != null && rawRun.source != null && rawRun.sourceHash != null) {
+    return rawRun;
+  }
+  if (
+    rawRun.definition == null &&
+    rawRun.definitionSource == null &&
+    rawRun.definitionHash == null
+  ) {
+    return rawRun;
+  }
+
+  // Older run.json snapshots used definition* fields. Normalize before schema parsing so
+  // existing durable runs stay visible/resumable long enough to hydrate source from disk.
+  return {
+    ...rawRun,
+    workflow: rawRun.workflow ?? rawRun.definition,
+    source: rawRun.source ?? rawRun.definitionSource,
+    sourceHash: rawRun.sourceHash ?? rawRun.definitionHash,
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value != null && typeof value === "object" && !Array.isArray(value);
+}
+
 // API callers provide run IDs when reading/resuming; validate before path joins so a malformed
 // ID cannot escape the workspace-scoped workflows directory.
 function assertValidWorkflowRunId(runId: string): void {
@@ -995,7 +1029,7 @@ function assertSameWorkflowRunIdentity(
   const sameIdentity =
     run.id === input.id &&
     run.workspaceId === input.workspaceId &&
-    run.definition.name === input.definition.name &&
+    run.workflow.name === input.workflow.name &&
     JSON.stringify(run.args) === JSON.stringify(input.args) &&
     JSON.stringify(run.parentWorkflow ?? null) === JSON.stringify(input.parentWorkflow ?? null);
   assert(

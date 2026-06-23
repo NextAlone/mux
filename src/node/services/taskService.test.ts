@@ -4327,30 +4327,37 @@ describe("TaskService", () => {
     });
   });
 
-  test("TaskService preserves null structuredOutput from inline agent_report args", async () => {
+  test("TaskService preserves schema-shaped workflow agent_report args verbatim", async () => {
     const config = await createTestConfig(rootDir);
     const { taskService } = createTaskServiceHarness(config);
     const reportReader = taskService as unknown as {
-      findAgentReportArgsInParts(parts: readonly unknown[]): {
+      findAgentReportArgsInParts(
+        parts: readonly unknown[],
+        options?: { acceptSchemaShapedWorkflowReport?: boolean }
+      ): {
         reportMarkdown: string;
         title?: string;
         structuredOutput?: unknown;
       } | null;
     };
 
-    const report = reportReader.findAgentReportArgsInParts([
-      {
-        type: "dynamic-tool",
-        toolName: "agent_report",
-        state: "output-available",
-        input: { reportMarkdown: "# Done", structuredOutput: null, title: null },
-        output: { success: true },
-      },
-    ]);
+    const schemaOutput = { reportMarkdown: "# Done", structuredOutput: null, title: null };
+    const report = reportReader.findAgentReportArgsInParts(
+      [
+        {
+          type: "dynamic-tool",
+          toolName: "agent_report",
+          state: "output-available",
+          input: schemaOutput,
+          output: { success: true },
+        },
+      ],
+      { acceptSchemaShapedWorkflowReport: true }
+    );
 
     expect(report).toEqual({
-      reportMarkdown: "# Done",
-      structuredOutput: null,
+      reportMarkdown: "Structured workflow report submitted.",
+      structuredOutput: schemaOutput,
     });
   });
 
@@ -4463,14 +4470,13 @@ describe("TaskService", () => {
     await runStore.createRun({
       id: workflowRunId,
       workspaceId: rootWorkspaceId,
-      definition: {
+      workflow: {
         name: "background-research",
         description: "Background research",
         scope: "built-in",
         executable: true,
       },
-      definitionSource:
-        "export default function workflow() { return { reportMarkdown: 'done' }; }\n",
+      source: "export default function workflow() { return { reportMarkdown: 'done' }; }\n",
       args: {},
       now: "2026-06-04T00:00:00.000Z",
     });
@@ -4670,14 +4676,13 @@ describe("TaskService", () => {
     await runStore.createRun({
       id: workflowRunId,
       workspaceId: rootWorkspaceId,
-      definition: {
+      workflow: {
         name: "background-research",
         description: "Background research",
         scope: "built-in",
         executable: true,
       },
-      definitionSource:
-        "export default function workflow() { return { reportMarkdown: 'done' }; }\n",
+      source: "export default function workflow() { return { reportMarkdown: 'done' }; }\n",
       args: {},
       now: "2026-06-04T00:00:00.000Z",
     });
@@ -4729,14 +4734,13 @@ describe("TaskService", () => {
     await runStore.createRun({
       id: workflowRunId,
       workspaceId: rootWorkspaceId,
-      definition: {
+      workflow: {
         name: "background-research",
         description: "Background research",
         scope: "built-in",
         executable: true,
       },
-      definitionSource:
-        "export default function workflow() { return { reportMarkdown: 'done' }; }\n",
+      source: "export default function workflow() { return { reportMarkdown: 'done' }; }\n",
       args: {},
       now: "2026-06-04T00:00:00.000Z",
     });
@@ -4791,14 +4795,13 @@ describe("TaskService", () => {
     await runStore.createRun({
       id: workflowRunId,
       workspaceId: rootWorkspaceId,
-      definition: {
+      workflow: {
         name: "background-research",
         description: "Background research",
         scope: "built-in",
         executable: true,
       },
-      definitionSource:
-        "export default function workflow() { return { reportMarkdown: 'done' }; }\n",
+      source: "export default function workflow() { return { reportMarkdown: 'done' }; }\n",
       args: {},
       now: "2026-06-04T00:00:00.000Z",
     });
@@ -4851,14 +4854,13 @@ describe("TaskService", () => {
     await runStore.createRun({
       id: workflowRunId,
       workspaceId: rootWorkspaceId,
-      definition: {
+      workflow: {
         name: "background-research",
         description: "Background research",
         scope: "built-in",
         executable: true,
       },
-      definitionSource:
-        "export default function workflow() { return { reportMarkdown: 'done' }; }\n",
+      source: "export default function workflow() { return { reportMarkdown: 'done' }; }\n",
       args: {},
       now: "2026-06-04T00:00:00.000Z",
     });
@@ -4929,14 +4931,13 @@ describe("TaskService", () => {
     await runStore.createRun({
       id: workflowRunId,
       workspaceId: rootWorkspaceId,
-      definition: {
+      workflow: {
         name: "background-research",
         description: "Background research",
         scope: "built-in",
         executable: true,
       },
-      definitionSource:
-        "export default function workflow() { return { reportMarkdown: 'done' }; }\n",
+      source: "export default function workflow() { return { reportMarkdown: 'done' }; }\n",
       args: {},
       now: "2026-06-04T00:00:00.000Z",
     });
@@ -5011,14 +5012,13 @@ describe("TaskService", () => {
     await runStore.createRun({
       id: workflowRunId,
       workspaceId: rootWorkspaceId,
-      definition: {
+      workflow: {
         name: "background-research",
         description: "Background research",
         scope: "built-in",
         executable: true,
       },
-      definitionSource:
-        "export default function workflow() { return { reportMarkdown: 'done' }; }\n",
+      source: "export default function workflow() { return { reportMarkdown: 'done' }; }\n",
       args: {},
       now: "2026-06-04T00:00:00.000Z",
     });
@@ -5070,14 +5070,13 @@ describe("TaskService", () => {
     await runStore.createRun({
       id: workflowRunId,
       workspaceId: rootWorkspaceId,
-      definition: {
+      workflow: {
         name: "background-research",
         description: "Background research",
         scope: "built-in",
         executable: true,
       },
-      definitionSource:
-        "export default function workflow() { return { reportMarkdown: 'done' }; }\n",
+      source: "export default function workflow() { return { reportMarkdown: 'done' }; }\n",
       args: {},
       now: "2026-06-04T00:00:00.000Z",
     });
@@ -5150,14 +5149,13 @@ describe("TaskService", () => {
     await runStore.createRun({
       id: workflowRunId,
       workspaceId: rootWorkspaceId,
-      definition: {
+      workflow: {
         name: "background-research",
         description: "Background research",
         scope: "built-in",
         executable: true,
       },
-      definitionSource:
-        "export default function workflow() { return { reportMarkdown: 'done' }; }\n",
+      source: "export default function workflow() { return { reportMarkdown: 'done' }; }\n",
       args: {},
       now: "2026-06-04T00:00:00.000Z",
     });
@@ -5222,14 +5220,13 @@ describe("TaskService", () => {
     await runStore.createRun({
       id: workflowRunId,
       workspaceId: rootWorkspaceId,
-      definition: {
+      workflow: {
         name: "background-research",
         description: "Background research",
         scope: "built-in",
         executable: true,
       },
-      definitionSource:
-        "export default function workflow() { return { reportMarkdown: 'done' }; }\n",
+      source: "export default function workflow() { return { reportMarkdown: 'done' }; }\n",
       args: {},
       now: "2026-06-04T00:00:00.000Z",
     });
@@ -5998,10 +5995,16 @@ describe("TaskService", () => {
           input: {
             reportMarkdown: "Hello from child",
             title: "Result",
-            structuredOutput: { claims: ["fast handoff"] },
           },
           state: "output-available",
-          output: { success: true },
+          output: {
+            success: true,
+            report: {
+              reportMarkdown: "Hello from child",
+              title: "Result",
+              structuredOutput: { claims: ["fast handoff"] },
+            },
+          },
         },
       ],
     });
@@ -7055,13 +7058,13 @@ describe("TaskService", () => {
     await runStore.createRun({
       id: workflowRunId,
       workspaceId: parentId,
-      definition: {
+      workflow: {
         name: "interrupted",
         description: "Interrupted",
         scope: "built-in",
         executable: true,
       },
-      definitionSource: "export default function workflow() { return {}; }\n",
+      source: "export default function workflow() { return {}; }\n",
       args: {},
       now: "2026-05-29T00:00:00.000Z",
     });
@@ -7072,13 +7075,13 @@ describe("TaskService", () => {
     await innerRunStore.createRun({
       id: innerWorkflowRunId,
       workspaceId: runningChildId,
-      definition: {
+      workflow: {
         name: "inner-running",
         description: "Inner running",
         scope: "built-in",
         executable: true,
       },
-      definitionSource: "export default function workflow() { return {}; }\n",
+      source: "export default function workflow() { return {}; }\n",
       args: {},
       now: "2026-05-29T00:00:00.000Z",
     });
@@ -7136,13 +7139,13 @@ describe("TaskService", () => {
     await runStore.createRun({
       id: workflowRunId,
       workspaceId: parentTaskId,
-      definition: {
+      workflow: {
         name: "interrupted",
         description: "Interrupted",
         scope: "built-in",
         executable: true,
       },
-      definitionSource: "export default function workflow() { return {}; }\n",
+      source: "export default function workflow() { return {}; }\n",
       args: {},
       now: "2026-05-29T00:00:00.000Z",
     });
@@ -7235,13 +7238,13 @@ describe("TaskService", () => {
     await runStore.createRun({
       id: workflowRunId,
       workspaceId: rootId,
-      definition: {
+      workflow: {
         name: "interrupted",
         description: "Interrupted",
         scope: "built-in",
         executable: true,
       },
-      definitionSource: "export default function workflow() { return {}; }\n",
+      source: "export default function workflow() { return {}; }\n",
       args: {},
       now: "2026-05-29T00:00:00.000Z",
     });
@@ -8428,7 +8431,6 @@ describe("TaskService", () => {
           input: {
             reportMarkdown: "Hello from child",
             title: "Result",
-            structuredOutput: { claims: ["durable"] },
           },
           state: "output-available",
           output: { success: true },
@@ -8492,7 +8494,8 @@ describe("TaskService", () => {
       config.getSessionDir(parentId),
       childId
     );
-    expect(reportArtifact?.structuredOutput).toEqual({ claims: ["durable"] });
+    expect(reportArtifact?.reportMarkdown).toBe("Hello from child");
+    expect(reportArtifact?.structuredOutput).toBeUndefined();
 
     expect(remove).toHaveBeenCalledTimes(1);
     expect(remove).toHaveBeenCalledWith(childId, true);
@@ -10245,14 +10248,13 @@ describe("TaskService", () => {
     await runStore.createRun({
       id: workflowRunId,
       workspaceId: childId,
-      definition: {
+      workflow: {
         name: "child-workflow",
         description: "Child workflow",
         scope: "built-in",
         executable: true,
       },
-      definitionSource:
-        "export default function workflow() { return { reportMarkdown: 'done' }; }\n",
+      source: "export default function workflow() { return { reportMarkdown: 'done' }; }\n",
       args: {},
       now: "2026-06-04T00:00:00.000Z",
     });
@@ -10329,14 +10331,13 @@ describe("TaskService", () => {
     await runStore.createRun({
       id: workflowRunId,
       workspaceId: childId,
-      definition: {
+      workflow: {
         name: "child-workflow",
         description: "Child workflow",
         scope: "built-in",
         executable: true,
       },
-      definitionSource:
-        "export default function workflow() { return { reportMarkdown: 'done' }; }\n",
+      source: "export default function workflow() { return { reportMarkdown: 'done' }; }\n",
       args: {},
       now: "2026-06-04T00:00:00.000Z",
     });
@@ -10552,13 +10553,13 @@ describe("TaskService", () => {
     await runStore.createRun({
       id: workflowRunId,
       workspaceId: parentId,
-      definition: {
+      workflow: {
         name: "interrupted",
         description: "Interrupted",
         scope: "built-in",
         executable: true,
       },
-      definitionSource: "export default function workflow() { return {}; }\n",
+      source: "export default function workflow() { return {}; }\n",
       args: {},
       now: "2026-05-29T00:00:00.000Z",
     });
@@ -10726,13 +10727,13 @@ describe("TaskService", () => {
     await runStore.createRun({
       id: workflowRunId,
       workspaceId: parentId,
-      definition: {
+      workflow: {
         name: "structured-text",
         description: "Structured text",
         scope: "built-in",
         executable: true,
       },
-      definitionSource: "export default function workflow() { return {}; }\n",
+      source: "export default function workflow() { return {}; }\n",
       args: {},
       now: "2026-06-04T00:00:00.000Z",
     });
@@ -10803,13 +10804,13 @@ describe("TaskService", () => {
     await runStore.createRun({
       id: workflowRunId,
       workspaceId: parentId,
-      definition: {
+      workflow: {
         name: "invalid-structured",
         description: "Invalid structured",
         scope: "built-in",
         executable: true,
       },
-      definitionSource: "export default function workflow() { return {}; }\n",
+      source: "export default function workflow() { return {}; }\n",
       args: {},
       now: "2026-06-04T00:00:00.000Z",
     });
@@ -10877,7 +10878,7 @@ describe("TaskService", () => {
           workflowTask: {
             runId: workflowRunId,
             stepId: "collect",
-            outputSchema: { type: "object", description: "pre-upgrade schema" },
+            outputSchema: { $ref: "#/defs/pre-upgrade" },
           },
         }),
       ],
@@ -10888,13 +10889,13 @@ describe("TaskService", () => {
     await runStore.createRun({
       id: workflowRunId,
       workspaceId: parentId,
-      definition: {
+      workflow: {
         name: "legacy-invalid-schema",
         description: "Legacy invalid schema",
         scope: "built-in",
         executable: true,
       },
-      definitionSource: "export default function workflow() { return {}; }\n",
+      source: "export default function workflow() { return {}; }\n",
       args: {},
       agentOutputSchemaRequired: false,
       now: "2026-06-04T00:00:00.000Z",
@@ -10935,7 +10936,109 @@ describe("TaskService", () => {
     expect(report?.structuredOutput).toBeUndefined();
   });
 
-  test("workflow subagent missing structuredOutput does not finalize even with empty schema", async () => {
+  test("workflow subagent treats strict-provider null optional fields as omitted", async () => {
+    const config = await createTestConfig(rootDir);
+
+    const projectPath = path.join(rootDir, "repo");
+    const parentId = "parent-optional-null-structured";
+    const childId = "child-optional-null-structured";
+    const workflowRunId = "wfr_optional_null_structured";
+
+    await saveWorkspaces(
+      config,
+      projectPath,
+      [
+        projectWorkspace(projectPath, "parent", parentId),
+        projectWorkspace(projectPath, "child", childId, {
+          name: "agent_exec_child",
+          parentWorkspaceId: parentId,
+          agentType: "exec",
+          taskStatus: "awaiting_report",
+          taskModelString: "openai:gpt-4o-mini",
+          workflowTask: {
+            runId: workflowRunId,
+            stepId: "collect",
+            outputSchema: {
+              type: "object",
+              required: ["code", "nested"],
+              properties: {
+                code: { type: "string" },
+                notes: { type: "string" },
+                nullableNote: { type: ["string", "null"] },
+                nested: {
+                  type: "object",
+                  required: ["id"],
+                  properties: {
+                    id: { type: "string" },
+                    detail: { type: "string" },
+                  },
+                  additionalProperties: false,
+                },
+              },
+              additionalProperties: false,
+            },
+          },
+        }),
+      ],
+      testTaskSettings()
+    );
+
+    const runStore = new WorkflowRunStore({ sessionDir: config.getSessionDir(parentId) });
+    await runStore.createRun({
+      id: workflowRunId,
+      workspaceId: parentId,
+      workflow: {
+        name: "optional-null-structured",
+        description: "Optional null structured",
+        scope: "built-in",
+        executable: true,
+      },
+      source: "export default function workflow() { return {}; }\n",
+      args: {},
+      now: "2026-06-04T00:00:00.000Z",
+    });
+    await runStore.appendStatus(workflowRunId, "running", "2026-06-04T00:00:01.000Z");
+
+    const { aiService } = createAIServiceMocks(config);
+    const { workspaceService, sendMessage } = createWorkspaceServiceMocks();
+    const { taskService } = createTaskServiceHarness(config, {
+      aiService,
+      workspaceService,
+    });
+
+    await handleTaskServiceStreamEndForTest(taskService, {
+      type: "stream-end",
+      workspaceId: childId,
+      messageId: "assistant-child-output",
+      metadata: { model: "openai:gpt-4o-mini", finishReason: "stop" },
+      parts: [
+        {
+          type: "dynamic-tool",
+          toolCallId: "agent-report-call-1",
+          toolName: "agent_report",
+          input: {
+            code: "ABC",
+            notes: null,
+            nullableNote: null,
+            nested: { id: "nested-1", detail: null },
+          },
+          state: "output-available",
+          output: { success: true },
+        },
+      ],
+    });
+
+    expect(sendMessage).not.toHaveBeenCalled();
+    expect(findWorkspaceInConfig(config, childId)?.taskStatus).toBe("reported");
+    const report = await readSubagentReportArtifact(config.getSessionDir(parentId), childId);
+    expect(report?.structuredOutput).toEqual({
+      code: "ABC",
+      nullableNote: null,
+      nested: { id: "nested-1" },
+    });
+  });
+
+  test("workflow subagent accepts direct schema-shaped report for object schema", async () => {
     const config = await createTestConfig(rootDir);
 
     const projectPath = path.join(rootDir, "repo");
@@ -10957,7 +11060,7 @@ describe("TaskService", () => {
           workflowTask: {
             runId: workflowRunId,
             stepId: "collect",
-            outputSchema: {},
+            outputSchema: { type: "object" },
           },
         }),
       ],
@@ -10968,13 +11071,13 @@ describe("TaskService", () => {
     await runStore.createRun({
       id: workflowRunId,
       workspaceId: parentId,
-      definition: {
+      workflow: {
         name: "missing-structured",
         description: "Missing structured",
         scope: "built-in",
         executable: true,
       },
-      definitionSource: "export default function workflow() { return {}; }\n",
+      source: "export default function workflow() { return {}; }\n",
       args: {},
       now: "2026-06-04T00:00:00.000Z",
     });
@@ -11007,20 +11110,11 @@ describe("TaskService", () => {
       ],
     });
 
-    const sendCalls = (sendMessage as unknown as { mock: { calls: unknown[][] } }).mock.calls;
-    expect(sendCalls).toHaveLength(1);
-    expect(sendCalls[0]?.[0]).toBe(childId);
-    expect(String(sendCalls[0]?.[1])).toContain("agent_report");
-    expect(sendCalls[0]?.[2]).toEqual(
-      expect.objectContaining({
-        toolPolicy: [{ regex_match: "^agent_report$", action: "require" }],
-      })
-    );
-    expect(sendCalls[0]?.[3]).toEqual(
-      expect.objectContaining({ synthetic: true, agentInitiated: true })
-    );
-    expect(findWorkspaceInConfig(config, childId)?.taskStatus).toBe("awaiting_report");
-    expect(await readSubagentReportArtifact(config.getSessionDir(parentId), childId)).toBeNull();
+    expect(sendMessage).not.toHaveBeenCalled();
+    expect(findWorkspaceInConfig(config, childId)?.taskStatus).toBe("reported");
+    const report = await readSubagentReportArtifact(config.getSessionDir(parentId), childId);
+    expect(report?.reportMarkdown).toBe("Structured workflow report submitted.");
+    expect(report?.structuredOutput).toEqual({ reportMarkdown: "Done", title: null });
   });
 
   test("length-truncated final assistant text still requires explicit agent_report", async () => {
@@ -14196,14 +14290,13 @@ describe("TaskService", () => {
       await runStore.createRun({
         id: firstRunId,
         workspaceId: rootWorkspaceId,
-        definition: {
+        workflow: {
           name: "first-workflow",
           description: "First workflow",
           scope: "built-in",
           executable: true,
         },
-        definitionSource:
-          "export default function workflow() { return { reportMarkdown: 'done' }; }\n",
+        source: "export default function workflow() { return { reportMarkdown: 'done' }; }\n",
         args: {},
         now: "2026-06-04T00:00:00.000Z",
       });
@@ -14242,14 +14335,13 @@ describe("TaskService", () => {
       await runStore.createRun({
         id: secondRunId,
         workspaceId: rootWorkspaceId,
-        definition: {
+        workflow: {
           name: "second-workflow",
           description: "Second workflow",
           scope: "built-in",
           executable: true,
         },
-        definitionSource:
-          "export default function workflow() { return { reportMarkdown: 'done' }; }\n",
+        source: "export default function workflow() { return { reportMarkdown: 'done' }; }\n",
         args: {},
         now: "2026-06-04T00:00:03.000Z",
       });

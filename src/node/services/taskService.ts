@@ -87,7 +87,6 @@ import {
 import {
   AgentReportInlineToolArgsSchema,
   AgentReportSubmittedReportSchema,
-  AgentReportWorkflowInlineToolArgsSchema,
   TaskToolResultSchema,
   TaskToolArgsSchema,
   type TaskIsolation,
@@ -125,6 +124,7 @@ import {
 } from "@/node/services/taskHandleStore";
 import { readAgentWorkflowRunReferences } from "@/node/services/agentWorkflowRunReferences";
 import { isWorkflowRunTaskId } from "@/node/services/tools/taskId";
+import { normalizeWorkflowAgentReportPayloadForHostSchema } from "@/common/utils/tools/workflowReportPayload";
 import {
   formatJsonSchemaValidationErrors,
   validateJsonSchemaSubset,
@@ -328,6 +328,22 @@ function formatStructuredOutputValidationMessage(params: {
   return `agent_report structuredOutput failed schema validation${stepLabel}: ${errorSummary}`;
 }
 
+function normalizeWorkflowAgentReportArgsForWorkflowTask(
+  workflowTask: WorkspaceConfigEntry["workflowTask"] | undefined,
+  reportArgs: { reportMarkdown: string; title?: string; structuredOutput?: unknown }
+): { reportMarkdown: string; title?: string; structuredOutput?: unknown } {
+  if (workflowTask?.outputSchema === undefined || reportArgs.structuredOutput === undefined) {
+    return reportArgs;
+  }
+  return {
+    ...reportArgs,
+    structuredOutput: normalizeWorkflowAgentReportPayloadForHostSchema(
+      workflowTask.outputSchema,
+      reportArgs.structuredOutput
+    ),
+  };
+}
+
 function validateWorkflowAgentReportStructuredOutput(params: {
   workflowTask?: WorkspaceConfigEntry["workflowTask"];
   reportArgs: { structuredOutput?: unknown };
@@ -339,10 +355,7 @@ function validateWorkflowAgentReportStructuredOutput(params: {
   }
 
   if (params.allowLegacyInvalidOutputSchema) {
-    const schemaValidation = validateJsonSchemaSubsetSchema(workflowTask.outputSchema);
-    if (!schemaValidation.success) {
-      return null;
-    }
+    return null;
   }
 
   if (
@@ -355,10 +368,11 @@ function validateWorkflowAgentReportStructuredOutput(params: {
     });
   }
 
-  const validation = validateJsonSchemaSubset(
+  const structuredOutput = normalizeWorkflowAgentReportPayloadForHostSchema(
     workflowTask.outputSchema,
     params.reportArgs.structuredOutput
   );
+  const validation = validateJsonSchemaSubset(workflowTask.outputSchema, structuredOutput);
   if (validation.success) {
     return null;
   }
@@ -6310,7 +6324,13 @@ export class TaskService {
     }
 
     const status = entry.workspace.taskStatus;
-    const reportArgs = this.findAgentReportArgsInParts(event.parts);
+    const workflowOutputSchema = entry.workspace.workflowTask?.outputSchema;
+    const acceptsSchemaShapedWorkflowReport =
+      workflowOutputSchema !== undefined &&
+      validateJsonSchemaSubsetSchema(workflowOutputSchema, { requireObjectSchema: true }).success;
+    const reportArgs = this.findAgentReportArgsInParts(event.parts, {
+      acceptSchemaShapedWorkflowReport: acceptsSchemaShapedWorkflowReport,
+    });
 
     // Stream-end settlement: interrupted tasks must settle all pending waiters.
     // Report present → finalize (resolve waiters). No report → reject waiters promptly.
@@ -7366,7 +7386,10 @@ export class TaskService {
     if (workflowTask?.outputSchema === undefined) {
       return false;
     }
-    if (validateJsonSchemaSubsetSchema(workflowTask.outputSchema).success) {
+    if (
+      validateJsonSchemaSubsetSchema(workflowTask.outputSchema, { requireObjectSchema: true })
+        .success
+    ) {
       return false;
     }
     const parentWorkspaceId = childEntry?.workspace.parentWorkspaceId;
@@ -7393,7 +7416,7 @@ export class TaskService {
   private async finalizeAgentTaskReport(
     childWorkspaceId: string,
     childEntry: { projectPath: string; workspace: WorkspaceConfigEntry } | null | undefined,
-    reportArgs: { reportMarkdown: string; title?: string; structuredOutput?: unknown }
+    rawReportArgs: { reportMarkdown: string; title?: string; structuredOutput?: unknown }
   ): Promise<AgentReportFinalizationResult> {
     this.markTaskForegroundRelevant(childWorkspaceId);
 
@@ -7402,7 +7425,7 @@ export class TaskService {
       "finalizeAgentTaskReport: childWorkspaceId must be non-empty"
     );
     assert(
-      typeof reportArgs.reportMarkdown === "string" && reportArgs.reportMarkdown.length > 0,
+      typeof rawReportArgs.reportMarkdown === "string" && rawReportArgs.reportMarkdown.length > 0,
       "finalizeAgentTaskReport: reportMarkdown must be non-empty"
     );
 
@@ -7417,6 +7440,10 @@ export class TaskService {
     const allowLegacyInvalidOutputSchema = await this.shouldAllowLegacyInvalidWorkflowOutputSchema(
       childWorkspaceId,
       latestEntryBeforeReport
+    );
+    const reportArgs = normalizeWorkflowAgentReportArgsForWorkflowTask(
+      latestEntryBeforeReport?.workspace.workflowTask,
+      rawReportArgs
     );
     const validationMessage = validateWorkflowAgentReportStructuredOutput({
       workflowTask: latestEntryBeforeReport?.workspace.workflowTask,
@@ -7751,7 +7778,8 @@ export class TaskService {
   }
 
   private findAgentReportArgsInParts(
-    parts: readonly unknown[]
+    parts: readonly unknown[],
+    options: { acceptSchemaShapedWorkflowReport?: boolean } = {}
   ): { reportMarkdown: string; title?: string; structuredOutput?: unknown } | null {
     for (let i = parts.length - 1; i >= 0; i--) {
       const part = parts[i];
@@ -7768,23 +7796,27 @@ export class TaskService {
         return outputReport.data;
       }
 
-      const parsedWorkflowArgs = AgentReportWorkflowInlineToolArgsSchema.safeParse(part.input);
-      if (parsedWorkflowArgs.success) {
+      if (
+        options.acceptSchemaShapedWorkflowReport === true &&
+        part.input != null &&
+        typeof part.input === "object" &&
+        !Array.isArray(part.input)
+      ) {
         return {
-          reportMarkdown: parsedWorkflowArgs.data.reportMarkdown,
-          title: parsedWorkflowArgs.data.title ?? undefined,
-          structuredOutput: parsedWorkflowArgs.data.structuredOutput,
+          reportMarkdown: "Structured workflow report submitted.",
+          structuredOutput: part.input,
         };
       }
 
       const parsedInlineArgs = AgentReportInlineToolArgsSchema.safeParse(part.input);
-      if (!parsedInlineArgs.success) continue;
-      // Normalize null → undefined at the schema boundary so downstream
-      // code that expects `title?: string` doesn't need to handle null.
-      return {
-        reportMarkdown: parsedInlineArgs.data.reportMarkdown,
-        title: parsedInlineArgs.data.title ?? undefined,
-      };
+      if (parsedInlineArgs.success) {
+        // Normalize null → undefined at the schema boundary so downstream
+        // code that expects `title?: string` doesn't need to handle null.
+        return {
+          reportMarkdown: parsedInlineArgs.data.reportMarkdown,
+          title: parsedInlineArgs.data.title ?? undefined,
+        };
+      }
     }
     return null;
   }
@@ -8081,15 +8113,6 @@ export class TaskService {
       return [];
     }
 
-    // If someone is actively awaiting this report (foreground task tool call or task_await),
-    // skip injecting a synthetic history message to avoid duplicating the report in context.
-    if (childWorkspaceId) {
-      const waiters = this.pendingWaitersByTaskId.get(childWorkspaceId);
-      if (waiters && waiters.length > 0) {
-        return [];
-      }
-    }
-
     if (childEntry?.workspace.workflowTask != null) {
       log.debug("Skipping generic parent report delivery for workflow-owned child", {
         parentWorkspaceId,
@@ -8131,6 +8154,15 @@ export class TaskService {
         ) {
           return [];
         }
+      }
+    }
+
+    // If someone is actively awaiting this report (foreground task tool call or task_await),
+    // skip injecting a synthetic history message to avoid duplicating the report in context.
+    if (childWorkspaceId) {
+      const waiters = this.pendingWaitersByTaskId.get(childWorkspaceId);
+      if (waiters && waiters.length > 0) {
+        return [];
       }
     }
 

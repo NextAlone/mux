@@ -120,6 +120,9 @@ function APIHarness(props: { client: unknown; children: ReactNode }) {
   );
 }
 
+const TEST_WORKFLOW_SCRIPT_PATH = "skill://deep-research/workflow.js";
+const TEST_REQUESTED_WORKFLOW_SCRIPT_PATH = "skill://deep-research/./workflow.js";
+
 const TEST_WORKSPACE_ID = "workflow-run-tool-test";
 
 function withStickyToolProviders(ui: ReactElement, toolName = "workflow_run") {
@@ -150,14 +153,19 @@ function createWorkflowRunForExpansionTest(input: {
   return {
     id: input.id,
     workspaceId: TEST_WORKSPACE_ID,
-    definition: {
+    workflow: {
       name: "deep-research",
       description: "Deep research",
       scope: "built-in" as const,
+      sourcePath: TEST_WORKFLOW_SCRIPT_PATH,
+      requestedScriptPath: TEST_WORKFLOW_SCRIPT_PATH,
+      canonicalScriptPath: TEST_WORKFLOW_SCRIPT_PATH,
+      sourceKind: "skill" as const,
+      sourceHash: "sha256:test",
       executable: true,
     },
-    definitionSource: "export default function workflow() { return null; }",
-    definitionHash: "sha256:test",
+    source: "export default function workflow() { return null; }",
+    sourceHash: "sha256:test",
     args: { topic: "workflow cards" },
     status: input.status,
     createdAt: "2026-05-29T00:00:00.000Z",
@@ -240,7 +248,7 @@ describe("WorkflowRunToolCall", () => {
     const completedView = renderWithStickyToolProviders(
       <WorkflowRunToolCall
         args={{
-          name: "deep-research",
+          script_path: "skill://deep-research/workflow.js",
           args: { topic: "workflow cards" },
           run_in_background: false,
         }}
@@ -262,7 +270,11 @@ describe("WorkflowRunToolCall", () => {
     const runningRun = createWorkflowRunForExpansionTest({ id: "wfr_running", status: "running" });
     const executingView = renderWithStickyToolProviders(
       <WorkflowRunToolCall
-        args={{ name: "deep-research", args: { topic: "workflow cards" }, run_in_background: true }}
+        args={{
+          script_path: "skill://deep-research/workflow.js",
+          args: { topic: "workflow cards" },
+          run_in_background: true,
+        }}
         status="executing"
         result={{ status: "running", runId: runningRun.id, result: null, run: runningRun }}
       />
@@ -278,7 +290,7 @@ describe("WorkflowRunToolCall", () => {
     const view = renderWithStickyToolProviders(
       <WorkflowRunToolCall
         args={{
-          name: "deep-research",
+          script_path: "skill://deep-research/workflow.js",
           args: { topic: "workflow cards" },
           run_in_background: false,
         }}
@@ -301,7 +313,7 @@ describe("WorkflowRunToolCall", () => {
       withStickyToolProviders(
         <WorkflowRunToolCall
           args={{
-            name: "deep-research",
+            script_path: "skill://deep-research/workflow.js",
             args: { topic: "workflow cards" },
             run_in_background: false,
           }}
@@ -342,14 +354,18 @@ describe("WorkflowRunToolCall", () => {
               run: {
                 id: "wfr_123",
                 workspaceId: "workspace-1",
-                definition: {
+                workflow: {
                   name: "deep-research",
                   description: "Deep research",
                   scope: "built-in",
+                  requestedScriptPath: "skill://deep-research/workflow.js",
+                  canonicalScriptPath: "skill://deep-research/workflow.js",
+                  sourceKind: "skill",
+                  sourceHash: "sha256:abc123",
                   executable: true,
                 },
-                definitionSource: "export default function workflow() { return null; }",
-                definitionHash: "sha256:test",
+                source: "export default function workflow() { return null; }",
+                sourceHash: "sha256:test",
                 args: { topic: "workflow cards" },
                 status: "completed",
                 createdAt: "2026-05-29T00:00:00.000Z",
@@ -433,9 +449,11 @@ describe("WorkflowRunToolCall", () => {
     expect(view.getByText("wfr_123")).toBeTruthy();
     const getDisclosureForTitle = (title: string) => view.getByText(title).closest("details");
     expect(getDisclosureForTitle("Arguments")?.hasAttribute("open")).toBe(false);
-    expect(getDisclosureForTitle("Definition source")?.hasAttribute("open")).toBe(false);
+    expect(getDisclosureForTitle("Script source")?.hasAttribute("open")).toBe(false);
     expect(getDisclosureForTitle("Structured output")?.hasAttribute("open")).toBe(false);
     expect(view.container.textContent).toContain("workflow cards");
+    expect(view.container.textContent).toContain("skill://deep-research/workflow.js");
+    expect(view.container.textContent).toContain("sha256:abc123");
     expect(view.container.textContent).toContain("scope");
     expect(view.container.textContent).toContain("adversarial-verification");
     expect(view.container.textContent).toContain("task_scope");
@@ -495,14 +513,14 @@ describe("WorkflowRunToolCall", () => {
               run: {
                 id: "wfr_task_rows",
                 workspaceId: "workspace-1",
-                definition: {
+                workflow: {
                   name: "implementation",
                   description: "Implementation",
                   scope: "built-in",
                   executable: true,
                 },
-                definitionSource: "export default function workflow() { return null; }",
-                definitionHash: "sha256:test",
+                source: "export default function workflow() { return null; }",
+                sourceHash: "sha256:test",
                 args: {},
                 status: "running",
                 createdAt: "2026-05-29T00:00:00.000Z",
@@ -644,7 +662,11 @@ describe("WorkflowRunToolCall", () => {
       <ThemeProvider forcedTheme="dark">
         <TooltipProvider>
           <WorkflowRunToolCall
-            args={{ name: "deep-research", args: {}, run_in_background: true }}
+            args={{
+              script_path: "skill://deep-research/workflow.js",
+              args: {},
+              run_in_background: true,
+            }}
             status="executing"
             result={{
               status: "running",
@@ -653,14 +675,14 @@ describe("WorkflowRunToolCall", () => {
               run: {
                 id: "wfr_task_titles",
                 workspaceId: "workspace-1",
-                definition: {
+                workflow: {
                   name: "deep-research",
                   description: "Deep research",
                   scope: "built-in",
                   executable: true,
                 },
-                definitionSource: "export default function workflow() { return null; }",
-                definitionHash: "sha256:test",
+                source: "export default function workflow() { return null; }",
+                sourceHash: "sha256:test",
                 args: {},
                 status: "running",
                 createdAt: "2026-05-29T00:00:00.000Z",
@@ -718,14 +740,14 @@ describe("WorkflowRunToolCall", () => {
               run: {
                 id: "wfr_parent",
                 workspaceId: "workspace-1",
-                definition: {
+                workflow: {
                   name: "parent-simple",
                   description: "Parent",
-                  scope: "scratch",
+                  scope: "project",
                   executable: true,
                 },
-                definitionSource: "export default function workflow() { return null; }",
-                definitionHash: "sha256:parent",
+                source: "export default function workflow() { return null; }",
+                sourceHash: "sha256:parent",
                 args: {},
                 status: "completed",
                 createdAt: "2026-05-29T00:00:00.000Z",
@@ -786,14 +808,14 @@ describe("WorkflowRunToolCall", () => {
               run: {
                 id: "wfr_patch_rows",
                 workspaceId: "workspace-1",
-                definition: {
+                workflow: {
                   name: "implementation",
                   description: "Implementation",
                   scope: "built-in",
                   executable: true,
                 },
-                definitionSource: "export default function workflow() { return null; }",
-                definitionHash: "sha256:patches",
+                source: "export default function workflow() { return null; }",
+                sourceHash: "sha256:patches",
                 args: {},
                 status: "completed",
                 createdAt: "2026-05-29T00:00:00.000Z",
@@ -863,14 +885,14 @@ describe("WorkflowRunToolCall", () => {
               run: {
                 id: "wfr_action_cached_rows",
                 workspaceId: "workspace-1",
-                definition: {
+                workflow: {
                   name: "action-list",
                   description: "Action list",
                   scope: "built-in",
                   executable: true,
                 },
-                definitionSource: "export default function workflow() { return null; }",
-                definitionHash: "sha256:cached-actions",
+                source: "export default function workflow() { return null; }",
+                sourceHash: "sha256:cached-actions",
                 args: {},
                 status: "completed",
                 createdAt: "2026-05-29T00:00:00.000Z",
@@ -938,14 +960,14 @@ describe("WorkflowRunToolCall", () => {
               run: {
                 id: "wfr_action_ambiguous_rows",
                 workspaceId: "workspace-1",
-                definition: {
+                workflow: {
                   name: "action-list",
                   description: "Action list",
                   scope: "built-in",
                   executable: true,
                 },
-                definitionSource: "export default function workflow() { return null; }",
-                definitionHash: "sha256:ambiguous-actions",
+                source: "export default function workflow() { return null; }",
+                sourceHash: "sha256:ambiguous-actions",
                 args: {},
                 status: "completed",
                 createdAt: "2026-05-29T00:00:00.000Z",
@@ -1047,14 +1069,14 @@ describe("WorkflowRunToolCall", () => {
               run: {
                 id: "wfr_missing_task_workspace",
                 workspaceId: "workspace-1",
-                definition: {
+                workflow: {
                   name: "implementation",
                   description: "Implementation",
                   scope: "built-in",
                   executable: true,
                 },
-                definitionSource: "export default function workflow() { return null; }",
-                definitionHash: "sha256:test",
+                source: "export default function workflow() { return null; }",
+                sourceHash: "sha256:test",
                 args: {},
                 status: "running",
                 createdAt: "2026-05-29T00:00:00.000Z",
@@ -1111,18 +1133,18 @@ describe("WorkflowRunToolCall", () => {
     });
   });
 
-  test("shows invocation arguments and definition source before workflow events", () => {
+  test("shows invocation arguments and script source before workflow events", () => {
     const runningRun = {
       id: "wfr_event_priority",
       workspaceId: TEST_WORKSPACE_ID,
-      definition: {
+      workflow: {
         name: "deep-research",
         description: "Deep research",
         scope: "built-in" as const,
         executable: true,
       },
-      definitionSource: "export default function workflow() { return null; }",
-      definitionHash: "sha256:event-priority",
+      source: "export default function workflow() { return null; }",
+      sourceHash: "sha256:event-priority",
       args: { topic: "workflow cards" },
       status: "running" as const,
       createdAt: "2026-05-29T00:00:00.000Z",
@@ -1145,7 +1167,7 @@ describe("WorkflowRunToolCall", () => {
     const view = renderWithStickyToolProviders(
       <WorkflowRunToolCall
         args={{
-          name: "deep-research",
+          script_path: "skill://deep-research/workflow.js",
           args: { topic: "workflow cards" },
           run_in_background: false,
         }}
@@ -1160,10 +1182,10 @@ describe("WorkflowRunToolCall", () => {
     );
 
     const argumentsTitle = view.getByText("Arguments");
-    const definitionSourceTitle = view.getByText("Definition source");
+    const sourceTitle = view.getByText("Script source");
     const eventsTitle = view.getByText("Workflow events (1)");
     expect(Boolean(argumentsTitle.compareDocumentPosition(eventsTitle) & 4)).toBe(true);
-    expect(Boolean(definitionSourceTitle.compareDocumentPosition(eventsTitle) & 4)).toBe(true);
+    expect(Boolean(sourceTitle.compareDocumentPosition(eventsTitle) & 4)).toBe(true);
     expect(view.getByText("collect-sources / github.issue.get / completed")).toBeTruthy();
   });
 
@@ -1192,14 +1214,14 @@ describe("WorkflowRunToolCall", () => {
     const attachedRun = {
       id: "wfr_attached",
       workspaceId: "workspace-1",
-      definition: {
+      workflow: {
         name: "deep-research",
         description: "Deep research",
         scope: "built-in" as const,
         executable: true,
       },
-      definitionSource: "export default function workflow() { return null; }",
-      definitionHash: "sha256:attached",
+      source: "export default function workflow() { return null; }",
+      sourceHash: "sha256:attached",
       args: { topic: "workflow cards" },
       status: "running" as const,
       createdAt: "2026-05-29T00:00:00.000Z",
@@ -1224,7 +1246,7 @@ describe("WorkflowRunToolCall", () => {
           <TooltipProvider>
             <WorkflowRunToolCall
               args={{
-                name: "deep-research",
+                script_path: TEST_REQUESTED_WORKFLOW_SCRIPT_PATH,
                 args: { topic: "workflow cards" },
                 run_in_background: false,
               }}
@@ -1306,14 +1328,19 @@ describe("WorkflowRunToolCall", () => {
     const staleRun = {
       id: "wfr_stale",
       workspaceId: "workspace-1",
-      definition: {
+      workflow: {
         name: "deep-research",
         description: "Deep research",
         scope: "built-in" as const,
+        sourcePath: TEST_WORKFLOW_SCRIPT_PATH,
+        requestedScriptPath: TEST_REQUESTED_WORKFLOW_SCRIPT_PATH,
+        canonicalScriptPath: TEST_WORKFLOW_SCRIPT_PATH,
+        sourceKind: "skill" as const,
+        sourceHash: "sha256:stale",
         executable: true,
       },
-      definitionSource: "export default function workflow() { return null; }",
-      definitionHash: "sha256:stale",
+      source: "export default function workflow() { return null; }",
+      sourceHash: "sha256:stale",
       args: { topic: "workflow cards" },
       status: "running" as const,
       createdAt: "2026-05-28T00:00:00.000Z",
@@ -1325,8 +1352,9 @@ describe("WorkflowRunToolCall", () => {
     };
     const foregroundRun = {
       ...staleRun,
+      workflow: { ...staleRun.workflow, sourceHash: "sha256:foreground" },
       id: "wfr_foreground",
-      definitionHash: "sha256:foreground",
+      sourceHash: "sha256:foreground",
       createdAt: "2026-05-29T00:00:00.490Z",
       updatedAt: "2026-05-29T00:00:02.000Z",
       events: [
@@ -1373,7 +1401,7 @@ describe("WorkflowRunToolCall", () => {
           <TooltipProvider>
             <WorkflowRunToolCall
               args={{
-                name: "deep-research",
+                script_path: TEST_REQUESTED_WORKFLOW_SCRIPT_PATH,
                 args: { topic: "workflow cards" },
                 run_in_background: false,
               }}
@@ -1405,14 +1433,19 @@ describe("WorkflowRunToolCall", () => {
     const firstRun = {
       id: "wfr_first",
       workspaceId: "workspace-1",
-      definition: {
+      workflow: {
         name: "deep-research",
         description: "Deep research",
         scope: "built-in" as const,
+        sourcePath: TEST_WORKFLOW_SCRIPT_PATH,
+        requestedScriptPath: TEST_REQUESTED_WORKFLOW_SCRIPT_PATH,
+        canonicalScriptPath: TEST_WORKFLOW_SCRIPT_PATH,
+        sourceKind: "skill" as const,
+        sourceHash: "sha256:first",
         executable: true,
       },
-      definitionSource: "export default function workflow() { return null; }",
-      definitionHash: "sha256:first",
+      source: "export default function workflow() { return null; }",
+      sourceHash: "sha256:first",
       args: { topic: "workflow cards" },
       status: "running" as const,
       createdAt: "2026-05-29T00:00:01.000Z",
@@ -1425,7 +1458,7 @@ describe("WorkflowRunToolCall", () => {
     const secondRun = {
       ...firstRun,
       id: "wfr_second",
-      definitionHash: "sha256:second",
+      sourceHash: "sha256:second",
       updatedAt: "2026-05-29T00:00:03.000Z",
       events: [
         { sequence: 1, type: "phase" as const, at: "2026-05-29T00:00:03.000Z", name: "second" },
@@ -1446,7 +1479,7 @@ describe("WorkflowRunToolCall", () => {
           <TooltipProvider>
             <WorkflowRunToolCall
               args={{
-                name: "deep-research",
+                script_path: TEST_REQUESTED_WORKFLOW_SCRIPT_PATH,
                 args: { topic: "workflow cards" },
                 run_in_background: false,
               }}
@@ -1473,14 +1506,14 @@ describe("WorkflowRunToolCall", () => {
     const runningRun = {
       id: "wfr_known",
       workspaceId: "workspace-1",
-      definition: {
+      workflow: {
         name: "deep-research",
         description: "Deep research",
         scope: "built-in" as const,
         executable: true,
       },
-      definitionSource: "export default function workflow() { return null; }",
-      definitionHash: "sha256:known",
+      source: "export default function workflow() { return null; }",
+      sourceHash: "sha256:known",
       args: { topic: "workflow cards" },
       status: "running" as const,
       createdAt: "2026-05-29T00:00:00.000Z",
@@ -1540,14 +1573,14 @@ describe("WorkflowRunToolCall", () => {
     const otherWorkspaceRun = {
       id: "wfr_known",
       workspaceId: "workspace-other",
-      definition: {
+      workflow: {
         name: "deep-research",
         description: "Deep research",
         scope: "built-in" as const,
         executable: true,
       },
-      definitionSource: "export default function workflow() { return null; }",
-      definitionHash: "sha256:known",
+      source: "export default function workflow() { return null; }",
+      sourceHash: "sha256:known",
       args: { topic: "workflow cards" },
       status: "running" as const,
       createdAt: "2026-05-29T00:00:00.000Z",
@@ -1592,14 +1625,14 @@ describe("WorkflowRunToolCall", () => {
     const staleInterruptedRun = {
       id: "wfr_known",
       workspaceId: "workspace-1",
-      definition: {
+      workflow: {
         name: "deep-research",
         description: "Deep research",
         scope: "built-in" as const,
         executable: true,
       },
-      definitionSource: "export default function workflow() { return null; }",
-      definitionHash: "sha256:known",
+      source: "export default function workflow() { return null; }",
+      sourceHash: "sha256:known",
       args: { topic: "workflow cards" },
       status: "interrupted" as const,
       createdAt: "2026-05-29T00:00:00.000Z",
@@ -1684,14 +1717,14 @@ describe("WorkflowRunToolCall", () => {
       const runningRun = {
         id: "wfr_ordered",
         workspaceId: "workspace-1",
-        definition: {
+        workflow: {
           name: "deep-research",
           description: "Deep research",
           scope: "built-in" as const,
           executable: true,
         },
-        definitionSource: "export default function workflow() { return null; }",
-        definitionHash: "sha256:ordered",
+        source: "export default function workflow() { return null; }",
+        sourceHash: "sha256:ordered",
         args: { topic: "workflow cards" },
         status: "running" as const,
         createdAt: "2026-05-29T00:00:00.000Z",
@@ -1764,14 +1797,14 @@ describe("WorkflowRunToolCall", () => {
     const runningRun = {
       id: "wfr_action_ordered",
       workspaceId: "workspace-1",
-      definition: {
+      workflow: {
         name: "deep-research",
         description: "Deep research",
         scope: "built-in" as const,
         executable: true,
       },
-      definitionSource: "export default function workflow() { return null; }",
-      definitionHash: "sha256:action-ordered",
+      source: "export default function workflow() { return null; }",
+      sourceHash: "sha256:action-ordered",
       args: { topic: "workflow cards" },
       status: "running" as const,
       createdAt: "2026-05-29T00:00:00.000Z",
@@ -1862,14 +1895,14 @@ describe("WorkflowRunToolCall", () => {
         getRun: async () => ({
           id: "wfr_live",
           workspaceId: "workspace-1",
-          definition: {
+          workflow: {
             name: "deep-research",
             description: "Deep research",
             scope: "built-in",
             executable: true,
           },
-          definitionSource: "export default function workflow() { return null; }",
-          definitionHash: "sha256:test",
+          source: "export default function workflow() { return null; }",
+          sourceHash: "sha256:test",
           args: { topic: "workflow cards" },
           status: "completed",
           createdAt: "2026-05-29T00:00:00.000Z",
@@ -1908,14 +1941,14 @@ describe("WorkflowRunToolCall", () => {
                 run: {
                   id: "wfr_live",
                   workspaceId: "workspace-1",
-                  definition: {
+                  workflow: {
                     name: "deep-research",
                     description: "Deep research",
                     scope: "built-in",
                     executable: true,
                   },
-                  definitionSource: "export default function workflow() { return null; }",
-                  definitionHash: "sha256:test",
+                  source: "export default function workflow() { return null; }",
+                  sourceHash: "sha256:test",
                   args: { topic: "workflow cards" },
                   status: "running",
                   createdAt: "2026-05-29T00:00:00.000Z",
@@ -1949,14 +1982,14 @@ describe("WorkflowRunToolCall", () => {
     const runningRun = {
       id: "wfr_manual",
       workspaceId: "workspace-1",
-      definition: {
+      workflow: {
         name: "deep-research",
         description: "Deep research",
         scope: "built-in" as const,
         executable: true,
       },
-      definitionSource: "export default function workflow() { return null; }",
-      definitionHash: "sha256:test",
+      source: "export default function workflow() { return null; }",
+      sourceHash: "sha256:test",
       args: { topic: "workflow cards" },
       status: "running" as const,
       createdAt: "2026-05-29T00:00:00.000Z",
@@ -2040,14 +2073,14 @@ describe("WorkflowRunToolCall", () => {
     const runningRun = {
       id: "wfr_report_auto",
       workspaceId: "workspace-1",
-      definition: {
+      workflow: {
         name: "deep-research",
         description: "Deep research",
         scope: "built-in" as const,
         executable: true,
       },
-      definitionSource: "export default function workflow() { return null; }",
-      definitionHash: "sha256:test",
+      source: "export default function workflow() { return null; }",
+      sourceHash: "sha256:test",
       args: { topic: "workflow cards" },
       status: "running" as const,
       createdAt: "2026-05-29T00:00:00.000Z",
@@ -2155,14 +2188,14 @@ describe("WorkflowRunToolCall", () => {
     const runningRun = {
       id: "wfr_structured_auto",
       workspaceId: "workspace-1",
-      definition: {
+      workflow: {
         name: "deep-research",
         description: "Deep research",
         scope: "built-in" as const,
         executable: true,
       },
-      definitionSource: "export default function workflow() { return null; }",
-      definitionHash: "sha256:test",
+      source: "export default function workflow() { return null; }",
+      sourceHash: "sha256:test",
       args: { topic: "workflow cards" },
       status: "running" as const,
       createdAt: "2026-05-29T00:00:00.000Z",
@@ -2282,14 +2315,14 @@ describe("WorkflowRunToolCall", () => {
           return {
             id: "wfr_interrupt",
             workspaceId: "workspace-1",
-            definition: {
+            workflow: {
               name: "deep-research",
               description: "Deep research",
               scope: "built-in",
               executable: true,
             },
-            definitionSource: "export default function workflow() { return null; }",
-            definitionHash: "sha256:test",
+            source: "export default function workflow() { return null; }",
+            sourceHash: "sha256:test",
             args: { topic: "workflow cards" },
             status: "interrupted",
             createdAt: "2026-05-29T00:00:00.000Z",
@@ -2327,14 +2360,14 @@ describe("WorkflowRunToolCall", () => {
                 run: {
                   id: "wfr_interrupt",
                   workspaceId: "workspace-1",
-                  definition: {
+                  workflow: {
                     name: "deep-research",
                     description: "Deep research",
                     scope: "built-in",
                     executable: true,
                   },
-                  definitionSource: "export default function workflow() { return null; }",
-                  definitionHash: "sha256:test",
+                  source: "export default function workflow() { return null; }",
+                  sourceHash: "sha256:test",
                   args: { topic: "workflow cards" },
                   status: "running",
                   createdAt: "2026-05-29T00:00:00.000Z",
@@ -2373,14 +2406,14 @@ describe("WorkflowRunToolCall", () => {
           return {
             id: "wfr_palette",
             workspaceId: "workspace-1",
-            definition: {
+            workflow: {
               name: "deep-research",
               description: "Deep research",
               scope: "built-in",
               executable: true,
             },
-            definitionSource: "export default function workflow() { return null; }",
-            definitionHash: "sha256:test",
+            source: "export default function workflow() { return null; }",
+            sourceHash: "sha256:test",
             args: { topic: "workflow cards" },
             status: "interrupted",
             createdAt: "2026-05-29T00:00:00.000Z",
@@ -2419,14 +2452,14 @@ describe("WorkflowRunToolCall", () => {
                   run: {
                     id: "wfr_palette",
                     workspaceId: "workspace-1",
-                    definition: {
+                    workflow: {
                       name: "deep-research",
                       description: "Deep research",
                       scope: "built-in",
                       executable: true,
                     },
-                    definitionSource: "export default function workflow() { return null; }",
-                    definitionHash: "sha256:test",
+                    source: "export default function workflow() { return null; }",
+                    sourceHash: "sha256:test",
                     args: { topic: "workflow cards" },
                     status: "running",
                     createdAt: "2026-05-29T00:00:00.000Z",
@@ -2468,14 +2501,14 @@ describe("WorkflowRunToolCall", () => {
     const interruptedRun = {
       id: "wfr_resume",
       workspaceId: "workspace-1",
-      definition: {
+      workflow: {
         name: "deep-research",
         description: "Deep research",
         scope: "built-in" as const,
         executable: true,
       },
-      definitionSource: "export default function workflow() { return null; }",
-      definitionHash: "sha256:test",
+      source: "export default function workflow() { return null; }",
+      sourceHash: "sha256:test",
       args: { topic: "workflow cards" },
       status: "interrupted" as const,
       createdAt: "2026-05-29T00:00:00.000Z",
@@ -2545,14 +2578,14 @@ describe("WorkflowRunToolCall", () => {
                 run: {
                   id: "wfr_resume",
                   workspaceId: "workspace-1",
-                  definition: {
+                  workflow: {
                     name: "deep-research",
                     description: "Deep research",
                     scope: "built-in",
                     executable: true,
                   },
-                  definitionSource: "export default function workflow() { return null; }",
-                  definitionHash: "sha256:test",
+                  source: "export default function workflow() { return null; }",
+                  sourceHash: "sha256:test",
                   args: { topic: "workflow cards" },
                   status: "interrupted",
                   createdAt: "2026-05-29T00:00:00.000Z",
@@ -2591,14 +2624,14 @@ describe("WorkflowRunToolCall", () => {
     const failedRun = {
       id: "wfr_retry",
       workspaceId: "workspace-1",
-      definition: {
+      workflow: {
         name: "deep-research",
         description: "Deep research",
         scope: "built-in" as const,
         executable: true,
       },
-      definitionSource: "export default function workflow() { return null; }",
-      definitionHash: "sha256:test",
+      source: "export default function workflow() { return null; }",
+      sourceHash: "sha256:test",
       args: { topic: "workflow cards" },
       status: "failed" as const,
       createdAt: "2026-05-29T00:00:00.000Z",
@@ -2708,14 +2741,14 @@ describe("WorkflowRunToolCall", () => {
       const failedRun = {
         id: "wfr_retry_terminal_failed",
         workspaceId: "workspace-1",
-        definition: {
+        workflow: {
           name: "deep-research",
           description: "Deep research",
           scope: "built-in" as const,
           executable: true,
         },
-        definitionSource: "export default function workflow() { return null; }",
-        definitionHash: "sha256:test",
+        source: "export default function workflow() { return null; }",
+        sourceHash: "sha256:test",
         args: {},
         status: "failed" as const,
         createdAt: "2026-05-29T00:00:00.000Z",
@@ -2780,7 +2813,11 @@ describe("WorkflowRunToolCall", () => {
           <ThemeProvider forcedTheme="dark">
             <TooltipProvider>
               <WorkflowRunToolCall
-                args={{ name: "deep-research", args: {}, run_in_background: true }}
+                args={{
+                  script_path: "skill://deep-research/workflow.js",
+                  args: {},
+                  run_in_background: true,
+                }}
                 status="completed"
                 result={{ status: "failed", runId: failedRun.id, result: null, run: failedRun }}
               />
@@ -2824,14 +2861,14 @@ describe("WorkflowRunToolCall", () => {
       const interruptedRun = {
         id: "wfr_resume_terminal_failed",
         workspaceId: "workspace-1",
-        definition: {
+        workflow: {
           name: "deep-research",
           description: "Deep research",
           scope: "built-in" as const,
           executable: true,
         },
-        definitionSource: "export default function workflow() { return null; }",
-        definitionHash: "sha256:test",
+        source: "export default function workflow() { return null; }",
+        sourceHash: "sha256:test",
         args: {},
         status: "interrupted" as const,
         createdAt: "2026-05-29T00:00:00.000Z",
@@ -2891,7 +2928,11 @@ describe("WorkflowRunToolCall", () => {
           <ThemeProvider forcedTheme="dark">
             <TooltipProvider>
               <WorkflowRunToolCall
-                args={{ name: "deep-research", args: {}, run_in_background: true }}
+                args={{
+                  script_path: "skill://deep-research/workflow.js",
+                  args: {},
+                  run_in_background: true,
+                }}
                 status="completed"
                 result={{
                   status: "interrupted",
@@ -2929,14 +2970,14 @@ describe("WorkflowRunToolCall", () => {
     const failedRun = {
       id: "wfr_retry_duplicate",
       workspaceId: "workspace-1",
-      definition: {
+      workflow: {
         name: "deep-research",
         description: "Deep research",
         scope: "built-in" as const,
         executable: true,
       },
-      definitionSource: "export default function workflow() { return null; }",
-      definitionHash: "sha256:test",
+      source: "export default function workflow() { return null; }",
+      sourceHash: "sha256:test",
       args: {},
       status: "failed" as const,
       createdAt: "2026-05-29T00:00:00.000Z",
@@ -2992,7 +3033,11 @@ describe("WorkflowRunToolCall", () => {
         <ThemeProvider forcedTheme="dark">
           <TooltipProvider>
             <WorkflowRunToolCall
-              args={{ name: "deep-research", args: {}, run_in_background: true }}
+              args={{
+                script_path: "skill://deep-research/workflow.js",
+                args: {},
+                run_in_background: true,
+              }}
               status="completed"
               result={{ status: "failed", runId: failedRun.id, result: null, run: failedRun }}
             />
@@ -3017,7 +3062,11 @@ describe("WorkflowRunToolCall", () => {
         <ThemeProvider forcedTheme="dark">
           <TooltipProvider>
             <WorkflowRunToolCall
-              args={{ name: "deep-research", args: {}, run_in_background: true }}
+              args={{
+                script_path: "skill://deep-research/workflow.js",
+                args: {},
+                run_in_background: true,
+              }}
               status="completed"
               result={{
                 status: "failed",
@@ -3026,14 +3075,14 @@ describe("WorkflowRunToolCall", () => {
                 run: {
                   id: "wfr_no_retry",
                   workspaceId: "workspace-1",
-                  definition: {
+                  workflow: {
                     name: "deep-research",
                     description: "Deep research",
                     scope: "built-in",
                     executable: true,
                   },
-                  definitionSource: "export default function workflow() { return null; }",
-                  definitionHash: "sha256:test",
+                  source: "export default function workflow() { return null; }",
+                  sourceHash: "sha256:test",
                   args: {},
                   status: "failed",
                   createdAt: "2026-05-29T00:00:00.000Z",
@@ -3071,7 +3120,11 @@ describe("WorkflowRunToolCall", () => {
         <ThemeProvider forcedTheme="dark">
           <TooltipProvider>
             <WorkflowRunToolCall
-              args={{ name: "deep-research", args: {}, run_in_background: true }}
+              args={{
+                script_path: "skill://deep-research/workflow.js",
+                args: {},
+                run_in_background: true,
+              }}
               status="completed"
               result={{
                 status: "failed",
@@ -3080,14 +3133,14 @@ describe("WorkflowRunToolCall", () => {
                 run: {
                   id: "wfr_patch_no_retry",
                   workspaceId: "workspace-1",
-                  definition: {
+                  workflow: {
                     name: "deep-research",
                     description: "Deep research",
                     scope: "built-in",
                     executable: true,
                   },
-                  definitionSource: "export default function workflow() { return null; }",
-                  definitionHash: "sha256:test",
+                  source: "export default function workflow() { return null; }",
+                  sourceHash: "sha256:test",
                   args: {},
                   status: "failed",
                   createdAt: "2026-05-29T00:00:00.000Z",
@@ -3133,14 +3186,14 @@ describe("WorkflowRunToolCall", () => {
     const refreshedRun = {
       id: "wfr_resume_failed",
       workspaceId: "workspace-1",
-      definition: {
+      workflow: {
         name: "deep-research",
         description: "Deep research",
         scope: "built-in" as const,
         executable: true,
       },
-      definitionSource: "export default function workflow() { return null; }",
-      definitionHash: "sha256:test",
+      source: "export default function workflow() { return null; }",
+      sourceHash: "sha256:test",
       args: { topic: "workflow cards" },
       status: "interrupted" as const,
       createdAt: "2026-05-29T00:00:00.000Z",
@@ -3191,14 +3244,14 @@ describe("WorkflowRunToolCall", () => {
                 run: {
                   id: "wfr_resume_failed",
                   workspaceId: "workspace-1",
-                  definition: {
+                  workflow: {
                     name: "deep-research",
                     description: "Deep research",
                     scope: "built-in",
                     executable: true,
                   },
-                  definitionSource: "export default function workflow() { return null; }",
-                  definitionHash: "sha256:test",
+                  source: "export default function workflow() { return null; }",
+                  sourceHash: "sha256:test",
                   args: { topic: "workflow cards" },
                   status: "interrupted",
                   createdAt: "2026-05-29T00:00:00.000Z",
@@ -3234,153 +3287,6 @@ describe("WorkflowRunToolCall", () => {
     expect(getRunCalls).toBe(1);
   });
 
-  test("saves scratch workflow runs directly to project workflows", async () => {
-    const promotions: unknown[] = [];
-    const api = {
-      workflows: {
-        promoteScratch: async (input: unknown) => {
-          promotions.push(input);
-          return {
-            name: "scratch",
-            description: "Scratch workflow",
-            scope: "project",
-            sourcePath: "/repo/.mux/workflows/scratch.js",
-            executable: true,
-          };
-        },
-      },
-    };
-
-    const view = render(
-      <APIHarness client={api}>
-        <ThemeProvider forcedTheme="dark">
-          <TooltipProvider>
-            <WorkflowRunToolCall
-              args={{ name: "scratch", args: {}, run_in_background: true }}
-              status="completed"
-              result={{
-                status: "completed",
-                runId: "wfr_scratch",
-                result: { reportMarkdown: "scratch done" },
-                run: {
-                  id: "wfr_scratch",
-                  workspaceId: "workspace-1",
-                  definition: {
-                    name: "scratch",
-                    description: "Scratch workflow",
-                    scope: "scratch",
-                    executable: true,
-                  },
-                  definitionSource: "export default function workflow() { return null; }",
-                  definitionHash: "sha256:test",
-                  args: {},
-                  status: "completed",
-                  createdAt: "2026-05-29T00:00:00.000Z",
-                  updatedAt: "2026-05-29T00:00:01.000Z",
-                  events: [],
-                  steps: [],
-                },
-              }}
-            />
-          </TooltipProvider>
-        </ThemeProvider>
-      </APIHarness>
-    );
-
-    fireEvent.click(getWorkflowHeader(view));
-
-    expect(view.queryByRole("button", { name: "Promote workflow" })).toBeNull();
-    expect(view.getByRole("button", { name: "Save to global workflows" })).toBeTruthy();
-
-    fireEvent.click(view.getByRole("button", { name: "Save to project workflows" }));
-
-    await waitFor(() => expect(promotions).toHaveLength(1));
-    expect(promotions[0]).toEqual({
-      workspaceId: "workspace-1",
-      runId: "wfr_scratch",
-      name: "scratch",
-      description: "Scratch workflow",
-      location: "project",
-      overwrite: false,
-    });
-    await waitFor(() => expect(view.getByText("Saved to project workflows")).toBeTruthy());
-    expect(view.container.textContent).toContain("/repo/.mux/workflows/scratch.js");
-    expect(view.queryByRole("button", { name: "Save to project workflows" })).toBeNull();
-    expect(view.queryByRole("button", { name: "Save to global workflows" })).toBeNull();
-  });
-
-  test("saves scratch workflow runs directly to global workflows", async () => {
-    const promotions: unknown[] = [];
-    const api = {
-      workflows: {
-        promoteScratch: async (input: unknown) => {
-          promotions.push(input);
-          return {
-            name: "scratch",
-            description: "Scratch workflow",
-            scope: "global",
-            sourcePath: "/home/user/.mux/workflows/scratch.js",
-            executable: true,
-          };
-        },
-      },
-    };
-
-    const view = render(
-      <APIHarness client={api}>
-        <ThemeProvider forcedTheme="dark">
-          <TooltipProvider>
-            <WorkflowRunToolCall
-              args={{ name: "scratch", args: {}, run_in_background: true }}
-              status="completed"
-              result={{
-                status: "completed",
-                runId: "wfr_scratch",
-                result: { reportMarkdown: "scratch done" },
-                run: {
-                  id: "wfr_scratch",
-                  workspaceId: "workspace-1",
-                  definition: {
-                    name: "scratch",
-                    description: "Scratch workflow",
-                    scope: "scratch",
-                    executable: true,
-                  },
-                  definitionSource: "export default function workflow() { return null; }",
-                  definitionHash: "sha256:test",
-                  args: {},
-                  status: "completed",
-                  createdAt: "2026-05-29T00:00:00.000Z",
-                  updatedAt: "2026-05-29T00:00:01.000Z",
-                  events: [],
-                  steps: [],
-                },
-              }}
-            />
-          </TooltipProvider>
-        </ThemeProvider>
-      </APIHarness>
-    );
-
-    fireEvent.click(getWorkflowHeader(view));
-
-    fireEvent.click(view.getByRole("button", { name: "Save to global workflows" }));
-
-    await waitFor(() => expect(promotions).toHaveLength(1));
-    expect(promotions[0]).toEqual({
-      workspaceId: "workspace-1",
-      runId: "wfr_scratch",
-      name: "scratch",
-      description: "Scratch workflow",
-      location: "global",
-      overwrite: false,
-    });
-    await waitFor(() => expect(view.getByText("Saved to global workflows")).toBeTruthy());
-    expect(view.container.textContent).toContain("/home/user/.mux/workflows/scratch.js");
-    expect(view.queryByRole("button", { name: "Save to project workflows" })).toBeNull();
-    expect(view.queryByRole("button", { name: "Save to global workflows" })).toBeNull();
-  });
-
   test("uses live workflow run status for the header instead of stale tool completion state", () => {
     const view = render(
       <ThemeProvider forcedTheme="dark">
@@ -3399,14 +3305,14 @@ describe("WorkflowRunToolCall", () => {
               run: {
                 id: "wfr_running",
                 workspaceId: "workspace-1",
-                definition: {
+                workflow: {
                   name: "deep-research",
                   description: "Deep research",
                   scope: "built-in",
                   executable: true,
                 },
-                definitionSource: "export default function workflow() { return null; }",
-                definitionHash: "sha256:test",
+                source: "export default function workflow() { return null; }",
+                sourceHash: "sha256:test",
                 args: { topic: "workflow cards" },
                 status: "running",
                 createdAt: "2026-05-29T00:00:00.000Z",

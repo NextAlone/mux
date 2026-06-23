@@ -2,7 +2,6 @@ import type { MuxMessage } from "@/common/types/message";
 import type { WorkflowRunRecord } from "@/common/types/workflow";
 import assert from "@/common/utils/assert";
 
-export const SCHEDULED_WORKFLOW_TRIGGER_LABEL = "Automation:";
 export const WORKFLOW_TRIGGER_DISPLAY_METADATA_TYPE = "workflow-trigger-display";
 export const WORKFLOW_RUN_CARD_DISPLAY_METADATA_TYPE = "workflow-run-card-display";
 export const WORKFLOW_RESULT_METADATA_TYPE = "workflow-result";
@@ -27,7 +26,7 @@ function isRecordValue(value: unknown): value is Record<string, unknown> {
 }
 
 /**
- * workflow_run / workflow_resume outputs embed the full run record (definition source, event
+ * workflow_run / workflow_resume outputs embed the full run record (script source, event
  * log, step snapshots) solely for the UI run card. The model only needs status/runId/result —
  * in-progress events may never materialize in the final outcome — so drop the record from
  * model-bound copies (persisted-history requests and internal stream steps alike) while the
@@ -133,7 +132,9 @@ export function buildWorkflowResultContextMessage(input: {
 }
 
 export interface WorkflowRunCardInput {
-  name: string;
+  scriptPath?: string;
+  /** Legacy persisted/test fixtures may still identify old named workflow invocations. */
+  name?: string;
   args: unknown;
 }
 
@@ -174,7 +175,11 @@ export function buildWorkflowRunToolPart(
   result: WorkflowRunCardResult,
   now = Date.now()
 ): WorkflowRunToolPart {
-  assert(input.name.length > 0, "buildWorkflowRunToolPart: workflow name is required");
+  const scriptPath = input.scriptPath ?? input.name;
+  assert(
+    scriptPath != null && scriptPath.length > 0,
+    "buildWorkflowRunToolPart: workflow scriptPath is required"
+  );
   assert(result.runId.length > 0, "buildWorkflowRunToolPart: runId is required");
 
   return {
@@ -183,7 +188,7 @@ export function buildWorkflowRunToolPart(
     toolName: "workflow_run",
     state: "output-available",
     input: {
-      name: input.name,
+      script_path: scriptPath,
       args: input.args,
       run_in_background: true,
     },

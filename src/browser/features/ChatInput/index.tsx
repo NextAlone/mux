@@ -15,7 +15,6 @@ import {
 import type { Toast } from "@/browser/features/ChatInput/ChatInputToast";
 import { ConnectionStatusToast } from "@/browser/components/ConnectionStatusToast/ConnectionStatusToast";
 import { ChatInputToast } from "@/browser/features/ChatInput/ChatInputToast";
-import type { WorkflowDefinitionDescriptor } from "@/common/types/workflow";
 import type { SendMessageError } from "@/common/types/errors";
 import { createErrorToast } from "@/browser/features/ChatInput/ChatInputToasts";
 import { ConfirmationModal } from "@/browser/components/ConfirmationModal/ConfirmationModal";
@@ -403,9 +402,6 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
   const [showSymbolSuggestions, setShowSymbolSuggestions] = useState(false);
   const [symbolSuggestions, setSymbolSuggestions] = useState<SlashSuggestion[]>([]);
   const lastSymbolQueryRef = useRef<string>("");
-  const [workflowDefinitionDescriptors, setWorkflowDefinitionDescriptors] = useState<
-    WorkflowDefinitionDescriptor[]
-  >([]);
   const [agentSkillDescriptors, setAgentSkillDescriptors] = useState<AgentSkillDescriptor[]>([]);
   const [toast, setToast] = useState<Toast | null>(null);
   // State for destructive command confirmation modal (currently only /clear).
@@ -1499,7 +1495,6 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
   useLayoutEffect(() => {
     const suggestions = getSlashCommandSuggestions(input, {
       agentSkills: agentSkillDescriptors,
-      workflows: dynamicWorkflowsExperimentEnabled ? workflowDefinitionDescriptors : [],
       variant,
       isExperimentEnabled: (experimentId) =>
         resolveSlashCommandExperimentValue(experimentId, {
@@ -1514,7 +1509,6 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
   }, [
     input,
     agentSkillDescriptors,
-    workflowDefinitionDescriptors,
     variant,
     workspaceHeartbeatsExperimentEnabled,
     dynamicWorkflowsExperimentEnabled,
@@ -1558,28 +1552,17 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
       }),
   });
 
-  // Load workflow definitions for slash suggestions and slash invocation.
+  // Project live workflow run cards for foreground slash invocations after reloads.
   useEffect(() => {
     let isMounted = true;
     const requestId = ++workflowsRequestIdRef.current;
 
     const loadWorkflows = async () => {
-      const discoveryInput =
-        variant === "workspace" && workspaceId
-          ? { workspaceId }
-          : variant === "creation" && atMentionProjectPath
-            ? { projectPath: atMentionProjectPath }
-            : null;
-
-      if (!api || !discoveryInput || !dynamicWorkflowsExperimentEnabled) {
-        if (isMounted && workflowsRequestIdRef.current === requestId) {
-          setWorkflowDefinitionDescriptors([]);
-        }
+      if (!api || !dynamicWorkflowsExperimentEnabled) {
         return;
       }
 
       try {
-        const workflows = await api.workflows.listDefinitions(discoveryInput);
         const discoveryWorkspaceId = variant === "workspace" && workspaceId ? workspaceId : null;
         const runs =
           discoveryWorkspaceId != null && isTranscriptCaughtUp
@@ -1588,7 +1571,6 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
         if (!isMounted || workflowsRequestIdRef.current !== requestId) {
           return;
         }
-        setWorkflowDefinitionDescriptors(Array.isArray(workflows) ? workflows : []);
         if (discoveryWorkspaceId == null) {
           return;
         }
@@ -1608,11 +1590,7 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
           });
         }
       } catch (error) {
-        console.error("Failed to load workflow definitions:", error);
-        if (!isMounted || workflowsRequestIdRef.current !== requestId) {
-          return;
-        }
-        setWorkflowDefinitionDescriptors([]);
+        console.error("Failed to project workflow run cards:", error);
       }
     };
 
@@ -2377,7 +2355,6 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
     const { parsed, skillInvocation } = await parseCommandWithSkillInvocation({
       messageText,
       agentSkillDescriptors,
-      workflowDefinitions: dynamicWorkflowsExperimentEnabled ? workflowDefinitionDescriptors : [],
       api,
       discovery: skillDiscovery,
     });

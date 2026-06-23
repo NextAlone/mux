@@ -14,7 +14,6 @@ import {
   type CommandAction,
 } from "@/browser/contexts/CommandRegistryContext";
 import type {
-  WorkflowDefinitionDescriptor,
   WorkflowRunEvent,
   WorkflowRunRecord,
   WorkflowStepRecord,
@@ -47,23 +46,26 @@ import {
 } from "./Shared/toolUtils";
 import { HighlightedCode } from "./Shared/HighlightedCode";
 import {
-  WorkflowDefinitionCard,
+  WorkflowScriptCard,
   WorkflowJsonBlock,
   WorkflowKindBadge,
   WorkflowSection,
   WORKFLOW_ACTION_BUTTON_CLASS,
-  formatWorkflowSavedMessage,
-  type WorkflowPromotionTarget,
-} from "./WorkflowDefinitionToolCall";
+} from "./WorkflowToolShared";
 import {
   useWorkflowToolLiveRun,
   useWorkspaceStoreRaw,
   type WorkflowToolLiveRunState,
 } from "@/browser/stores/WorkspaceStore";
+import { workflowScriptMatchesPath } from "@/browser/utils/workflowRunScriptPaths";
 import { MarkdownRenderer } from "../Messages/MarkdownRenderer";
 
+type WorkflowRunToolDisplayArgs =
+  | WorkflowRunToolArgs
+  | (Omit<WorkflowRunToolArgs, "script_path"> & { script_path?: string; name: string });
+
 interface WorkflowRunToolCallProps {
-  args: WorkflowRunToolArgs;
+  args: WorkflowRunToolDisplayArgs;
   result?: WorkflowRunToolResult;
   status?: ToolStatus;
   workspaceId?: string;
@@ -862,16 +864,21 @@ function getNewestWorkflowRunSnapshot(
   return compareWorkflowRunSnapshots(current, next) > 0 ? current : next;
 }
 
+function getWorkflowRunScriptPath(args: WorkflowRunToolDisplayArgs): string {
+  return args.script_path ?? ("name" in args ? args.name : "");
+}
+
 function findForegroundWorkflowRun(input: {
   runs: readonly WorkflowRunRecord[];
-  args: WorkflowRunToolArgs;
+  args: WorkflowRunToolDisplayArgs;
   startedAt?: number;
 }): WorkflowRunRecord | null {
-  assert(input.args.name.length > 0, "findForegroundWorkflowRun requires a workflow name");
+  const scriptPath = getWorkflowRunScriptPath(input.args);
+  assert(scriptPath.length > 0, "findForegroundWorkflowRun requires a script path");
   const invocationArgs = input.args.args ?? {};
   const candidates = input.runs.filter(
     (run) =>
-      run.definition.name === input.args.name &&
+      workflowScriptMatchesPath(run.workflow, scriptPath) &&
       DISCOVERABLE_FOREGROUND_WORKFLOW_STATUSES.has(run.status) &&
       workflowArgsEqual(run.args ?? {}, invocationArgs) &&
       isFreshEnoughForToolCall(run, input.startedAt)
@@ -1001,18 +1008,12 @@ export const WorkflowRunToolCall: React.FC<WorkflowRunToolCallProps> = ({
   });
 
   const [actionError, setActionError] = useState<string | null>(null);
-  const [promotedDefinition, setPromotedDefinition] = useState<WorkflowDefinitionDescriptor | null>(
-    null
-  );
-  const [savingPromotionTarget, setSavingPromotionTarget] =
-    useState<WorkflowPromotionTarget | null>(null);
-  const savingPromotionTargetRef = useRef<WorkflowPromotionTarget | null>(null);
   const resumeOrRetryPendingForRun =
     runId != null && (resumingRunId === runId || workflowControlInFlightRunId === runId);
-  const displayDefinition = promotedDefinition ?? run?.definition;
+  const displayWorkflow = run?.workflow;
   // workflow_resume cards only know the run ID until a snapshot loads; prefer the real
   // workflow name once available.
-  const displayName = displayDefinition?.name ?? args.name;
+  const displayName = displayWorkflow?.name ?? getWorkflowRunScriptPath(args);
   // A uniquely discovered foreground run is actionable before the blocking tool call returns.
   const discoveredForegroundRunConfirmed =
     status === "executing" &&
@@ -1055,18 +1056,6 @@ export const WorkflowRunToolCall: React.FC<WorkflowRunToolCallProps> = ({
     run?.workspaceId != null &&
     canRetryWorkflowFromCheckpoint(run) &&
     !resumeOrRetryPendingForRun;
-  const canPromote =
-    runIdentityConfirmed &&
-    run?.workspaceId != null &&
-    run.definition.scope === "scratch" &&
-    promotedDefinition == null;
-  const canSavePromotedWorkflow =
-    apiState?.api != null &&
-    runId != null &&
-    canPromote &&
-    savingPromotionTarget == null &&
-    savingPromotionTargetRef.current == null;
-
   const updateRunFromAction = async (action: WorkflowRunControlAction) => {
     if (apiState?.api == null || run?.workspaceId == null || runId == null) {
       return;
@@ -1099,49 +1088,6 @@ export const WorkflowRunToolCall: React.FC<WorkflowRunToolCallProps> = ({
   const updateRunFromActionRef = useRef(updateRunFromAction);
   updateRunFromActionRef.current = updateRunFromAction;
 
-  const saveScratchWorkflow = (location: WorkflowPromotionTarget) => {
-    const api = apiState?.api;
-    const sourceDefinition = run?.definition;
-    if (
-      api == null ||
-      run?.workspaceId == null ||
-      runId == null ||
-      sourceDefinition == null ||
-      !canPromote ||
-      savingPromotionTargetRef.current != null
-    ) {
-      return;
-    }
-
-    assert(sourceDefinition.scope === "scratch", "Only scratch workflow runs can be saved");
-    setActionError(null);
-    setSavingPromotionTarget(location);
-    savingPromotionTargetRef.current = location;
-    api.workflows
-      .promoteScratch({
-        workspaceId: run.workspaceId,
-        runId,
-        name: sourceDefinition.name,
-        description: sourceDefinition.description,
-        location,
-        overwrite: false,
-      })
-      .then((descriptor) => {
-        assert(
-          descriptor.scope === location,
-          "promoteScratch returned a descriptor for a different location"
-        );
-        setPromotedDefinition(descriptor);
-      })
-      .catch((error: unknown) => {
-        setActionError(error instanceof Error ? error.message : "Failed to save workflow");
-      })
-      .finally(() => {
-        savingPromotionTargetRef.current = null;
-        setSavingPromotionTarget(null);
-      });
-  };
-
   useEffect(() => {
     // Checkpoint retries briefly keep showing the old failed snapshot until polling observes a
     // post-retry event sequence, so don't clear that pending marker just because status is failed.
@@ -1153,9 +1099,6 @@ export const WorkflowRunToolCall: React.FC<WorkflowRunToolCallProps> = ({
       setResumingRunId(null);
     }
   }, [resumingRunId, run, runId]);
-
-  const saveScratchWorkflowRef = useRef(saveScratchWorkflow);
-  saveScratchWorkflowRef.current = saveScratchWorkflow;
 
   useEffect(() => {
     if (registerCommandSource == null || runId == null || run?.workspaceId == null) {
@@ -1195,32 +1138,6 @@ export const WorkflowRunToolCall: React.FC<WorkflowRunToolCallProps> = ({
           run: () => updateRunFromActionRef.current("retryFromCheckpoint"),
         });
       }
-      if (canPromote) {
-        actions.push(
-          {
-            id: `workflow:${runId}:save-project`,
-            title: `Save workflow to project workflows: ${displayName}`,
-            subtitle,
-            section: "Workflows",
-            keywords: ["workflow", "save", "project", "scratch", displayName, runId],
-            run: () => {
-              setLocalExpanded(true);
-              saveScratchWorkflowRef.current("project");
-            },
-          },
-          {
-            id: `workflow:${runId}:save-global`,
-            title: `Save workflow to global workflows: ${displayName}`,
-            subtitle,
-            section: "Workflows",
-            keywords: ["workflow", "save", "global", "scratch", displayName, runId],
-            run: () => {
-              setLocalExpanded(true);
-              saveScratchWorkflowRef.current("global");
-            },
-          }
-        );
-      }
       return actions;
     });
 
@@ -1230,7 +1147,6 @@ export const WorkflowRunToolCall: React.FC<WorkflowRunToolCallProps> = ({
     displayName,
     canInterrupt,
     canRetryFromCheckpoint,
-    canPromote,
     canResume,
     resumeOrRetryPendingForRun,
     registerCommandSource,
@@ -1373,12 +1289,12 @@ export const WorkflowRunToolCall: React.FC<WorkflowRunToolCallProps> = ({
           <div className="text-muted mb-2 flex flex-wrap items-center gap-2 text-[10px]">
             {runId && <span className="font-mono">{runId}</span>}
             <span>{displayStatus}</span>
-            {displayDefinition?.scope && <span>{displayDefinition.scope}</span>}
+            {displayWorkflow?.scope && <span>{displayWorkflow.scope}</span>}
           </div>
 
-          {displayDefinition && (
-            <WorkflowSection title="Definition">
-              <WorkflowDefinitionCard descriptor={displayDefinition} compact />
+          {displayWorkflow && (
+            <WorkflowSection title="Script">
+              <WorkflowScriptCard descriptor={displayWorkflow} compact />
             </WorkflowSection>
           )}
 
@@ -1387,19 +1303,19 @@ export const WorkflowRunToolCall: React.FC<WorkflowRunToolCallProps> = ({
             <WorkflowJsonBlock value={invocationArgs} className="max-h-[180px]" />
           </WorkflowDisclosureSection>
 
-          {run?.definitionSource && (
-            <WorkflowDisclosureSection title="Definition source">
+          {run?.source && (
+            <WorkflowDisclosureSection title="Script source">
               <div className="border-border bg-code-bg max-h-[260px] overflow-auto rounded border p-2">
                 <HighlightedCode
                   language="javascript"
-                  code={run.definitionSource.trimEnd()}
+                  code={run.source.trimEnd()}
                   showLineNumbers
                 />
               </div>
             </WorkflowDisclosureSection>
           )}
 
-          {(canInterrupt || canResume || canRetryFromCheckpoint || canPromote) && (
+          {(canInterrupt || canResume || canRetryFromCheckpoint) && (
             <div className="mb-2 flex flex-wrap gap-2 text-[10px]">
               {canInterrupt && (
                 <button
@@ -1437,42 +1353,6 @@ export const WorkflowRunToolCall: React.FC<WorkflowRunToolCallProps> = ({
                   Retry from checkpoint
                 </button>
               )}
-              {canPromote && (
-                <>
-                  <button
-                    type="button"
-                    className={WORKFLOW_ACTION_BUTTON_CLASS}
-                    disabled={!canSavePromotedWorkflow}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      saveScratchWorkflow("project");
-                    }}
-                  >
-                    {savingPromotionTarget === "project"
-                      ? "Saving workflow..."
-                      : "Save to project workflows"}
-                  </button>
-                  <button
-                    type="button"
-                    className={WORKFLOW_ACTION_BUTTON_CLASS}
-                    disabled={!canSavePromotedWorkflow}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      saveScratchWorkflow("global");
-                    }}
-                  >
-                    {savingPromotionTarget === "global"
-                      ? "Saving workflow..."
-                      : "Save to global workflows"}
-                  </button>
-                </>
-              )}
-            </div>
-          )}
-
-          {(promotedDefinition?.scope === "project" || promotedDefinition?.scope === "global") && (
-            <div className="text-success mb-2 text-[10px]">
-              {formatWorkflowSavedMessage(promotedDefinition.scope)}
             </div>
           )}
 
@@ -1564,7 +1444,7 @@ export const WorkflowResumeToolCall: React.FC<WorkflowResumeToolCallProps> = (pr
   return (
     <WorkflowRunToolCall
       args={{
-        name: props.args.run_id,
+        script_path: props.args.run_id,
         args: undefined,
         run_in_background: props.args.run_in_background ?? false,
       }}
