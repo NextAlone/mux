@@ -90,6 +90,14 @@ import { isWorktreeRuntime } from "@/node/runtime/worktreeLifecycleHooks";
 import { expandTilde, expandTildeForSSH } from "@/node/runtime/tildeExpansion";
 import { removeManagedGitWorktree } from "@/node/worktree/removeManagedGitWorktree";
 
+import {
+  copyStagedWorkspaceAttachments,
+  extractStagedAttachmentPathsFromText,
+  readStagedWorkspaceAttachment,
+  stageWorkspaceAttachment,
+  type DownloadedStagedWorkspaceAttachment,
+  type StagedWorkspaceAttachment,
+} from "@/node/utils/attachments/stageWorkspaceAttachment";
 import { ContainerManager } from "@/node/multiProject/containerManager";
 
 import type { PostCompactionExclusions } from "@/common/types/attachment";
@@ -1065,6 +1073,23 @@ function rollUpAncestorWorkspaceIds(params: {
     params.newParentWorkspaceId,
     ...filtered.filter((id) => id !== params.newParentWorkspaceId),
   ];
+}
+
+async function collectReferencedStagedAttachmentPaths(sessionDir: string): Promise<string[]> {
+  const paths = new Set<string>();
+  for (const fileName of [CHAT_ARCHIVE_FILE_NAME, CHAT_FILE_NAME, "partial.json"] as const) {
+    try {
+      const content = await fsPromises.readFile(path.join(sessionDir, fileName), "utf8");
+      for (const stagedPath of extractStagedAttachmentPathsFromText(content)) {
+        paths.add(stagedPath);
+      }
+    } catch (error) {
+      if (!isErrnoWithCode(error, "ENOENT")) {
+        throw error;
+      }
+    }
+  }
+  return [...paths];
 }
 
 async function archiveChildSessionArtifactsIntoParentSessionDir(params: {
@@ -6588,6 +6613,14 @@ export class WorkspaceService extends EventEmitter {
         log
       );
 
+      // Create a fresh source runtime handle because DockerRuntime.forkWorkspace() can
+      // mutate the original runtime's container identity to target the new workspace.
+      const freshSourceRuntime = createRuntime(sourceRuntimeConfig, {
+        projectPath: foundProjectPath,
+        workspaceName: sourceMetadata.name,
+        workspacePath: sourceWorkspace?.workspacePath,
+      });
+
       const sourceSessionDir = this.config.getSessionDir(sourceWorkspaceId);
       const newSessionDir = this.config.getSessionDir(newWorkspaceId);
 
@@ -6641,6 +6674,35 @@ export class WorkspaceService extends EventEmitter {
           targetWorkspaceId: newWorkspaceId,
         });
 
+        const referencedStagedAttachmentPaths =
+          await collectReferencedStagedAttachmentPaths(newSessionDir);
+        if (referencedStagedAttachmentPaths.length > 0) {
+          const sourceWorkspacePath = resolveWorkspaceExecutionPath(
+            sourceMetadata,
+            freshSourceRuntime
+          );
+          const targetWorkspacePath = resolveWorkspaceExecutionPath(
+            {
+              ...sourceMetadata,
+              name: resolvedName,
+              namedWorkspacePath: workspacePath,
+              projectPath: foundProjectPath,
+              runtimeConfig: forkedRuntimeConfig,
+            },
+            targetRuntime
+          );
+          const copyStagedAttachmentsResult = await copyStagedWorkspaceAttachments({
+            sourceRuntime: freshSourceRuntime,
+            targetRuntime,
+            sourceWorkspacePath,
+            stagedPaths: referencedStagedAttachmentPaths,
+            targetWorkspacePath,
+          });
+          if (!copyStagedAttachmentsResult.success) {
+            throw new Error(copyStagedAttachmentsResult.error);
+          }
+        }
+
         // Forks inherit chat history, but their cost ledger must start fresh.
         // Persist an explicit empty usage file so later reads do not rebuild
         // historical costs from the copied messages.
@@ -6661,17 +6723,10 @@ export class WorkspaceService extends EventEmitter {
         }
         initLogger.logComplete(-1);
         const message = getErrorMessage(copyError);
-        return Err(`Failed to copy chat history: ${message}`);
+        return Err(`Failed to copy fork state: ${message}`);
       }
 
       // Copy plan file using explicit source/target runtimes for cross-runtime safety.
-      // Create a fresh source runtime handle because DockerRuntime.forkWorkspace() can
-      // mutate the original runtime's container identity to target the new workspace.
-      const freshSourceRuntime = createRuntime(sourceRuntimeConfig, {
-        projectPath: foundProjectPath,
-        workspaceName: sourceMetadata.name,
-        workspacePath: sourceWorkspace?.workspacePath,
-      });
       await copyPlanFileAcrossRuntimes(
         freshSourceRuntime,
         targetRuntime,
@@ -6904,6 +6959,46 @@ export class WorkspaceService extends EventEmitter {
     }
 
     return foundDecision && current;
+  }
+
+  async stageAttachment(input: {
+    workspaceId: string;
+    filename: string;
+    mediaType?: string | null;
+    sizeBytes: number;
+    dataBase64: string;
+  }): Promise<Result<StagedWorkspaceAttachment, string>> {
+    const metadata = await this.getInfo(input.workspaceId);
+    if (metadata == null) {
+      return Err("Workspace not found");
+    }
+
+    const { runtime, workspacePath } = createRuntimeContextForWorkspace(metadata);
+    return stageWorkspaceAttachment({
+      runtime,
+      workspacePath,
+      filename: input.filename,
+      mediaType: input.mediaType,
+      sizeBytes: input.sizeBytes,
+      dataBase64: input.dataBase64,
+    });
+  }
+
+  async downloadStagedAttachment(input: {
+    workspaceId: string;
+    stagedPath: string;
+  }): Promise<Result<DownloadedStagedWorkspaceAttachment, string>> {
+    const metadata = await this.getInfo(input.workspaceId);
+    if (metadata == null) {
+      return Err("Workspace not found");
+    }
+
+    const { runtime, workspacePath } = createRuntimeContextForWorkspace(metadata);
+    return readStagedWorkspaceAttachment({
+      runtime,
+      workspacePath,
+      stagedPath: input.stagedPath,
+    });
   }
 
   async sendMessage(
