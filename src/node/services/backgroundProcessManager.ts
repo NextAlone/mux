@@ -90,6 +90,13 @@ export interface BackgroundProcessMonitorState extends BackgroundProcessMonitorC
   lastLines: string[];
   flushTimer?: ReturnType<typeof setTimeout>;
   lastReadOffset: number;
+  /**
+   * File byte offset at the end of the last complete line that produced a match. Unlike
+   * lastReadOffset (the raw scan cursor, which can sit past the match on later/unmatched output),
+   * this marks where the matched output actually ends. emitMonitorMatch compares it against the
+   * agent's shown-read offset to suppress wakes for output already delivered inline.
+   */
+  matchedThroughOffset: number;
   pollIntervalMs: number;
   incompleteLineBuffer: string;
   stopped: boolean;
@@ -116,6 +123,14 @@ export interface BackgroundProcess {
   isForeground: boolean;
   /** Tracks read position for incremental output retrieval */
   outputBytesRead: number;
+  /**
+   * File byte offset through the end of the last complete line an *unfiltered* getOutput call
+   * (task_await / bash_output) has delivered to the agent. Unlike outputBytesRead, this never
+   * advances for filtered reads (which may drop matched lines) or for buffered trailing fragments,
+   * so it is the faithful "agent has been shown this" signal the monitor consults. Both this and
+   * the monitor's matchedThroughOffset are absolute file offsets, so suppression is race-free.
+   */
+  shownThroughOffset: number;
   /** Mutex to serialize getOutput() calls (prevents race condition when
    * parallel tool calls read from same offset before position is updated) */
   outputLock: AsyncMutex;
@@ -230,6 +245,7 @@ export class BackgroundProcessManager extends EventEmitter<BackgroundProcessMana
       totalDroppedLines: 0,
       lastLines: [],
       lastReadOffset: 0,
+      matchedThroughOffset: 0,
       incompleteLineBuffer: "",
       stopped: false,
       pollIntervalMs: options.pollIntervalMs,
@@ -258,6 +274,20 @@ export class BackgroundProcessManager extends EventEmitter<BackgroundProcessMana
     if (monitor.flushTimer) {
       clearTimeout(monitor.flushTimer);
       monitor.flushTimer = undefined;
+    }
+
+    // Don't wake the agent about output it has already been shown. shownThroughOffset is the file
+    // position an unfiltered task_await / bash_output read has delivered complete lines through;
+    // matchedThroughOffset is where the matched line ends. Both are absolute file offsets, so this
+    // is order-independent (no race between the reader and the monitor). If the agent was shown
+    // through the match, a wake would only double-report it (e.g. a concurrent task_await that just
+    // returned the same line), so drop. Anything still beyond the shown mark -- a filtered-out
+    // match (filtered reads never advance the mark), a line still buffered unterminated (matched
+    // only on exit), or genuinely new output -- stays above it and still wakes.
+    if (proc.shownThroughOffset >= monitor.matchedThroughOffset) {
+      monitor.pendingLines = [];
+      monitor.droppedLines = 0;
+      return;
     }
 
     const lines = monitor.pendingLines;
@@ -378,7 +408,11 @@ export class BackgroundProcessManager extends EventEmitter<BackgroundProcessMana
     )}`;
   }
 
-  private recordMonitorMatch(proc: BackgroundProcess, line: string): void {
+  private recordMonitorMatch(
+    proc: BackgroundProcess,
+    line: string,
+    completeRegionEndOffset: number
+  ): void {
     const monitor = proc.monitor;
     if (!monitor || monitor.stopped) return;
 
@@ -386,6 +420,9 @@ export class BackgroundProcessManager extends EventEmitter<BackgroundProcessMana
     monitor.matchesCount++;
     monitor.pendingLines.push(boundedLine);
     monitor.lastLines.push(boundedLine);
+    // Offsets only grow, so this advances to the end of the latest matched line. Set before any
+    // flush (including the maxEvents-triggered stopMonitor below) so emitMonitorMatch sees it.
+    monitor.matchedThroughOffset = completeRegionEndOffset;
 
     if (monitor.lastLines.length > MONITOR_MAX_LAST_LINES) {
       monitor.lastLines.splice(0, monitor.lastLines.length - MONITOR_MAX_LAST_LINES);
@@ -415,36 +452,51 @@ export class BackgroundProcessManager extends EventEmitter<BackgroundProcessMana
   private processMonitorContent(
     proc: BackgroundProcess,
     content: string,
-    options?: { includeIncompleteLine?: boolean }
+    options: { chunkStartOffset: number; includeIncompleteLine?: boolean }
   ): void {
     const monitor = proc.monitor;
     if (!monitor || monitor.stopped) return;
-    if (content.length === 0 && options?.includeIncompleteLine !== true) return;
+    if (content.length === 0 && options.includeIncompleteLine !== true) return;
 
     const rawWithBuffer = monitor.incompleteLineBuffer + content;
     const allLines = rawWithBuffer.split("\n");
     const hasTrailingNewline = rawWithBuffer.endsWith("\n");
-    const completeLines = hasTrailingNewline ? allLines.slice(0, -1) : allLines.slice(0, -1);
+    const completeLines = allLines.slice(0, -1);
 
-    const includeIncompleteLine = options?.includeIncompleteLine === true;
+    // Absolute file byte offset where each complete line ends. A complete line always terminates at
+    // a newline within `content` (the prepended incompleteLineBuffer never contains one), so we can
+    // map each line's end to a file offset by walking content's newlines from this chunk's start.
+    // Tracking ends per-line (not per-chunk) means a matched line followed by later complete output
+    // in the same poll is suppressed as soon as the agent has read through that line specifically.
+    const lineEndOffsets: number[] = [];
+    const contentSegments = content.split("\n");
+    let cursor = options.chunkStartOffset;
+    for (let i = 0; i < contentSegments.length - 1; i++) {
+      cursor += Buffer.byteLength(contentSegments[i], "utf8") + 1; // +1 for the "\n"
+      lineEndOffsets.push(cursor);
+    }
+
+    const includeIncompleteLine = options.includeIncompleteLine === true;
     if (includeIncompleteLine && !hasTrailingNewline) {
       const last = allLines[allLines.length - 1];
       if (last.length > 0) {
         completeLines.push(last);
+        // The promoted fragment ends at the end of this chunk's content.
+        lineEndOffsets.push(options.chunkStartOffset + Buffer.byteLength(content, "utf8"));
       }
       monitor.incompleteLineBuffer = "";
     } else {
-      const incompleteLine = hasTrailingNewline ? "" : (allLines[allLines.length - 1] ?? "");
+      const rawTrailingIncomplete = hasTrailingNewline ? "" : (allLines[allLines.length - 1] ?? "");
       monitor.incompleteLineBuffer = this.boundMonitorIncompleteLineBuffer(
-        this.sanitizeMonitorLine(incompleteLine)
+        this.sanitizeMonitorLine(rawTrailingIncomplete)
       );
     }
 
-    for (const rawLine of completeLines) {
+    for (let i = 0; i < completeLines.length; i++) {
       if (monitor.stopped) break;
-      const line = this.sanitizeMonitorLine(rawLine);
+      const line = this.sanitizeMonitorLine(completeLines[i]);
       if (this.monitorMatchesLine(monitor, line)) {
-        this.recordMonitorMatch(proc, line);
+        this.recordMonitorMatch(proc, line, lineEndOffsets[i]);
       }
     }
   }
@@ -467,15 +519,16 @@ export class BackgroundProcessManager extends EventEmitter<BackgroundProcessMana
       const monitor = proc?.monitor;
       if (!proc || !monitor || monitor.stopped) return;
 
-      const read = await proc.handle.readOutput(monitor.lastReadOffset);
-      if (read.newOffset < monitor.lastReadOffset) {
+      const chunkStartOffset = monitor.lastReadOffset;
+      const read = await proc.handle.readOutput(chunkStartOffset);
+      if (read.newOffset < chunkStartOffset) {
         log.debug(`BackgroundProcessManager: monitor read offset moved backwards for ${processId}`);
         this.stopMonitor(proc, true);
         return;
       }
 
       monitor.lastReadOffset = read.newOffset;
-      this.processMonitorContent(proc, read.content);
+      this.processMonitorContent(proc, read.content, { chunkStartOffset });
 
       const exitCode = await proc.handle.getExitCode();
       if (exitCode !== null) {
@@ -493,9 +546,13 @@ export class BackgroundProcessManager extends EventEmitter<BackgroundProcessMana
 
         // stdout/stderr redirection can lag exit-code observation by a tick.
         await new Promise((resolve) => setTimeout(resolve, monitor.pollIntervalMs));
-        const finalRead = await proc.handle.readOutput(monitor.lastReadOffset);
+        const finalChunkStartOffset = monitor.lastReadOffset;
+        const finalRead = await proc.handle.readOutput(finalChunkStartOffset);
         monitor.lastReadOffset = finalRead.newOffset;
-        this.processMonitorContent(proc, finalRead.content, { includeIncompleteLine: true });
+        this.processMonitorContent(proc, finalRead.content, {
+          chunkStartOffset: finalChunkStartOffset,
+          includeIncompleteLine: true,
+        });
         this.stopMonitor(proc, true);
         return;
       }
@@ -610,6 +667,7 @@ export class BackgroundProcessManager extends EventEmitter<BackgroundProcessMana
       displayName: config.displayName,
       isForeground: config.isForeground ?? false,
       outputBytesRead: 0,
+      shownThroughOffset: 0,
       outputLock: new AsyncMutex(),
       getOutputCallCount: 0,
       incompleteLineBuffer: "",
@@ -729,6 +787,7 @@ export class BackgroundProcessManager extends EventEmitter<BackgroundProcessMana
       displayName,
       isForeground: false, // Now in background
       outputBytesRead: 0,
+      shownThroughOffset: 0,
       outputLock: new AsyncMutex(),
       getOutputCallCount: 0,
       incompleteLineBuffer: "",
@@ -1058,6 +1117,16 @@ export class BackgroundProcessManager extends EventEmitter<BackgroundProcessMana
     // Update buffer for next call (clear on exit, keep incomplete line otherwise)
     proc.incompleteLineBuffer =
       currentStatus === "running" && !hasTrailingNewline ? allLines[allLines.length - 1] : "";
+
+    // Advance the monitor's "shown through" mark only on unfiltered reads. A filtered read may have
+    // dropped matched lines, so it must not count as having shown them. End-of-last-complete-line =
+    // read cursor minus the trailing fragment we just buffered (cleared, hence 0, on exit). Offsets
+    // only grow; Math.max guards against any out-of-order/partial call regressing the mark.
+    if (!filter) {
+      const shownThrough =
+        proc.outputBytesRead - Buffer.byteLength(proc.incompleteLineBuffer, "utf8");
+      proc.shownThroughOffset = Math.max(proc.shownThroughOffset, shownThrough);
+    }
 
     log.debug(
       `BackgroundProcessManager.getOutput: read rawLen=${accumulatedRaw.length}, completeLines=${linesToReturn.length}`
