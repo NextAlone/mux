@@ -27,6 +27,9 @@ import { isPathInsideDir } from "@/node/utils/pathUtils";
 const SNAPSHOT_VERSION = 1;
 const SNAPSHOT_DIR_NAME = "archive-state";
 const SNAPSHOT_METADATA_FILE_NAME = "metadata.json";
+const ENABLE_LEGACY_GIT_ARCHIVE_SNAPSHOT: boolean = false;
+const JJ_ARCHIVE_SNAPSHOT_UNSUPPORTED =
+  "Archive snapshots are not yet supported for jj-native worktree runtimes.";
 const NOOP_INIT_LOGGER: InitLogger = {
   logStep: () => undefined,
   logStdout: () => undefined,
@@ -97,6 +100,9 @@ export class WorktreeArchiveSnapshotService {
     if (!isWorktreeRuntime(args.workspaceMetadata.runtimeConfig)) {
       return Err("Archive snapshots are only supported for worktree runtimes");
     }
+    if (!ENABLE_LEGACY_GIT_ARCHIVE_SNAPSHOT) {
+      return Err(JJ_ARCHIVE_SNAPSHOT_UNSUPPORTED);
+    }
 
     const configSnapshot = this.config.loadConfigOrDefault();
     const workspaceEntry = findWorkspaceEntryByIdOrPath(
@@ -156,6 +162,9 @@ export class WorktreeArchiveSnapshotService {
 
     if (!isWorktreeRuntime(args.workspaceMetadata.runtimeConfig)) {
       return Err("Archive snapshots are only supported for worktree runtimes");
+    }
+    if (!ENABLE_LEGACY_GIT_ARCHIVE_SNAPSHOT) {
+      return Err(JJ_ARCHIVE_SNAPSHOT_UNSUPPORTED);
     }
 
     const configSnapshot = this.config.loadConfigOrDefault();
@@ -230,6 +239,9 @@ export class WorktreeArchiveSnapshotService {
 
     if (!isWorktreeRuntime(args.workspaceMetadata.runtimeConfig)) {
       return Err("Archive snapshots are only supported for worktree runtimes");
+    }
+    if (!ENABLE_LEGACY_GIT_ARCHIVE_SNAPSHOT) {
+      return Err(JJ_ARCHIVE_SNAPSHOT_UNSUPPORTED);
     }
 
     const configSnapshot = this.config.loadConfigOrDefault();
@@ -434,6 +446,9 @@ export class WorktreeArchiveSnapshotService {
 
     if (!isWorktreeRuntime(args.workspaceMetadata.runtimeConfig)) {
       return Err("Archive snapshot restore is only supported for worktree runtimes");
+    }
+    if (!ENABLE_LEGACY_GIT_ARCHIVE_SNAPSHOT) {
+      return Err(JJ_ARCHIVE_SNAPSHOT_UNSUPPORTED);
     }
 
     const persistedWorkspacePath = workspaceEntry.workspace.path;
