@@ -6,9 +6,13 @@ import {
   createJjWorkspace,
   detectDefaultJjBookmark,
   forgetJjWorkspace,
+  getCurrentJjChangeId,
+  getJjRoot,
+  hasJjWorkspaceChanges,
   isInsideJjRepository,
   parseJjBookmarkNames,
   parseJjFileListOutput,
+  renameJjWorkspace,
 } from "./jj";
 
 // eslint-disable-next-line @typescript-eslint/no-empty-function
@@ -85,6 +89,24 @@ describe("jj bookmark helpers", () => {
     await expect(isInsideJjRepository("/repo")).resolves.toBe(true);
   });
 
+  test("returns the normalized jj root path", async () => {
+    execFileAsyncSpy = spyOn(disposableExec, "execFileAsync").mockImplementation((file, args) => {
+      expect(file).toBe("jj");
+      expect(args).toEqual([
+        "--no-pager",
+        "--color",
+        "never",
+        "--repository",
+        "/repo/subdir",
+        "--ignore-working-copy",
+        "root",
+      ]);
+      return createMockExecResult(Promise.resolve({ stdout: "/repo\n", stderr: "" }));
+    });
+
+    await expect(getJjRoot("/repo/subdir")).resolves.toBe("/repo");
+  });
+
   test("creates a jj workspace at an explicit base revision", async () => {
     execFileAsyncSpy = spyOn(disposableExec, "execFileAsync").mockImplementation((file, args) => {
       expect(file).toBe("jj");
@@ -137,5 +159,69 @@ describe("jj bookmark helpers", () => {
       projectPath: "/repo",
       workspaceName: "agent-task",
     });
+  });
+
+  test("renames the current jj workspace from its checkout path", async () => {
+    execFileAsyncSpy = spyOn(disposableExec, "execFileAsync").mockImplementation((file, args) => {
+      expect(file).toBe("jj");
+      expect(args).toEqual([
+        "--no-pager",
+        "--color",
+        "never",
+        "--repository",
+        "/mux/src/repo/old-name",
+        "workspace",
+        "rename",
+        "new-name",
+      ]);
+      return createMockExecResult(Promise.resolve({ stdout: "", stderr: "" }));
+    });
+
+    await renameJjWorkspace({
+      workspacePath: "/mux/src/repo/old-name",
+      newWorkspaceName: "new-name",
+    });
+  });
+
+  test("detects dirty jj workspaces from diff summary output", async () => {
+    execFileAsyncSpy = spyOn(disposableExec, "execFileAsync").mockImplementation((file, args) => {
+      expect(file).toBe("jj");
+      expect(args).toEqual([
+        "--no-pager",
+        "--color",
+        "never",
+        "--repository",
+        "/mux/src/repo/agent-task",
+        "diff",
+        "--summary",
+      ]);
+      return createMockExecResult(Promise.resolve({ stdout: "M src/main.ts\n", stderr: "" }));
+    });
+
+    await expect(hasJjWorkspaceChanges("/mux/src/repo/agent-task")).resolves.toBe(true);
+  });
+
+  test("returns the current jj change id from a workspace checkout", async () => {
+    execFileAsyncSpy = spyOn(disposableExec, "execFileAsync").mockImplementation((file, args) => {
+      expect(file).toBe("jj");
+      expect(args).toEqual([
+        "--no-pager",
+        "--color",
+        "never",
+        "--repository",
+        "/mux/src/repo/source-task",
+        "log",
+        "--no-graph",
+        "-r",
+        "@",
+        "-T",
+        'change_id.shortest() ++ "\\n"',
+        "-n",
+        "1",
+      ]);
+      return createMockExecResult(Promise.resolve({ stdout: "kqpnwost\n", stderr: "" }));
+    });
+
+    await expect(getCurrentJjChangeId("/mux/src/repo/source-task")).resolves.toBe("kqpnwost");
   });
 });

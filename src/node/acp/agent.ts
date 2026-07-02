@@ -32,7 +32,7 @@ import {
   WORDS_TO_TOKENS_RATIO,
   buildCompactionPrompt,
 } from "@/common/constants/ui";
-import { execFileAsync } from "@/node/utils/disposableExec";
+import { getJjRoot } from "@/node/vcs/jj";
 import { RuntimeConfigSchema } from "@/common/orpc/schemas";
 import type { OnChatMode, SendMessageOptions, WorkspaceChatMessage } from "@/common/orpc/types";
 import type { AgentSkillDescriptor } from "@/common/types/agentSkill";
@@ -2191,16 +2191,16 @@ export class MuxAgent implements Agent {
     const parentProjectPath = findContainingTopLevelProjectPath(normalizedProjectPath, projects);
     if (
       parentProjectPath != null &&
-      (await pathsShareGitTopLevel(parentProjectPath, normalizedProjectPath))
+      (await pathsShareJjTopLevel(parentProjectPath, normalizedProjectPath))
     ) {
       return await this.registerAcpSubProject(parentProjectPath, normalizedProjectPath);
     }
 
-    const gitTopLevel = await readGitTopLevelForAcpScope(normalizedProjectPath);
-    if (gitTopLevel != null && gitTopLevel !== normalizedProjectPath) {
-      const existingGitRootProjectPath = findProjectPathByNormalizedPath(gitTopLevel, projects);
+    const jjTopLevel = await readJjTopLevelForAcpScope(normalizedProjectPath);
+    if (jjTopLevel != null && jjTopLevel !== normalizedProjectPath) {
+      const existingJjRootProjectPath = findProjectPathByNormalizedPath(jjTopLevel, projects);
       const owningProjectPath =
-        existingGitRootProjectPath ?? (await this.registerAcpTopLevelProject(gitTopLevel));
+        existingJjRootProjectPath ?? (await this.registerAcpTopLevelProject(jjTopLevel));
       return await this.registerAcpSubProject(owningProjectPath, normalizedProjectPath);
     }
 
@@ -2242,24 +2242,18 @@ export class MuxAgent implements Agent {
   }
 }
 
-async function pathsShareGitTopLevel(leftPath: string, rightPath: string): Promise<boolean> {
-  const [leftGitRoot, rightGitRoot] = await Promise.all([
-    readGitTopLevelForAcpScope(leftPath),
-    readGitTopLevelForAcpScope(rightPath),
+async function pathsShareJjTopLevel(leftPath: string, rightPath: string): Promise<boolean> {
+  const [leftJjRoot, rightJjRoot] = await Promise.all([
+    readJjTopLevelForAcpScope(leftPath),
+    readJjTopLevelForAcpScope(rightPath),
   ]);
 
-  return leftGitRoot != null && leftGitRoot === rightGitRoot;
+  return leftJjRoot != null && leftJjRoot === rightJjRoot;
 }
 
-async function readGitTopLevelForAcpScope(projectPath: string): Promise<string | null> {
-  try {
-    using proc = execFileAsync("git", ["-C", projectPath, "rev-parse", "--show-toplevel"]);
-    const { stdout } = await proc.result;
-    const trimmed = stdout.trim();
-    return trimmed.length > 0 ? normalizePathForWorkspaceMatch(trimmed) : null;
-  } catch {
-    return null;
-  }
+async function readJjTopLevelForAcpScope(projectPath: string): Promise<string | null> {
+  const root = await getJjRoot(projectPath);
+  return root ? normalizePathForWorkspaceMatch(root) : null;
 }
 
 function findProjectPathByNormalizedPath(
