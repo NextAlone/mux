@@ -2,15 +2,23 @@ import type { Config, ProjectConfig } from "@/node/config";
 import { formatSshEndpoint } from "@/common/utils/ssh/formatSshEndpoint";
 import { spawn } from "child_process";
 import { createHash, randomBytes } from "crypto";
-import { validateProjectPath, isGitRepository, stripTrailingSlashes } from "@/node/utils/pathUtils";
+import { validateProjectPath, stripTrailingSlashes } from "@/node/utils/pathUtils";
 import { listLocalBranches, detectDefaultTrunkBranch } from "@/node/git";
-import { getJjRoot, isInsideJjRepository, listJjFiles } from "@/node/vcs/jj";
+import {
+  buildJjGitCloneArgs,
+  createJjBookmark,
+  describeJjRevision,
+  getJjRoot,
+  initJjGitRepository,
+  isInsideJjRepository,
+  listJjFiles,
+} from "@/node/vcs/jj";
 import type { Result } from "@/common/types/result";
 import { Ok, Err } from "@/common/types/result";
 import type { Secret } from "@/common/types/secrets";
 import type { Stats } from "fs";
 import * as fsPromises from "fs/promises";
-import { execFileAsync, killProcessTree } from "@/node/utils/disposableExec";
+import { killProcessTree } from "@/node/utils/disposableExec";
 import {
   buildFileCompletionsIndex,
   EMPTY_FILE_COMPLETIONS_INDEX,
@@ -539,7 +547,7 @@ export class ProjectService {
 
       const normalizedProjects = deriveProjectHierarchy(config.projects);
       if (findDeepestTopLevelParentProject(normalizedPath, normalizedProjects)) {
-        return Err("Cannot clone a new git repository inside an existing project tree");
+        return Err("Cannot clone a new jj repository inside an existing project tree");
       }
 
       if (config.projects.has(normalizedPath)) {
@@ -658,7 +666,7 @@ export class ProjectService {
             })
           : undefined;
 
-      const child = spawn("git", ["clone", "--progress", "--", cloneUrl, cloneWorkPath], {
+      const child = spawn("jj", buildJjGitCloneArgs(cloneUrl, cloneWorkPath), {
         stdio: ["ignore", "pipe", "pipe"],
         env: { ...process.env, GIT_TERMINAL_PROMPT: "0", ...(askpass?.env ?? {}) },
         // Detached children become process-group leaders on Unix so we can
@@ -1148,11 +1156,7 @@ export class ProjectService {
     }
   }
 
-  /**
-   * Initialize a git repository in the project directory.
-   * Runs `git init` and creates an initial commit so branches exist.
-   * Also handles "unborn" repos (git init already run but no commits yet).
-   */
+  /** Initialize a colocated jj repository in the project directory. */
   async gitInit(projectPath: string): Promise<Result<void>> {
     if (typeof projectPath !== "string" || projectPath.trim().length === 0) {
       return Err("Project path is required");
@@ -1164,37 +1168,23 @@ export class ProjectService {
       }
       const normalizedPath = validation.expandedPath!;
 
-      const isGitRepo = await isGitRepository(normalizedPath);
+      const isJjRepo = await isInsideJjRepository(normalizedPath);
 
-      if (isGitRepo) {
-        // Check if repo is "unborn" (git init but no commits yet)
+      if (isJjRepo) {
         const branches = await listLocalBranches(normalizedPath);
         if (branches.length > 0) {
-          return Err("Directory is already a git repository with commits");
+          return Err("Directory is already a jj repository with bookmarks");
         }
-        // Repo exists but is unborn - just create the initial commit
       } else {
-        // Initialize git repository with main as default branch
-        using initProc = execFileAsync("git", ["-C", normalizedPath, "init", "-b", "main"]);
-        await initProc.result;
+        await initJjGitRepository(normalizedPath);
       }
 
-      // Create an initial empty commit so the branch exists and worktree/SSH can work
-      // Without a commit, the repo is "unborn" and has no branches
-      // Use -c flags to set identity only for this commit (don't persist to repo config)
-      using commitProc = execFileAsync("git", [
-        "-C",
-        normalizedPath,
-        "-c",
-        "user.name=mux",
-        "-c",
-        "user.email=mux@localhost",
-        "commit",
-        "--allow-empty",
-        "-m",
-        "Initial commit",
-      ]);
-      await commitProc.result;
+      await describeJjRevision({
+        projectPath: normalizedPath,
+        revision: "@",
+        message: "Initial commit",
+      });
+      await createJjBookmark({ projectPath: normalizedPath, name: "main", revision: "@" });
 
       // Invalidate file completions cache since the repo state changed
       this.fileCompletionsCache.delete(normalizedPath);
@@ -1202,8 +1192,8 @@ export class ProjectService {
       return Ok(undefined);
     } catch (error) {
       const message = getErrorMessage(error);
-      log.error("Failed to initialize git repository:", error);
-      return Err(`Failed to initialize git repository: ${message}`);
+      log.error("Failed to initialize jj repository:", error);
+      return Err(`Failed to initialize jj repository: ${message}`);
     }
   }
 

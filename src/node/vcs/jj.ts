@@ -27,6 +27,10 @@ export function parseJjFileListOutput(output: string): string[] {
     .filter((line) => line.length > 0);
 }
 
+export function buildJjGitCloneArgs(source: string, destination: string): string[] {
+  return [...JJ_MACHINE_ARGS, "git", "clone", "--colocate", source, destination];
+}
+
 export function detectDefaultJjBookmark(args: {
   bookmarks: string[];
   currentBookmarks: string[];
@@ -140,6 +144,52 @@ export async function createJjWorkspace(args: {
     "--message",
     args.message,
     args.workspacePath,
+  ]);
+  await proc.result;
+}
+
+export async function initJjGitRepository(projectPath: string): Promise<void> {
+  using proc = disposableExec.execFileAsync("jj", [
+    ...JJ_MACHINE_ARGS,
+    "git",
+    "init",
+    "--colocate",
+    projectPath,
+  ]);
+  await proc.result;
+}
+
+export async function describeJjRevision(args: {
+  projectPath: string;
+  revision: string;
+  message: string;
+}): Promise<void> {
+  using proc = disposableExec.execFileAsync("jj", [
+    ...JJ_MACHINE_ARGS,
+    "--repository",
+    args.projectPath,
+    "describe",
+    "-m",
+    args.message,
+    args.revision,
+  ]);
+  await proc.result;
+}
+
+export async function createJjBookmark(args: {
+  projectPath: string;
+  name: string;
+  revision: string;
+}): Promise<void> {
+  using proc = disposableExec.execFileAsync("jj", [
+    ...JJ_MACHINE_ARGS,
+    "--repository",
+    args.projectPath,
+    "bookmark",
+    "create",
+    "-r",
+    args.revision,
+    args.name,
   ]);
   await proc.result;
 }

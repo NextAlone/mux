@@ -3,12 +3,16 @@ import { afterEach, describe, expect, spyOn, test } from "bun:test";
 import * as disposableExec from "@/node/utils/disposableExec";
 
 import {
+  buildJjGitCloneArgs,
   createJjWorkspace,
+  createJjBookmark,
+  describeJjRevision,
   detectDefaultJjBookmark,
   forgetJjWorkspace,
   getCurrentJjChangeId,
   getJjRoot,
   hasJjWorkspaceChanges,
+  initJjGitRepository,
   isInsideJjRepository,
   parseJjBookmarkNames,
   parseJjFileListOutput,
@@ -223,5 +227,81 @@ describe("jj bookmark helpers", () => {
     });
 
     await expect(getCurrentJjChangeId("/mux/src/repo/source-task")).resolves.toBe("kqpnwost");
+  });
+
+  test("builds colocated jj git clone arguments", () => {
+    expect(buildJjGitCloneArgs("git@example.com:owner/repo.git", "/tmp/repo")).toEqual([
+      "--no-pager",
+      "--color",
+      "never",
+      "git",
+      "clone",
+      "--colocate",
+      "git@example.com:owner/repo.git",
+      "/tmp/repo",
+    ]);
+  });
+
+  test("initializes a colocated jj git repository", async () => {
+    execFileAsyncSpy = spyOn(disposableExec, "execFileAsync").mockImplementation((file, args) => {
+      expect(file).toBe("jj");
+      expect(args).toEqual([
+        "--no-pager",
+        "--color",
+        "never",
+        "git",
+        "init",
+        "--colocate",
+        "/repo",
+      ]);
+      return createMockExecResult(Promise.resolve({ stdout: "", stderr: "" }));
+    });
+
+    await initJjGitRepository("/repo");
+  });
+
+  test("describes a jj revision without opening an editor", async () => {
+    execFileAsyncSpy = spyOn(disposableExec, "execFileAsync").mockImplementation((file, args) => {
+      expect(file).toBe("jj");
+      expect(args).toEqual([
+        "--no-pager",
+        "--color",
+        "never",
+        "--repository",
+        "/repo",
+        "describe",
+        "-m",
+        "Initial commit",
+        "@",
+      ]);
+      return createMockExecResult(Promise.resolve({ stdout: "", stderr: "" }));
+    });
+
+    await describeJjRevision({
+      projectPath: "/repo",
+      revision: "@",
+      message: "Initial commit",
+    });
+  });
+
+  test("creates a jj bookmark at a revision", async () => {
+    execFileAsyncSpy = spyOn(disposableExec, "execFileAsync").mockImplementation((file, args) => {
+      expect(file).toBe("jj");
+      expect(args).toEqual([
+        "--no-pager",
+        "--color",
+        "never",
+        "--repository",
+        "/repo",
+        "bookmark",
+        "create",
+        "-r",
+        "@",
+        "main",
+      ]);
+      return createMockExecResult(Promise.resolve({ stdout: "", stderr: "" }));
+    });
+
+    await createJjBookmark({ projectPath: "/repo", name: "main", revision: "@" });
   });
 });
