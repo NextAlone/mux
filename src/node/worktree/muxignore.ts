@@ -1,10 +1,10 @@
 import ignore from "ignore";
 import * as fs from "fs/promises";
 import * as path from "path";
-import { execFileAsync } from "@/node/utils/disposableExec";
 import { log } from "@/node/services/log";
 
 const MUXIGNORE_FILENAME = ".muxignore";
+const SKIPPED_METADATA_DIRS = new Set([".git", ".jj"]);
 
 /**
  * Parse .muxignore and return negation patterns (without the ! prefix).
@@ -19,64 +19,42 @@ export function parseMuxignorePatterns(content: string): string[] {
     .map((line) => line.slice(1));
 }
 
-/**
- * Get list of gitignored files in the project that match .muxignore patterns.
- * Uses `git ls-files` for consistency with the project's git-first philosophy.
- */
+async function listProjectFiles(projectPath: string, currentPath = projectPath): Promise<string[]> {
+  const entries = await fs.readdir(currentPath, { withFileTypes: true });
+  const files: string[] = [];
+
+  for (const entry of entries) {
+    if (entry.isDirectory() && SKIPPED_METADATA_DIRS.has(entry.name)) {
+      continue;
+    }
+
+    const entryPath = path.join(currentPath, entry.name);
+    if (entry.isDirectory()) {
+      files.push(...(await listProjectFiles(projectPath, entryPath)));
+      continue;
+    }
+
+    if (!entry.isFile()) {
+      continue;
+    }
+
+    files.push(path.relative(projectPath, entryPath).split(path.sep).join("/"));
+  }
+
+  return files;
+}
+
+/** Get list of files in the project that match .muxignore patterns. */
 async function getFilesToSync(projectPath: string, patterns: string[]): Promise<string[]> {
-  // Patterns that start with ! are "negative" entries (e.g. from `!!foo`) and
-  // cannot select candidate files on their own, so only positive patterns are
-  // used for git prefiltering.
-  const includePatterns = patterns.filter((pattern) => !pattern.startsWith("!"));
-  if (includePatterns.length === 0) return [];
+  if (patterns.every((pattern) => pattern.startsWith("!"))) return [];
 
-  // Root-anchored ignore patterns (e.g. `!/.env`) are valid in .muxignore,
-  // but git pathspec treats a leading slash as an absolute filesystem path.
-  // Normalize to repo-relative pathspecs for prefiltering.
-  const includePathspecs = includePatterns
-    .flatMap((rawPattern) => {
-      const normalized = rawPattern.replace(/^\.\//, "").replace(/^\/+/, "");
-      if (normalized.length === 0) return [];
-
-      // `git ls-files` returns files, not directories. Expand directory patterns
-      // (e.g. `config/`) to file pathspecs so nested files are discovered.
-      const pathspec = normalized.endsWith("/") ? `${normalized}**` : normalized;
-
-      // Non-rooted gitignore patterns can match at any depth (e.g. `!.env`,
-      // `!config/`). Include recursive pathspecs so git prefiltering doesn't
-      // drop nested candidates before ignore-based matching runs.
-      const isRootAnchored = rawPattern.startsWith("/") || rawPattern.startsWith("./");
-      return isRootAnchored ? [pathspec] : [pathspec, `**/${pathspec}`];
-    })
-    .filter((pattern, index, all) => all.indexOf(pattern) === index);
-  if (includePathspecs.length === 0) return [];
-
-  using proc = execFileAsync("git", [
-    "-C",
-    projectPath,
-    "ls-files",
-    "--others",
-    "--ignored",
-    "--exclude-standard",
-    "-z",
-    "--",
-    ...includePathspecs,
-  ]);
-  const { stdout } = await proc.result;
-  const ignoredFiles = stdout
-    .split("\0")
-    .map((line) => line.replace(/\r$/, ""))
-    .filter(Boolean);
-
-  // Use the `ignore` package to preserve .muxignore-style matching semantics
-  // after git's pathspec prefiltering.
   const ig = ignore().add(patterns);
-  return ignoredFiles.filter((file) => ig.ignores(file));
+  return (await listProjectFiles(projectPath)).filter((file) => ig.ignores(file));
 }
 
 /**
  * Sync gitignored files from project root to worktree based on .muxignore.
- * Runs after `git worktree add` so that files like `.env` are available
+ * Runs after workspace creation so that files like `.env` are available
  * before `.mux/init` hooks execute.
  *
  * Best-effort: logs debug details but never throws.
