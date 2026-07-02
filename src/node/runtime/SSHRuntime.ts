@@ -46,7 +46,6 @@ import {
   sshConnectionPool,
 } from "./sshConnectionPool";
 import { getOriginUrlForBundle } from "./gitBundleSync";
-import { gitNoHooksPrefix } from "@/node/utils/gitNoHooksEnv";
 import { execFileAsync } from "@/node/utils/disposableExec";
 import { syncRuntimeGitSubmodules } from "./submoduleSync";
 import {
@@ -58,7 +57,6 @@ import {
 import {
   buildRemoteProjectLayout,
   getRemoteWorkspacePath,
-  REMOTE_BASE_REPO_DIR,
   type RemoteProjectLayout,
 } from "./remoteProjectLayout";
 import { streamToString, shescape } from "./streamUtils";
@@ -66,6 +64,7 @@ import { streamToString, shescape } from "./streamUtils";
 /** Staging namespace for synced branch refs. Branches land here instead of
  *  refs/heads/* so they don't collide with branches checked out in worktrees. */
 const BUNDLE_REF_PREFIX = "refs/mux-bundle/";
+const JJ = "jj --no-pager --color never";
 /**
  * Canonical message thrown when an SSH operation is aborted. Several call sites
  * compare against this exact value (e.g. `errorMsg === OPERATION_ABORTED_ERROR`),
@@ -149,12 +148,6 @@ const UNRESOLVED_DELTA_PUSH_PATTERNS = [
 
 function isUnresolvedDeltaPushFailure(errorMsg: string): boolean {
   return UNRESOLVED_DELTA_PUSH_PATTERNS.some((pattern) => errorMsg.includes(pattern));
-}
-
-function isMissingObjectCheckoutFailure(message: string): boolean {
-  return /unable to read sha1 file|Could not reset index file|missing (blob|tree|commit)|bad object|unable to read tree|object file .* is empty|loose object .* is corrupt/i.test(
-    message
-  );
 }
 
 const sharedProjectSyncTails = new Map<string, Promise<void>>();
@@ -884,7 +877,7 @@ export class SSHRuntime extends RemoteRuntime {
     };
   }
 
-  private async checkBaseRepoRevisionConnectivity(
+  protected async checkBaseRepoRevisionConnectivity(
     baseRepoPathArg: string,
     revision: string,
     abortSignal?: AbortSignal
@@ -1034,7 +1027,7 @@ export class SSHRuntime extends RemoteRuntime {
     }
   }
 
-  private async cleanupFailedNewWorktreeCheckout(
+  protected async cleanupFailedNewWorktreeCheckout(
     baseRepoPathArg: string,
     workspacePathArg: string,
     abortSignal?: AbortSignal
@@ -1451,7 +1444,7 @@ export class SSHRuntime extends RemoteRuntime {
     return false;
   }
 
-  private async resolveWorktreeBaseRepoPath(
+  protected async resolveWorktreeBaseRepoPath(
     projectPath: string,
     workspacePath: string,
     abortSignal?: AbortSignal
@@ -1484,7 +1477,7 @@ export class SSHRuntime extends RemoteRuntime {
    * Detect whether a remote workspace is a git worktree (`.git` is a file)
    * vs a legacy full clone (`.git` is a directory).
    */
-  private async isWorktreeWorkspace(
+  protected async isWorktreeWorkspace(
     workspacePath: string,
     abortSignal?: AbortSignal
   ): Promise<boolean> {
@@ -1497,7 +1490,7 @@ export class SSHRuntime extends RemoteRuntime {
     return result.exitCode === 0;
   }
 
-  private async resolveCheckedOutBranch(
+  protected async resolveCheckedOutBranch(
     workspacePath: string,
     abortSignal?: AbortSignal,
     timeout = 10
@@ -1525,7 +1518,7 @@ export class SSHRuntime extends RemoteRuntime {
    * to the first available ref under refs/mux-bundle/ (handles main vs master
    * mismatches). Returns null if no bundle refs exist.
    */
-  private async resolveBundleTrunkRef(
+  protected async resolveBundleTrunkRef(
     baseRepoPathArg: string,
     trunkBranch: string,
     abortSignal?: AbortSignal
@@ -1570,7 +1563,7 @@ export class SSHRuntime extends RemoteRuntime {
     return check.exitCode === 0;
   }
 
-  private async resolveFreshWorkspaceSourceBase(
+  protected async resolveFreshWorkspaceSourceBase(
     baseRepoPathArg: string,
     trunkBranch: string,
     fetchedOrigin: boolean,
@@ -2499,15 +2492,12 @@ export class SSHRuntime extends RemoteRuntime {
   }
 
   async initWorkspace(params: WorkspaceInitParams): Promise<WorkspaceInitResult> {
-    // Disable git hooks for untrusted projects (prevents post-checkout execution)
-    const nhp = gitNoHooksPrefix(params.trusted);
-
     return runWorkspaceInitHook({
       params,
       runtimeType: "ssh",
       hookCheckPath: params.projectPath,
       beforeHook: async () => {
-        await this.prepareWorkspaceCheckout(params, nhp);
+        await this.prepareWorkspaceCheckout(params);
       },
       runHook: async ({ muxEnv, initLogger, abortSignal }) => {
         // Expand tilde in hook path (quoted paths don't auto-expand on remote).
@@ -2568,7 +2558,7 @@ export class SSHRuntime extends RemoteRuntime {
    * can skip the post-worktree submodule-sync probe (another SSH RT) when
    * the workspace has no `.gitmodules`.
    */
-  private async tryWarmWorktreeAdd(
+  protected async tryWarmWorktreeAdd(
     params: WorkspaceInitParams,
     nhp: string
   ): Promise<{ gitmodulesPresent: boolean } | null> {
@@ -2752,209 +2742,46 @@ export class SSHRuntime extends RemoteRuntime {
     return { gitmodulesPresent };
   }
 
-  private async prepareWorkspaceCheckout(params: WorkspaceInitParams, nhp: string): Promise<void> {
+  private async prepareWorkspaceCheckout(params: WorkspaceInitParams): Promise<void> {
     const { projectPath, branchName, trunkBranch, workspacePath, initLogger, abortSignal, env } =
       params;
-
-    // STARTUP-PERF (warm fast-path): try to materialize the workspace in a
-    // single fused SSH command. See `tryWarmWorktreeAdd()` for the contract
-    // and miss reasons. When this succeeds, we skip the entire multi-call
-    // slow path (test-d → git-check → ensureBaseRepo → snapshot check →
-    // manifest check → refreshOrigin → fetchOrigin → resolveBundleTrunkRef →
-    // resolveFreshWorkspaceSourceBase → worktree-add), collapsing ~9 sequential
-    // SSH round-trips into one.
-    const warmHit = await this.tryWarmWorktreeAdd(params, nhp);
-    if (warmHit) {
-      // STARTUP-PERF: The warm SSH command already reported whether
-      // `.gitmodules` exists in the freshly-materialized worktree, so we can
-      // skip the (otherwise unavoidable) probe-RTT inside
-      // `hasRuntimeGitmodules()` when the answer is "missing". On a typical
-      // single-package project this saves one full SSH round-trip on every
-      // warm workspace create.
-      if (warmHit.gitmodulesPresent) {
-        await syncRuntimeGitSubmodules({
-          runtime: this,
-          workspacePath,
-          initLogger,
-          abortSignal,
-          env,
-          trusted: params.trusted,
-        });
-      }
-      return;
-    }
-
-    // If the workspace directory already exists and contains a git repo (e.g. forked from
-    // another SSH workspace via worktree add or legacy cp), skip the expensive sync step.
     const workspacePathArg = expandTildeForSSH(workspacePath);
-    let needsWorktreeCheckout = true;
-    let workspacePathExistedBeforeCheckout = false;
 
-    try {
-      const dirCheck = await execBuffered(this, `test -d ${workspacePathArg}`, {
-        cwd: "/tmp",
-        timeout: 10,
-        abortSignal,
-      });
-      if (dirCheck.exitCode === 0) {
-        workspacePathExistedBeforeCheckout = true;
-        const gitCheck = await execBuffered(
-          this,
-          `git -C ${workspacePathArg} rev-parse --is-inside-work-tree`,
-          {
-            cwd: "/tmp",
-            timeout: 20,
-            abortSignal,
-          }
+    const existingCheck = await execBuffered(
+      this,
+      [
+        `if [ ! -e ${workspacePathArg} ]; then echo missing; exit 0; fi`,
+        `if [ ! -d ${workspacePathArg} ]; then echo not-directory; exit 0; fi`,
+        `if cd ${workspacePathArg} && ${JJ} root >/dev/null 2>&1; then echo jj; else echo not-jj; fi`,
+      ].join("\n"),
+      { cwd: "/tmp", timeout: 20, abortSignal }
+    );
+    const existingState = existingCheck.stdout.trim();
+
+    if (existingState === "jj") {
+      initLogger.logStep("Remote workspace already contains a jj repository; skipping sync");
+    } else {
+      if (existingState !== "missing") {
+        throw new Error(
+          `Remote workspace path exists but is not a jj repository: ${workspacePath}`
         );
-        needsWorktreeCheckout = gitCheck.exitCode !== 0;
       }
-    } catch {
-      // Default to materializing the workspace on unexpected errors, but do not
-      // later delete the path because we failed to prove it was absent first.
-      needsWorktreeCheckout = true;
-      workspacePathExistedBeforeCheckout = true;
-    }
 
-    if (needsWorktreeCheckout) {
-      // SSH workspace initialization owns repo materialization: it syncs the project into
-      // the shared base repo, checks out the worktree, and then materializes submodules
-      // before repo-controlled init hooks run.
-      initLogger.logStep("Syncing project files to remote...");
-      await this.syncProjectToRemote(projectPath, initLogger, abortSignal);
+      initLogger.logStep("Syncing colocated jj repository to remote...");
+      await this.copyProjectCheckoutToRemote(projectPath, workspacePath, initLogger, abortSignal);
       initLogger.logStep("Files synced successfully");
 
-      // A brand-new workspace still needs git worktree add so the checkout exists before init hooks
-      // or submodule sync run. Re-enter ensureBaseRepo() here so older shared repos still get their
-      // local core.bare config normalized before we reuse them for a fresh worktree checkout.
-      const baseRepoPath = this.getBaseRepoPath(projectPath);
-      const { baseRepoPathArg } = await this.ensureBaseRepo(projectPath, initLogger, abortSignal);
-
-      // Fetch latest from origin in the base repo so an explicit Source branch
-      // means the upstream branch, not the local snapshot staged in refs/mux-bundle/*.
-      const fetchedOrigin = await this.fetchOriginTrunk(
-        baseRepoPath,
-        trunkBranch,
-        initLogger,
-        abortSignal,
-        nhp
-      );
-
-      // Resolve the bundle's staging ref to use only as a local fallback start point.
-      // refs/mux-bundle/* is a transport cache for the user's laptop state; it must
-      // not override origin/<source> when the remote source branch is available.
-      const bundleTrunkRef = await this.resolveBundleTrunkRef(
-        baseRepoPathArg,
-        trunkBranch,
-        abortSignal
-      );
-      const newBranchBase = await this.resolveFreshWorkspaceSourceBase(
-        baseRepoPathArg,
-        trunkBranch,
-        fetchedOrigin,
-        bundleTrunkRef,
-        initLogger,
-        abortSignal
-      );
-
-      // `ensureBaseRepo()` keeps the bare repo HEAD on an unborn internal
-      // branch so Git porcelain stays happy even when there is no commit yet.
-      // Once we know the start point, detach HEAD at that commit when possible
-      // and let `worktree add -B` own branch creation/reset. Git still prevents
-      // resetting a branch that's active in another worktree.
-      initLogger.logStep(`Creating worktree for branch: ${branchName}`);
-      const runWorktreeAdd = (baseRef: string) =>
-        execBuffered(
-          this,
-          [
-            buildBestEffortDetachBaseRepoHeadCommand(baseRepoPathArg, shescape.quote(baseRef)),
-            `${nhp}git -C ${baseRepoPathArg} worktree add ${workspacePathArg} -B ${shescape.quote(branchName)} ${shescape.quote(baseRef)}`,
-          ].join("\n"),
-          {
-            cwd: "/tmp",
-            timeout: 300,
-            abortSignal,
-          }
-        );
-
-      let worktreeBase = newBranchBase;
-      let worktreeResult = await runWorktreeAdd(worktreeBase);
-
-      if (
-        worktreeResult.exitCode !== 0 &&
-        isMissingObjectCheckoutFailure(worktreeResult.stderr || worktreeResult.stdout)
-      ) {
-        initLogger.logStep("Shared base repository is missing checkout objects; repairing...");
-        if (!workspacePathExistedBeforeCheckout) {
-          await this.cleanupFailedNewWorktreeCheckout(
-            baseRepoPathArg,
-            workspacePathArg,
-            abortSignal
-          );
-        }
-
-        await this.repairBaseRepoMissingObjectsFromLocal(
-          projectPath,
-          baseRepoPathArg,
-          initLogger,
-          abortSignal
-        );
-
-        const repairedBaseCheck = await this.checkBaseRepoRevisionConnectivity(
-          baseRepoPathArg,
-          worktreeBase,
-          abortSignal
-        );
-        if (!repairedBaseCheck.healthy) {
-          if (worktreeBase === `origin/${trunkBranch}` && bundleTrunkRef != null) {
-            initLogger.logStderr(
-              `Note: origin/${trunkBranch} is still missing objects after repair; using local snapshot ${bundleTrunkRef}`
-            );
-            worktreeBase = bundleTrunkRef;
-            const fallbackCheck = await this.checkBaseRepoRevisionConnectivity(
-              baseRepoPathArg,
-              worktreeBase,
-              abortSignal
-            );
-            if (!fallbackCheck.healthy) {
-              throw new Error(
-                `Shared base repository is still missing objects after repair: ${fallbackCheck.detail}`
-              );
-            }
-          } else {
-            throw new Error(
-              `Shared base repository is still missing objects after repair: ${repairedBaseCheck.detail}`
-            );
-          }
-        }
-
-        worktreeResult = await runWorktreeAdd(worktreeBase);
-      }
-
-      if (worktreeResult.exitCode !== 0) {
-        throw new Error(
-          `Failed to create worktree: ${worktreeResult.stderr || worktreeResult.stdout}`
-        );
-      }
-      initLogger.logStep("Worktree created successfully");
-    } else {
-      initLogger.logStep("Remote workspace already contains a git repo; skipping sync");
-
-      // Existing workspace (e.g. forked): fetch origin and checkout as before.
-      const fetchedOrigin = await this.fetchOriginTrunk(
+      initLogger.logStep(`Creating jj workspace change for: ${branchName}`);
+      const checkoutResult = await this.createRemoteJjWorkspaceChange({
         workspacePath,
-        trunkBranch,
-        initLogger,
+        bookmarkName: branchName,
+        fallbackBookmarkName: trunkBranch,
         abortSignal,
-        nhp
-      );
-      const shouldUseOrigin =
-        fetchedOrigin &&
-        (await this.canFastForwardToOrigin(workspacePath, trunkBranch, initLogger, abortSignal));
-
-      if (shouldUseOrigin) {
-        await this.fastForwardToOrigin(workspacePath, trunkBranch, initLogger, abortSignal, nhp);
+      });
+      if (!checkoutResult.success) {
+        throw new Error(checkoutResult.error);
       }
+      initLogger.logStep("jj workspace change created successfully");
     }
 
     await syncRuntimeGitSubmodules({
@@ -2967,11 +2794,130 @@ export class SSHRuntime extends RemoteRuntime {
     });
   }
 
+  private async copyProjectCheckoutToRemote(
+    projectPath: string,
+    workspacePath: string,
+    initLogger: InitLogger,
+    abortSignal?: AbortSignal
+  ): Promise<void> {
+    const workspaceParent = path.posix.dirname(workspacePath);
+    const workspacePathArg = expandTildeForSSH(workspacePath);
+    const workspaceParentArg = expandTildeForSSH(workspaceParent);
+    const stagingPath = path.posix.join(
+      workspaceParent,
+      `.mux-checkout-staging-${crypto.randomBytes(6).toString("hex")}`
+    );
+    const stagingPathArg = expandTildeForSSH(stagingPath);
+    const script = [
+      "set -eu",
+      `workspace_path=${workspacePathArg}`,
+      `workspace_parent=${workspaceParentArg}`,
+      `staging_path=${stagingPathArg}`,
+      'if [ -e "$workspace_path" ]; then echo MUX_WORKSPACE_EXISTS; exit 17; fi',
+      'mkdir -p "$workspace_parent"',
+      'rm -rf "$staging_path"',
+      'mkdir "$staging_path"',
+      "trap 'rm -rf \"$staging_path\"' EXIT",
+      'tar -xf - -C "$staging_path"',
+      'if [ -e "$workspace_path" ]; then echo MUX_WORKSPACE_EXISTS; exit 17; fi',
+      'mv "$staging_path" "$workspace_path"',
+      "trap - EXIT",
+    ].join("\n");
+
+    const remoteStream = await this.exec(script, {
+      cwd: "/tmp",
+      timeout: 600,
+      abortSignal,
+    });
+    const remoteStdoutPromise = streamToString(remoteStream.stdout);
+    const remoteStderrPromise = streamToString(remoteStream.stderr);
+
+    const tarProc = spawn("tar", ["-C", projectPath, "-cf", "-", "."], {
+      stdio: ["ignore", "pipe", "pipe"],
+      windowsHide: true,
+    });
+    let tarStderr = "";
+    tarProc.stderr?.on("data", (data: Buffer) => {
+      const chunk = data.toString();
+      tarStderr += chunk;
+      for (const line of chunk.split("\n").filter(Boolean)) {
+        initLogger.logStderr(line);
+      }
+    });
+    const tarExitCodePromise = waitForProcessExit(tarProc);
+
+    try {
+      await pipeReadableToWebWritable(tarProc.stdout, remoteStream.stdin, abortSignal);
+    } catch (error) {
+      tarProc.kill();
+      throw error;
+    }
+
+    const [tarExitCode, remoteExitCode, remoteStdout, remoteStderr] = await Promise.all([
+      tarExitCodePromise,
+      remoteStream.exitCode,
+      remoteStdoutPromise,
+      remoteStderrPromise,
+    ]);
+
+    if (abortSignal?.aborted) {
+      throw new Error(OPERATION_ABORTED_ERROR);
+    }
+    if (tarExitCode !== 0) {
+      throw new Error(`Failed to create project archive: ${tarStderr.trim() || tarExitCode}`);
+    }
+    if (remoteExitCode !== 0) {
+      const detail = (remoteStderr || remoteStdout).trim() || `exit ${remoteExitCode}`;
+      throw new Error(`Failed to unpack project on remote: ${detail}`);
+    }
+  }
+
+  private async createRemoteJjWorkspaceChange(args: {
+    workspacePath: string;
+    bookmarkName: string;
+    fallbackBookmarkName: string;
+    abortSignal?: AbortSignal;
+  }): Promise<{ success: true } | { success: false; error: string }> {
+    const candidates = [
+      args.bookmarkName,
+      `${args.bookmarkName}@origin`,
+      args.fallbackBookmarkName,
+      `${args.fallbackBookmarkName}@origin`,
+      "@",
+    ].filter((candidate, index, all) => candidate.length > 0 && all.indexOf(candidate) === index);
+
+    const script = [
+      "set -eu",
+      ...candidates.map((candidate) => {
+        const quoted = shescape.quote(candidate);
+        return `if ${JJ} log --no-graph -r ${quoted} -T 'change_id ++ "\\n"' -n 1 >/dev/null 2>&1; then ${JJ} new ${quoted}; exit $?; fi`;
+      }),
+      `echo "No jj bookmark or change found for ${args.bookmarkName}" >&2`,
+      "exit 1",
+    ].join("\n");
+
+    const result = await this.exec(script, {
+      cwd: args.workspacePath,
+      timeout: 300,
+      abortSignal: args.abortSignal,
+    });
+    const [stdout, stderr, exitCode] = await Promise.all([
+      streamToString(result.stdout),
+      streamToString(result.stderr),
+      result.exitCode,
+    ]);
+
+    if (exitCode !== 0) {
+      return { success: false, error: stderr || stdout || "jj new failed" };
+    }
+    return { success: true };
+  }
+
   /**
    * Fetch trunk branch from origin into its remote-tracking ref before checkout.
    * Returns true if fetch succeeded (origin is available for branching).
    */
-  private async fetchOriginTrunk(
+  protected async fetchOriginTrunk(
     workspacePath: string,
     trunkBranch: string,
     initLogger: InitLogger,
@@ -3021,7 +2967,7 @@ export class SSHRuntime extends RemoteRuntime {
    *
    * @param branch - The branch name to compare locally and on origin (e.g. "main")
    */
-  private async canFastForwardToOrigin(
+  protected async canFastForwardToOrigin(
     workspacePath: string,
     branch: string,
     initLogger: InitLogger,
@@ -3057,7 +3003,7 @@ export class SSHRuntime extends RemoteRuntime {
    * Fast-forward merge to latest origin/<trunkBranch> after checkout.
    * Best-effort operation for existing branches that may be behind origin.
    */
-  private async fastForwardToOrigin(
+  protected async fastForwardToOrigin(
     workspacePath: string,
     trunkBranch: string,
     initLogger: InitLogger,
@@ -3112,22 +3058,7 @@ export class SSHRuntime extends RemoteRuntime {
     try {
       const expandedOldPath = expandTildeForSSH(oldPath);
       const expandedNewPath = expandTildeForSSH(newPath);
-
-      // Detect if workspace is a worktree vs legacy full clone.
-      const isWorktree = await this.isWorktreeWorkspace(oldPath, abortSignal);
-
-      let moveCommand: string;
-      if (isWorktree) {
-        // Worktree: use `git worktree move` to keep the workspace registered in whichever
-        // shared base repo originally created it, including upgraded legacy SSH layouts.
-        const baseRepoPathArg = expandTildeForSSH(
-          await this.resolveWorktreeBaseRepoPath(projectPath, oldPath, abortSignal)
-        );
-        moveCommand = `git -C ${baseRepoPathArg} worktree move ${expandedOldPath} ${expandedNewPath}`;
-      } else {
-        // Legacy full clone: plain mv.
-        moveCommand = `mv ${expandedOldPath} ${expandedNewPath}`;
-      }
+      const moveCommand = `mv ${expandedOldPath} ${expandedNewPath}`;
 
       const stream = await this.exec(moveCommand, {
         cwd: this.config.srcBaseDir,
@@ -3172,105 +3103,35 @@ export class SSHRuntime extends RemoteRuntime {
     workspaceName: string,
     force: boolean,
     abortSignal?: AbortSignal,
-    trusted?: boolean
+    _trusted?: boolean
   ): Promise<{ success: true; deletedPath: string } | { success: false; error: string }> {
     // Check if already aborted
     if (abortSignal?.aborted) {
       return { success: false, error: "Delete operation aborted" };
     }
 
-    // Disable git hooks for untrusted projects
-    const nhp = gitNoHooksPrefix(trusted);
-
     const deletedPath = this.getWorkspacePath(projectPath, workspaceName);
+    const deletedPathArg = expandTildeForSSH(deletedPath);
 
     try {
-      // Combine all pre-deletion checks into a single bash script to minimize round trips
-      // Exit codes: 0=ok to delete, 1=uncommitted changes, 2=unpushed commits, 3=doesn't exist
+      // Combine all pre-deletion checks into a single shell script to minimize round trips.
+      // Exit codes: 0=ok, 1=working-copy changes, 2=unpublished changes, 3=missing, 4=not jj.
       const checkScript = force
-        ? // When force=true, only check existence
-          `test -d ${shescape.quote(deletedPath)} || exit 3`
-        : // When force=false, perform all safety checks
-          `
-            test -d ${shescape.quote(deletedPath)} || exit 3
-            cd ${shescape.quote(deletedPath)} || exit 1
-            git diff --quiet --exit-code && git diff --quiet --cached --exit-code || exit 1
-            if git remote | grep -q .; then
-              # First, check the original condition: any commits not in any remote
-              unpushed=$(git log --branches --not --remotes --oneline)
-              if [ -n "$unpushed" ]; then
-                # Get current branch for better error messaging
-                BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null)
-
-                # Get default branch (prefer main/master over origin/HEAD since origin/HEAD
-                # might point to a feature branch in some setups)
-                if git rev-parse --verify origin/main >/dev/null 2>&1; then
-                  DEFAULT="main"
-                elif git rev-parse --verify origin/master >/dev/null 2>&1; then
-                  DEFAULT="master"
-                else
-                  # Fallback to origin/HEAD if main/master don't exist
-                  DEFAULT=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@')
-                fi
-
-                # Check for squash-merge: if all changed files match origin/$DEFAULT, content is merged
-                if [ -n "$DEFAULT" ]; then
-                  # Fetch latest to ensure we have current remote state
-                  # nhp disables git hooks for untrusted projects (reference-transaction, etc.)
-                  ${nhp}git fetch origin "$DEFAULT" --quiet 2>/dev/null || true
-
-                  # Get merge-base between current branch and default
-                  MERGE_BASE=$(git merge-base "origin/$DEFAULT" HEAD 2>/dev/null)
-                  if [ -n "$MERGE_BASE" ]; then
-                    # Get files changed on this branch since fork point
-                    CHANGED_FILES=$(git diff --name-only "$MERGE_BASE" HEAD 2>/dev/null)
-
-                    if [ -n "$CHANGED_FILES" ]; then
-                      # Check if all changed files match what's in origin/$DEFAULT
-                      ALL_MERGED=true
-                      while IFS= read -r f; do
-                        # Compare file content between HEAD and origin/$DEFAULT
-                        # If file doesn't exist in one but exists in other, they differ
-                        if ! git diff --quiet "HEAD:$f" "origin/$DEFAULT:$f" 2>/dev/null; then
-                          ALL_MERGED=false
-                          break
-                        fi
-                      done <<< "$CHANGED_FILES"
-
-                      if $ALL_MERGED; then
-                        # All changes are in default branch - safe to delete (squash-merge case)
-                        exit 0
-                      fi
-                    else
-                      # No changed files means nothing to merge - safe to delete
-                      exit 0
-                    fi
-                  fi
-                fi
-
-                # If we get here, there are real unpushed changes
-                # Show helpful output for debugging
-                if [ -n "$BRANCH" ] && [ -n "$DEFAULT" ] && git show-branch "$BRANCH" "origin/$DEFAULT" >/dev/null 2>&1; then
-                  echo "Branch status compared to origin/$DEFAULT:" >&2
-                  echo "" >&2
-                  git show-branch "$BRANCH" "origin/$DEFAULT" 2>&1 | head -20 >&2
-                  echo "" >&2
-                  echo "Note: Branch has changes not yet in origin/$DEFAULT." >&2
-                else
-                  # Fallback to just showing the commit list
-                  echo "$unpushed" | head -10 >&2
-                fi
-                exit 2
-              fi
-            fi
-            exit 0
-          `;
+        ? `test -d ${deletedPathArg} || exit 3`
+        : [
+            `test -d ${deletedPathArg} || exit 3`,
+            `cd ${deletedPathArg} || exit 1`,
+            `${JJ} root >/dev/null 2>&1 || exit 4`,
+            `test -z "$(${JJ} diff --summary 2>/dev/null)" || exit 1`,
+            `if ${JJ} git remote list 2>/dev/null | awk '{ print $1 }' | grep -qx origin; then`,
+            `  unpublished=$(${JJ} log --no-graph -r 'remote_bookmarks(remote=origin)..@ & ~empty()' -T 'change_id.shortest() ++ " " ++ description.first_line() ++ "\\n"' 2>/dev/null || true)`,
+            '  if [ -n "$unpublished" ]; then printf "%s\\n" "$unpublished" >&2; exit 2; fi',
+            "fi",
+            "exit 0",
+          ].join("\n");
 
       const checkStream = await this.exec(checkScript, {
         cwd: this.config.srcBaseDir,
-        // Non-force path includes `git fetch origin` (network op) that can
-        // easily exceed 10s on slow SSH connections. Force path only checks
-        // existence, so a short timeout is fine.
         timeout: force ? 10 : 30,
         abortSignal,
       });
@@ -3293,7 +3154,7 @@ export class SSHRuntime extends RemoteRuntime {
       }
 
       if (checkExitCode === 2) {
-        // Read stderr which contains the unpushed commits output
+        // Read stderr which contains the unpublished changes output.
         const stderr = await streamToString(checkStream.stderr);
         const commitList = stderr.trim();
         const errorMsg = commitList
@@ -3306,6 +3167,13 @@ export class SSHRuntime extends RemoteRuntime {
         };
       }
 
+      if (checkExitCode === 4) {
+        return {
+          success: false,
+          error: "Workspace is not a jj repository. Use force flag to delete anyway.",
+        };
+      }
+
       if (checkExitCode !== 0) {
         // Unexpected error
         const stderr = await streamToString(checkStream.stderr);
@@ -3315,101 +3183,20 @@ export class SSHRuntime extends RemoteRuntime {
         };
       }
 
-      const branchToDelete = await this.resolveCheckedOutBranch(deletedPath, abortSignal, 10);
+      const stream = await this.exec(`rm -rf ${deletedPathArg}`, {
+        cwd: this.config.srcBaseDir,
+        timeout: 30,
+        abortSignal,
+      });
+      await stream.stdin.abort();
+      const exitCode = await stream.exitCode;
 
-      // Detect if workspace is a worktree (.git is a file) vs a legacy full clone (.git is a directory).
-      const isWorktree = await this.isWorktreeWorkspace(deletedPath, abortSignal);
-
-      if (isWorktree) {
-        // Worktree: use `git worktree remove` against the actual common git dir for this
-        // workspace so upgraded legacy SSH worktrees keep their original base repo metadata.
-        const baseRepoPath = await this.resolveWorktreeBaseRepoPath(
-          projectPath,
-          deletedPath,
-          abortSignal
-        );
-        const baseRepoPathArg = expandTildeForSSH(baseRepoPath);
-        const removeCmd = force
-          ? `${nhp}git -C ${baseRepoPathArg} worktree remove --force ${this.quoteForRemote(deletedPath)}`
-          : `${nhp}git -C ${baseRepoPathArg} worktree remove ${this.quoteForRemote(deletedPath)}`;
-        const stream = await this.exec(removeCmd, {
-          cwd: this.config.srcBaseDir,
-          timeout: 30,
-          abortSignal,
-        });
-        await stream.stdin.abort();
-        const exitCode = await stream.exitCode;
-
-        if (exitCode !== 0) {
-          const stderr = await streamToString(stream.stderr);
-          // Fallback: if worktree remove fails (e.g., locked), rm -rf + prune.
-          const fallbackStream = await this.exec(
-            // Use quoteForRemote (expandTildeForSSH) to match the quoting in the
-            // worktree remove command above — shescape.quote doesn't expand tilde.
-            // `worktree prune` is best-effort: if the base repo was externally
-            // deleted/corrupted the prune fails, but the workspace IS gone after
-            // rm -rf — don't report failure for a cosmetic prune error.
-            `rm -rf ${this.quoteForRemote(deletedPath)} && (${nhp}git -C ${baseRepoPathArg} worktree prune 2>/dev/null || true)`,
-            { cwd: this.config.srcBaseDir, timeout: 30, abortSignal }
-          );
-          await fallbackStream.stdin.abort();
-          const fallbackExitCode = await fallbackStream.exitCode;
-          if (fallbackExitCode !== 0) {
-            const fallbackStderr = await streamToString(fallbackStream.stderr);
-            return {
-              success: false,
-              error: `Failed to delete worktree: ${stderr.trim() || fallbackStderr.trim() || "Unknown error"}`,
-            };
-          }
-        }
-        // Best-effort: delete the orphaned branch ref from the base repo so
-        // that re-forking with the same workspace name can use the fast worktree
-        // path (git worktree add -b fails if the branch already exists).
-        // Skip protected trunk branch names to avoid accidental deletion.
-        const PROTECTED_BRANCHES = ["main", "master", "trunk", "develop", "default"];
-        if (branchToDelete && !PROTECTED_BRANCHES.includes(branchToDelete)) {
-          // HEAD neutralization migrates legacy *Mux-owned* base repos whose
-          // HEAD still points at a user branch (the Graphite-poisoning state)
-          // so `branch -D` keeps Git's native checked-out-branch guard instead
-          // of refusing because the bare repo "has the branch checked out".
-          // The resolved common git dir is workspace-derived, though: a
-          // hand-crafted or legacy worktree can resolve to a real checkout's
-          // `.git`, and rewriting that repo's HEAD would strand the user's
-          // checkout on the unborn internal branch. Managed base repos
-          // (canonical and legacy hashed layouts alike) are always named
-          // `.mux-base.git`, so scope the HEAD rewrite to them.
-          const isManagedBaseRepo = path.posix.basename(baseRepoPath) === REMOTE_BASE_REPO_DIR;
-          await execBuffered(
-            this,
-            [
-              ...(isManagedBaseRepo
-                ? [
-                    `git --git-dir=${baseRepoPathArg} symbolic-ref HEAD ${shescape.quote(BASE_REPO_UNBORN_HEAD_REF)} 2>/dev/null || true`,
-                  ]
-                : []),
-              `${nhp}git -C ${baseRepoPathArg} branch -D ${shescape.quote(branchToDelete)} 2>/dev/null || true`,
-            ].join("\n"),
-            { cwd: "/tmp", timeout: 10 }
-          ).catch(() => undefined);
-        }
-      } else {
-        // Legacy full clone: rm -rf to remove the directory on the remote host.
-        const removeCommand = `rm -rf ${shescape.quote(deletedPath)}`;
-        const stream = await this.exec(removeCommand, {
-          cwd: this.config.srcBaseDir,
-          timeout: 30,
-          abortSignal,
-        });
-        await stream.stdin.abort();
-        const exitCode = await stream.exitCode;
-
-        if (exitCode !== 0) {
-          const stderr = await streamToString(stream.stderr);
-          return {
-            success: false,
-            error: `Failed to delete directory: ${stderr.trim() || "Unknown error"}`,
-          };
-        }
+      if (exitCode !== 0) {
+        const stderr = await streamToString(stream.stderr);
+        return {
+          success: false,
+          error: `Failed to delete directory: ${stderr.trim() || "Unknown error"}`,
+        };
       }
 
       return { success: true, deletedPath };
@@ -3451,11 +3238,10 @@ export class SSHRuntime extends RemoteRuntime {
     // SAFETY (rm-rf cannot wipe a sibling): every byte of work this fork
     // produces lands in a per-attempt staging directory whose name carries
     // 96 bits of crypto-random entropy. The final canonical path is only
-    // created via an atomic `mv` (worktree path) or `git worktree move`
-    // (worktree-add path), guarded by a final `test -e` collision check.
-    // If anything between branch detection and finalize fails, `rm -rf`
-    // operates exclusively on the staging path and *cannot* touch any
-    // real workspace — even if a concurrent fork raced on the same
+    // created via an atomic `mv`, guarded by a final `test -e` collision
+    // check. If anything between change detection and finalize fails,
+    // `rm -rf` operates exclusively on the staging path and *cannot* touch
+    // any real workspace — even if a concurrent fork raced on the same
     // `newWorkspaceName`.
     const stagingId = crypto.randomBytes(6).toString("hex");
     const stagingName = `.mux-fork-staging-${stagingId}`;
@@ -3477,36 +3263,6 @@ export class SSHRuntime extends RemoteRuntime {
       }).catch(() => undefined);
     };
 
-    const removeStagingWorktree = async (
-      baseRepoPathArg: string,
-      nhp: string,
-      reason: string
-    ): Promise<void> => {
-      // The staging worktree is registered in the base repo under
-      // `<bare>/worktrees/<stagingName>/`. `worktree remove --force` unwinds
-      // both the registration and the on-disk dir; the rm-rf afterwards is
-      // belt-and-suspenders for the case where the registration was created
-      // but the dir wasn't (or vice versa).
-      log.info(
-        `forkWorkspace: removing staging worktree ${stagingPath} (project=${projectPath}, source=${sourceWorkspaceName}, target=${newWorkspaceName}, reason=${reason})`
-      );
-      await execBuffered(
-        this,
-        `${nhp}git -C ${baseRepoPathArg} worktree remove --force ${stagingPathArg} 2>/dev/null || true`,
-        { cwd: "/tmp", timeout: 30 }
-      ).catch(() => undefined);
-      await removeStaging(reason);
-    };
-
-    // Hoisted outside the try block so the catch handler can reach them when
-    // cleaning up after a thrown/aborted fork — both for `removeStagingWorktree`
-    // (needs the base repo arg + no-hooks prefix) and for the registration flag
-    // that distinguishes "rm-rf is enough" from "must also unregister".
-    const baseRepoPath = this.getBaseRepoPath(projectPath);
-    const baseRepoPathArg = expandTildeForSSH(baseRepoPath);
-    const nhp = gitNoHooksPrefix(params.trusted);
-    let stagingHasWorktreeRegistration = false;
-
     try {
       // Guard: avoid clobbering an existing destination directory. Surface a
       // crisp error to the caller — the staging machinery below catches
@@ -3522,271 +3278,109 @@ export class SSHRuntime extends RemoteRuntime {
         }
       }
 
-      // Detect current branch from the source workspace.
-      initLogger.logStep("Detecting source workspace branch...");
-      const sourceBranch = await this.resolveCheckedOutBranch(sourceWorkspacePath, abortSignal, 30);
-      if (!sourceBranch) {
+      initLogger.logStep("Detecting source workspace change...");
+      const sourceChangeResult = await execBuffered(
+        this,
+        `cd ${sourceWorkspacePathArg} && ${JJ} log --no-graph -r @ -T 'change_id.shortest() ++ "\\n"' -n 1`,
+        { cwd: "/tmp", timeout: 30, abortSignal }
+      );
+      const sourceBranch = sourceChangeResult.stdout.trim();
+      if (sourceChangeResult.exitCode !== 0 || sourceBranch.length === 0) {
         return {
           success: false,
-          error: "Failed to detect branch in source workspace",
+          error: "Failed to detect jj change in source workspace",
         };
       }
 
-      // Try fast worktree path first when the shared base repo exists.
-      // Falls back to full directory copy when the base repo is missing OR when
-      // worktree creation fails (e.g. forking a legacy workspace whose branch
-      // only exists locally and not in the base repo).
-      //
-      // Note: worktree-based fork creates a clean checkout from sourceBranch's
-      // committed HEAD. Uncommitted working-tree changes from the source are NOT
-      // carried over (inherent git worktree limitation). The cp -R -P fallback
-      // preserves full working-tree state including uncommitted changes.
-      let usedWorktree = false;
-
-      const hasBaseRepo = await execBuffered(this, `test -d ${baseRepoPathArg}`, {
-        cwd: "/tmp",
-        timeout: 10,
-        abortSignal,
-      });
-
-      if (hasBaseRepo.exitCode === 0) {
-        initLogger.logStep("Creating worktree for forked workspace...");
-        // Stage the worktree under `stagingPath`; `git worktree move` will
-        // rename it (and update the bare repo's gitdir back-reference) into
-        // `newWorkspacePath` once everything else has succeeded. The base repo
-        // HEAD is neutralized first so `worktree add -b` keeps Git's normal
-        // active-branch and existing-branch guards.
-        const worktreeCmd = [
-          `git --git-dir=${baseRepoPathArg} symbolic-ref HEAD ${shescape.quote(BASE_REPO_UNBORN_HEAD_REF)} 2>/dev/null || true`,
-          buildBestEffortDetachBaseRepoHeadCommand(baseRepoPathArg, shescape.quote(sourceBranch)),
-          `${nhp}git -C ${baseRepoPathArg} worktree add -b ${shescape.quote(newWorkspaceName)} ${stagingPathArg} ${shescape.quote(sourceBranch)}`,
-        ].join("\n");
-        const worktreeResult = await execBuffered(this, worktreeCmd, {
+      // Full directory copy into the staging path. `parentDir` is the
+      // canonical project root; `mkdir -p` is idempotent and only ever
+      // creates `<srcBaseDir>/<projectId>/`, never a legacy `<basename>/`.
+      initLogger.logStep("Preparing remote workspace...");
+      const mkdirResult = await execBuffered(
+        this,
+        `mkdir -p ${expandTildeForSSH(layout.projectRoot)}`,
+        {
           cwd: "/tmp",
-          timeout: 60,
+          timeout: 10,
           abortSignal,
-        });
-
-        if (worktreeResult.exitCode === 0) {
-          usedWorktree = true;
-          stagingHasWorktreeRegistration = true;
-        } else {
-          // Source branch likely doesn't exist in the base repo (legacy
-          // workspace) — fall through to the cp -R -P path. Cleanup operates
-          // exclusively on the unique staging path so it cannot touch a
-          // sibling workspace, even if `git worktree add` left a partial dir
-          // before failing on the bad reference.
-          await removeStaging(
-            `worktree add failed: ${(worktreeResult.stderr || worktreeResult.stdout).trim()}`
-          );
-          log.info(
-            `Worktree fork failed (${(worktreeResult.stderr || worktreeResult.stdout).trim()}); falling back to full copy`
-          );
-          initLogger.logStep("Worktree creation failed; falling back to full copy...");
         }
+      );
+      if (mkdirResult.exitCode !== 0) {
+        return {
+          success: false,
+          error: `Failed to prepare remote workspace: ${mkdirResult.stderr || mkdirResult.stdout}`,
+        };
       }
 
-      if (!usedWorktree) {
-        // Full directory copy into the staging path. `parentDir` is the
-        // canonical project root; `mkdir -p` is idempotent and only ever
-        // creates `<srcBaseDir>/<projectId>/`, never a legacy `<basename>/`.
-        initLogger.logStep("Preparing remote workspace...");
-        const mkdirResult = await execBuffered(
-          this,
-          `mkdir -p ${expandTildeForSSH(layout.projectRoot)}`,
-          { cwd: "/tmp", timeout: 10, abortSignal }
-        );
-        if (mkdirResult.exitCode !== 0) {
-          return {
-            success: false,
-            error: `Failed to prepare remote workspace: ${mkdirResult.stderr || mkdirResult.stdout}`,
-          };
-        }
-
-        // Copy the source workspace on the remote host so we preserve working tree state.
-        // Avoid preserving ownership to prevent fork failures when files are owned by another user.
-        initLogger.logStep("Copying workspace on remote...");
-        const copyResult = await execBuffered(
-          this,
-          `cp -R -P ${sourceWorkspacePathArg} ${stagingPathArg}`,
-          { cwd: "/tmp", timeout: 300, abortSignal }
-        );
-        if (copyResult.exitCode !== 0) {
-          await removeStaging(
-            `cp -R -P failed: ${(copyResult.stderr || copyResult.stdout).trim()}`
-          );
-          return {
-            success: false,
-            error: `Failed to copy workspace: ${copyResult.stderr || copyResult.stdout}`,
-          };
-        }
-
-        // Best-effort: create local tracking branches for all remote branches.
-        initLogger.logStep("Creating local tracking branches...");
-        try {
-          await execBuffered(
-            this,
-            `cd ${stagingPathArg} && for branch in $(git for-each-ref --format='%(refname:short)' refs/remotes/origin/ | grep -v 'origin/HEAD'); do localname=\${branch#origin/}; git show-ref --verify --quiet refs/heads/$localname || git branch $localname $branch; done`,
-            { cwd: "/tmp", timeout: 30 }
-          );
-        } catch {
-          // Ignore - best-effort.
-        }
-
-        // Best-effort: preserve the origin URL from the source workspace, if one exists.
-        try {
-          const originResult = await execBuffered(
-            this,
-            `git -C ${sourceWorkspacePathArg} remote get-url origin 2>/dev/null || true`,
-            { cwd: "/tmp", timeout: 10 }
-          );
-          const originUrl = originResult.stdout.trim();
-          if (originUrl.length > 0) {
-            await execBuffered(
-              this,
-              `git -C ${stagingPathArg} remote set-url origin ${shescape.quote(originUrl)}`,
-              { cwd: "/tmp", timeout: 10 }
-            );
-          } else {
-            await execBuffered(
-              this,
-              `git -C ${stagingPathArg} remote remove origin 2>/dev/null || true`,
-              { cwd: "/tmp", timeout: 10 }
-            );
-          }
-        } catch {
-          // Ignore - best-effort.
-        }
-
-        // Checkout the destination branch in the staging dir, creating it
-        // from sourceBranch if needed.
-        initLogger.logStep(`Checking out branch: ${newWorkspaceName}`);
-        const checkoutCmd =
-          `${nhp}git -C ${stagingPathArg} checkout ${shescape.quote(newWorkspaceName)} 2>/dev/null || ` +
-          `${nhp}git -C ${stagingPathArg} checkout -b ${shescape.quote(newWorkspaceName)} ${shescape.quote(sourceBranch)}`;
-        const checkoutResult = await execBuffered(this, checkoutCmd, {
+      // Copy the source workspace on the remote host so we preserve working tree state.
+      // Avoid preserving ownership to prevent fork failures when files are owned by another user.
+      initLogger.logStep("Copying workspace on remote...");
+      const copyResult = await execBuffered(
+        this,
+        `cp -R -P ${sourceWorkspacePathArg} ${stagingPathArg}`,
+        {
           cwd: "/tmp",
-          timeout: 120,
-        });
-        if (checkoutResult.exitCode !== 0) {
-          await removeStaging(
-            `checkout failed: ${(checkoutResult.stderr || checkoutResult.stdout).trim()}`
-          );
-          return {
-            success: false,
-            error: `Failed to checkout forked branch: ${checkoutResult.stderr || checkoutResult.stdout}`,
-          };
+          timeout: 300,
+          abortSignal,
         }
+      );
+      if (copyResult.exitCode !== 0) {
+        await removeStaging(`cp -R -P failed: ${(copyResult.stderr || copyResult.stdout).trim()}`);
+        return {
+          success: false,
+          error: `Failed to copy workspace: ${copyResult.stderr || copyResult.stdout}`,
+        };
+      }
+
+      initLogger.logStep(`Creating forked jj workspace change: ${newWorkspaceName}`);
+      const newResult = await execBuffered(this, `cd ${stagingPathArg} && ${JJ} new @`, {
+        cwd: "/tmp",
+        timeout: 120,
+        abortSignal,
+      });
+      if (newResult.exitCode !== 0) {
+        await removeStaging(`jj new failed: ${(newResult.stderr || newResult.stdout).trim()}`);
+        return {
+          success: false,
+          error: `Failed to create forked jj change: ${newResult.stderr || newResult.stdout}`,
+        };
       }
 
       // Finalize: move the staging dir into the canonical destination. There
-      // are two cases:
-      //   - Worktree-add path: use `git worktree move` so the bare repo's
-      //     `worktrees/<name>/gitdir` back-reference is updated atomically
-      //     with the on-disk rename.
-      //   - Copy fallback path: plain `mv` (no gitdir indirection to track).
-      // Both cases guard against a TOCTOU collision at the destination — if
-      // another fork landed there since the initial `test -e`, we refuse to
-      // proceed and clean up our staging dir instead of overwriting.
+      // is a single case in the jj-native model: plain `mv`, guarded against
+      // destination races before and after the rename.
       initLogger.logStep("Finalizing workspace path...");
-      if (usedWorktree) {
-        const moveResult = await execBuffered(
-          this,
-          [
-            `if [ -e ${newWorkspacePathArg} ]; then echo MUX_FORK_COLLISION; exit 7; fi`,
-            `${nhp}git -C ${baseRepoPathArg} worktree move ${stagingPathArg} ${newWorkspacePathArg}`,
-          ].join(" && "),
-          { cwd: "/tmp", timeout: 30 }
+      // Shell `mv <src-dir> <dest-dir>` nests the source inside an existing
+      // destination directory. The post-check turns that race into a reported
+      // collision and removes only this attempt's unique staging suffix.
+      const stagingBaseArg = shescape.quote(stagingName);
+      const finalizeScript = [
+        `if [ -e ${newWorkspacePathArg} ]; then echo MUX_FORK_COLLISION; exit 7; fi`,
+        `mv ${stagingPathArg} ${newWorkspacePathArg} || { echo MUX_FORK_MV_FAILED; exit 8; }`,
+        `if [ -d ${newWorkspacePathArg}/${stagingBaseArg} ]; then rm -rf ${newWorkspacePathArg}/${stagingBaseArg}; echo MUX_FORK_COLLISION; exit 7; fi`,
+      ].join("; ");
+      const moveResult = await execBuffered(this, finalizeScript, {
+        cwd: "/tmp",
+        timeout: 30,
+      });
+      if (moveResult.exitCode !== 0) {
+        const collision = moveResult.stdout.includes("MUX_FORK_COLLISION");
+        await removeStaging(
+          collision
+            ? "finalize collision (destination created by another process)"
+            : `mv failed: ${(moveResult.stderr || moveResult.stdout).trim()}`
         );
-        if (moveResult.exitCode !== 0) {
-          const collision = moveResult.stdout.includes("MUX_FORK_COLLISION");
-          await removeStagingWorktree(
-            baseRepoPathArg,
-            nhp,
-            collision
-              ? "finalize collision (destination created by another process)"
-              : `worktree move failed: ${(moveResult.stderr || moveResult.stdout).trim()}`
-          );
-          stagingHasWorktreeRegistration = false;
-          return {
-            success: false,
-            error: collision
-              ? `Workspace at ${newWorkspacePath} was created by another process during fork; pick a different name`
-              : `Failed to finalize forked worktree: ${moveResult.stderr || moveResult.stdout}`,
-          };
-        }
-        stagingHasWorktreeRegistration = false;
-      } else {
-        // Shell `mv <src-dir> <dest-dir>` has a nasty surprise: if `<dest-dir>`
-        // exists as a directory at the moment the rename(2) syscall runs, BOTH
-        // GNU coreutils mv and BSD mv fall back to "move source INTO dest" —
-        // i.e. they produce `<dest>/<src-basename>/…` instead of failing. The
-        // pre-check `test -e <dest>` mitigates the common case, but it cannot
-        // close the TOCTOU window between the check and the rename: two
-        // concurrent forks racing the cp-fallback path on the same
-        // `newWorkspaceName` would both observe an empty destination, both
-        // call `mv`, and the second `mv` would nest its staging dir under
-        // the first fork's freshly-created destination. Without a post-hoc
-        // detector, the second fork would then return success with
-        // `workspacePath = <dest>` while the actual content sits at
-        // `<dest>/.mux-fork-staging-<hex>/`.
-        //
-        // The shell snippet below does the pre-check, the mv, and a post-hoc
-        // nesting check in a single SSH round-trip. If the post-check finds
-        // our staging dir nested inside the destination, we know another
-        // fork raced ahead — we report it as `MUX_FORK_COLLISION` and clean
-        // up only our nested staging dir, leaving the winning fork's
-        // destination contents intact.
-        const stagingBaseArg = shescape.quote(stagingName);
-        // Multi-statement script (not `&&`-joined) because `&&` is invalid
-        // syntax inside `if/then/fi`. Each top-level statement either
-        // succeeds (and execution continues) or `exit`s on a known sentinel
-        // code: 0=ok, 7=collision (with cleanup already done), 8=mv failed.
-        const finalizeScript = [
-          `if [ -e ${newWorkspacePathArg} ]; then echo MUX_FORK_COLLISION; exit 7; fi`,
-          `mv ${stagingPathArg} ${newWorkspacePathArg} || { echo MUX_FORK_MV_FAILED; exit 8; }`,
-          // Post-hoc nesting detector: only triggers when another fork won
-          // the race after our pre-check passed. Removing only the nested
-          // path is safe because the staging name is unique to this attempt
-          // (96-bit suffix) and can never collide with a real workspace name.
-          `if [ -d ${newWorkspacePathArg}/${stagingBaseArg} ]; then rm -rf ${newWorkspacePathArg}/${stagingBaseArg}; echo MUX_FORK_COLLISION; exit 7; fi`,
-        ].join("; ");
-        const moveResult = await execBuffered(this, finalizeScript, {
-          cwd: "/tmp",
-          timeout: 30,
-        });
-        if (moveResult.exitCode !== 0) {
-          const collision = moveResult.stdout.includes("MUX_FORK_COLLISION");
-          // On `MUX_FORK_COLLISION` the inline script has already removed the
-          // nested staging dir (if any) and left the winning fork's dest
-          // untouched, so `removeStaging` here is a no-op safety net.
-          await removeStaging(
-            collision
-              ? "finalize collision (destination created by another process)"
-              : `mv failed: ${(moveResult.stderr || moveResult.stdout).trim()}`
-          );
-          return {
-            success: false,
-            error: collision
-              ? `Workspace at ${newWorkspacePath} was created by another process during fork; pick a different name`
-              : `Failed to finalize forked workspace: ${moveResult.stderr || moveResult.stdout}`,
-          };
-        }
+        return {
+          success: false,
+          error: collision
+            ? `Workspace at ${newWorkspacePath} was created by another process during fork; pick a different name`
+            : `Failed to finalize forked workspace: ${moveResult.stderr || moveResult.stdout}`,
+        };
       }
 
       return { success: true, workspacePath: newWorkspacePath, sourceBranch };
     } catch (error) {
-      // Catch-all cleanup so an aborted/thrown fork can never leave the
-      // staging worktree registered in the bare repo with a dangling gitdir.
-      if (stagingHasWorktreeRegistration) {
-        await removeStagingWorktree(
-          baseRepoPathArg,
-          nhp,
-          `unexpected error: ${getErrorMessage(error)}`
-        );
-      } else {
-        await removeStaging(`unexpected error: ${getErrorMessage(error)}`);
-      }
+      await removeStaging(`unexpected error: ${getErrorMessage(error)}`);
       return { success: false, error: getErrorMessage(error) };
     }
   }
