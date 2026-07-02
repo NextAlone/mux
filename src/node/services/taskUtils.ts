@@ -14,23 +14,67 @@ export function coerceNonEmptyString(value: unknown): string | undefined {
   return trimmed.length > 0 ? trimmed : undefined;
 }
 
-export async function tryReadGitHeadCommitSha(
+export async function tryReadJjCurrentRevision(
   runtime: Runtime,
   workspacePath: string
-): Promise<string | undefined> {
-  assert(workspacePath.length > 0, "tryReadGitHeadCommitSha: workspacePath must be non-empty");
+): Promise<{ changeId: string; commitId?: string } | undefined> {
+  assert(workspacePath.length > 0, "tryReadJjCurrentRevision: workspacePath must be non-empty");
 
   try {
-    const result = await execBuffered(runtime, "git rev-parse HEAD", {
-      cwd: workspacePath,
-      timeout: 10,
-    });
+    const result = await execBuffered(
+      runtime,
+      `jj --no-pager --color never log --no-graph -r @ -T 'change_id ++ "\\n" ++ commit_id ++ "\\n"' -n 1`,
+      {
+        cwd: workspacePath,
+        timeout: 10,
+      }
+    );
     if (result.exitCode !== 0) {
       return undefined;
     }
 
-    const sha = result.stdout.trim();
-    return sha.length > 0 ? sha : undefined;
+    const [changeId, commitId] = result.stdout
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0);
+    return changeId ? { changeId, commitId } : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+export async function tryReadJjCurrentChangeId(
+  runtime: Runtime,
+  workspacePath: string
+): Promise<string | undefined> {
+  assert(workspacePath.length > 0, "tryReadJjCurrentChangeId: workspacePath must be non-empty");
+  return (await tryReadJjCurrentRevision(runtime, workspacePath))?.changeId;
+}
+
+export async function tryResolveJjChangeId(
+  runtime: Runtime,
+  workspacePath: string,
+  revision: string
+): Promise<string | undefined> {
+  assert(workspacePath.length > 0, "tryResolveJjChangeId: workspacePath must be non-empty");
+  assert(revision.length > 0, "tryResolveJjChangeId: revision must be non-empty");
+
+  try {
+    const safeRevision = `'${revision.replace(/'/g, `'\\''`)}'`;
+    const result = await execBuffered(
+      runtime,
+      `jj --no-pager --color never log --no-graph -r ${safeRevision} -T 'change_id ++ "\\n"' -n 1`,
+      {
+        cwd: workspacePath,
+        timeout: 10,
+      }
+    );
+    if (result.exitCode !== 0) {
+      return undefined;
+    }
+
+    const changeId = result.stdout.trim();
+    return changeId.length > 0 ? changeId : undefined;
   } catch {
     return undefined;
   }

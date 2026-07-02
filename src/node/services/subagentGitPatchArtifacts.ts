@@ -23,8 +23,11 @@ interface LegacySubagentGitPatchArtifactV1 {
   status: SubagentGitPatchArtifact["status"];
   baseCommitSha?: string;
   headCommitSha?: string;
+  baseChangeId?: string;
+  headChangeId?: string;
   commitCount?: number;
   mboxPath?: string;
+  diffPath?: string;
   error?: string;
   appliedAtMs?: number;
 }
@@ -34,6 +37,7 @@ const SUBAGENT_GIT_PATCH_ARTIFACTS_FILE_VERSION = 2 as const;
 const SUBAGENT_GIT_PATCH_ARTIFACTS_FILE_NAME = "subagent-patches.json";
 const SUBAGENT_GIT_PATCH_DIR_NAME = "subagent-patches";
 const SUBAGENT_GIT_PATCH_MBOX_FILE_NAME = "series.mbox";
+const SUBAGENT_GIT_PATCH_DIFF_FILE_NAME = "changes.diff";
 const LEGACY_SINGLE_PROJECT_NAME = "project";
 const LEGACY_SINGLE_PROJECT_PATH = "";
 const LEGACY_SINGLE_PROJECT_STORAGE_KEY = "legacy-single-project";
@@ -193,8 +197,11 @@ function normalizeLegacyArtifact(
         status: legacyArtifact.status,
         baseCommitSha: legacyArtifact.baseCommitSha,
         headCommitSha: legacyArtifact.headCommitSha,
+        baseChangeId: legacyArtifact.baseChangeId,
+        headChangeId: legacyArtifact.headChangeId,
         commitCount: legacyArtifact.commitCount,
         mboxPath: legacyArtifact.mboxPath,
+        diffPath: legacyArtifact.diffPath,
         error: legacyArtifact.error,
         appliedAtMs: legacyArtifact.appliedAtMs,
       },
@@ -283,6 +290,17 @@ export function getSubagentGitPatchMboxPath(
   return path.join(
     getSubagentGitPatchProjectDir(workspaceSessionDir, childTaskId, storageKey),
     SUBAGENT_GIT_PATCH_MBOX_FILE_NAME
+  );
+}
+
+export function getSubagentGitPatchDiffPath(
+  workspaceSessionDir: string,
+  childTaskId: string,
+  storageKey = LEGACY_SINGLE_PROJECT_STORAGE_KEY
+): string {
+  return path.join(
+    getSubagentGitPatchProjectDir(workspaceSessionDir, childTaskId, storageKey),
+    SUBAGENT_GIT_PATCH_DIFF_FILE_NAME
   );
 }
 

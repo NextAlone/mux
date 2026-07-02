@@ -11,7 +11,8 @@ import { DEFAULT_RUNTIME_CONFIG } from "@/common/constants/workspace";
 import type { ProjectRef } from "@/common/types/workspace";
 import {
   coerceNonEmptyString,
-  tryReadGitHeadCommitSha,
+  tryReadJjCurrentChangeId,
+  tryResolveJjChangeId,
   findWorkspaceEntry,
 } from "@/node/services/taskUtils";
 import { log } from "@/node/services/log";
@@ -27,7 +28,7 @@ import { execBuffered } from "@/node/utils/runtime/helpers";
 import { AgentIdSchema } from "@/common/orpc/schemas";
 import { resolvePersistedAgentIdCandidates } from "@/common/utils/agentIds";
 import {
-  getSubagentGitPatchMboxPath,
+  getSubagentGitPatchDiffPath,
   matchesProjectArtifactProjectPathForUpdate,
   upsertSubagentGitPatchArtifact,
 } from "@/node/services/subagentGitPatchArtifacts";
@@ -220,7 +221,7 @@ function buildPendingProjectArtifacts(params: {
         projectName: project.projectName,
         storageKey: project.storageKey,
         status: "pending",
-        baseCommitSha: baseCommitShaByProjectPath[project.projectPath] || undefined,
+        baseChangeId: baseCommitShaByProjectPath[project.projectPath] || undefined,
       }) satisfies SubagentGitProjectPatchArtifact
   );
 }
@@ -300,7 +301,7 @@ function failPendingProjectArtifacts(params: {
 // ---------------------------------------------------------------------------
 
 /**
- * Handles git-format-patch artifact generation for subagent tasks.
+ * Handles jj-native task-change artifact generation for subagent tasks.
  *
  * Extracted from TaskService to keep patch-specific logic self-contained.
  */
@@ -311,7 +312,7 @@ export class GitPatchArtifactService {
 
   /**
    * If the child workspace is an exec-like agent, write a pending patch artifact
-   * marker and kick off background `git format-patch` generation.
+   * marker and kick off background jj diff metadata generation.
    *
    * @param onComplete - called after generation finishes (success *or* failure),
    *   typically used to trigger reported-leaf-task cleanup.
@@ -649,10 +650,10 @@ export class GitPatchArtifactService {
 
       for (const projectRepo of projectRepos) {
         try {
-          let baseCommitSha = coerceNonEmptyString(
+          let baseRevision = coerceNonEmptyString(
             taskBaseCommitShaByProjectPath[projectRepo.projectPath]
           );
-          if (!baseCommitSha) {
+          if (!baseRevision) {
             const trunkBranch =
               coerceNonEmptyString(ws.taskTrunkBranch) ??
               coerceNonEmptyString(findWorkspaceEntry(cfg, parentWorkspaceId)?.workspace.name);
@@ -663,90 +664,100 @@ export class GitPatchArtifactService {
                 projectName: projectRepo.projectName,
                 storageKey: projectRepo.storageKey,
                 status: "failed",
-                error:
-                  "taskBaseCommitSha missing and could not determine trunk branch for merge-base fallback.",
+                error: "Task base change missing and could not determine trunk bookmark fallback.",
               });
               continue;
             }
 
-            const mergeBaseResult = await execBuffered(
-              runtime,
-              `git merge-base ${shellQuote(trunkBranch)} HEAD`,
-              { cwd: projectRepo.repoCwd, timeout: 30 }
-            );
-            if (mergeBaseResult.exitCode !== 0) {
-              await ensureProjectArtifact({
-                projectPath: projectRepo.projectPath,
-                projectName: projectRepo.projectName,
-                storageKey: projectRepo.storageKey,
-                status: "failed",
-                error: `git merge-base failed: ${mergeBaseResult.stderr.trim() || "unknown error"}`,
-              });
-              continue;
-            }
-
-            baseCommitSha = mergeBaseResult.stdout.trim();
+            baseRevision = trunkBranch;
           }
 
-          const headCommitSha = await tryReadGitHeadCommitSha(runtime, projectRepo.repoCwd);
-          if (!headCommitSha) {
+          const baseChangeId = await tryResolveJjChangeId(
+            runtime,
+            projectRepo.repoCwd,
+            baseRevision
+          );
+          if (!baseChangeId) {
             await ensureProjectArtifact({
               projectPath: projectRepo.projectPath,
               projectName: projectRepo.projectName,
               storageKey: projectRepo.storageKey,
               status: "failed",
-              baseCommitSha,
-              error: "git rev-parse HEAD failed.",
+              error: `Could not resolve jj base revision ${baseRevision}.`,
             });
             continue;
           }
+
+          const headChangeId = await tryReadJjCurrentChangeId(runtime, projectRepo.repoCwd);
+          if (!headChangeId) {
+            await ensureProjectArtifact({
+              projectPath: projectRepo.projectPath,
+              projectName: projectRepo.projectName,
+              storageKey: projectRepo.storageKey,
+              status: "failed",
+              baseChangeId,
+              error: "Could not determine current jj change.",
+            });
+            continue;
+          }
+
+          const changedPathsResult = await execBuffered(
+            runtime,
+            `jj --no-pager --color never diff --from ${shellQuote(
+              baseChangeId
+            )} --to ${shellQuote(headChangeId)} --name-only`,
+            { cwd: projectRepo.repoCwd, timeout: 30 }
+          );
+          if (changedPathsResult.exitCode !== 0) {
+            await ensureProjectArtifact({
+              projectPath: projectRepo.projectPath,
+              projectName: projectRepo.projectName,
+              storageKey: projectRepo.storageKey,
+              status: "failed",
+              baseChangeId,
+              headChangeId,
+              error:
+                changedPathsResult.stderr.trim() ||
+                changedPathsResult.stdout.trim() ||
+                "jj diff --name-only failed.",
+            });
+            continue;
+          }
+
+          const changedPaths = changedPathsResult.stdout
+            .split(/\r?\n/)
+            .map((line) => line.trim())
+            .filter((line) => line.length > 0);
 
           const countResult = await execBuffered(
             runtime,
-            `git rev-list --count ${baseCommitSha}..${headCommitSha}`,
+            `jj --no-pager --color never log --no-graph -r ${shellQuote(
+              `${baseChangeId}..${headChangeId}`
+            )} -T 'change_id ++ "\\n"'`,
             { cwd: projectRepo.repoCwd, timeout: 30 }
           );
-          if (countResult.exitCode !== 0) {
-            await ensureProjectArtifact({
-              projectPath: projectRepo.projectPath,
-              projectName: projectRepo.projectName,
-              storageKey: projectRepo.storageKey,
-              status: "failed",
-              baseCommitSha,
-              headCommitSha,
-              error: `git rev-list failed: ${countResult.stderr.trim() || "unknown error"}`,
-            });
-            continue;
-          }
+          const commitCount =
+            countResult.exitCode === 0
+              ? countResult.stdout
+                  .split(/\r?\n/)
+                  .map((line) => line.trim())
+                  .filter((line) => line.length > 0).length
+              : undefined;
 
-          const commitCount = Number.parseInt(countResult.stdout.trim(), 10);
-          if (!Number.isFinite(commitCount) || commitCount < 0) {
-            await ensureProjectArtifact({
-              projectPath: projectRepo.projectPath,
-              projectName: projectRepo.projectName,
-              storageKey: projectRepo.storageKey,
-              status: "failed",
-              baseCommitSha,
-              headCommitSha,
-              error: `Invalid commit count: ${countResult.stdout.trim()}`,
-            });
-            continue;
-          }
-
-          if (commitCount === 0) {
+          if (changedPaths.length === 0) {
             await ensureProjectArtifact({
               projectPath: projectRepo.projectPath,
               projectName: projectRepo.projectName,
               storageKey: projectRepo.storageKey,
               status: "skipped",
-              baseCommitSha,
-              headCommitSha,
-              commitCount,
+              baseChangeId,
+              headChangeId,
+              commitCount: commitCount ?? 0,
             });
             continue;
           }
 
-          const patchPath = getSubagentGitPatchMboxPath(
+          const patchPath = getSubagentGitPatchDiffPath(
             parentSessionDir,
             childWorkspaceId,
             projectRepo.storageKey
@@ -758,25 +769,27 @@ export class GitPatchArtifactService {
               projectName: projectRepo.projectName,
               storageKey: projectRepo.storageKey,
               status: "failed",
-              baseCommitSha,
-              headCommitSha,
+              baseChangeId,
+              headChangeId,
               commitCount,
               error: `Refusing to write patch outside session dir for storage key ${projectRepo.storageKey}.`,
             });
             continue;
           }
 
-          const formatPatchStream = await runtime.exec(
-            `git format-patch --stdout --binary ${baseCommitSha}..${headCommitSha}`,
+          const diffStream = await runtime.exec(
+            `jj --no-pager --color never diff --git --from ${shellQuote(
+              baseChangeId
+            )} --to ${shellQuote(headChangeId)}`,
             { cwd: projectRepo.repoCwd, timeout: 120 }
           );
-          await formatPatchStream.stdin.close();
+          await diffStream.stdin.close();
 
-          const stderrPromise = streamToString(formatPatchStream.stderr);
-          const writePromise = writeReadableStreamToLocalFile(formatPatchStream.stdout, patchPath);
+          const stderrPromise = streamToString(diffStream.stderr);
+          const writePromise = writeReadableStreamToLocalFile(diffStream.stdout, patchPath);
 
           const [exitCode, stderr] = await Promise.all([
-            formatPatchStream.exitCode,
+            diffStream.exitCode,
             stderrPromise,
             writePromise,
           ]);
@@ -788,10 +801,10 @@ export class GitPatchArtifactService {
               projectName: projectRepo.projectName,
               storageKey: projectRepo.storageKey,
               status: "failed",
-              baseCommitSha,
-              headCommitSha,
+              baseChangeId,
+              headChangeId,
               commitCount,
-              error: `git format-patch failed (exitCode=${exitCode}): ${stderr.trim() || "unknown error"}`,
+              error: `jj diff --git failed (exitCode=${exitCode}): ${stderr.trim() || "unknown error"}`,
             });
             continue;
           }
@@ -801,10 +814,10 @@ export class GitPatchArtifactService {
             projectName: projectRepo.projectName,
             storageKey: projectRepo.storageKey,
             status: "ready",
-            baseCommitSha,
-            headCommitSha,
+            baseChangeId,
+            headChangeId,
             commitCount,
-            mboxPath: patchPath,
+            diffPath: patchPath,
           });
         } catch (error: unknown) {
           await ensureProjectArtifact({
