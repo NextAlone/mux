@@ -6,6 +6,11 @@ import { execFileAsync } from "@/node/utils/disposableExec";
 import { createRuntime } from "./runtime/runtimeFactory";
 import { log } from "./services/log";
 import { getErrorMessage } from "@/common/utils/errors";
+import {
+  detectDefaultJjTrunkBookmark,
+  getCurrentBookmark,
+  listLocalBookmarks,
+} from "@/node/vcs/jj";
 
 /**
  * Remove stale .git/index.lock file if it exists and is old.
@@ -48,61 +53,18 @@ export interface CreateWorktreeOptions {
 }
 
 export async function listLocalBranches(projectPath: string): Promise<string[]> {
-  using proc = execFileAsync("git", [
-    "-C",
-    projectPath,
-    "for-each-ref",
-    "--format=%(refname:short)",
-    "refs/heads",
-  ]);
-  const { stdout } = await proc.result;
-  return stdout
-    .split("\n")
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0)
-    .sort((a, b) => a.localeCompare(b));
+  return listLocalBookmarks(projectPath);
 }
 
 export async function getCurrentBranch(projectPath: string): Promise<string | null> {
-  try {
-    using proc = execFileAsync("git", ["-C", projectPath, "rev-parse", "--abbrev-ref", "HEAD"]);
-    const { stdout } = await proc.result;
-    const branch = stdout.trim();
-    if (!branch || branch === "HEAD") {
-      return null;
-    }
-    return branch;
-  } catch {
-    return null;
-  }
+  return getCurrentBookmark(projectPath);
 }
-
-const FALLBACK_TRUNK_CANDIDATES = ["main", "master", "trunk", "develop", "default"];
 
 export async function detectDefaultTrunkBranch(
   projectPath: string,
   branches?: string[]
 ): Promise<string> {
-  const branchList = branches ?? (await listLocalBranches(projectPath));
-
-  if (branchList.length === 0) {
-    throw new Error(`No branches available in repository ${projectPath}`);
-  }
-
-  const branchSet = new Set(branchList);
-  const currentBranch = await getCurrentBranch(projectPath);
-
-  if (currentBranch && branchSet.has(currentBranch)) {
-    return currentBranch;
-  }
-
-  for (const candidate of FALLBACK_TRUNK_CANDIDATES) {
-    if (branchSet.has(candidate)) {
-      return candidate;
-    }
-  }
-
-  return branchList[0];
+  return detectDefaultJjTrunkBookmark(projectPath, branches);
 }
 
 export async function createWorktree(

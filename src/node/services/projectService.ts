@@ -5,10 +5,10 @@ import { createHash, randomBytes } from "crypto";
 import {
   validateProjectPath,
   isGitRepository,
-  isInsideGitRepository,
   stripTrailingSlashes,
 } from "@/node/utils/pathUtils";
 import { listLocalBranches, detectDefaultTrunkBranch } from "@/node/git";
+import { isInsideJjRepository, listJjFiles } from "@/node/vcs/jj";
 import type { Result } from "@/common/types/result";
 import { Ok, Err } from "@/common/types/result";
 import type { Secret } from "@/common/types/secrets";
@@ -1134,11 +1134,9 @@ export class ProjectService {
       }
       const normalizedPath = validation.expandedPath!;
 
-      // Non-git repos return empty branches - they're restricted to local runtime only.
-      // Use `git rev-parse --is-inside-work-tree` so sub-projects (whose .git lives
-      // in a parent directory) still surface the surrounding repo's branches and
-      // don't trigger the "git init" banner.
-      if (!(await isInsideGitRepository(normalizedPath))) {
+      // User goal: jj-native management, including colocated repositories. Treat jj root
+      // discovery as the source of truth for whether branch/bookmark UX is available.
+      if (!(await isInsideJjRepository(normalizedPath))) {
         return { branches: [], recommendedTrunk: null };
       }
 
@@ -1249,27 +1247,15 @@ export class ProjectService {
     if (isStale && !cacheEntry.refreshing) {
       cacheEntry.refreshing = (async () => {
         try {
-          // Sub-projects share a parent git repository; match branch listing by
-          // accepting any path inside a work tree rather than requiring `.git`
+          // Sub-projects share a parent jj repository; match bookmark listing by
+          // accepting any path inside a jj workspace rather than requiring `.jj`
           // directly under the project directory.
-          if (!(await isInsideGitRepository(normalizedPath))) {
+          if (!(await isInsideJjRepository(normalizedPath))) {
             cacheEntry.index = EMPTY_FILE_COMPLETIONS_INDEX;
             return;
           }
 
-          using proc = execFileAsync("git", [
-            "-C",
-            normalizedPath,
-            "ls-files",
-            "-co",
-            "--exclude-standard",
-          ]);
-          const { stdout } = await proc.result;
-
-          const files = stdout
-            .split("\n")
-            .map((line) => line.trim())
-            .filter((line) => line.length > 0)
+          const files = (await listJjFiles(normalizedPath))
             // File @mentions are whitespace-delimited (extractAtMentions uses /@(\\S+)/), so
             // suggestions containing spaces would be inserted incorrectly (e.g. "@foo bar.ts").
             .filter((filePath) => !/\s/.test(filePath));
