@@ -186,7 +186,7 @@ export function extractAllHunks(fileDiffs: FileDiff[]): DiffHunk[] {
  * Shared logic between file tree and hunk commands. Kept under the existing function name
  * until the surrounding review UI is renamed from Git to jj terminology.
  *
- * @param diffBase - Base revision ("main", "HEAD", "--staged")
+ * @param diffBase - Base revision ("@-", "main", "main@origin")
  * @param includeUncommitted - Include uncommitted working directory changes
  * @param pathFilter - Optional path filter (e.g., ' -- "src/foo.ts"')
  * @param command - "diff" (unified), "numstat" (file stats), or "name-status" (file status)
@@ -199,7 +199,7 @@ export function buildGitDiffCommand(
 ): string {
   // SECURITY: diffBase can come from repository branch names (including auto-detected trunk refs).
   // Quote it before embedding in shell command strings to prevent command injection.
-  const baseRevision = diffBase === "--staged" || diffBase === "HEAD" ? "@-" : diffBase;
+  const baseRevision = normalizeJjDiffBase(diffBase);
   const quotedDiffBase = shellQuote(baseRevision);
   const revisionArgs = `--from ${quotedDiffBase} --to @`;
   const jjBase = `jj --no-pager --color never diff ${revisionArgs}`;
@@ -214,4 +214,34 @@ export function buildGitDiffCommand(
   }
 
   return `${summaryCommand} | awk '{ $1=""; sub(/^ /, ""); print "0\\t0\\t" $0 }'`;
+}
+
+export function normalizeJjDiffBase(diffBase: string): string {
+  const trimmed = diffBase.trim();
+  if (trimmed.length === 0 || trimmed === "--staged" || trimmed === "HEAD") {
+    return "@-";
+  }
+
+  const headAncestorMatch = /^HEAD~(\d+)$/.exec(trimmed);
+  if (headAncestorMatch) {
+    const depth = Number.parseInt(headAncestorMatch[1], 10);
+    if (depth <= 0) {
+      return "@";
+    }
+    return `@${"-".repeat(depth)}`;
+  }
+
+  const refsRemotesOriginPrefix = "refs/remotes/origin/";
+  if (trimmed.startsWith(refsRemotesOriginPrefix)) {
+    const branch = trimmed.slice(refsRemotesOriginPrefix.length);
+    return branch.length > 0 ? `${branch}@origin` : "@-";
+  }
+
+  const originPrefix = "origin/";
+  if (trimmed.startsWith(originPrefix)) {
+    const branch = trimmed.slice(originPrefix.length);
+    return branch.length > 0 ? `${branch}@origin` : "@-";
+  }
+
+  return trimmed;
 }

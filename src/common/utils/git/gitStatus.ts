@@ -4,12 +4,11 @@
  * Generate bash script to get jj status for a workspace.
  * Returns structured output compatible with the existing git-status UI model.
  *
- * @param baseRef - The ref to compare against (e.g., "origin/main").
- *                  If not provided or not an origin/ ref, auto-detects.
+ * @param baseRef - The ref to compare against (e.g., "main", "main@origin").
+ *                  If not provided or not branch-like, auto-detects.
  */
 export function generateGitStatusScript(baseRef?: string): string {
-  // Extract branch name if it's an origin/ ref, otherwise empty for auto-detect
-  const preferredBranch = baseRef?.startsWith("origin/") ? baseRef.replace(/^origin\//, "") : "";
+  const preferredBranch = getPreferredBookmarkFromBaseRef(baseRef);
   // Security rationale: baseRef is client-controlled in some IPC paths, so quote as a single-quoted
   // shell literal to prevent command substitution / quote-breaking injection when embedding in bash.
   const shellSafePreferredBranch = `'${preferredBranch.replace(/'/g, `'\\''`)}'`;
@@ -173,3 +172,35 @@ export GIT_SSH_COMMAND="\${GIT_SSH_COMMAND:-ssh} -o BatchMode=yes -o StrictHostK
 
 jj --no-pager --color never git fetch --remote origin 2>&1 || true
 `;
+
+export function getPreferredBookmarkFromBaseRef(baseRef?: string): string {
+  if (!baseRef) {
+    return "";
+  }
+
+  const trimmed = baseRef.trim();
+  if (trimmed.length === 0 || trimmed.startsWith("@") || trimmed === "trunk()") {
+    return "";
+  }
+
+  if (trimmed.endsWith("@origin")) {
+    return trimmed.slice(0, -"@origin".length);
+  }
+
+  const refsRemotesOriginPrefix = "refs/remotes/origin/";
+  if (trimmed.startsWith(refsRemotesOriginPrefix)) {
+    return trimmed.slice(refsRemotesOriginPrefix.length);
+  }
+
+  const originPrefix = "origin/";
+  if (trimmed.startsWith(originPrefix)) {
+    return trimmed.slice(originPrefix.length);
+  }
+
+  const refsHeadsPrefix = "refs/heads/";
+  if (trimmed.startsWith(refsHeadsPrefix)) {
+    return trimmed.slice(refsHeadsPrefix.length);
+  }
+
+  return trimmed;
+}

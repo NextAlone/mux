@@ -63,9 +63,9 @@ export const WORKSPACE_DEFAULTS: {
 
   /**
    * Fallback diff base for code review when trunk auto-detection is unavailable.
-   * Most flows will override this with origin/<detected-trunk>.
+   * jj workspaces compare the working-copy commit against its parent by default.
    */
-  reviewBase: "origin/main" as string,
+  reviewBase: "@-" as string,
 };
 
 // Freeze the object at runtime to prevent accidental mutation

@@ -10,14 +10,13 @@ import { Check } from "lucide-react";
 import { cn } from "@/common/lib/utils";
 
 const BASE_SUGGESTIONS = [
-  "HEAD",
-  "--staged",
+  "@-",
+  "@--",
+  "trunk()",
   "main",
-  "origin/main",
-  "HEAD~1",
-  "HEAD~2",
+  "main@origin",
   "develop",
-  "origin/develop",
+  "develop@origin",
 ] as const;
 
 interface BaseSelectorPopoverProps {

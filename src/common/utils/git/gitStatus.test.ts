@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { generateGitStatusScript } from "./gitStatus";
+import { generateGitStatusScript, getPreferredBookmarkFromBaseRef } from "./gitStatus";
 
 describe("generateGitStatusScript", () => {
   test("single-quotes preferred branch to prevent shell interpolation", () => {
@@ -11,9 +11,21 @@ describe("generateGitStatusScript", () => {
   });
 
   test("uses jj commands for status collection", () => {
-    const script = generateGitStatusScript("origin/main");
+    const script = generateGitStatusScript("main@origin");
 
     expect(script).toContain("jj --no-pager --color never");
     expect(script).not.toMatch(/\bgit\s+(rev-parse|status|diff|fetch|branch|remote)\b/);
+  });
+
+  test.each([
+    ["main@origin", "main"],
+    ["origin/main", "main"],
+    ["refs/remotes/origin/develop", "develop"],
+    ["refs/heads/main", "main"],
+    ["main", "main"],
+    ["@-", ""],
+    ["trunk()", ""],
+  ])("extracts preferred bookmark from %s", (baseRef, expected) => {
+    expect(getPreferredBookmarkFromBaseRef(baseRef)).toBe(expected);
   });
 });

@@ -69,7 +69,12 @@ import {
   type LastRefreshInfo,
   type RefreshFailureInfo,
 } from "@/browser/utils/RefreshController";
-import { parseDiff, extractAllHunks, buildGitDiffCommand } from "@/common/utils/git/diffParser";
+import {
+  parseDiff,
+  extractAllHunks,
+  buildGitDiffCommand,
+  normalizeJjDiffBase,
+} from "@/common/utils/git/diffParser";
 import {
   getReviewImmersiveKey,
   getReviewDefaultBaseKey,
@@ -220,6 +225,11 @@ const reviewPanelCache = new LRUCache<string, ReviewPanelCacheValue>({
 
 function getOriginBranchForFetch(diffBase: string): string | null {
   const trimmed = diffBase.trim();
+  if (trimmed.endsWith("@origin")) {
+    const branch = trimmed.slice(0, -"@origin".length);
+    return branch.length > 0 ? branch : null;
+  }
+
   if (!trimmed.startsWith("origin/")) return null;
 
   const branch = trimmed.slice("origin/".length);
@@ -228,7 +238,7 @@ function getOriginBranchForFetch(diffBase: string): string | null {
   return branch;
 }
 
-function toOriginDiffBase(trunkBranch: string | null | undefined): string | null {
+function toDetectedDiffBase(trunkBranch: string | null | undefined): string | null {
   if (typeof trunkBranch !== "string") {
     return null;
   }
@@ -251,7 +261,7 @@ function toOriginDiffBase(trunkBranch: string | null | undefined): string | null
     return null;
   }
 
-  return `origin/${branchName}`;
+  return normalizeJjDiffBase(branchName);
 }
 
 function toMetadataDiffBase(trunkBranch: string | null | undefined): string | null {
@@ -270,7 +280,22 @@ function toMetadataDiffBase(trunkBranch: string | null | undefined): string | nu
     return branchName.length > 0 ? branchName : null;
   }
 
-  return trimmed;
+  return normalizeJjDiffBase(trimmed);
+}
+
+function isLegacyGitDiffBase(diffBase: string | undefined): boolean {
+  if (typeof diffBase !== "string") {
+    return false;
+  }
+
+  const trimmed = diffBase.trim();
+  return (
+    trimmed === "HEAD" ||
+    trimmed === "--staged" ||
+    /^HEAD~\d+$/.test(trimmed) ||
+    trimmed.startsWith("origin/") ||
+    trimmed.startsWith("refs/remotes/origin/")
+  );
 }
 
 interface OriginFetchState {
@@ -900,14 +925,19 @@ export const ReviewPanel: React.FC<ReviewPanelProps> = ({
   );
 
   // Auto-detect trunk for new review base keys so repos using master/develop
-  // don't start on the hard-coded fallback. Existing user selections are preserved.
+  // don't start on the hard-coded fallback. Existing jj selections are preserved.
   //
   // IMPORTANT: workspace task trunk metadata may represent a fork source branch, not
   // the repository's canonical trunk. So we only apply metadata trunk to the workspace-
   // scoped diff base, while the project default comes from listBranches().recommendedTrunk.
   useEffect(() => {
-    const projectBaseIsPersisted = readPersistedString(projectDefaultBaseKey) !== undefined;
-    const workspaceBaseIsPersisted = readPersistedString(workspaceDiffBaseKey) !== undefined;
+    const persistedProjectBase = readPersistedString(projectDefaultBaseKey);
+    const persistedWorkspaceBase = readPersistedString(workspaceDiffBaseKey);
+    const projectBaseNeedsMigration = isLegacyGitDiffBase(persistedProjectBase);
+    const workspaceBaseNeedsMigration = isLegacyGitDiffBase(persistedWorkspaceBase);
+    const projectBaseIsPersisted = persistedProjectBase !== undefined && !projectBaseNeedsMigration;
+    const workspaceBaseIsPersisted =
+      persistedWorkspaceBase !== undefined && !workspaceBaseNeedsMigration;
     const shouldInitializeWorkspaceBase = !workspaceBaseIsPersisted;
 
     const metadataTrunkBase = toMetadataDiffBase(
@@ -919,7 +949,14 @@ export const ReviewPanel: React.FC<ReviewPanelProps> = ({
       setDiffBase(metadataTrunkBase);
     }
 
-    if (projectBaseIsPersisted || !api) {
+    if (projectBaseIsPersisted) {
+      if (shouldInitializeWorkspaceBase && !initializedWorkspaceFromMetadata) {
+        setDiffBase(persistedProjectBase ?? WORKSPACE_DEFAULTS.reviewBase);
+      }
+      return;
+    }
+
+    if (!api) {
       return;
     }
 
@@ -927,25 +964,37 @@ export const ReviewPanel: React.FC<ReviewPanelProps> = ({
     void (async () => {
       try {
         const branchResult = await api.projects.listBranches({ projectPath });
-        const detectedBase = toOriginDiffBase(branchResult.recommendedTrunk);
+        const detectedBase = toDetectedDiffBase(branchResult.recommendedTrunk);
         if (cancelled) {
           return;
         }
         if (!detectedBase) {
           // Persist fallback once so repeated metadata updates don't keep re-trying
           // trunk detection for repos that currently have no usable recommended trunk.
-          if (readPersistedString(projectDefaultBaseKey) === undefined) {
+          if (
+            readPersistedString(projectDefaultBaseKey) === undefined ||
+            isLegacyGitDiffBase(readPersistedString(projectDefaultBaseKey))
+          ) {
             setDefaultBase(WORKSPACE_DEFAULTS.reviewBase);
+          }
+          if (shouldInitializeWorkspaceBase && !initializedWorkspaceFromMetadata) {
+            const currentWorkspaceBase = readPersistedString(workspaceDiffBaseKey);
+            if (currentWorkspaceBase === undefined || isLegacyGitDiffBase(currentWorkspaceBase)) {
+              setDiffBase(WORKSPACE_DEFAULTS.reviewBase);
+            }
           }
           return;
         }
 
-        if (readPersistedString(projectDefaultBaseKey) === undefined) {
+        if (
+          readPersistedString(projectDefaultBaseKey) === undefined ||
+          isLegacyGitDiffBase(readPersistedString(projectDefaultBaseKey))
+        ) {
           setDefaultBase(detectedBase);
         }
         if (shouldInitializeWorkspaceBase && !initializedWorkspaceFromMetadata) {
           const currentWorkspaceBase = readPersistedString(workspaceDiffBaseKey);
-          if (currentWorkspaceBase === undefined) {
+          if (currentWorkspaceBase === undefined || isLegacyGitDiffBase(currentWorkspaceBase)) {
             setDiffBase(detectedBase);
           }
         }
