@@ -31,15 +31,15 @@ const TUTORIAL_SEQUENCES: Record<TutorialSequence, TutorialStep[]> = {
     },
     {
       target: "trunk-branch",
-      title: "Branch From",
-      content: "Choose which branch to create your workspace from.",
+      title: "Bookmark From",
+      content: "Choose which bookmark to create your workspace from.",
       position: "top",
     },
     {
       target: "runtime-selector",
       title: "Runtime Environment",
       content:
-        "Run locally using git worktrees, or connect via SSH to setup the worktree on a remote machine in an isolated environment.",
+        "Run locally using jj workspaces, or connect via SSH to set up an isolated remote workspace.",
       position: "top",
     },
   ],

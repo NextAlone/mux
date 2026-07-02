@@ -357,7 +357,7 @@ export const TaskApplyGitPatchToolCall: React.FC<TaskApplyGitPatchToolCallProps>
   const errorPreview =
     typeof errorResult?.error === "string" ? errorResult.error.split("\n")[0]?.trim() : undefined;
 
-  // A failed patch must surface its error, so force the row open when there's an error
+  // A failed task change must surface its error, so force the row open when there's an error
   // result instead of letting a stored `tools: false` preference hide it (mirrors how
   // TaskToolCall forces open on error/failed states).
   const { expanded, toggleExpanded } = useToolExpansion(false, {
@@ -373,7 +373,7 @@ export const TaskApplyGitPatchToolCall: React.FC<TaskApplyGitPatchToolCallProps>
       <ToolHeader onClick={toggleExpanded}>
         <ExpandIcon expanded={expanded}>▶</ExpandIcon>
         <ToolIcon toolName="task_apply_git_patch" />
-        <ToolName>Apply patch</ToolName>
+        <ToolName>Apply task change</ToolName>
         <span className="text-muted ml-1 max-w-40 truncate text-[10px]">{taskId}</span>
         {isDryRun && <span className="text-backgrounded text-[10px] font-medium">dry-run</span>}
         {successResult && (
@@ -392,7 +392,7 @@ export const TaskApplyGitPatchToolCall: React.FC<TaskApplyGitPatchToolCallProps>
       {expanded && (
         <ToolDetails>
           <DetailSection>
-            <DetailLabel>Patch source</DetailLabel>
+            <DetailLabel>Task change source</DetailLabel>
             <div className="bg-code-bg flex flex-wrap gap-4 rounded px-2 py-1.5 text-[11px] leading-[1.4]">
               <div className="flex min-w-0 items-center gap-1.5">
                 <span className="text-secondary shrink-0 font-medium">Task ID:</span>
@@ -436,7 +436,7 @@ export const TaskApplyGitPatchToolCall: React.FC<TaskApplyGitPatchToolCallProps>
           {status === "executing" && !result && (
             <DetailSection>
               <DetailContent>
-                Applying patch
+                Applying task change
                 <LoadingDots />
               </DetailContent>
             </DetailSection>

@@ -1070,12 +1070,12 @@ export const workspace = {
     input: z.object({
       projectPath: z.string(),
       /**
-       * Workspace branch name. When omitted, the backend auto-generates a name
-       * based on the trunk branch (e.g., "main-1", "main-2"), similar to how
+       * Workspace bookmark name. When omitted, the backend auto-generates a name
+       * based on the trunk bookmark (e.g., "main-1", "main-2"), similar to how
        * /fork derives a name from the parent workspace.
        */
       branchName: z.string().optional(),
-      /** Trunk branch to fork from - only required for worktree/SSH runtimes, ignored for local */
+      /** Trunk bookmark to fork from - only required for worktree/SSH runtimes, ignored for local */
       trunkBranch: z.string().optional(),
       /** Human-readable title (e.g., "Fix plan mode over SSH") - optional for backwards compat */
       title: z.string().optional(),

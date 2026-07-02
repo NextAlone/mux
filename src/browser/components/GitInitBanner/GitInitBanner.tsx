@@ -8,8 +8,8 @@ interface GitInitBannerProps {
 }
 
 /**
- * Banner prompting user to run git init for non-git directories.
- * Shown on the creation screen when the project is not a git repository.
+ * Banner prompting user to initialize jj metadata for plain directories.
+ * Shown on the creation screen when the project is not a jj repository.
  */
 export function GitInitBanner(props: GitInitBannerProps) {
   const { api } = useAPI();
@@ -34,7 +34,7 @@ export function GitInitBanner(props: GitInitBannerProps) {
         setError(result.error);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to initialize git repository");
+      setError(err instanceof Error ? err.message : "Failed to initialize jj repository");
     } finally {
       setIsLoading(false);
     }
@@ -50,7 +50,7 @@ export function GitInitBanner(props: GitInitBannerProps) {
         <Check className="h-5 w-5 shrink-0 text-green-500" />
         <div className="flex flex-1 flex-col gap-0.5">
           <span className="text-sm font-medium text-green-500" data-testid="git-init-success">
-            Git repository initialized
+            Jj repository initialized
           </span>
           <span className="text-muted-foreground text-xs">
             You can now use Worktree and Remote runtimes for isolated workspaces
@@ -68,10 +68,10 @@ export function GitInitBanner(props: GitInitBannerProps) {
       <GitBranch className="text-muted-foreground h-5 w-5 shrink-0" />
       <div className="flex flex-1 flex-col gap-0.5">
         <span className="text-foreground text-sm font-medium">
-          This directory is not a git repository
+          This directory is not a jj repository
         </span>
         <span className="text-muted-foreground text-xs">
-          Run <code className="bg-bg-dark-hover rounded px-1 font-mono">git init</code> to enable
+          Run <code className="bg-bg-dark-hover rounded px-1 font-mono">jj git init</code> to enable
           Worktree and Remote runtimes
         </span>
         {error && (
@@ -93,7 +93,7 @@ export function GitInitBanner(props: GitInitBannerProps) {
             Running...
           </>
         ) : (
-          "Run git init"
+          "Initialize jj"
         )}
       </button>
     </div>

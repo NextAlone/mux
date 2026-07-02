@@ -2254,9 +2254,10 @@ export const ReviewPanel: React.FC<ReviewPanelProps> = ({
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
 
-  const isNonGitWorkspace =
+  const isNonJjWorkspace =
     diffState.status === "error" &&
-    (/not a git repository\b/i.test(diffState.message) ||
+    (/not a jj repository\b/i.test(diffState.message) ||
+      /not a git repository\b/i.test(diffState.message) ||
       /repository not found\b/i.test(diffState.message));
   // Show loading state while workspace is being created
   if (isCreating) {
@@ -2299,11 +2300,11 @@ export const ReviewPanel: React.FC<ReviewPanelProps> = ({
       />
 
       {diffState.status === "error" ? (
-        isNonGitWorkspace ? (
+        isNonJjWorkspace ? (
           <div className="text-muted flex flex-col items-center justify-start gap-3 px-6 pt-12 pb-6 text-center">
-            <div className="text-foreground text-base font-medium">Not a git repository</div>
+            <div className="text-foreground text-base font-medium">Not a jj repository</div>
             <div className="text-[13px] leading-[1.5]">
-              This project is not a git repository, so changes {"can't"} be computed.
+              This project is not a jj repository, so changes {"can't"} be computed.
             </div>
           </div>
         ) : (

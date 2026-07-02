@@ -552,10 +552,10 @@ export function CreationControls(props: CreationControlsProps) {
     availabilityMap?.devcontainer?.available === false &&
     availabilityMap.devcontainer.reason === "No devcontainer.json found";
 
-  // Check if git is required (worktree unavailable due to git or no branches)
+  // Check if jj metadata is required (workspace runtime unavailable due to repo/bookmark state).
   const isNonGitRepo =
     (availabilityMap?.worktree?.available === false &&
-      availabilityMap.worktree.reason === "Requires git repository") ||
+      availabilityMap.worktree.reason === "Requires jj repository") ||
     (props.branchesLoaded && props.branches.length === 0);
 
   const branchOptions =
@@ -566,14 +566,14 @@ export function CreationControls(props: CreationControlsProps) {
     Boolean(props.disabled) || isNonGitRepo || branchOptions.length === 0;
 
   // Keep selected runtime aligned with availability + Settings enablement constraints.
-  // All constraint checks (non-git, devcontainer missing, enablement, policy) are unified
+  // All constraint checks (non-repo, devcontainer missing, enablement, policy) are unified
   // into a single firstEnabled fallback so every edge combination is handled consistently.
   useEffect(() => {
     const runtimeEnablement = props.runtimeEnablement;
 
     // Determine if the current selection needs correction.
     const isCurrentDisabledBySettings = runtimeEnablement?.[runtimeChoice] === false;
-    // In non-git repos all modes except Local are unavailable (not just Worktree).
+    // In non-jj repos all modes except Local are unavailable (not just Worktree).
     const isCurrentUnavailable =
       (isNonGitRepo && selectedRuntime.mode !== RUNTIME_MODE.LOCAL) ||
       (isDevcontainerMissing && selectedRuntime.mode === RUNTIME_MODE.DEVCONTAINER);
@@ -808,7 +808,7 @@ export function CreationControls(props: CreationControlsProps) {
                 />
               </TooltipTrigger>
               <TooltipContent align="start" className="max-w-64">
-                A stable identifier used for git branches, worktree folders, and session
+                A stable identifier used for jj bookmarks, workspace folders, and session
                 directories.
               </TooltipContent>
             </Tooltip>
@@ -847,7 +847,7 @@ export function CreationControls(props: CreationControlsProps) {
         </div>
       </div>
 
-      {/* Runtime and source branch controls */}
+      {/* Runtime and source bookmark controls */}
       <div className="flex flex-col gap-1.5" data-component="RuntimeTypeGroup">
         <div className="flex flex-wrap items-end gap-x-3 gap-y-2">
           {/* Workspace Type + Source Branch share a row on mobile */}
@@ -975,9 +975,9 @@ export function CreationControls(props: CreationControlsProps) {
                 >
                   <SelectTrigger
                     className={cn(INLINE_CONTROL_CLASSES, "w-full md:w-[140px]")}
-                    aria-label="Select source branch"
+                    aria-label="Select source bookmark"
                   >
-                    <SelectValue placeholder="Select source branch" />
+                    <SelectValue placeholder="Select source bookmark" />
                   </SelectTrigger>
                   <SelectContent className="border-border-medium">
                     {branchOptions.map((branch) => (

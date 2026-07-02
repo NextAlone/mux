@@ -48,25 +48,27 @@ export function formatGitPatchArtifactSummary(
 
   switch (gitPatchArtifact.status) {
     case "pending":
-      return projectSummary.length > 0 ? `Patch: pending (${projectSummary})` : "Patch: pending";
+      return projectSummary.length > 0
+        ? `Task change: pending (${projectSummary})`
+        : "Task change: pending";
     case "skipped":
       return projectSummary.length > 0
-        ? `Patch: skipped (${projectSummary})`
-        : "Patch: skipped (no commits)";
+        ? `Task change: skipped (${projectSummary})`
+        : "Task change: skipped (no commits)";
     case "ready":
       return projectSummary.length > 0
-        ? `Patch: ready (${projectSummary}; ${totalCommitCount} ${commitLabel})`
-        : `Patch: ready (${totalCommitCount} ${commitLabel})`;
+        ? `Task change: ready (${projectSummary}; ${totalCommitCount} ${commitLabel})`
+        : `Task change: ready (${totalCommitCount} ${commitLabel})`;
     case "failed": {
       const shortError = getFailedPatchError(legacyCompatibleArtifact);
       if (projectSummary.length > 0) {
         return shortError
-          ? `Patch: failed (${projectSummary}; ${shortError})`
-          : `Patch: failed (${projectSummary})`;
+          ? `Task change: failed (${projectSummary}; ${shortError})`
+          : `Task change: failed (${projectSummary})`;
       }
-      return shortError ? `Patch: failed (${shortError})` : "Patch: failed";
+      return shortError ? `Task change: failed (${shortError})` : "Task change: failed";
     }
     default:
-      return `Patch: ${String(gitPatchArtifact.status)}`;
+      return `Task change: ${String(gitPatchArtifact.status)}`;
   }
 }

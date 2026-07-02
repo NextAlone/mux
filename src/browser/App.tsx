@@ -558,7 +558,7 @@ function AppInner() {
           primaryProjectPath.split("\\").pop() ??
           primaryProjectPath;
         throw new Error(
-          `No branches found for ${primaryProjectName}. Initialize a git repository before creating a multi-project workspace.`
+          `No bookmarks found for ${primaryProjectName}. Initialize a jj repository before creating a multi-project workspace.`
         );
       }
 

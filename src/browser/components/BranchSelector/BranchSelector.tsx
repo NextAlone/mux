@@ -225,7 +225,7 @@ export function BranchSelector({ workspaceId, workspaceName, className }: Branch
         if (result.success && result.data.success && result.data.output) {
           // jj prints remote bookmark names without the remote suffix. Keep the remote in the
           // revision we pass back to `jj new`, otherwise slash-containing bookmark names would be
-          // truncated by the legacy Git branch stripping logic.
+          // truncated by the legacy bookmark stripping logic.
           const branches = result.data.output
             .split("\n")
             .map((b) => b.trim())
@@ -350,7 +350,7 @@ export function BranchSelector({ workspaceId, workspaceName, className }: Branch
     }
   };
 
-  // Display name: actual git branch if available, otherwise workspace name
+  // Display name: active jj bookmark if available, otherwise workspace name.
   const displayName = typeof currentBranch === "string" ? currentBranch : workspaceName;
 
   const toggleRemote = (remote: string) => {
@@ -419,7 +419,7 @@ export function BranchSelector({ workspaceId, workspaceName, className }: Branch
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search branches..."
+              placeholder="Search bookmarks..."
               className="text-foreground placeholder:text-muted w-full bg-transparent font-mono text-[11px] outline-none"
             />
           </div>
@@ -462,7 +462,7 @@ export function BranchSelector({ workspaceId, workspaceName, className }: Branch
                               <Loader2 className="h-3 w-3 animate-spin" />
                             </div>
                           ) : remoteBranches.length === 0 ? (
-                            <div className="text-muted py-1.5 pl-2 text-[10px]">No branches</div>
+                            <div className="text-muted py-1.5 pl-2 text-[10px]">No bookmarks</div>
                           ) : (
                             <>
                               {remoteBranches.map((branch) => {
@@ -485,7 +485,7 @@ export function BranchSelector({ workspaceId, workspaceName, className }: Branch
                               })}
                               {state?.truncated && !search && (
                                 <div className="text-muted px-2 py-1 text-[10px] italic">
-                                  +more branches (use search)
+                                  +more bookmarks (use search)
                                 </div>
                               )}
                             </>
@@ -500,13 +500,13 @@ export function BranchSelector({ workspaceId, workspaceName, className }: Branch
               </>
             )}
 
-            {/* Local branches */}
+            {/* Local bookmarks */}
             {isLoading && localBranches.length <= 1 ? (
               <div className="text-muted flex items-center justify-center py-2">
                 <Loader2 className="h-3 w-3 animate-spin" />
               </div>
             ) : filteredLocalBranches.length === 0 ? (
-              <div className="text-muted py-2 text-center text-[10px]">No matching branches</div>
+              <div className="text-muted py-2 text-center text-[10px]">No matching bookmarks</div>
             ) : (
               <>
                 {filteredLocalBranches.map((branch) => (
@@ -526,7 +526,7 @@ export function BranchSelector({ workspaceId, workspaceName, className }: Branch
                 ))}
                 {localBranchesTruncated && !search && (
                   <div className="text-muted px-2 py-1 text-[10px] italic">
-                    +more branches (use search)
+                    +more bookmarks (use search)
                   </div>
                 )}
               </>
@@ -535,19 +535,19 @@ export function BranchSelector({ workspaceId, workspaceName, className }: Branch
         </PopoverContent>
       </Popover>
 
-      {/* Copy button - only show on hover once the real branch name is known. */}
+      {/* Copy button - only show on hover once the real bookmark name is known. */}
       {typeof currentBranch === "string" && (
         <Tooltip>
           <TooltipTrigger asChild>
             <button
               onClick={handleCopy}
               className="text-muted hover:text-foreground flex h-3.5 w-3.5 shrink-0 items-center justify-center opacity-0 transition-opacity group-hover:opacity-100"
-              aria-label="Copy branch name"
+              aria-label="Copy bookmark name"
             >
               {copied ? <Check className="h-2.5 w-2.5" /> : <Copy className="h-2.5 w-2.5" />}
             </button>
           </TooltipTrigger>
-          <TooltipContent side="bottom">{copied ? "Copied!" : "Copy branch name"}</TooltipContent>
+          <TooltipContent side="bottom">{copied ? "Copied!" : "Copy bookmark name"}</TooltipContent>
         </Tooltip>
       )}
 
