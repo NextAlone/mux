@@ -307,7 +307,7 @@ async function ensureOriginFetched(params: {
   const promise = params.api.workspace
     .executeBash({
       workspaceId: params.workspaceId,
-      script: `GIT_TERMINAL_PROMPT=0 git fetch origin ${shellQuote(originBranch)} --quiet || true`,
+      script: `GIT_TERMINAL_PROMPT=0 jj --no-pager --color never git fetch --remote origin --branch ${shellQuote(originBranch)} || true`,
       options: repoRootBashOptions(30, params.repoRootProjectPath),
     })
     .then(() => undefined)

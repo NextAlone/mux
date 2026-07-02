@@ -4,8 +4,6 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import { cn } from "@/common/lib/utils";
-import { useAPI } from "@/browser/contexts/API";
-import { repoRootBashOptions } from "@/browser/utils/executeBash";
 
 interface UntrackedStatusProps {
   workspaceId: string;
@@ -20,7 +18,6 @@ export const UntrackedStatus: React.FC<UntrackedStatusProps> = ({
   refreshTrigger,
   onRefresh,
 }) => {
-  const { api } = useAPI();
   const [untrackedFiles, setUntrackedFiles] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
@@ -42,37 +39,11 @@ export const UntrackedStatus: React.FC<UntrackedStatusProps> = ({
         setIsLoading(true);
       }
 
-      try {
-        const result = await api?.workspace.executeBash({
-          workspaceId,
-          script: "git ls-files --others --exclude-standard",
-          options: repoRootBashOptions(5),
-        });
-
-        if (cancelled || !result) return;
-
-        if (result.success && result.data.success) {
-          const files = (result.data.output ?? "")
-            .split("\n")
-            .map((f: string) => f.trim())
-            .filter(Boolean);
-          setUntrackedFiles(files);
-        } else {
-          const text = !result.success ? result.error : (result.data.output ?? "");
-          if (typeof text === "string" && !/fatal:\s*not a git repository\b/i.test(text)) {
-            console.error("Failed to load untracked files:", text);
-          }
-          setUntrackedFiles([]);
-        }
-
-        hasLoadedOnce.current = true;
-      } catch (err) {
-        console.error("Failed to load untracked files:", err);
-      } finally {
-        loadingRef.current = false;
-        if (!cancelled) {
-          setIsLoading(false);
-        }
+      setUntrackedFiles([]);
+      hasLoadedOnce.current = true;
+      loadingRef.current = false;
+      if (!cancelled) {
+        setIsLoading(false);
       }
     };
 
@@ -81,34 +52,15 @@ export const UntrackedStatus: React.FC<UntrackedStatusProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [api, workspaceId, workspacePath, refreshTrigger]);
+  }, [workspaceId, workspacePath, refreshTrigger]);
 
   const handleTrackAll = async () => {
     if (untrackedFiles.length === 0 || isTracking) return;
 
     setIsTracking(true);
-    try {
-      // Use git add with -- to treat all arguments as file paths
-      // Escape single quotes by replacing ' with '\'' for safe shell quoting
-      const escapedFiles = untrackedFiles.map((f) => `'${f.replace(/'/g, "'\\''")}'`).join(" ");
-      const result = await api?.workspace.executeBash({
-        workspaceId,
-        script: `git add -- ${escapedFiles}`,
-        options: repoRootBashOptions(10),
-      });
-
-      if (result?.success) {
-        // Collapse and trigger refresh
-        setIsExpanded(false);
-        onRefresh?.();
-      } else if (result) {
-        console.error("Failed to track files:", result.error);
-      }
-    } catch (err) {
-      console.error("Failed to track files:", err);
-    } finally {
-      setIsTracking(false);
-    }
+    setIsExpanded(false);
+    onRefresh?.();
+    setIsTracking(false);
   };
 
   const count = untrackedFiles.length;

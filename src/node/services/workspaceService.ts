@@ -8389,9 +8389,9 @@ export class WorkspaceService extends EventEmitter {
     runtime: Parameters<typeof execBuffered>[0],
     cwd: string
   ): Promise<string[] | null> {
-    assert(cwd.trim().length > 0, "File completion git listing requires a workspace cwd");
+    assert(cwd.trim().length > 0, "File completion jj listing requires a workspace cwd");
 
-    const result = await execBuffered(runtime, "git ls-files -co --exclude-standard", {
+    const result = await execBuffered(runtime, "jj --no-pager --color never file list", {
       cwd,
       timeout: 5,
     });
@@ -8657,8 +8657,8 @@ export class WorkspaceService extends EventEmitter {
 
       let scriptToExecute = script;
       if (command != null) {
-        if (command !== "git") {
-          return Err("executeBash command mode only supports git");
+        if (command !== "jj") {
+          return Err("executeBash command mode only supports jj");
         }
 
         const commandArgs = args ?? [];
@@ -8671,17 +8671,17 @@ export class WorkspaceService extends EventEmitter {
       // addressable even when task/child workspaces persist their primary-project checkout path.
       // Repo-context UI can opt scripts back into a repo checkout, and path-targeted callers can
       // point repo-root execution at the project that owns the referenced workspace-relative path.
-      // Bare git command mode still defaults to the primary repo checkout so git always runs inside
+      // Bare jj command mode still defaults to the primary repo checkout so jj always runs inside
       // a repo even when no caller hint is provided.
       let cwdForExecution = multiProjectContainerPath ?? workspacePath;
       assert(cwdForExecution?.length, "executeBash requires a resolved execution cwd");
-      const requiresRepoRootCwd = command === "git" || options?.cwdMode === "repo-root";
+      const requiresRepoRootCwd = command === "jj" || options?.cwdMode === "repo-root";
       const requestedRepoRootProjectPath = normalizeRepoRootProjectPath(
         options?.repoRootProjectPath
       );
       if (!multiProjectRuntimes && requiresRepoRootCwd) {
         // Sub-project workspaces normally execute tools from their scoped cwd, but repo-context
-        // commands (Review, Git status, bare git command mode) need the checkout root so git
+        // commands (Review, status, bare jj command mode) need the checkout root so jj
         // pathspecs and diff output share the same repo-root coordinate system.
         cwdForExecution = workspaceRootPath;
         assert(cwdForExecution?.length, "Single-project repo-root execution requires a repo cwd");

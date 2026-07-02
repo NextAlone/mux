@@ -1,11 +1,8 @@
-/**
- * Git status script and parsing utilities.
- * Frontend-safe (no Node.js imports).
- */
+/** Jujutsu status script and parsing utilities. Frontend-safe (no Node.js imports). */
 
 /**
- * Generate bash script to get git status for a workspace.
- * Returns structured output with base ref, ahead/behind counts, and dirty status.
+ * Generate bash script to get jj status for a workspace.
+ * Returns structured output compatible with the existing git-status UI model.
  *
  * @param baseRef - The ref to compare against (e.g., "origin/main").
  *                  If not provided or not an origin/ ref, auto-detects.
@@ -18,84 +15,72 @@ export function generateGitStatusScript(baseRef?: string): string {
   const shellSafePreferredBranch = `'${preferredBranch.replace(/'/g, `'\\''`)}'`;
 
   return `
-# Determine primary branch to compare against
+# Determine primary bookmark to compare against
+JJ="jj --no-pager --color never"
 PRIMARY_BRANCH=""
 PREFERRED_BRANCH=${shellSafePreferredBranch}
 
-# Try preferred branch first if specified
+BOOKMARKS=$($JJ bookmark list -T 'name ++ "\\n"' 2>/dev/null || true)
+
+# Try preferred bookmark first if specified
 if [ -n "$PREFERRED_BRANCH" ]; then
-  if git rev-parse --verify "refs/remotes/origin/$PREFERRED_BRANCH" >/dev/null 2>&1; then
+  if printf '%s\\n' "$BOOKMARKS" | grep -Fxq "$PREFERRED_BRANCH"; then
     PRIMARY_BRANCH="$PREFERRED_BRANCH"
   fi
 fi
 
 # Fall back to auto-detection
 if [ -z "$PRIMARY_BRANCH" ]; then
-  # Method 1: symbolic-ref (fastest)
-  PRIMARY_BRANCH=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@')
-
-  # Method 2: remote show origin (fallback)
-  if [ -z "$PRIMARY_BRANCH" ]; then
-    PRIMARY_BRANCH=$(git remote show origin 2>/dev/null | grep 'HEAD branch' | cut -d' ' -f5)
-  fi
-
-  # Method 3: check for main or master
-  if [ -z "$PRIMARY_BRANCH" ]; then
-    PRIMARY_BRANCH=$(git branch -r 2>/dev/null | grep -E 'origin/(main|master)$' | head -1 | sed 's@^.*origin/@@')
-  fi
-fi
-
-# Exit if we can't determine primary branch
-if [ -z "$PRIMARY_BRANCH" ]; then
-  echo "ERROR: Could not determine primary branch"
-  exit 1
-fi
-
-# Avoid sampling while git is holding the index lock (e.g., mid-commit)
-GIT_DIR=$(git rev-parse --git-dir 2>/dev/null || echo "")
-if [ -n "$GIT_DIR" ]; then
-  LOCK_PATH="$GIT_DIR/index.lock"
-  retries=0
-  while [ -f "$LOCK_PATH" ] && [ $retries -lt 20 ]; do
-    sleep 0.05
-    retries=$((retries + 1))
+  for candidate in main master trunk develop default; do
+    if printf '%s\\n' "$BOOKMARKS" | grep -Fxq "$candidate"; then
+      PRIMARY_BRANCH="$candidate"
+      break
+    fi
   done
 fi
 
-# Stable ahead/behind counts (rev-list is format-stable across git versions)
-AHEAD_BEHIND=$(git rev-list --left-right --count HEAD..."origin/$PRIMARY_BRANCH" 2>/dev/null || echo "")
-if [ -z "$AHEAD_BEHIND" ]; then
-  AHEAD_BEHIND="0 0"
+if [ -z "$PRIMARY_BRANCH" ]; then
+  PRIMARY_BRANCH=$(printf '%s\\n' "$BOOKMARKS" | sed '/^[[:space:]]*$/d' | head -1)
 fi
 
-# Check for dirty (uncommitted changes)
-DIRTY_COUNT=$(git status --porcelain 2>/dev/null | wc -l | tr -d ' ')
+# Exit if we can't determine primary bookmark
+if [ -z "$PRIMARY_BRANCH" ]; then
+  echo "ERROR: Could not determine primary bookmark"
+  exit 1
+fi
 
-# Compute line deltas (additions/deletions) vs merge-base with origin's primary branch.
-#
-# We emit *only* totals to keep output tiny (avoid output truncation in large repos).
-MERGE_BASE=$(git merge-base HEAD "origin/$PRIMARY_BRANCH" 2>/dev/null || echo "")
+# Best-effort ahead/behind using jj revsets when a remote bookmark is present.
+AHEAD=0
+BEHIND=0
+REMOTE_BOOKMARK="$PRIMARY_BRANCH@origin"
+if $JJ log -r "$REMOTE_BOOKMARK" --no-graph -T 'commit_id.short() ++ "\\n"' -n 1 >/dev/null 2>&1; then
+  AHEAD=$($JJ log -r "$REMOTE_BOOKMARK..@" --no-graph -T 'commit_id ++ "\\n"' 2>/dev/null | sed '/^[[:space:]]*$/d' | wc -l | tr -d ' ')
+  BEHIND=$($JJ log -r "@..$REMOTE_BOOKMARK" --no-graph -T 'commit_id ++ "\\n"' 2>/dev/null | sed '/^[[:space:]]*$/d' | wc -l | tr -d ' ')
+  if [ -z "$AHEAD" ]; then
+    AHEAD=0
+  fi
+  if [ -z "$BEHIND" ]; then
+    BEHIND=0
+  fi
+fi
+AHEAD_BEHIND="$AHEAD $BEHIND"
 
-# Outgoing: local changes vs merge-base (working tree vs base, includes uncommitted changes)
+# Check for dirty changes in the working-copy commit.
+DIRTY_COUNT=$($JJ diff --summary 2>/dev/null | sed '/^[[:space:]]*$/d' | wc -l | tr -d ' ')
+if [ -z "$DIRTY_COUNT" ]; then
+  DIRTY_COUNT=0
+fi
+
+# Line deltas are optional in the UI. Keep output stable until the jj numstat path lands.
 OUTGOING_STATS="0 0"
-if [ -n "$MERGE_BASE" ]; then
-  OUTGOING_STATS=$(git diff --numstat "$MERGE_BASE" 2>/dev/null | awk '{ if ($1 == "-" || $2 == "-") next; add += $1; del += $2 } END { printf "%d %d", add+0, del+0 }')
-  if [ -z "$OUTGOING_STATS" ]; then
-    OUTGOING_STATS="0 0"
-  fi
-fi
-
-# Incoming: remote primary branch changes vs merge-base
 INCOMING_STATS="0 0"
-if [ -n "$MERGE_BASE" ]; then
-  INCOMING_STATS=$(git diff --numstat "$MERGE_BASE" "origin/$PRIMARY_BRANCH" 2>/dev/null | awk '{ if ($1 == "-" || $2 == "-") next; add += $1; del += $2 } END { printf "%d %d", add+0, del+0 }')
-  if [ -z "$INCOMING_STATS" ]; then
-    INCOMING_STATS="0 0"
-  fi
-fi
 
-# Detect current HEAD branch (for branch selector updates)
-HEAD_BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
+# Detect the nearest bookmark behind the working-copy change; jj workspaces normally keep @
+# anonymous, so checking only bookmarks at @ would show a change id for ordinary workspaces.
+HEAD_BRANCH=$($JJ log --no-graph -r 'latest(::@ & bookmarks())' -T 'bookmarks.join("\\n") ++ "\\n"' -n 1 2>/dev/null | head -1)
+if [ -z "$HEAD_BRANCH" ]; then
+  HEAD_BRANCH=$($JJ log --no-graph -r @ -T 'change_id.shortest() ++ "\\n"' -n 1 2>/dev/null || echo "")
+fi
 
 # Output sections
 echo "---HEAD_BRANCH---"
@@ -112,7 +97,7 @@ echo "$OUTGOING_STATS $INCOMING_STATS"
 }
 
 /**
- * Bash script to get git status for a workspace (auto-detects primary branch).
+ * Bash script to get jj status for a workspace (auto-detects primary bookmark).
  */
 export const GIT_STATUS_SCRIPT = generateGitStatusScript();
 
@@ -177,17 +162,7 @@ export function parseGitStatusScriptOutput(output: string): ParsedGitStatusOutpu
 }
 
 /**
- * Smart git fetch script that minimizes lock contention.
- *
- * Uses ls-remote to check if remote has new commits before fetching.
- * This avoids locks in the common case where remote SHA is already local
- * (e.g., IDE or user already fetched).
- *
- * Flow:
- * 1. ls-remote to get remote SHA (no lock, network only)
- * 2. cat-file to check if SHA exists locally (no lock)
- * 3. If local: skip fetch (no lock needed)
- * 4. If not local: fetch to get new commits (lock, but rare)
+ * Smart jj fetch script. Kept under the existing constant name until the UI store is renamed.
  */
 export const GIT_FETCH_SCRIPT = `
 # Disable ALL prompts
@@ -196,39 +171,5 @@ export GIT_ASKPASS=echo
 export SSH_ASKPASS=echo
 export GIT_SSH_COMMAND="\${GIT_SSH_COMMAND:-ssh} -o BatchMode=yes -o StrictHostKeyChecking=accept-new"
 
-# Get primary branch name
-PRIMARY_BRANCH=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@')
-if [ -z "$PRIMARY_BRANCH" ]; then
-  PRIMARY_BRANCH=$(git remote show origin 2>/dev/null | grep 'HEAD branch' | cut -d' ' -f5)
-fi
-if [ -z "$PRIMARY_BRANCH" ]; then
-  PRIMARY_BRANCH="main"
-fi
-
-# Check remote SHA via ls-remote (no lock, network only)
-REMOTE_SHA=$(git ls-remote origin "refs/heads/$PRIMARY_BRANCH" 2>/dev/null | cut -f1)
-if [ -z "$REMOTE_SHA" ]; then
-  echo "SKIP: Could not get remote SHA"
-  exit 0
-fi
-
-# Check current local remote-tracking ref (no lock)
-LOCAL_SHA=$(git rev-parse --verify "refs/remotes/origin/$PRIMARY_BRANCH" 2>/dev/null || echo "")
-
-# If local tracking ref already matches remote, skip fetch
-if [ "$LOCAL_SHA" = "$REMOTE_SHA" ]; then
-  echo "SKIP: Remote SHA already fetched"
-  exit 0
-fi
-
-# Remote has new commits or ref moved - fetch updates
-git -c protocol.version=2 \\
-    -c fetch.negotiationAlgorithm=skipping \\
-    fetch origin \\
-    --prune \\
-    --no-tags \\
-    --no-recurse-submodules \\
-    --no-write-fetch-head \\
-    --filter=blob:none \\
-    2>&1
+jj --no-pager --color never git fetch --remote origin 2>&1 || true
 `;

@@ -1,37 +1,39 @@
-export interface BranchSelectorGitCommand {
-  command: "git";
+export interface BranchSelectorJjCommand {
+  command: "jj";
   args: string[];
 }
 
-export function buildCheckoutCommand(checkoutTarget: string): BranchSelectorGitCommand {
+export function buildCheckoutCommand(checkoutTarget: string): BranchSelectorJjCommand {
   // SECURITY: branch names are attacker-controlled repository metadata.
   // Build argv for backend execution so the branch name remains an opaque argument,
   // not interpolated shell text.
   return {
-    command: "git",
-    args: ["checkout", checkoutTarget, "--"],
+    command: "jj",
+    args: ["--no-pager", "--color", "never", "new", checkoutTarget],
   };
 }
 
 export function buildRemoteBranchListCommand(
   remote: string,
   maxRemoteBranches: number
-): BranchSelectorGitCommand {
-  // SECURITY: remote names are untrusted repository metadata. Keep the remote portion
-  // as a single argv element and let Git parse it as a ref namespace.
-  // We request extra refs because `for-each-ref refs/remotes/<remote>` may include
-  // pseudo-refs (`<remote>` and `<remote>/HEAD`) that are filtered out by the UI.
-  const PSEUDO_REF_ALLOWANCE = 2;
-  const fetchCount = maxRemoteBranches + 1 + PSEUDO_REF_ALLOWANCE;
-
+): BranchSelectorJjCommand {
+  void maxRemoteBranches;
+  // SECURITY: remote names are untrusted repository metadata. Keep the remote as a single argv
+  // element and let jj parse it as a remote bookmark namespace.
   return {
-    command: "git",
+    command: "jj",
     args: [
-      "for-each-ref",
-      "--sort=-committerdate",
-      "--format=%(refname:short)",
-      `--count=${fetchCount}`,
-      `refs/remotes/${remote}`,
+      "--no-pager",
+      "--color",
+      "never",
+      "bookmark",
+      "list",
+      "--remote",
+      remote,
+      "--sort",
+      "committer-date-",
+      "--template",
+      'name ++ "\\n"',
     ],
   };
 }

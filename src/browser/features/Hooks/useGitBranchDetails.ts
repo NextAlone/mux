@@ -140,7 +140,7 @@ export interface GitBranchDetailsResult {
 }
 
 /**
- * Hook for fetching git branch details (show-branch output, dirty files).
+ * Hook for fetching jj change details (dirty files for now).
  * Implements caching (5s TTL) and debouncing (200ms) to avoid excessive IPC calls.
  *
  * @param workspaceId - Workspace to fetch git details for
@@ -177,40 +177,14 @@ export function useGitBranchDetails(
     setIsLoading(true);
 
     try {
-      // Consolidated bash script that gets all git info and outputs JSON
+      // Consolidated bash script that gets jj info and outputs the legacy sections.
       const getDirtyFiles = gitStatus?.dirty
-        ? "DIRTY_FILES=$(git status --porcelain 2>/dev/null | head -20)"
+        ? "DIRTY_FILES=$(jj --no-pager --color never diff --summary 2>/dev/null | head -20)"
         : "DIRTY_FILES=''";
 
       const script = `
-# Get current branch
-CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "main")
-
-# Get primary branch (main or master)
-PRIMARY_BRANCH=$(git branch -r 2>/dev/null | grep -E 'origin/(main|master)$' | head -1 | sed 's@^.*origin/@@' || echo "main")
-
-if [ -z "$PRIMARY_BRANCH" ]; then
-  PRIMARY_BRANCH="main"
-fi
-
-# Build refs list for show-branch
-REFS="HEAD origin/$PRIMARY_BRANCH"
-
-# Check if origin/<current-branch> exists and is different from primary
-if [ "$CURRENT_BRANCH" != "$PRIMARY_BRANCH" ] && git rev-parse --verify "origin/$CURRENT_BRANCH" >/dev/null 2>&1; then
-  REFS="$REFS origin/$CURRENT_BRANCH"
-fi
-
-# Get show-branch output
-SHOW_BRANCH=$(git show-branch --sha1-name $REFS 2>/dev/null || echo "")
-
-# Extract all hashes and get dates in ONE git log call
-HASHES=$(printf '%s\n' "$SHOW_BRANCH" | grep -oE '\\[[a-f0-9]+\\]' | tr -d '[]' | tr '\\n' ' ')
-if [ -n "$HASHES" ]; then
-  DATES_OUTPUT=$(git log --no-walk --format='%h|%ad' --date=format:'%b %d %I:%M %p' $HASHES 2>/dev/null || echo "")
-else
-  DATES_OUTPUT=""
-fi
+SHOW_BRANCH=""
+DATES_OUTPUT=""
 
 # Get dirty files if requested
 ${getDirtyFiles}
@@ -258,10 +232,16 @@ printf '__MUX_BRANCH_DATA__BEGIN_DIRTY_FILES__\\n%s\\n__MUX_BRANCH_DATA__END_DIR
       // Parse show-branch output
       const parsed = parseGitShowBranch(gitData.showBranch, dateMap);
       if (parsed.commits.length === 0) {
-        setErrorMessage("Unable to parse branch info");
-        setBranchHeaders(null);
-        setCommits(null);
-        setDirtyFiles(null);
+        setBranchHeaders([]);
+        setCommits([]);
+        setDirtyFiles(gitData.dirtyFiles);
+        setErrorMessage(null);
+        cacheRef.current = {
+          headers: [],
+          commits: [],
+          dirtyFiles: gitData.dirtyFiles,
+          timestamp: Date.now(),
+        };
         return;
       }
 

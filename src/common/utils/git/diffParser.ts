@@ -182,64 +182,36 @@ export function extractAllHunks(fileDiffs: FileDiff[]): DiffHunk[] {
 }
 
 /**
- * Build git diff command based on diffBase and includeUncommitted flag
- * Shared logic between numstat (file tree) and diff (hunks) commands
+ * Build jj diff command based on diffBase and includeUncommitted flag.
+ * Shared logic between file tree and hunk commands. Kept under the existing function name
+ * until the surrounding review UI is renamed from Git to jj terminology.
  *
- * Git diff semantics:
- * - `git diff A...HEAD` (three-dot): Shows commits on current branch since branching from A
- *   → Uses merge-base(A, HEAD) as comparison point, so changes to A after branching don't appear
- * - `git diff $(git merge-base A HEAD)`: Shows all changes from branch point to working directory
- *   → Includes both committed changes on the branch AND uncommitted working directory changes
- *   → Single unified diff (no duplicate hunks from concatenation)
- * - `git diff HEAD`: Shows only uncommitted changes (working directory vs HEAD)
- * - `git diff --staged`: Shows only staged changes (index vs HEAD)
- *
- * The key insight: When includeUncommitted is true, we compare from the merge-base directly
- * to the working directory. This gives a stable comparison point (doesn't change when base
- * ref moves forward) while including both committed and uncommitted work in a single diff.
- *
- * @param diffBase - Base reference ("main", "HEAD", "--staged")
+ * @param diffBase - Base revision ("main", "HEAD", "--staged")
  * @param includeUncommitted - Include uncommitted working directory changes
  * @param pathFilter - Optional path filter (e.g., ' -- "src/foo.ts"')
  * @param command - "diff" (unified), "numstat" (file stats), or "name-status" (file status)
  */
 export function buildGitDiffCommand(
   diffBase: string,
-  includeUncommitted: boolean,
+  _includeUncommitted: boolean,
   pathFilter: string,
   command: "diff" | "numstat" | "name-status"
 ): string {
-  const flags =
-    command === "numstat"
-      ? " -M --numstat"
-      : command === "name-status"
-        ? " -M --name-status"
-        : " -M";
-
-  if (diffBase === "--staged") {
-    // Staged changes, optionally with unstaged appended as separate diff
-    const base = `git diff --staged${flags}${pathFilter}`;
-    return includeUncommitted ? `${base} && git diff HEAD${flags}${pathFilter}` : base;
-  }
-
-  if (diffBase === "HEAD") {
-    // Uncommitted changes only (working vs HEAD)
-    return `git diff HEAD${flags}${pathFilter}`;
-  }
-
   // SECURITY: diffBase can come from repository branch names (including auto-detected trunk refs).
   // Quote it before embedding in shell command strings to prevent command injection.
-  const quotedDiffBase = shellQuote(diffBase);
+  const baseRevision = diffBase === "--staged" || diffBase === "HEAD" ? "@-" : diffBase;
+  const quotedDiffBase = shellQuote(baseRevision);
+  const revisionArgs = `--from ${quotedDiffBase} --to @`;
+  const jjBase = `jj --no-pager --color never diff ${revisionArgs}`;
 
-  // Branch diff: use three-dot for committed only, or merge-base for committed+uncommitted
-  if (includeUncommitted) {
-    // Use merge-base to get a unified diff from branch point to working directory
-    // This includes both committed changes on the branch AND uncommitted working changes
-    // Single command avoids duplicate hunks from concatenation
-    // Stable comparison point: merge-base doesn't change when diffBase ref moves forward
-    return `git diff $(git merge-base ${quotedDiffBase} HEAD)${flags}${pathFilter}`;
-  } else {
-    // Three-dot: committed changes only (merge-base to HEAD)
-    return `git diff ${quotedDiffBase}...HEAD${flags}${pathFilter}`;
+  if (command === "diff") {
+    return `${jjBase} --git${pathFilter}`;
   }
+
+  const summaryCommand = `${jjBase} --summary${pathFilter}`;
+  if (command === "name-status") {
+    return `${summaryCommand} | awk '{ status=$1; $1=""; sub(/^ /, ""); print status "\\t" $0 }'`;
+  }
+
+  return `${summaryCommand} | awk '{ $1=""; sub(/^ /, ""); print "0\\t0\\t" $0 }'`;
 }

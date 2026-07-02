@@ -6,15 +6,21 @@ describe("BranchSelector command builders", () => {
     const maliciousBranch = "feature/$(id>/tmp/mux_branch_injection_poc)";
 
     expect(buildCheckoutCommand(maliciousBranch)).toEqual({
-      command: "git",
-      args: ["checkout", "feature/$(id>/tmp/mux_branch_injection_poc)", "--"],
+      command: "jj",
+      args: [
+        "--no-pager",
+        "--color",
+        "never",
+        "new",
+        "feature/$(id>/tmp/mux_branch_injection_poc)",
+      ],
     });
   });
 
   test("preserves branch names containing single quotes", () => {
     expect(buildCheckoutCommand("feature/it's")).toEqual({
-      command: "git",
-      args: ["checkout", "feature/it's", "--"],
+      command: "jj",
+      args: ["--no-pager", "--color", "never", "new", "feature/it's"],
     });
   });
 
@@ -22,13 +28,19 @@ describe("BranchSelector command builders", () => {
     const maliciousRemote = "origin';touch /tmp/mux_remote_injection;#";
 
     expect(buildRemoteBranchListCommand(maliciousRemote, 50)).toEqual({
-      command: "git",
+      command: "jj",
       args: [
-        "for-each-ref",
-        "--sort=-committerdate",
-        "--format=%(refname:short)",
-        "--count=53",
-        "refs/remotes/origin';touch /tmp/mux_remote_injection;#",
+        "--no-pager",
+        "--color",
+        "never",
+        "bookmark",
+        "list",
+        "--remote",
+        "origin';touch /tmp/mux_remote_injection;#",
+        "--sort",
+        "committer-date-",
+        "--template",
+        'name ++ "\\n"',
       ],
     });
   });

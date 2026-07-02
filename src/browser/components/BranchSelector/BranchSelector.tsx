@@ -85,12 +85,12 @@ export function BranchSelector({ workspaceId, workspaceName, className }: Branch
 
     try {
       // Explicit opens are allowed to wake the runtime, so determine whether the
-      // workspace is a git repo first and only then load branch/remotes data.
+      // workspace is a jj repo first and only then load bookmark/remotes data.
       const repoProbeResult = await api.workspace.executeBash({
         workspaceId,
         // Keep stderr intact here so explicit opens can distinguish a definitive
-        // "not a git repository" result from transient runtime/IPC failures.
-        script: `git rev-parse --is-inside-work-tree`,
+        // "not a jj repository" result from transient runtime/IPC failures.
+        script: `jj --no-pager --color never root >/dev/null && echo true`,
         options: repoRootBashOptions(5),
       });
       const repoProbeOutput =
@@ -105,11 +105,11 @@ export function BranchSelector({ workspaceId, workspaceName, className }: Branch
       }
       const repoState =
         repoProbeOutput === "true"
-          ? "git"
-          : /not a git repository/i.test(repoProbeError)
-            ? "non-git"
+          ? "jj"
+          : /not a jj repository|no jj repo/i.test(repoProbeError)
+            ? "non-jj"
             : "unknown";
-      if (repoState === "non-git") {
+      if (repoState === "non-jj") {
         branchCache.remove(workspaceId);
         clearGitStatus(workspaceId);
         setCurrentBranch(false);
@@ -118,26 +118,26 @@ export function BranchSelector({ workspaceId, workspaceName, className }: Branch
         setRemotes([]);
         return;
       }
-      if (repoState !== "git") {
+      if (repoState !== "jj") {
         return;
       }
 
-      // Once we know the repo exists, resolve the active branch with an untruncated
-      // command and keep the branch list separately capped for the popover.
+      // Once we know the repo exists, resolve the active bookmark with an untruncated
+      // command and keep the bookmark list separately capped for the popover.
       const [currentBranchResult, branchResult, remoteResult] = await Promise.all([
         api.workspace.executeBash({
           workspaceId,
-          script: `git branch --show-current 2>/dev/null`,
+          script: `jj --no-pager --color never log --no-graph -r 'latest(::@ & bookmarks())' -T 'bookmarks.join("\\n") ++ "\\n"' -n 1 2>/dev/null | head -1`,
           options: repoRootBashOptions(5),
         }),
         api.workspace.executeBash({
           workspaceId,
-          script: `git branch --sort=-committerdate --format='%(refname:short)' 2>/dev/null | head -${MAX_LOCAL_BRANCHES + 1}`,
+          script: `jj --no-pager --color never bookmark list --sort committer-date- -T 'name ++ "\\n"' 2>/dev/null | head -${MAX_LOCAL_BRANCHES + 1}`,
           options: repoRootBashOptions(5),
         }),
         api.workspace.executeBash({
           workspaceId,
-          script: `git remote 2>/dev/null`,
+          script: `jj --no-pager --color never git remote list 2>/dev/null | awk '{ print $1 }'`,
           options: repoRootBashOptions(5),
         }),
       ]);
@@ -223,12 +223,14 @@ export function BranchSelector({ workspaceId, workspaceName, className }: Branch
         });
 
         if (result.success && result.data.success && result.data.output) {
-          // `for-each-ref refs/remotes/<remote>` includes the remote symref (`<remote>`)
-          // and may include `<remote>/HEAD`; hide those pseudo-refs from selectable branches.
+          // jj prints remote bookmark names without the remote suffix. Keep the remote in the
+          // revision we pass back to `jj new`, otherwise slash-containing bookmark names would be
+          // truncated by the legacy Git branch stripping logic.
           const branches = result.data.output
             .split("\n")
             .map((b) => b.trim())
-            .filter((b) => b.length > 0 && b !== remote && b !== `${remote}/HEAD`);
+            .filter((b) => b.length > 0)
+            .map((b) => `${b}@${remote}`);
           const truncated = branches.length > MAX_REMOTE_BRANCHES;
           setRemoteStates((prev) => ({
             ...prev,
@@ -259,9 +261,10 @@ export function BranchSelector({ workspaceId, workspaceName, className }: Branch
     async (targetBranch: string, isRemote = false) => {
       if (!api) return;
 
-      const checkoutTarget = isRemote ? targetBranch.replace(/^[^/]+\//, "") : targetBranch;
+      const checkoutTarget = targetBranch;
+      const displayBranch = isRemote ? targetBranch.replace(/@[^@]+$/, "") : targetBranch;
 
-      if (checkoutTarget === currentBranch) {
+      if (displayBranch === currentBranch) {
         setIsOpen(false);
         return;
       }
@@ -293,9 +296,9 @@ export function BranchSelector({ workspaceId, workspaceName, className }: Branch
           invalidateGitStatus(workspaceId);
         } else {
           // Update current branch on successful checkout
-          setCurrentBranch(checkoutTarget);
+          setCurrentBranch(displayBranch);
           // Persist to localStorage for instant display on app restart
-          branchCache.set(workspaceId, checkoutTarget);
+          branchCache.set(workspaceId, displayBranch);
           // Refresh git status with new branch state
           invalidateGitStatus(workspaceId);
         }
@@ -463,7 +466,7 @@ export function BranchSelector({ workspaceId, workspaceName, className }: Branch
                           ) : (
                             <>
                               {remoteBranches.map((branch) => {
-                                const displayName = branch.replace(`${remote}/`, "");
+                                const displayName = branch.replace(/@[^@]+$/, "");
                                 return (
                                   <button
                                     key={branch}

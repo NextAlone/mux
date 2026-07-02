@@ -6,12 +6,13 @@
 import type { APIClient } from "@/browser/contexts/API";
 import { normalizeRepoRootFilePath, repoRootBashOptions } from "@/browser/utils/executeBash";
 import type { FrontendWorkspaceMetadata } from "@/common/types/workspace";
+import { shellQuote } from "@/common/utils/shell";
 
 /** Number of lines to expand per click */
 export const LINES_PER_EXPANSION = 20;
 
 /**
- * Read lines from a file at a specific git ref.
+ * Read lines from a file at a specific jj revision.
  * @returns Array of lines or null if error
  */
 export async function readFileLines(
@@ -32,11 +33,11 @@ export async function readFileLines(
     repoRootProjectPath
   );
   const script = gitRef
-    ? `git show "${gitRef}:${repoRootFilePath.replace(/"/g, '\\"')}" 2>/dev/null | sed -n '${startLine},${endLine}p'`
+    ? `jj --no-pager --color never file show --revision ${shellQuote(gitRef)} -- ${shellQuote(repoRootFilePath)} 2>/dev/null | sed -n '${startLine},${endLine}p'`
     : `sed -n '${startLine},${endLine}p' "${filePath.replace(/"/g, '\\"')}"`;
 
   // Plain reads must stay on the shared container root for sibling-project paths, while
-  // git-ref lookups still need repo-root git context for `git show`. Path-targeted callers pass
+  // revision lookups still need repo-root jj context for `jj file show`. Path-targeted callers pass
   // the owning project explicitly so multi-project repo-root execution lands in the right checkout.
   const result = await api.workspace.executeBash({
     workspaceId,
@@ -56,14 +57,11 @@ export async function readFileLines(
 }
 
 /**
- * Determine which git ref to use for reading file context.
- *
- * Note: branch diffs use merge-base under the hood, so return a shell expression
- * that resolves to the merge-base commit when needed.
+ * Determine which jj revision to use for reading file context.
  */
 export function getOldFileRef(diffBase: string, _includeUncommitted: boolean): string {
-  if (diffBase === "--staged" || diffBase === "HEAD") return "HEAD";
-  return `$(git merge-base ${diffBase} HEAD 2>/dev/null || echo ${diffBase})`;
+  if (diffBase === "--staged" || diffBase === "HEAD") return "@-";
+  return diffBase;
 }
 
 /**
