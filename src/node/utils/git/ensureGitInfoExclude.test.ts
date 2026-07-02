@@ -25,7 +25,10 @@ afterEach(async () => {
 describe("ensureGitInfoExclude", () => {
   test("adds the staged attachment directory to a git repo exclude file once", async () => {
     const repo = await makeTempDir("mux-git-exclude-");
-    execFileSync("git", ["init", "-b", "main"], { cwd: repo, stdio: "ignore" });
+    execFileSync("jj", ["--no-pager", "--color", "never", "git", "init", "--colocate", "."], {
+      cwd: repo,
+      stdio: "ignore",
+    });
     const runtime = new LocalRuntime(repo);
 
     const first = await ensureGitInfoExclude({
@@ -41,17 +44,20 @@ describe("ensureGitInfoExclude", () => {
 
     expect(first.status).toBe("ensured");
     expect(second.status).toBe("ensured");
-    const excludePath = execFileSync("git", ["rev-parse", "--git-path", "info/exclude"], {
+    const gitRoot = execFileSync("jj", ["--no-pager", "--color", "never", "git", "root"], {
       cwd: repo,
       encoding: "utf8",
     }).trim();
-    const exclude = await readFile(path.join(repo, excludePath), "utf8");
+    const exclude = await readFile(path.join(gitRoot, "info", "exclude"), "utf8");
     expect(exclude.match(/^\/\.mux\/user-attachments\/$/gm)).toHaveLength(1);
   });
 
   test("uses a git-root-relative pattern for subdirectory workspaces", async () => {
     const repo = await makeTempDir("mux-git-exclude-subdir-");
-    execFileSync("git", ["init", "-b", "main"], { cwd: repo, stdio: "ignore" });
+    execFileSync("jj", ["--no-pager", "--color", "never", "git", "init", "--colocate", "."], {
+      cwd: repo,
+      stdio: "ignore",
+    });
     const workspacePath = path.join(repo, "packages", "app");
     await mkdir(workspacePath, { recursive: true });
     await writeFile(path.join(workspacePath, ".keep"), "");
@@ -64,11 +70,11 @@ describe("ensureGitInfoExclude", () => {
     });
 
     expect(result.status).toBe("ensured");
-    const excludePath = execFileSync("git", ["rev-parse", "--git-path", "info/exclude"], {
+    const gitRoot = execFileSync("jj", ["--no-pager", "--color", "never", "git", "root"], {
       cwd: repo,
       encoding: "utf8",
     }).trim();
-    const exclude = await readFile(path.join(repo, excludePath), "utf8");
+    const exclude = await readFile(path.join(gitRoot, "info", "exclude"), "utf8");
     expect(exclude).toContain("/packages/app/.mux/user-attachments/");
   });
 
