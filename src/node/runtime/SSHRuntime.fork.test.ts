@@ -12,9 +12,9 @@
  *
  *   2. Every `rm -rf` issued by forkWorkspace targets a per-attempt staging
  *      directory (`.mux-fork-staging-<12 hex>`), never the final workspace
- *      path. Even when `git worktree add` or `cp -R -P` leaves a partial,
- *      cleanup operates exclusively on the unique staging name and therefore
- *      cannot destroy a sibling workspace.
+ *      path. Even when `cp -R -P` or `jj new` leaves a partial, cleanup
+ *      operates exclusively on the unique staging name and therefore cannot
+ *      destroy a sibling workspace.
  *
  * The tests drive a real SSHRuntime instance through a mocked `exec()` that
  * dispatches on substring patterns. We assert on the *exact* command strings
@@ -154,14 +154,10 @@ describe("SSHRuntime.forkWorkspace canonical-layout invariant", () => {
     runtime.canned.push(
       { matches: (c) => c.startsWith("test -e "), exitCode: 1 }, // destination doesn't exist
       {
-        matches: (c) => c.includes("branch --show-current"),
-        stdout: "feature-source\n",
+        matches: (c) => c.includes("log --no-graph -r @"),
+        stdout: "abc123\n",
         exitCode: 0,
-      },
-      { matches: (c) => c.startsWith("test -d "), exitCode: 0 }, // base repo exists
-      { matches: (c) => c.includes("worktree add "), exitCode: 0 }, // worktree add succeeds
-      // Finalize step embeds the collision check + `git worktree move` in one shell line.
-      { matches: (c) => c.includes("worktree move "), exitCode: 0 }
+      }
     );
 
     const result = await runtime.forkWorkspace(buildForkParams());
@@ -172,7 +168,7 @@ describe("SSHRuntime.forkWorkspace canonical-layout invariant", () => {
     expect(result.workspacePath).toMatch(/^\/remote\/src\/mux-[0-9a-f]{12}\/feature-new$/);
   });
 
-  it("uses the canonical project root for the worktree-add target even when source is legacy", async () => {
+  it("uses the canonical project root for the staging copy target even when source is legacy", async () => {
     const runtime = new ForkTestSSHRuntime("/remote/src", {
       project: "/Users/me/Projects/coder/mux",
       name: "feature-source",
@@ -182,66 +178,43 @@ describe("SSHRuntime.forkWorkspace canonical-layout invariant", () => {
     runtime.canned.push(
       { matches: (c) => c.startsWith("test -e "), exitCode: 1 },
       {
-        matches: (c) => c.includes("branch --show-current"),
-        stdout: "feature-source\n",
+        matches: (c) => c.includes("log --no-graph -r @"),
+        stdout: "abc123\n",
         exitCode: 0,
-      },
-      { matches: (c) => c.startsWith("test -d "), exitCode: 0 },
-      { matches: (c) => c.includes("worktree add "), exitCode: 0 },
-      { matches: (c) => c.includes("worktree move "), exitCode: 0 }
+      }
     );
 
     await runtime.forkWorkspace(buildForkParams());
 
-    const worktreeAddCmd = runtime.commands.find((c) => c.includes("worktree add "));
-    expect(worktreeAddCmd).toBeDefined();
+    const copyCmd = runtime.commands.find((c) => c.startsWith("cp -R -P "));
+    expect(copyCmd).toBeDefined();
     // The staging path lives under the canonical project root, not under the
     // legacy `<basename>/` parent.
-    expect(worktreeAddCmd!).toMatch(
-      /\/remote\/src\/mux-[0-9a-f]{12}\/\.mux-fork-staging-[0-9a-f]{12}/
-    );
-    expect(worktreeAddCmd!).not.toContain("/remote/src/mux/feature-new");
+    expect(copyCmd!).toMatch(/\/remote\/src\/mux-[0-9a-f]{12}\/\.mux-fork-staging-[0-9a-f]{12}/);
+    expect(copyCmd!).not.toContain("/remote/src/mux/feature-new");
   });
 });
 
 describe("SSHRuntime.forkWorkspace rm-rf-cannot-wipe-siblings invariant", () => {
-  it("never issues `rm -rf` against the final workspace path on a failed worktree add", async () => {
+  it("never issues `rm -rf` against the final workspace path when jj new fails", async () => {
     const runtime = new ForkTestSSHRuntime("/remote/src", {
       project: "/Users/me/Projects/coder/mux",
       name: "feature-source",
       path: "/remote/src/mux-canonical/feature-source",
     });
 
-    let worktreeAddCalls = 0;
     runtime.canned.push(
       { matches: (c) => c.startsWith("test -e "), exitCode: 1 },
       {
-        matches: (c) => c.includes("branch --show-current"),
-        stdout: "only-on-legacy\n",
+        matches: (c) => c.includes("log --no-graph -r @"),
+        stdout: "abc123\n",
         exitCode: 0,
       },
-      { matches: (c) => c.startsWith("test -d "), exitCode: 0 },
-      // First worktree add (in staging) FAILS — branch doesn't exist in base repo.
-      {
-        matches: (c) => {
-          if (c.includes("worktree add ")) {
-            worktreeAddCalls++;
-            return true;
-          }
-          return false;
-        },
-        stderr: "fatal: invalid reference: only-on-legacy\n",
-        exitCode: 128,
-      },
-      // cp -R -P fallback succeeds.
       { matches: (c) => c.startsWith("cp -R -P "), exitCode: 0 },
-      // Final `mv` succeeds.
-      { matches: (c) => c.includes("mv ") && c.includes("MUX_FORK_COLLISION"), exitCode: 0 }
+      { matches: (c) => c.includes("jj new @"), stderr: "jj new failed\n", exitCode: 1 }
     );
 
     await runtime.forkWorkspace(buildForkParams());
-
-    expect(worktreeAddCalls).toBe(1);
 
     // The whole point: across ALL commands issued, no rm -rf may target the
     // final workspace path. Every rm -rf is confined to a `.mux-fork-staging-*`
@@ -265,11 +238,10 @@ describe("SSHRuntime.forkWorkspace rm-rf-cannot-wipe-siblings invariant", () => 
     runtime.canned.push(
       { matches: (c) => c.startsWith("test -e "), exitCode: 1 },
       {
-        matches: (c) => c.includes("branch --show-current"),
-        stdout: "feature-source\n",
+        matches: (c) => c.includes("log --no-graph -r @"),
+        stdout: "abc123\n",
         exitCode: 0,
       },
-      { matches: (c) => c.startsWith("test -d "), exitCode: 1 }, // base repo missing → cp fallback
       { matches: (c) => c.startsWith("mkdir -p "), exitCode: 0 },
       { matches: (c) => c.startsWith("cp -R -P "), stderr: "cp: cannot stat source\n", exitCode: 1 }
     );
@@ -287,7 +259,7 @@ describe("SSHRuntime.forkWorkspace rm-rf-cannot-wipe-siblings invariant", () => 
     }
   });
 
-  it("uses `git worktree move` (not raw mv) to finalize a worktree fork so the bare repo's gitdir back-reference is updated", async () => {
+  it("finalizes with mv plus a collision guard in the jj-native copy path", async () => {
     const runtime = new ForkTestSSHRuntime("/remote/src", {
       project: "/Users/me/Projects/coder/mux",
       name: "feature-source",
@@ -297,19 +269,21 @@ describe("SSHRuntime.forkWorkspace rm-rf-cannot-wipe-siblings invariant", () => 
     runtime.canned.push(
       { matches: (c) => c.startsWith("test -e "), exitCode: 1 },
       {
-        matches: (c) => c.includes("branch --show-current"),
-        stdout: "feature-source\n",
+        matches: (c) => c.includes("log --no-graph -r @"),
+        stdout: "abc123\n",
         exitCode: 0,
       },
-      { matches: (c) => c.startsWith("test -d "), exitCode: 0 },
-      { matches: (c) => c.includes("worktree add "), exitCode: 0 },
-      { matches: (c) => c.includes("worktree move "), exitCode: 0 }
+      { matches: (c) => c.startsWith("cp -R -P "), exitCode: 0 },
+      { matches: (c) => c.includes("jj new @"), exitCode: 0 },
+      { matches: (c) => c.includes("mv ") && c.includes("MUX_FORK_COLLISION"), exitCode: 0 }
     );
 
     const result = await runtime.forkWorkspace(buildForkParams());
 
     expect(result.success).toBe(true);
-    const finalizeCmd = runtime.commands.find((c) => c.includes("worktree move "));
+    const finalizeCmd = runtime.commands.find(
+      (c) => c.includes("mv ") && c.includes("MUX_FORK_COLLISION")
+    );
     expect(finalizeCmd).toBeDefined();
     expect(finalizeCmd!).toContain("MUX_FORK_COLLISION"); // collision-guard prelude
     expect(finalizeCmd!).toMatch(/\.mux-fork-staging-[0-9a-f]{12}/);
@@ -326,15 +300,19 @@ describe("SSHRuntime.forkWorkspace rm-rf-cannot-wipe-siblings invariant", () => 
     runtime.canned.push(
       { matches: (c) => c.startsWith("test -e "), exitCode: 1 }, // initial guard passes
       {
-        matches: (c) => c.includes("branch --show-current"),
-        stdout: "feature-source\n",
+        matches: (c) => c.includes("log --no-graph -r @"),
+        stdout: "abc123\n",
         exitCode: 0,
       },
-      { matches: (c) => c.startsWith("test -d "), exitCode: 0 },
-      { matches: (c) => c.includes("worktree add "), exitCode: 0 },
+      { matches: (c) => c.startsWith("cp -R -P "), exitCode: 0 },
+      { matches: (c) => c.includes("jj new @"), exitCode: 0 },
       // Finalize trips the collision branch — the destination was created by
       // a concurrent process between the initial `test -e` and now.
-      { matches: (c) => c.includes("worktree move "), stdout: "MUX_FORK_COLLISION\n", exitCode: 7 }
+      {
+        matches: (c) => c.includes("mv ") && c.includes("MUX_FORK_COLLISION"),
+        stdout: "MUX_FORK_COLLISION\n",
+        exitCode: 7,
+      }
     );
 
     const result = await runtime.forkWorkspace(buildForkParams());
@@ -344,9 +322,7 @@ describe("SSHRuntime.forkWorkspace rm-rf-cannot-wipe-siblings invariant", () => 
 
     // The collision-cleanup MUST target the staging worktree, NOT the
     // existing destination workspace.
-    const removeCmds = runtime.commands.filter(
-      (c) => c.includes("worktree remove --force ") || c.startsWith("rm -rf ")
-    );
+    const removeCmds = runtime.commands.filter((c) => c.startsWith("rm -rf "));
     expect(removeCmds.length).toBeGreaterThan(0);
     for (const cmd of removeCmds) {
       expect(cmd).toContain(".mux-fork-staging-");
@@ -375,13 +351,13 @@ describe("SSHRuntime.forkWorkspace cp-fallback finalize race", () => {
     runtime.canned.push(
       { matches: (c) => c.startsWith("test -e "), exitCode: 1 },
       {
-        matches: (c) => c.includes("branch --show-current"),
-        stdout: "feature-source\n",
+        matches: (c) => c.includes("log --no-graph -r @"),
+        stdout: "abc123\n",
         exitCode: 0,
       },
-      { matches: (c) => c.startsWith("test -d "), exitCode: 1 }, // no base repo → cp fallback
       { matches: (c) => c.startsWith("mkdir -p "), exitCode: 0 },
       { matches: (c) => c.startsWith("cp -R -P "), exitCode: 0 },
+      { matches: (c) => c.includes("jj new @"), exitCode: 0 },
       // The finalize script reports MUX_FORK_COLLISION because the post-hoc
       // nesting detector fired. Exit code 7 = collision.
       {
@@ -439,13 +415,13 @@ describe("SSHRuntime.forkWorkspace staging-name uniqueness", () => {
       r.canned.push(
         { matches: (c) => c.startsWith("test -e "), exitCode: 1 },
         {
-          matches: (c) => c.includes("branch --show-current"),
-          stdout: "feature-source\n",
+          matches: (c) => c.includes("log --no-graph -r @"),
+          stdout: "abc123\n",
           exitCode: 0,
         },
-        { matches: (c) => c.startsWith("test -d "), exitCode: 0 },
-        { matches: (c) => c.includes("worktree add "), exitCode: 0 },
-        { matches: (c) => c.includes("worktree move "), exitCode: 0 }
+        { matches: (c) => c.startsWith("cp -R -P "), exitCode: 0 },
+        { matches: (c) => c.includes("jj new @"), exitCode: 0 },
+        { matches: (c) => c.includes("mv ") && c.includes("MUX_FORK_COLLISION"), exitCode: 0 }
       );
     }
 
