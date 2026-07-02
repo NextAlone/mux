@@ -1,22 +1,14 @@
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 
-import { NON_INTERACTIVE_ENV_VARS } from "@/common/constants/env";
 import { getErrorMessage } from "@/common/utils/errors";
 import { hasErrorCode } from "@/node/services/tools/skillFileUtils";
-import { GIT_NO_HOOKS_ENV } from "@/node/utils/gitNoHooksEnv";
 import { execBuffered } from "@/node/utils/runtime/helpers";
-
-import { LocalRuntime } from "./LocalRuntime";
 import type { InitLogger, Runtime } from "./Runtime";
 
-const SUBMODULE_SYNC_TIMEOUT_SECS = 60;
-const SUBMODULE_UPDATE_TIMEOUT_SECS = 600;
 const GITMODULES_PROBE_TIMEOUT_SECS = 10;
 const GITMODULES_PROBE_MISSING_EXIT_CODE = 2;
 const GITMODULES_PROBE_INVALID_EXIT_CODE = 3;
-const SUBMODULE_SYNC_COMMAND = "git submodule sync --recursive";
-const SUBMODULE_UPDATE_COMMAND = "git submodule update --init --recursive";
 
 interface BaseSubmoduleSyncArgs {
   workspacePath: string;
@@ -30,80 +22,19 @@ interface RuntimeSubmoduleSyncArgs extends BaseSubmoduleSyncArgs {
   runtime: Runtime;
 }
 
-function buildGitExecutionEnv(options?: {
-  env?: Record<string, string>;
-  trusted?: boolean;
-}): Record<string, string> {
-  return {
-    ...(options?.env ?? {}),
-    ...NON_INTERACTIVE_ENV_VARS,
-    // Default-deny mirrors the rest of workspace materialization: untrusted repos
-    // must not get a chance to run repo-controlled git hooks during checkout.
-    ...(options?.trusted ? {} : GIT_NO_HOOKS_ENV),
-  };
-}
-
 function formatSubmoduleSyncError(error: unknown): Error {
-  return new Error(`Failed to initialize git submodules: ${getErrorMessage(error)}`);
+  return new Error(`Failed to initialize submodules: ${getErrorMessage(error)}`);
 }
 
 function formatGitmodulesProbeError(error: unknown): Error {
   return new Error(`Failed to probe .gitmodules before submodule sync: ${getErrorMessage(error)}`);
 }
 
-async function runSubmoduleCommand(args: {
-  runtime: Runtime;
-  workspacePath: string;
-  abortSignal?: AbortSignal;
-  env: Record<string, string>;
-  command: string;
-  timeout: number;
-  fallbackError: string;
-}): Promise<void> {
-  const result = await execBuffered(args.runtime, args.command, {
-    cwd: args.workspacePath,
-    timeout: args.timeout,
-    abortSignal: args.abortSignal,
-    env: args.env,
-  });
-
-  if (result.exitCode !== 0) {
-    throw new Error(result.stderr || result.stdout || args.fallbackError);
-  }
-}
-
 async function runSubmoduleMaterialization(args: RuntimeSubmoduleSyncArgs): Promise<void> {
-  const env = buildGitExecutionEnv({ env: args.env, trusted: args.trusted });
-
-  // Skills, docs, and other workspace-managed files can live inside submodules.
-  // Materialize them before init hooks or downstream runtime setup so later discovery
-  // doesn't misdiagnose missing files as invalid workspace state.
-  args.initLogger.logStep("Initializing git submodules...");
-
-  try {
-    await runSubmoduleCommand({
-      runtime: args.runtime,
-      workspacePath: args.workspacePath,
-      abortSignal: args.abortSignal,
-      env,
-      command: SUBMODULE_SYNC_COMMAND,
-      timeout: SUBMODULE_SYNC_TIMEOUT_SECS,
-      fallbackError: "git submodule sync failed",
-    });
-    await runSubmoduleCommand({
-      runtime: args.runtime,
-      workspacePath: args.workspacePath,
-      abortSignal: args.abortSignal,
-      env,
-      command: SUBMODULE_UPDATE_COMMAND,
-      timeout: SUBMODULE_UPDATE_TIMEOUT_SECS,
-      fallbackError: "git submodule update failed",
-    });
-  } catch (error) {
-    throw formatSubmoduleSyncError(error);
-  }
-
-  args.initLogger.logStep("Git submodules ready");
+  args.initLogger.logStep("Submodules detected");
+  throw formatSubmoduleSyncError(
+    "jj-native submodule materialization is not implemented without invoking Git. Materialize submodules before creating this runtime, or use a non-submodule repository until jj-native submodule support is added."
+  );
 }
 
 async function hasLocalGitmodules(workspacePath: string): Promise<boolean> {
@@ -125,7 +56,6 @@ async function hasLocalGitmodules(workspacePath: string): Promise<boolean> {
 }
 
 async function hasRuntimeGitmodules(args: RuntimeSubmoduleSyncArgs): Promise<boolean> {
-  const env = buildGitExecutionEnv({ env: args.env, trusted: args.trusted });
   const gitmodulesProbeCommand =
     `if [ -f .gitmodules ]; then printf present; exit 0; fi; ` +
     `if [ -e .gitmodules ]; then printf invalid; exit ${GITMODULES_PROBE_INVALID_EXIT_CODE}; fi; ` +
@@ -134,7 +64,7 @@ async function hasRuntimeGitmodules(args: RuntimeSubmoduleSyncArgs): Promise<boo
     cwd: args.workspacePath,
     timeout: GITMODULES_PROBE_TIMEOUT_SECS,
     abortSignal: args.abortSignal,
-    env,
+    env: args.env,
   });
 
   if (
@@ -156,10 +86,10 @@ export async function syncLocalGitSubmodules(args: BaseSubmoduleSyncArgs): Promi
     return;
   }
 
-  await runSubmoduleMaterialization({
-    ...args,
-    runtime: new LocalRuntime(args.workspacePath),
-  });
+  args.initLogger.logStep("Submodules detected");
+  throw formatSubmoduleSyncError(
+    "jj-native submodule materialization is not implemented without invoking Git. Materialize submodules before creating this runtime, or use a non-submodule repository until jj-native submodule support is added."
+  );
 }
 
 export async function syncRuntimeGitSubmodules(args: RuntimeSubmoduleSyncArgs): Promise<void> {
