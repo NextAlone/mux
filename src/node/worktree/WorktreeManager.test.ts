@@ -8,6 +8,23 @@ import type { InitLogger } from "@/node/runtime/Runtime";
 import * as submoduleSync from "@/node/runtime/submoduleSync";
 import { WorktreeManager } from "./WorktreeManager";
 
+// eslint-disable-next-line @typescript-eslint/no-empty-function
+const noop = () => {};
+
+function createMockExecResult(
+  result: Promise<{ stdout: string; stderr: string }>
+): ReturnType<typeof disposableExec.execFileAsync> {
+  void result.catch(noop);
+  return {
+    result,
+    get promise() {
+      return result;
+    },
+    child: {},
+    [Symbol.dispose]: noop,
+  } as unknown as ReturnType<typeof disposableExec.execFileAsync>;
+}
+
 function initGitRepo(projectPath: string): void {
   execSync("git init -b main", { cwd: projectPath, stdio: "ignore" });
   execSync('git config user.email "test@example.com"', { cwd: projectPath, stdio: "ignore" });
@@ -90,6 +107,91 @@ describe("WorktreeManager constructor", () => {
 });
 
 describe("WorktreeManager.createWorkspace", () => {
+  it("creates jj workspaces without invoking git commands", async () => {
+    const rootDir = await fsPromises.realpath(
+      await fsPromises.mkdtemp(path.join(os.tmpdir(), "worktree-manager-jj-create-"))
+    );
+    const projectPath = path.join(rootDir, "repo");
+    const srcBaseDir = path.join(rootDir, "src");
+    const workspaceName = "agent-task";
+    const workspacePath = path.join(srcBaseDir, "repo", workspaceName);
+
+    await fsPromises.mkdir(path.join(projectPath, ".jj", "repo"), { recursive: true });
+    await fsPromises.mkdir(srcBaseDir, { recursive: true });
+
+    const execFileAsyncSpy = spyOn(disposableExec, "execFileAsync").mockImplementation(
+      (file, args) => {
+        if (file === "git") {
+          return createMockExecResult(
+            Promise.reject(new Error(`unexpected git command: ${(args ?? []).join(" ")}`))
+          );
+        }
+
+        expect(file).toBe("jj");
+        const commandArgs = args ?? [];
+        if (commandArgs.includes("bookmark") && commandArgs.includes("list")) {
+          return createMockExecResult(Promise.resolve({ stdout: "main\n", stderr: "" }));
+        }
+
+        if (commandArgs.includes("workspace") && commandArgs.includes("add")) {
+          expect(commandArgs).toEqual([
+            "--no-pager",
+            "--color",
+            "never",
+            "--repository",
+            projectPath,
+            "workspace",
+            "add",
+            "--name",
+            workspaceName,
+            "--revision",
+            "main",
+            "--message",
+            workspaceName,
+            workspacePath,
+          ]);
+          return createMockExecResult(Promise.resolve({ stdout: "", stderr: "" }));
+        }
+
+        return createMockExecResult(
+          Promise.reject(new Error(`unexpected jj command: ${commandArgs.join(" ")}`))
+        );
+      }
+    );
+
+    try {
+      const manager = new WorktreeManager(srcBaseDir);
+      const result = await manager.createWorkspace({
+        projectPath,
+        branchName: workspaceName,
+        trunkBranch: "main",
+        initLogger: createNullInitLogger(),
+        trusted: true,
+      });
+
+      expect(result.success).toBe(true);
+      if (!result.success || !result.workspacePath) {
+        throw new Error("Expected createWorkspace to return a workspace path");
+      }
+      expect(result.workspacePath).toBe(workspacePath);
+
+      const bookmarkMap = JSON.parse(
+        await fsPromises.readFile(
+          path.join(projectPath, ".jj", "repo", "mux-workspaces.json"),
+          "utf8"
+        )
+      ) as Record<string, string>;
+      expect(bookmarkMap).toEqual({ [workspaceName]: workspaceName });
+
+      for (const [file] of execFileAsyncSpy.mock.calls) {
+        expect(file).toBe("jj");
+      }
+    } finally {
+      execFileAsyncSpy.mockRestore();
+      await fsPromises.rm(rootDir, { recursive: true, force: true });
+    }
+  });
+
   const rollbackCases = [
     {
       name: "rolls back failed new worktrees when submodule materialization fails",
@@ -199,6 +301,79 @@ describe("WorktreeManager.createWorkspace", () => {
 });
 
 describe("WorktreeManager.renameWorkspace", () => {
+  it("renames jj workspaces and their mapping without invoking git commands", async () => {
+    const rootDir = await fsPromises.realpath(
+      await fsPromises.mkdtemp(path.join(os.tmpdir(), "worktree-manager-jj-rename-"))
+    );
+    const projectPath = path.join(rootDir, "repo");
+    const srcBaseDir = path.join(rootDir, "src");
+    const oldName = "old-task";
+    const newName = "new-task";
+    const oldPath = path.join(srcBaseDir, "repo", oldName);
+    const newPath = path.join(srcBaseDir, "repo", newName);
+    const workspaceMapPath = path.join(projectPath, ".jj", "repo", "mux-workspaces.json");
+
+    await fsPromises.mkdir(path.join(projectPath, ".jj", "repo"), { recursive: true });
+    await fsPromises.mkdir(oldPath, { recursive: true });
+    await fsPromises.writeFile(workspaceMapPath, `${JSON.stringify({ [oldName]: "topic" })}\n`);
+
+    const execFileAsyncSpy = spyOn(disposableExec, "execFileAsync").mockImplementation(
+      (file, args) => {
+        if (file === "git") {
+          return createMockExecResult(
+            Promise.reject(new Error(`unexpected git command: ${(args ?? []).join(" ")}`))
+          );
+        }
+
+        expect(file).toBe("jj");
+        expect(args).toEqual([
+          "--no-pager",
+          "--color",
+          "never",
+          "--repository",
+          oldPath,
+          "workspace",
+          "rename",
+          newName,
+        ]);
+        return createMockExecResult(Promise.resolve({ stdout: "", stderr: "" }));
+      }
+    );
+
+    try {
+      const manager = new WorktreeManager(srcBaseDir);
+      const result = await manager.renameWorkspace(projectPath, oldName, newName, true);
+
+      expect(result.success).toBe(true);
+      if (!result.success) {
+        throw new Error("Expected renameWorkspace to succeed");
+      }
+      expect(result.oldPath).toBe(oldPath);
+      expect(result.newPath).toBe(newPath);
+      await expect(fsPromises.access(oldPath)).rejects.toThrow();
+      let newPathExists = true;
+      try {
+        await fsPromises.access(newPath);
+      } catch {
+        newPathExists = false;
+      }
+      expect(newPathExists).toBe(true);
+
+      const bookmarkMap = JSON.parse(await fsPromises.readFile(workspaceMapPath, "utf8")) as Record<
+        string,
+        string
+      >;
+      expect(bookmarkMap).toEqual({ [newName]: "topic" });
+
+      for (const [file] of execFileAsyncSpy.mock.calls) {
+        expect(file).toBe("jj");
+      }
+    } finally {
+      execFileAsyncSpy.mockRestore();
+      await fsPromises.rm(rootDir, { recursive: true, force: true });
+    }
+  });
+
   it("does not rename unrelated branches when the workspace tracks a different branch", async () => {
     const fixture = await createWorktreeManagerFixture();
 
@@ -253,6 +428,64 @@ describe("WorktreeManager.renameWorkspace", () => {
 });
 
 describe("WorktreeManager.deleteWorkspace", () => {
+  it("forgets jj workspaces and removes their directory without invoking git commands", async () => {
+    const rootDir = await fsPromises.realpath(
+      await fsPromises.mkdtemp(path.join(os.tmpdir(), "worktree-manager-jj-delete-"))
+    );
+    const projectPath = path.join(rootDir, "repo");
+    const srcBaseDir = path.join(rootDir, "src");
+    const workspaceName = "agent-task";
+    const workspacePath = path.join(srcBaseDir, "repo", workspaceName);
+    const workspaceMapPath = path.join(projectPath, ".jj", "repo", "mux-workspaces.json");
+
+    await fsPromises.mkdir(path.join(projectPath, ".jj", "repo"), { recursive: true });
+    await fsPromises.mkdir(workspacePath, { recursive: true });
+    await fsPromises.writeFile(
+      workspaceMapPath,
+      `${JSON.stringify({ [workspaceName]: workspaceName })}\n`
+    );
+
+    const execFileAsyncSpy = spyOn(disposableExec, "execFileAsync").mockImplementation(
+      (file, args) => {
+        if (file === "git") {
+          return createMockExecResult(
+            Promise.reject(new Error(`unexpected git command: ${(args ?? []).join(" ")}`))
+          );
+        }
+
+        expect(file).toBe("jj");
+        expect(args).toEqual([
+          "--no-pager",
+          "--color",
+          "never",
+          "--repository",
+          projectPath,
+          "--ignore-working-copy",
+          "workspace",
+          "forget",
+          workspaceName,
+        ]);
+        return createMockExecResult(Promise.resolve({ stdout: "", stderr: "" }));
+      }
+    );
+
+    try {
+      const manager = new WorktreeManager(srcBaseDir);
+      const result = await manager.deleteWorkspace(projectPath, workspaceName, true, true);
+
+      expect(result.success).toBe(true);
+      await expect(fsPromises.access(workspacePath)).rejects.toThrow();
+      await expect(fsPromises.access(workspaceMapPath)).rejects.toThrow();
+
+      for (const [file] of execFileAsyncSpy.mock.calls) {
+        expect(file).toBe("jj");
+      }
+    } finally {
+      execFileAsyncSpy.mockRestore();
+      await fsPromises.rm(rootDir, { recursive: true, force: true });
+    }
+  });
+
   it("deletes non-agent branches when removing worktrees (force)", async () => {
     const fixture = await createWorktreeManagerFixture({
       tempDirPrefix: "worktree-manager-delete-",
@@ -627,4 +860,95 @@ describe("WorktreeManager.deleteWorkspace", () => {
       await fixture.cleanup();
     }
   }, 20_000);
+});
+
+describe("WorktreeManager.forkWorkspace", () => {
+  it("forks from the source jj change id without invoking git commands", async () => {
+    const rootDir = await fsPromises.realpath(
+      await fsPromises.mkdtemp(path.join(os.tmpdir(), "worktree-manager-jj-fork-"))
+    );
+    const projectPath = path.join(rootDir, "repo");
+    const srcBaseDir = path.join(rootDir, "src");
+    const sourceWorkspaceName = "source-task";
+    const newWorkspaceName = "fork-task";
+    const sourceWorkspacePath = path.join(srcBaseDir, "repo", sourceWorkspaceName);
+    const newWorkspacePath = path.join(srcBaseDir, "repo", newWorkspaceName);
+
+    await fsPromises.mkdir(path.join(projectPath, ".jj", "repo"), { recursive: true });
+    await fsPromises.mkdir(sourceWorkspacePath, { recursive: true });
+
+    const execFileAsyncSpy = spyOn(disposableExec, "execFileAsync").mockImplementation(
+      (file, args) => {
+        if (file === "git") {
+          return createMockExecResult(
+            Promise.reject(new Error(`unexpected git command: ${(args ?? []).join(" ")}`))
+          );
+        }
+
+        expect(file).toBe("jj");
+        const commandArgs = args ?? [];
+        if (
+          commandArgs.includes("bookmark") &&
+          commandArgs.includes("list") &&
+          commandArgs.includes(sourceWorkspacePath)
+        ) {
+          return createMockExecResult(Promise.resolve({ stdout: "", stderr: "" }));
+        }
+
+        if (commandArgs.includes("log") && commandArgs.includes(sourceWorkspacePath)) {
+          return createMockExecResult(Promise.resolve({ stdout: "kqpnwost\n", stderr: "" }));
+        }
+
+        if (commandArgs.includes("bookmark") && commandArgs.includes("list")) {
+          return createMockExecResult(Promise.resolve({ stdout: "main\n", stderr: "" }));
+        }
+
+        if (commandArgs.includes("workspace") && commandArgs.includes("add")) {
+          expect(commandArgs).toEqual([
+            "--no-pager",
+            "--color",
+            "never",
+            "--repository",
+            projectPath,
+            "workspace",
+            "add",
+            "--name",
+            newWorkspaceName,
+            "--revision",
+            "kqpnwost",
+            "--message",
+            newWorkspaceName,
+            newWorkspacePath,
+          ]);
+          return createMockExecResult(Promise.resolve({ stdout: "", stderr: "" }));
+        }
+
+        return createMockExecResult(
+          Promise.reject(new Error(`unexpected jj command: ${commandArgs.join(" ")}`))
+        );
+      }
+    );
+
+    try {
+      const manager = new WorktreeManager(srcBaseDir);
+      const result = await manager.forkWorkspace({
+        projectPath,
+        sourceWorkspaceName,
+        newWorkspaceName,
+        initLogger: createNullInitLogger(),
+        trusted: true,
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.workspacePath).toBe(newWorkspacePath);
+      expect(result.sourceBranch).toBe("kqpnwost");
+
+      for (const [file] of execFileAsyncSpy.mock.calls) {
+        expect(file).toBe("jj");
+      }
+    } finally {
+      execFileAsyncSpy.mockRestore();
+      await fsPromises.rm(rootDir, { recursive: true, force: true });
+    }
+  });
 });

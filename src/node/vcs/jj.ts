@@ -4,6 +4,7 @@ const FALLBACK_TRUNK_BOOKMARKS = ["main", "master", "trunk", "develop", "default
 const JJ_MACHINE_ARGS = ["--no-pager", "--color", "never"] as const;
 const JJ_BOOKMARK_NAME_TEMPLATE = 'name ++ "\\n"';
 const JJ_FILE_PATH_TEMPLATE = 'path ++ "\\n"';
+const JJ_CHANGE_ID_TEMPLATE = 'change_id.shortest() ++ "\\n"';
 
 function createUniqueSortedNames(names: Iterable<string>): string[] {
   return Array.from(
@@ -52,10 +53,7 @@ export function detectDefaultJjBookmark(args: {
   return bookmarks[0];
 }
 
-async function listBookmarksForRevision(
-  projectPath: string,
-  revision?: string
-): Promise<string[]> {
+async function listBookmarksForRevision(projectPath: string, revision?: string): Promise<string[]> {
   const args = [
     ...JJ_MACHINE_ARGS,
     "--repository",
@@ -89,6 +87,22 @@ export async function isInsideJjRepository(projectPath: string): Promise<boolean
     return true;
   } catch {
     return false;
+  }
+}
+
+export async function getJjRoot(projectPath: string): Promise<string | null> {
+  try {
+    using proc = disposableExec.execFileAsync("jj", [
+      ...JJ_MACHINE_ARGS,
+      "--repository",
+      projectPath,
+      "--ignore-working-copy",
+      "root",
+    ]);
+    const { stdout } = await proc.result;
+    return stdout.trim() || null;
+  } catch {
+    return null;
   }
 }
 
@@ -144,6 +158,51 @@ export async function forgetJjWorkspace(args: {
     args.workspaceName,
   ]);
   await proc.result;
+}
+
+export async function renameJjWorkspace(args: {
+  workspacePath: string;
+  newWorkspaceName: string;
+}): Promise<void> {
+  using proc = disposableExec.execFileAsync("jj", [
+    ...JJ_MACHINE_ARGS,
+    "--repository",
+    args.workspacePath,
+    "workspace",
+    "rename",
+    args.newWorkspaceName,
+  ]);
+  await proc.result;
+}
+
+export async function hasJjWorkspaceChanges(workspacePath: string): Promise<boolean> {
+  using proc = disposableExec.execFileAsync("jj", [
+    ...JJ_MACHINE_ARGS,
+    "--repository",
+    workspacePath,
+    "diff",
+    "--summary",
+  ]);
+  const { stdout } = await proc.result;
+  return stdout.trim().length > 0;
+}
+
+export async function getCurrentJjChangeId(workspacePath: string): Promise<string | null> {
+  using proc = disposableExec.execFileAsync("jj", [
+    ...JJ_MACHINE_ARGS,
+    "--repository",
+    workspacePath,
+    "log",
+    "--no-graph",
+    "-r",
+    "@",
+    "-T",
+    JJ_CHANGE_ID_TEMPLATE,
+    "-n",
+    "1",
+  ]);
+  const { stdout } = await proc.result;
+  return stdout.trim() || null;
 }
 
 export async function listLocalBookmarks(projectPath: string): Promise<string[]> {

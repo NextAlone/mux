@@ -2,13 +2,9 @@ import type { Config, ProjectConfig } from "@/node/config";
 import { formatSshEndpoint } from "@/common/utils/ssh/formatSshEndpoint";
 import { spawn } from "child_process";
 import { createHash, randomBytes } from "crypto";
-import {
-  validateProjectPath,
-  isGitRepository,
-  stripTrailingSlashes,
-} from "@/node/utils/pathUtils";
+import { validateProjectPath, isGitRepository, stripTrailingSlashes } from "@/node/utils/pathUtils";
 import { listLocalBranches, detectDefaultTrunkBranch } from "@/node/git";
-import { isInsideJjRepository, listJjFiles } from "@/node/vcs/jj";
+import { getJjRoot, isInsideJjRepository, listJjFiles } from "@/node/vcs/jj";
 import type { Result } from "@/common/types/result";
 import { Ok, Err } from "@/common/types/result";
 import type { Secret } from "@/common/types/secrets";
@@ -323,14 +319,9 @@ async function resolveRealProjectPath(projectPath: string): Promise<string> {
   return stripTrailingSlashes(await fsPromises.realpath(projectPath));
 }
 
-async function readGitTopLevel(projectPath: string): Promise<string | null> {
-  try {
-    using proc = execFileAsync("git", ["-C", projectPath, "rev-parse", "--show-toplevel"]);
-    const { stdout } = await proc.result;
-    return stripTrailingSlashes(stdout.trim());
-  } catch {
-    return null;
-  }
+async function readJjTopLevel(projectPath: string): Promise<string | null> {
+  const root = await getJjRoot(projectPath);
+  return root ? stripTrailingSlashes(root) : null;
 }
 
 function findDeepestTopLevelParentProject(
@@ -475,13 +466,13 @@ export class ProjectService {
 
       const parentProjectPath = findDeepestTopLevelParentProject(normalizedPath, config.projects);
       if (parentProjectPath) {
-        const [parentGitRoot, subProjectGitRoot] = await Promise.all([
-          readGitTopLevel(parentProjectPath),
-          readGitTopLevel(normalizedPath),
+        const [parentJjRoot, subProjectJjRoot] = await Promise.all([
+          readJjTopLevel(parentProjectPath),
+          readJjTopLevel(normalizedPath),
         ]);
-        if (parentGitRoot !== subProjectGitRoot) {
+        if (parentJjRoot !== subProjectJjRoot) {
           await cleanupCreatedDirectory();
-          return Err("Sub-project must be in the same git repository as its parent project");
+          return Err("Sub-project must be in the same jj repository as its parent project");
         }
       }
 
@@ -489,13 +480,13 @@ export class ProjectService {
         isPathDescendant(normalizedPath, candidatePath)
       );
       if (descendantProjectPaths.length > 0) {
-        const parentGitRoot = await readGitTopLevel(normalizedPath);
+        const parentJjRoot = await readJjTopLevel(normalizedPath);
         for (const descendantProjectPath of descendantProjectPaths) {
-          const descendantGitRoot = await readGitTopLevel(descendantProjectPath);
-          if (parentGitRoot !== descendantGitRoot) {
+          const descendantJjRoot = await readJjTopLevel(descendantProjectPath);
+          if (parentJjRoot !== descendantJjRoot) {
             await cleanupCreatedDirectory();
             return Err(
-              "Cannot register a parent project above an existing project from a different git repository"
+              "Cannot register a parent project above an existing project from a different jj repository"
             );
           }
         }
