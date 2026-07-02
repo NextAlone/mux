@@ -70,19 +70,47 @@ export function parseSource(source: string): { owner: string; repo: string } {
   return parsed;
 }
 
-async function assertGitAvailable(): Promise<void> {
+const JJ_ARGS = ["--config", "ui.paginate=never", "--config", "ui.color=never"] as const;
+
+async function runJj(cwd: string, args: string[]): Promise<string> {
+  using proc = execFileAsync("jj", [...JJ_ARGS, "-R", cwd, ...args]);
+  const { stdout } = await proc.result;
+  return stdout.trim();
+}
+
+async function assertJjAvailable(): Promise<void> {
   try {
-    using proc = execFileAsync("git", ["--version"]);
+    using proc = execFileAsync("jj", [...JJ_ARGS, "--version"]);
     await proc.result;
   } catch {
-    throw new Error("git is required for skills_catalog_read but was not found in PATH");
+    throw new Error("jj is required for skills_catalog_read but was not found in PATH");
   }
 }
 
 async function detectBranch(repoDir: string): Promise<string> {
-  using proc = execFileAsync("git", ["-C", repoDir, "rev-parse", "--abbrev-ref", "HEAD"]);
-  const { stdout } = await proc.result;
-  return stdout.trim();
+  const stdout = await runJj(repoDir, [
+    "bookmark",
+    "list",
+    "--all-remotes",
+    "-r",
+    "@-",
+    "-T",
+    'name ++ "\n"',
+  ]);
+  const names = [
+    ...new Set(
+      stdout
+        .split("\n")
+        .map((name) => name.trim())
+        .filter(Boolean)
+    ),
+  ];
+  return (
+    names.find((name) => name === "main") ??
+    names.find((name) => name === "master") ??
+    names[0] ??
+    "main"
+  );
 }
 
 function isMissingPathError(error: unknown): boolean {
@@ -208,7 +236,7 @@ export async function fetchSkillContent(
   repo: string,
   skillId: string
 ): Promise<FetchedSkillContent> {
-  await assertGitAvailable();
+  await assertJjAvailable();
 
   const cloneDir = await mkdtemp(path.join(tmpdir(), "mux-skill-"));
 
@@ -218,11 +246,15 @@ export async function fetchSkillContent(
     const skillsRoot = path.resolve(cloneDir, "skills");
 
     const repoUrl = `https://github.com/${owner}/${repo}.git`;
-    using cloneProc = execFileAsync("git", [
+    using cloneProc = execFileAsync("jj", [
+      ...JJ_ARGS,
+      "git",
       "clone",
+      "--colocate",
       "--depth",
       "1",
-      "--single-branch",
+      "--fetch-tags",
+      "none",
       repoUrl,
       cloneDir,
     ]);
@@ -288,7 +320,7 @@ export async function fetchSkillContent(
     if (
       error instanceof Error &&
       (error.message.includes("Could not find SKILL.md") ||
-        error.message.includes("git is required") ||
+        error.message.includes("jj is required") ||
         error.message.includes("Invalid skillId") ||
         error.message.includes("Unsafe catalog skill path") ||
         error.message.includes("Unsafe catalog skills root"))

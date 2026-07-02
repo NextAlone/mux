@@ -101,7 +101,7 @@ Exit codes for CLI Goal Runs:
 ### Runtimes
 
 - **`local`** (default): Runs directly in the specified directory. Best for one-off tasks.
-- **`worktree`**: Creates an isolated git worktree under `~/.mux/src`. Useful for parallel work.
+- **`worktree`**: Creates an isolated jj workspace under `~/.mux/src`. Useful for parallel work.
 - **`ssh <host>`**: Runs on a remote machine via SSH. Example: `--runtime "ssh user@myserver.com"`
 - **`docker <image>`**: Runs in a Docker container. Example: `--runtime "docker node:20"`
 
@@ -188,7 +188,7 @@ Only one argument mode can be used per run:
 | `--args-file args.json`         | Exact JSON value read from a file         |
 | `--args-stdin`                  | Exact JSON value read from stdin          |
 
-Workspace-file workflow scripts are executable only after the project is trusted. If an explicit local `.js` script path points into an untrusted project, `mux workflow run` fails before executing repo-controlled workflow code. Linked git worktrees inherit trust from the main repository path. Grant trust headlessly with [`mux trust`](#mux-trust).
+Workspace-file workflow scripts are executable only after the project is trusted. If an explicit local `.js` script path points into an untrusted project, `mux workflow run` fails before executing repo-controlled workflow code. Linked jj workspaces inherit trust from the main repository path. Grant trust headlessly with [`mux trust`](#mux-trust).
 
 ## `mux trust`
 
@@ -208,7 +208,7 @@ mux trust --revoke
 mux trust --json
 ```
 
-Run from a linked git worktree (for example a mux workspace checkout), trust is recorded for the main repository path rather than the ephemeral worktree path. Review a repository before trusting it: trusted projects can execute repo-controlled code.
+Run from a linked jj workspace (for example a mux workspace checkout), trust is recorded for the main repository path rather than the ephemeral workspace path. Review a repository before trusting it: trusted projects can execute repo-controlled code.
 
 ## `mux server`
 

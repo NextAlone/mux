@@ -118,9 +118,9 @@ function buildEnvironmentContext(
   runtimeType: RuntimeMode,
   bestOf: WorkspaceMetadata["bestOf"] | undefined
 ): string {
-  // Common lines shared across git-based runtimes
-  const gitCommonLines = [
-    "- This IS a git repository - run git commands directly (no cd needed)",
+  // Common lines shared across jj-based runtimes.
+  const vcsCommonLines = [
+    "- This IS a jj repository - run jj commands directly (no cd needed)",
     "- Tools run here automatically",
     "- You are meant to do your work isolated from the user and other agents",
     "- Parent directories may contain other workspaces - do not confuse them with this project",
@@ -140,30 +140,30 @@ function buildEnvironmentContext(
       break;
 
     case RUNTIME_MODE.WORKTREE:
-      // Worktree runtime creates a git worktree locally
-      description = `You are in a git worktree at ${workspacePath}`;
+      // Worktree runtime creates a jj workspace locally.
+      description = `You are in a jj workspace at ${workspacePath}`;
       lines = [
-        ...gitCommonLines,
-        "- Do not modify or visit other worktrees (especially the main project) without explicit user intent",
+        ...vcsCommonLines,
+        "- Do not modify or visit other jj workspaces (especially the main project) without explicit user intent",
       ];
       break;
 
     case RUNTIME_MODE.SSH:
-      // SSH runtime clones the repository on a remote host
-      description = `Your working directory is ${workspacePath} (a git repository clone)`;
-      lines = gitCommonLines;
+      // SSH runtime syncs the repository on a remote host.
+      description = `Your working directory is ${workspacePath} (a jj repository checkout)`;
+      lines = vcsCommonLines;
       break;
 
     case RUNTIME_MODE.DOCKER:
       // Docker runtime runs in an isolated container
-      description = `Your working directory is ${workspacePath} (a git repository clone inside a Docker container)`;
-      lines = gitCommonLines;
+      description = `Your working directory is ${workspacePath} (a jj repository checkout inside a Docker container)`;
+      lines = vcsCommonLines;
       break;
 
     case RUNTIME_MODE.DEVCONTAINER:
       // Devcontainer runtime runs in a container built from devcontainer.json
-      description = `Your working directory is ${workspacePath} (a git worktree inside a Dev Container)`;
-      lines = gitCommonLines;
+      description = `Your working directory is ${workspacePath} (a jj workspace inside a Dev Container)`;
+      lines = vcsCommonLines;
       break;
 
     default:

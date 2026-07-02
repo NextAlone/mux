@@ -39,7 +39,7 @@ interface TrustCLIOptions {
 
 /**
  * Resolve the project directory for trust and workflow discovery: an explicit
- * --dir wins; otherwise the git toplevel of cwd (falling back to cwd itself).
+ * --dir wins; otherwise the jj workspace root of cwd (falling back to cwd itself).
  */
 export async function resolveProjectDir(input: ResolveProjectDirInput): Promise<string> {
   if (input.explicitDir != null) {
@@ -50,8 +50,8 @@ export async function resolveProjectDir(input: ResolveProjectDirInput): Promise<
 
   const cwd = path.resolve(input.cwd);
   await ensureDirectory(cwd);
-  const gitRoot = await findGitRoot(cwd);
-  return gitRoot ?? cwd;
+  const jjRoot = await findJjRoot(cwd);
+  return jjRoot ?? cwd;
 }
 
 async function ensureDirectory(dirPath: string): Promise<void> {
@@ -61,47 +61,47 @@ async function ensureDirectory(dirPath: string): Promise<void> {
   }
 }
 
-export async function findGitRoot(cwd: string): Promise<string | null> {
+async function runJj(cwd: string, args: string[]): Promise<string | null> {
   try {
-    const { stdout } = await execFileAsync("git", ["rev-parse", "--show-toplevel"], { cwd });
-    const gitRoot = stdout.trim();
-    return gitRoot.length > 0 ? gitRoot : null;
+    const { stdout } = await execFileAsync(
+      "jj",
+      ["--config", "ui.paginate=never", "--config", "ui.color=never", ...args],
+      { cwd }
+    );
+    const trimmed = stdout.trim();
+    return trimmed.length > 0 ? trimmed : null;
   } catch {
     return null;
   }
 }
 
+export async function findJjRoot(cwd: string): Promise<string | null> {
+  return runJj(cwd, ["root"]);
+}
+
 /**
- * For a linked git worktree, returns the main repository working directory (the
- * parent of the common `.git` dir). Returns null for the main checkout itself,
- * bare repos, and non-git directories.
+ * For a linked jj workspace, returns the main repository working directory when
+ * jj exposes a colocated Git root. Returns null for the main checkout itself,
+ * non-colocated jj repos, and non-jj directories.
  */
 export async function findMainRepoDir(projectDir: string): Promise<string | null> {
-  try {
-    const { stdout } = await execFileAsync("git", ["rev-parse", "--git-common-dir"], {
-      cwd: projectDir,
-    });
-    const commonDir = stdout.trim();
-    if (commonDir.length === 0) {
-      return null;
-    }
-    // The main checkout reports a relative ".git"; linked worktrees report the main
-    // repo's .git dir. Resolve against projectDir so both shapes become absolute.
-    const absoluteCommonDir = path.resolve(projectDir, commonDir);
-    if (path.basename(absoluteCommonDir) !== ".git") {
-      return null;
-    }
-    const mainRepoDir = path.dirname(absoluteCommonDir);
-    return mainRepoDir === projectDir ? null : mainRepoDir;
-  } catch {
+  const gitRoot = await runJj(projectDir, ["git", "root"]);
+  if (gitRoot == null) {
     return null;
   }
+
+  const absoluteGitRoot = path.resolve(projectDir, gitRoot);
+  if (path.basename(absoluteGitRoot) !== ".git") {
+    return null;
+  }
+  const mainRepoDir = path.dirname(absoluteGitRoot);
+  return mainRepoDir === projectDir ? null : mainRepoDir;
 }
 
 /**
  * Resolve project trust for repo-controlled automation. Trust is keyed in
- * config.json by the registered project path, so linked git worktrees (e.g. mux
- * workspaces under ~/.mux/src/<project>/<branch>) miss a direct lookup of their own
+ * config.json by the registered project path, so linked jj workspaces (e.g. mux
+ * workspaces under ~/.mux/src/<project>/<bookmark>) miss a direct lookup of their own
  * checkout path. Mirror the desktop app, which scans the workspace checkout but
  * resolves trust against the registered project path (resolveWorkflowContext in
  * src/node/orpc/router.ts), by also accepting trust granted to the main repository.
@@ -125,13 +125,13 @@ async function runTrust(options: TrustCLIOptions): Promise<number> {
   const realConfig = new Config();
   const trusted = options.revoke !== true;
 
-  // Linked worktrees are ephemeral aliases of the main repository: key trust by the
+  // Linked workspaces are ephemeral aliases of the main repository: key trust by the
   // main repo path (matching resolveProjectTrusted) instead of accumulating
-  // per-worktree entries in config.json. findMainRepoDir(gitRoot) is null for a main
-  // checkout, so an explicit non-worktree --dir is trusted exactly as given and
+  // per-workspace entries in config.json. findMainRepoDir(jjRoot) is null for a main
+  // checkout, so an explicit non-workspace --dir is trusted exactly as given and
   // sub-project trust stays possible.
-  const gitRoot = await findGitRoot(projectDir);
-  const mainRepoDir = gitRoot == null ? null : await findMainRepoDir(gitRoot);
+  const jjRoot = await findJjRoot(projectDir);
+  const mainRepoDir = jjRoot == null ? null : await findMainRepoDir(jjRoot);
   const trustDir = mainRepoDir ?? projectDir;
 
   // Compare and verify against the checkout's *effective* trust (direct entry or
@@ -158,11 +158,11 @@ async function runTrust(options: TrustCLIOptions): Promise<number> {
       setEntryTrusted(trustDir, true);
       if (!trusted) {
         // Revocation must also clear direct entries for the checkout paths themselves
-        // (e.g. a worktree added as its own project, or an older/manual config entry);
+        // (e.g. a workspace added as its own project, or an older/manual config entry);
         // resolveProjectTrusted's direct lookup would otherwise keep this checkout
         // trusted after we report revocation. Skip entry creation: absence already
         // means untrusted.
-        for (const dir of new Set([projectDir, gitRoot ?? projectDir])) {
+        for (const dir of new Set([projectDir, jjRoot ?? projectDir])) {
           if (dir !== trustDir) {
             setEntryTrusted(dir, false);
           }
@@ -187,7 +187,7 @@ async function runTrust(options: TrustCLIOptions): Promise<number> {
     return 0;
   }
   if (mainRepoDir != null) {
-    process.stdout.write(`Resolved linked git worktree ${projectDir} to its main repository.\n`);
+    process.stdout.write(`Resolved linked jj workspace ${projectDir} to its main repository.\n`);
   }
   if (wasTrusted === trusted) {
     process.stdout.write(`Project already ${trusted ? "trusted" : "untrusted"}: ${trustDir}\n`);

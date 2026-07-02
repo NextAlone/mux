@@ -24,10 +24,10 @@ Only lines prefixed with `!` (negation) are actionable — they identify gitigno
 
 ## Behavior
 
-- **When:** Files are copied after the git worktree is created, before [init hooks](/hooks/init) run — so your init scripts have access to `.env` and other secrets.
+- **When:** Files are copied after the jj workspace is created, before [init hooks](/hooks/init) run — so your init scripts have access to `.env` and other secrets.
 - **Source:** Your project root directory (the main checkout).
 - **Copy mode:** Physical file copy, not symlink. Each workspace gets its own independent copy.
-- **No overwrite:** Files that already exist in the worktree are not overwritten.
+- **No overwrite:** Files that already exist in the workspace are not overwritten.
 - **Best-effort:** If a file can't be copied, Mux logs debug information and continues — it won't block workspace creation.
 
 ## Where to place it

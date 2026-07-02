@@ -1319,7 +1319,7 @@ async function handleForkCommand(
  * Supports formats:
  * - "ssh <host>" or "ssh <user@host>" -> SSH runtime
  * - "docker <image>" -> Docker container runtime
- * - "worktree" -> Worktree runtime (git worktrees)
+ * - "worktree" -> Worktree runtime (jj workspaces)
  * - "local" -> Local runtime (project-dir, no isolation)
  * - "devcontainer <configPath>" -> Dev container runtime
  * - undefined -> Worktree runtime (default)

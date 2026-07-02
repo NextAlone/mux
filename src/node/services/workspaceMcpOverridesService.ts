@@ -256,14 +256,10 @@ export class WorkspaceMcpOverridesService {
         return;
       }
 
-      const gitRootResult = await execBuffered(
-        runtime,
-        "jj --no-pager --color never git root",
-        {
-          cwd: workspacePath,
-          timeout: 10,
-        }
-      );
+      const gitRootResult = await execBuffered(runtime, "jj --no-pager --color never git root", {
+        cwd: workspacePath,
+        timeout: 10,
+      });
       if (gitRootResult.exitCode !== 0) {
         return;
       }

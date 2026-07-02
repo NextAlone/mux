@@ -18,9 +18,9 @@ import { WorktreeManager } from "@/node/worktree/WorktreeManager";
  * Worktree runtime implementation that executes commands and file operations
  * directly on the host machine using Node.js APIs.
  *
- * This runtime uses git worktrees for workspace isolation:
+ * This runtime uses jj workspaces for workspace isolation:
  * - Workspaces are created in {srcBaseDir}/{projectName}/{workspaceName}
- * - Each workspace is a git worktree with its own branch
+ * - Each workspace is a jj workspace with its own working-copy commit
  */
 export class WorktreeRuntime extends LocalBaseRuntime {
   private readonly worktreeManager: WorktreeManager;

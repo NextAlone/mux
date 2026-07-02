@@ -17,7 +17,7 @@ Coordinate implementation by delegating investigation + coding to sub-agents, th
 - **Do not implement features/bugfixes directly in this workspace.** Spawn `exec` sub-agents and have them complete the work end-to-end. Even though your `file_edit_*` tools are available, treat them as off-limits for this workflow.
 - **Do not do broad repo investigation here.** If you need context, spawn an `explore` sub-agent with a narrow prompt to preserve your context window for coordination.
 - **Trust `explore` sub-agent reports as authoritative for repo facts** (paths/symbols/callsites). Do not redo the same investigation yourself; only re-check if a report is ambiguous or contradicts other evidence. For correctness claims, an `explore` report counts as having read the referenced files.
-- **`bash` is for orchestration only:** `git` / `gh` repo coordination, targeted post-apply verification, and waiting on PR review/CI. Do not use `bash` for file reads/writes, manual code editing, or broad repo exploration. If a direct verification check fails due to a code issue, delegate the fix to `exec` instead of patching it yourself.
+- **`bash` is for orchestration only:** `jj` / `gh` repo coordination, targeted post-apply verification, and waiting on PR review/CI. Do not use `bash` for file reads/writes, manual code editing, or broad repo exploration. If a direct verification check fails due to a code issue, delegate the fix to `exec` instead of patching it yourself.
 - **Never read or scan session storage** (`~/.mux/sessions/**`, `~/.mux/sessions/subagent-patches/**`). Treat session storage as internal. Access patches only through `task_apply_git_patch`.
 - **Do not call `propose_plan`** from this workflow conductor. If a complex subtask needs more shape before implementation, either decompose it with one or more `explore` tasks and write a richer brief for `exec`, or model an explicit workflow-owned `agentId: "plan"` step followed by a separate `exec` step.
 
@@ -70,7 +70,7 @@ Note: `plan` is intentionally not runnable as a sub-agent. Use top-level plan mo
 - Constraints:
   - Do not expand scope.
   - Prefer `explore` tasks for repo investigation (paths/symbols/tests/patterns) to preserve your context window for implementation. Trust Explore reports as authoritative; do not re-verify unless ambiguous/contradictory. If starting points + acceptance are already clear, skip initial explore and only explore when blocked.
-  - Create one or more git commits before `agent_report`.
+  - Create one or more jj commits before `agent_report`.
 
 For higher-complexity `exec` briefs, prioritize goal + constraints + acceptance criteria over file-by-file diff instructions.
 
@@ -103,19 +103,19 @@ Example dependency chain (schema download → generation):
 3. If you can do useful setup work while they run, do it; when you are ready to integrate, call `task_await` for the pending task IDs. If no parent-side work remains, end the turn after recording task IDs; Mux will wake this workspace as each background task reaches a terminal state.
 4. For each successful implementation task, integrate patches **one at a time**:
    - Treat every successful child task with a `taskId` as pending patch integration, whether the completion arrived inline from `task` or later from `task_await`.
-   - Complete each dry-run + real-apply pair before starting the next patch. Applying one patch changes `HEAD`, which can invalidate later dry-run results.
+   - Complete each dry-run + real-apply pair before starting the next patch. Applying one patch changes the parent revision, which can invalidate later dry-run results.
    - Dry-run apply: `task_apply_git_patch` with `dry_run: true`.
    - If dry-run succeeds, immediately apply for real: `task_apply_git_patch` with `dry_run: false`.
    - Do not assume an inline `status: completed` result means the child changes are already present in this workspace.
    - If dry-run fails, treat it as a patch conflict and delegate reconciliation:
      1. Do not attempt a real apply for that patch in this workspace.
-     2. Spawn a dedicated `exec` task. In the brief, include the original failing `task_id` and instruct the sub-agent to replay that patch via `task_apply_git_patch`, resolve conflicts in its own workspace, run `git am --continue`, commit the resolved result, and report back with a new patch to apply cleanly.
+     2. Spawn a dedicated `exec` task. In the brief, include the original failing `task_id` and instruct the sub-agent to replay that task change via `task_apply_git_patch`, resolve conflicts in its own workspace, commit the resolved result with jj, and report back with a new patch to apply cleanly.
    - If real apply fails unexpectedly:
-     1. Restore a clean working tree before delegating: run `git am --abort` via `bash` only when a git-am session is in progress; if abort reports no operation in progress, continue.
+     1. Restore a clean working tree before delegating by checking `jj st`; if the task-change apply left conflicts, delegate cleanup to a focused `exec` task instead of attempting ad-hoc Git recovery.
      2. Then follow the same delegated reconciliation flow above.
 5. Verify + review:
    - Run the gate loop (next section) against the integrated state.
-   - Use `git`/`gh` directly for PR orchestration when a PR already exists (pushes, review-request comments, replies to review remarks, and CI/check-status waiting loops). Create a new PR only when the user explicitly asks.
+   - Use `jj`/`gh` directly for PR orchestration when a PR already exists (pushes, review-request comments, replies to review remarks, and CI/check-status waiting loops). Create a new PR only when the user explicitly asks.
    - PASS: summary-only (no long logs).
    - FAIL: include the failing command + key error lines; then delegate a fix to `exec` and re-verify.
 
@@ -139,7 +139,7 @@ In a workflow, the verifier becomes `agent(prompt, { id, schema, onRefusal: "fai
 
 1. Spawn the prerequisite `exec` implementation task with `run_in_background: false`.
 2. If step 1 returns `queued`/`running` without a completed report, call `task_await` with the returned `taskId` before attempting any patch apply. If step 1 returns `status: completed` inline, that same `taskId` still requires patch application.
-3. Dry-run apply its patch (`dry_run: true`); then apply for real (`dry_run: false`). If either step fails, follow the conflict playbook above (including `git am --abort` only when a real apply leaves a git-am session in progress).
+3. Dry-run apply its patch (`dry_run: true`); then apply for real (`dry_run: false`). If either step fails, follow the conflict playbook above.
 4. Only then spawn the dependent task.
 
 ## Prerequisites

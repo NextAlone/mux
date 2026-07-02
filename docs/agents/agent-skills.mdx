@@ -113,8 +113,8 @@ You should use sub-agents to review the change from multiple angles (correctness
 
 Before reviewing, gather context:
 
-- Identify the change scope: `git diff --name-only` (or the file list the user provides).
-- Skim the diff for intent and risk: `git diff`.
+- Identify the change scope: `jj diff --name-only` (or the file list the user provides).
+- Skim the diff for intent and risk: `jj diff --git`.
 - Note which layers are touched:
   - UI (React/components/styles)
   - Main process / backend services
