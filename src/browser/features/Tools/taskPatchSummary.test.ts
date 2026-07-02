@@ -3,7 +3,7 @@ import { describe, expect, test } from "bun:test";
 import { formatGitPatchArtifactSummary } from "./taskPatchSummary";
 
 describe("formatGitPatchArtifactSummary", () => {
-  test("renders mixed per-project patch summary", () => {
+  test("renders mixed per-project task change summary", () => {
     expect(
       formatGitPatchArtifactSummary({
         childTaskId: "task-1",
@@ -38,7 +38,7 @@ describe("formatGitPatchArtifactSummary", () => {
         skippedProjectCount: 1,
         totalCommitCount: 2,
       })
-    ).toBe("Patch: ready (1 ready, 1 skipped, 1 failed; 2 commits)");
+    ).toBe("Task change: ready (1 ready, 1 skipped, 1 failed; 2 commits)");
   });
 
   test("falls back to legacy single-project commit counts", () => {
@@ -47,7 +47,7 @@ describe("formatGitPatchArtifactSummary", () => {
         status: "ready",
         commitCount: 1,
       })
-    ).toBe("Patch: ready (1 commit)");
+    ).toBe("Task change: ready (1 commit)");
   });
 
   test("falls back to legacy top-level errors for failed summaries", () => {
@@ -56,6 +56,6 @@ describe("formatGitPatchArtifactSummary", () => {
         status: "failed",
         error: "legacy patch generation failed",
       })
-    ).toBe("Patch: failed (legacy patch generation failed)");
+    ).toBe("Task change: failed (legacy patch generation failed)");
   });
 });

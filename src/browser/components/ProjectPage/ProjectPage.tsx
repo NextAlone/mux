@@ -94,12 +94,12 @@ export const ProjectPage: React.FC<ProjectPageProps> = ({
   const hasProviders = hasConfiguredProvider(providersConfig);
   const shouldShowAgentsInitBanner = !providersLoading && hasProviders && showAgentsInitNudge;
 
-  // Git repository state for the banner
+  // Jj repository state for the banner
   const [branchesLoaded, setBranchesLoaded] = useState(false);
-  const [hasBranches, setHasBranches] = useState(true); // Assume git repo until proven otherwise
+  const [hasBranches, setHasBranches] = useState(true); // Assume jj repo until proven otherwise
   const [branchRefreshKey, setBranchRefreshKey] = useState(0);
 
-  // Load branches to determine if this is a git repository.
+  // Load bookmarks to determine if this is a jj repository.
   // Uses local cancelled flag (not ref) to handle StrictMode double-renders correctly.
   useEffect(() => {
     if (!api) return;

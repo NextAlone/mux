@@ -198,15 +198,14 @@ export const WorkspaceMetadataSchema = z.object({
   }),
   taskBaseCommitSha: z.string().optional().meta({
     description:
-      "Git commit SHA this agent task workspace started from (used for generating git-format-patch artifacts).",
+      "Legacy base revision this agent task workspace started from; jj-native artifacts use task change IDs.",
   }),
   taskBaseCommitShaByProjectPath: z.record(z.string(), z.string()).optional().meta({
-    description:
-      "Per-project git HEAD SHAs captured when an agent task workspace starts (used for multi-project git-format-patch artifacts).",
+    description: "Legacy per-project base revisions captured when an agent task workspace starts.",
   }),
   taskTrunkBranch: z.string().optional().meta({
     description:
-      "Trunk branch used to create/init this agent task workspace (used for restart-safe init on queued tasks).",
+      "Trunk bookmark used to create/init this agent task workspace (used for restart-safe init on queued tasks).",
   }),
   archivedAt: z.string().optional().meta({
     description:
@@ -306,7 +305,7 @@ export const PostCompactionStateSchema = z.object({
 });
 
 export const GitStatusSchema = z.object({
-  /** Current HEAD branch name (empty string if detached HEAD or not a git repo) */
+  /** Current bookmark name (empty string if no active bookmark or not a jj repo) */
   branch: z.string(),
   /** Commit divergence relative to origin's primary branch */
   ahead: z.number(),

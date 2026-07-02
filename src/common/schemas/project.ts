@@ -26,14 +26,16 @@ export const WorktreeArchiveSnapshotProjectSchema = z.object({
   storageKey: z.string().meta({
     description: "Filesystem-safe per-project storage key for archive artifacts.",
   }),
-  branchName: z.string().meta({ description: "Workspace branch name captured for this project." }),
+  branchName: z
+    .string()
+    .meta({ description: "Workspace bookmark name captured for this project." }),
   trunkBranch: z
     .string()
-    .meta({ description: "Trunk branch used to compute merge-base fallback." }),
-  baseSha: z.string().meta({ description: "Commit used as the restore base for patch replay." }),
-  headSha: z.string().meta({ description: "HEAD commit SHA captured at archive time." }),
+    .meta({ description: "Trunk bookmark used to compute the restore fallback." }),
+  baseSha: z.string().meta({ description: "Legacy restore base revision." }),
+  headSha: z.string().meta({ description: "Legacy head revision captured at archive time." }),
   committedPatchPath: z.string().optional().meta({
-    description: "Session-dir-relative path to the git-format-patch mailbox for committed history.",
+    description: "Legacy session-dir-relative path to committed-history patch artifacts.",
   }),
   stagedPatchPath: z.string().optional().meta({
     description: "Session-dir-relative path to the staged tracked diff artifact.",
@@ -175,15 +177,14 @@ export const WorkspaceConfigSchema = z.object({
     }),
   taskBaseCommitSha: z.string().optional().meta({
     description:
-      "Git commit SHA this agent task workspace started from (used for generating git-format-patch artifacts).",
+      "Legacy base revision this agent task workspace started from; jj-native artifacts use task change IDs.",
   }),
   taskBaseCommitShaByProjectPath: z.record(z.string(), z.string()).optional().meta({
-    description:
-      "Per-project git HEAD SHAs captured when an agent task workspace starts (used for multi-project git-format-patch artifacts).",
+    description: "Legacy per-project base revisions captured when an agent task workspace starts.",
   }),
   taskTrunkBranch: z.string().optional().meta({
     description:
-      "Trunk branch used to create/init this agent task workspace (used for restart-safe init on queued tasks).",
+      "Trunk bookmark used to create/init this agent task workspace (used for restart-safe init on queued tasks).",
   }),
   taskIsolation: z
     .enum(["fork", "none"])

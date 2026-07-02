@@ -4,8 +4,8 @@ export interface BranchSelectorJjCommand {
 }
 
 export function buildCheckoutCommand(checkoutTarget: string): BranchSelectorJjCommand {
-  // SECURITY: branch names are attacker-controlled repository metadata.
-  // Build argv for backend execution so the branch name remains an opaque argument,
+  // SECURITY: bookmark names are attacker-controlled repository metadata.
+  // Build argv for backend execution so the bookmark name remains an opaque argument,
   // not interpolated shell text.
   return {
     command: "jj",

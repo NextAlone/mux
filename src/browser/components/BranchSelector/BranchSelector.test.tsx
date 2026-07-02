@@ -173,22 +173,22 @@ describe("BranchSelector", () => {
     globalThis.location = originalLocation;
   });
 
-  test("resolves and shows the active branch even when the recent branch list does not include it", async () => {
+  test("resolves and shows the active bookmark even when the recent bookmark list does not include it", async () => {
     const executeBash = mock((input: ExecuteBashInput) => {
-      if (input.script.includes("git rev-parse --is-inside-work-tree")) {
+      if (input.script.includes("jj --no-pager --color never root")) {
         return Promise.resolve(bashSuccess("true"));
       }
-      if (input.script.includes("git branch --show-current")) {
+      if (input.script.includes("latest(::@ & bookmarks())")) {
         return Promise.resolve(bashSuccess("feature/lazy-start"));
       }
-      if (input.script.includes("%(refname:short)")) {
+      if (input.script.includes("bookmark list --sort")) {
         return Promise.resolve(
           bashSuccess(
             Array.from({ length: 101 }, (_, index) => `recent-branch-${index + 1}`).join("\n")
           )
         );
       }
-      if (input.script.includes("git remote")) {
+      if (input.script.includes("jj --no-pager --color never git remote list")) {
         return Promise.resolve(bashSuccess("origin"));
       }
       throw new Error(`Unexpected script: ${input.script}`);
@@ -202,24 +202,26 @@ describe("BranchSelector", () => {
     const view = render(<BranchSelector workspaceId="ws-1" workspaceName="scratch-workspace" />);
 
     expect(view.getByRole("button", { name: "scratch-workspace" })).toBeDefined();
-    expect(view.queryByLabelText("Copy branch name")).toBeNull();
+    expect(view.queryByLabelText("Copy bookmark name")).toBeNull();
     expect(view.container.querySelector(".lucide-git-branch")).toBeTruthy();
 
     fireEvent.click(view.getByRole("button", { name: "scratch-workspace" }));
 
     await waitFor(() => {
-      expect(view.getByLabelText("Copy branch name")).toBeDefined();
+      expect(view.getByLabelText("Copy bookmark name")).toBeDefined();
     });
     expect(view.getAllByText("feature/lazy-start").length).toBeGreaterThan(0);
     const executedScripts = executeBash.mock.calls.map(([input]) => input.script);
     expect(
-      executedScripts.some((script) => script.includes("git rev-parse --is-inside-work-tree"))
+      executedScripts.some((script) => script.includes("jj --no-pager --color never root"))
     ).toBe(true);
-    expect(executedScripts.some((script) => script.includes("git branch --show-current"))).toBe(
+    expect(executedScripts.some((script) => script.includes("latest(::@ & bookmarks())"))).toBe(
       true
     );
-    expect(executedScripts.some((script) => script.includes("%(refname:short)"))).toBe(true);
-    expect(executedScripts.some((script) => script.includes("git remote"))).toBe(true);
+    expect(executedScripts.some((script) => script.includes("bookmark list --sort"))).toBe(true);
+    expect(
+      executedScripts.some((script) => script.includes("jj --no-pager --color never git remote"))
+    ).toBe(true);
   });
 
   test("resets stale branch state when the component remounts for a different workspace", async () => {
@@ -249,17 +251,17 @@ describe("BranchSelector", () => {
 
     expect(view.getByRole("button", { name: "second-workspace" })).toBeDefined();
     expect(view.queryByRole("button", { name: "feature/lazy-start" })).toBeNull();
-    expect(view.queryByLabelText("Copy branch name")).toBeNull();
+    expect(view.queryByLabelText("Copy bookmark name")).toBeNull();
   });
 
-  test("switches to the non-git fallback after an explicit open confirms the workspace is not a repo", async () => {
+  test("switches to the non-jj fallback after an explicit open confirms the workspace is not a repo", async () => {
     const executeBash = mock((input: ExecuteBashInput) => {
-      if (input.script.includes("git rev-parse --is-inside-work-tree")) {
+      if (input.script.includes("jj --no-pager --color never root")) {
         return Promise.resolve({
           success: true,
           data: {
             success: false,
-            error: "fatal: not a git repository",
+            error: "Error: No jj repo found",
             exitCode: 128,
             wall_duration_ms: 0,
           },
@@ -304,12 +306,12 @@ describe("BranchSelector", () => {
     expect(localStorage.getItem("branch:ws-2")).toBeNull();
     expect(localStorage.getItem("branchIndex")).toBe(JSON.stringify([]));
     expect(clearGitStatusMock).toHaveBeenCalledWith("ws-2");
-    expect(executeBash.mock.calls[0]?.[0].script).toContain("git rev-parse --is-inside-work-tree");
+    expect(executeBash.mock.calls[0]?.[0].script).toContain("jj --no-pager --color never root");
   });
 
   test("keeps the selector interactive when the repo probe fails inconclusively", async () => {
     const executeBash = mock((input: ExecuteBashInput) => {
-      if (input.script.includes("git rev-parse --is-inside-work-tree")) {
+      if (input.script.includes("jj --no-pager --color never root")) {
         return Promise.resolve({
           success: false,
           error: "runtime not ready",
