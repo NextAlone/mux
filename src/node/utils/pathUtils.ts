@@ -1,7 +1,7 @@
 import * as fs from "fs/promises";
 import * as path from "path";
-import { execFileAsync } from "./disposableExec";
 import { PlatformPaths } from "./paths.main";
+import { isInsideJjRepository } from "@/node/vcs/jj";
 
 /**
  * Result of path validation
@@ -93,12 +93,20 @@ export async function validateProjectPath(inputPath: string): Promise<PathValida
 }
 
 /**
- * Check if a path is a git repository
+ * Check if a path is a colocated jj repository
  *
  * @param projectPath - Path to check (should be already validated/normalized)
- * @returns true if the path contains a .git directory
+ * @returns true if the path contains jj metadata, with a legacy .git fallback.
  */
 export async function isGitRepository(projectPath: string): Promise<boolean> {
+  const jjPath = path.join(projectPath, ".jj");
+  try {
+    await fs.stat(jjPath);
+    return true;
+  } catch {
+    // Fall back for pre-jj workspaces until the legacy cleanup batch removes them.
+  }
+
   const gitPath = path.join(projectPath, ".git");
   try {
     await fs.stat(gitPath);
@@ -109,22 +117,16 @@ export async function isGitRepository(projectPath: string): Promise<boolean> {
 }
 
 /**
- * Check whether `projectPath` lies inside a git work tree, even if `.git`
+ * Check whether `projectPath` lies inside a jj repository, even if `.jj`
  * lives in an ancestor directory. This matters for sub-projects: the
- * sub-project directory itself has no `.git`, but it still belongs to the
- * parent project's git work tree, so we should treat it as a git repo for
+ * sub-project directory itself has no `.jj`, but it still belongs to the
+ * parent project's jj checkout, so we should treat it as a repo for
  * UX (e.g. branch listing, suppressing the "git init" banner).
  *
  * @param projectPath - Path to check (should be already validated/normalized)
  */
 export async function isInsideGitRepository(projectPath: string): Promise<boolean> {
-  try {
-    using proc = execFileAsync("git", ["-C", projectPath, "rev-parse", "--is-inside-work-tree"]);
-    const { stdout } = await proc.result;
-    return stdout.trim() === "true";
-  } catch {
-    return false;
-  }
+  return isInsideJjRepository(projectPath);
 }
 
 /**

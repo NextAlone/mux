@@ -171,5 +171,12 @@ describe("pathUtils", () => {
       const result = await isGitRepository(tempDir);
       expect(result).toBe(true);
     });
+
+    it("should return true for jj directory", async () => {
+      // eslint-disable-next-line local/no-sync-fs-methods -- Test setup only
+      fs.mkdirSync(path.join(tempDir, ".jj"));
+      const result = await isGitRepository(tempDir);
+      expect(result).toBe(true);
+    });
   });
 });
