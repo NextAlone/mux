@@ -701,8 +701,11 @@ export const SubagentGitProjectPatchArtifactSchema = z
     status: SubagentGitPatchArtifactStatusSchema,
     baseCommitSha: z.string().optional(),
     headCommitSha: z.string().optional(),
+    baseChangeId: z.string().optional(),
+    headChangeId: z.string().optional(),
     commitCount: z.number().int().nonnegative().optional(),
     mboxPath: z.string().optional(),
+    diffPath: z.string().optional(),
     error: z.string().optional(),
     appliedAtMs: z.number().int().nonnegative().optional(),
   })
@@ -863,30 +866,37 @@ export const TaskAwaitToolResultSchema = z
   .strict();
 
 // -----------------------------------------------------------------------------
-// task_apply_git_patch (apply git-format-patch artifact via git am)
+// task_apply_git_patch (legacy tool name; applies jj-native task-change artifacts)
 // -----------------------------------------------------------------------------
 
 export const TaskApplyGitPatchToolArgsSchema = z
   .object({
-    task_id: z.string().min(1).describe("Child task ID whose patch artifact should be applied"),
+    task_id: z
+      .string()
+      .min(1)
+      .describe("Child task ID whose task-change artifact should be applied"),
     project_path: z
       .string()
       .nullish()
-      .describe("When provided, apply only the patch artifact for this project path."),
+      .describe("When provided, apply only the task-change artifact for this project path."),
     dry_run: z
       .boolean()
       .nullish()
       .describe(
-        "When true, attempt to apply the patch in a temporary git worktree and then discard it (does not modify the current workspace)."
+        "When true, attempt to restore the task change in a temporary jj workspace and then discard it (does not modify the current workspace)."
       ),
     expected_head_sha: z
       .string()
       .min(1)
       .nullish()
       .describe(
-        "When provided, refuse to apply unless the target repository HEAD matches this SHA."
+        "When provided, refuse to apply unless the target jj change or Git commit ID matches this value."
       ),
-    three_way: z.boolean().nullish().default(true).describe("When true, run git am with --3way"),
+    three_way: z
+      .boolean()
+      .nullish()
+      .default(true)
+      .describe("Deprecated compatibility option; jj-native task apply ignores this value."),
     force: z
       .boolean()
       .nullish()
@@ -912,6 +922,7 @@ export const TaskApplyGitPatchProjectResultSchema = z
     status: TaskApplyGitPatchProjectResultStatusSchema,
     appliedCommits: z.array(TaskApplyGitPatchAppliedCommitSchema).optional(),
     headCommitSha: z.string().optional(),
+    headChangeId: z.string().optional(),
     error: z.string().optional(),
     failedPatchSubject: z.string().optional(),
     conflictPaths: z.array(z.string()).optional(),
@@ -2025,8 +2036,8 @@ export const TOOL_DEFINITIONS = {
   },
   task_apply_git_patch: {
     description:
-      "Apply a completed sub-agent task's git-format-patch artifact to the current workspace using `git am`. " +
-      "This is an explicit integration step: mux will not auto-apply patches.",
+      "Apply a completed sub-agent task's jj-native task-change artifact to the current workspace using `jj restore`. " +
+      "This is an explicit integration step: mux will not auto-apply task changes.",
     schema: TaskApplyGitPatchToolArgsSchema,
   },
   task_await: {

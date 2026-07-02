@@ -242,6 +242,7 @@ import {
 import { taskQueueDebug } from "@/node/services/taskQueueDebug";
 import {
   getSubagentGitPatchMboxPath,
+  getSubagentGitPatchDiffPath,
   readSubagentGitPatchArtifactsFile,
   updateSubagentGitPatchArtifactsFile,
 } from "@/node/services/subagentGitPatchArtifacts";
@@ -1227,13 +1228,24 @@ async function archiveChildSessionArtifactsIntoParentSessionDir(params: {
       if (!taskId) continue;
 
       for (const projectArtifact of childEntry.projectArtifacts) {
-        if (!projectArtifact.mboxPath) {
+        const artifactPath = projectArtifact.diffPath ?? projectArtifact.mboxPath;
+        if (!artifactPath) {
           continue;
         }
 
-        const srcDir = path.dirname(projectArtifact.mboxPath);
+        const srcDir = path.dirname(artifactPath);
         const destDir = path.dirname(
-          getSubagentGitPatchMboxPath(params.parentSessionDir, taskId, projectArtifact.storageKey)
+          projectArtifact.diffPath
+            ? getSubagentGitPatchDiffPath(
+                params.parentSessionDir,
+                taskId,
+                projectArtifact.storageKey
+              )
+            : getSubagentGitPatchMboxPath(
+                params.parentSessionDir,
+                taskId,
+                projectArtifact.storageKey
+              )
         );
 
         if (!isPathInsideDir(params.childSessionDir, srcDir)) {
@@ -1291,6 +1303,13 @@ async function archiveChildSessionArtifactsIntoParentSessionDir(params: {
                 parentWorkspaceId: params.parentWorkspaceId,
                 projectArtifacts: childEntry.projectArtifacts.map((projectArtifact) => ({
                   ...projectArtifact,
+                  diffPath: projectArtifact.diffPath
+                    ? getSubagentGitPatchDiffPath(
+                        params.parentSessionDir,
+                        taskId,
+                        projectArtifact.storageKey
+                      )
+                    : undefined,
                   mboxPath: projectArtifact.mboxPath
                     ? getSubagentGitPatchMboxPath(
                         params.parentSessionDir,
@@ -5884,7 +5903,7 @@ export class WorkspaceService extends EventEmitter {
     }
 
     const metadata = metadataResult.data;
-    assert(metadata, `Workspace ${workspaceId} metadata is required for git status checks`);
+    assert(metadata, `Workspace ${workspaceId} metadata is required for jj status checks`);
 
     const projects = getProjects(metadata);
     assert(projects.length > 0, `Workspace ${workspaceId} must include at least one project`);
@@ -5947,7 +5966,7 @@ export class WorkspaceService extends EventEmitter {
             projectPath: project.projectPath,
             projectName: project.projectName,
             gitStatus: null,
-            error: "Git status script returned empty output",
+            error: "Jj status script returned empty output",
           });
           continue;
         }
@@ -5958,7 +5977,7 @@ export class WorkspaceService extends EventEmitter {
             projectPath: project.projectPath,
             projectName: project.projectName,
             gitStatus: null,
-            error: "Failed to parse git status script output",
+            error: "Failed to parse jj status script output",
           });
           continue;
         }
@@ -5990,19 +6009,19 @@ export class WorkspaceService extends EventEmitter {
 
     assert(
       results.length === projects.length,
-      `Workspace ${workspaceId} git status result count must match project count`
+      `Workspace ${workspaceId} jj status result count must match project count`
     );
     const resultProjectPaths = results.map((result) =>
       normalizeRepoRootProjectPath(result.projectPath)
     );
     assert(
       new Set(resultProjectPaths).size === uniqueNormalizedProjectPaths.size,
-      `Workspace ${workspaceId} git status results must contain one entry per project`
+      `Workspace ${workspaceId} jj status results must contain one entry per project`
     );
     for (const resultProjectPath of resultProjectPaths) {
       assert(
         uniqueNormalizedProjectPaths.has(resultProjectPath),
-        `Workspace ${workspaceId} git status returned an unknown project path: ${resultProjectPath}`
+        `Workspace ${workspaceId} jj status returned an unknown project path: ${resultProjectPath}`
       );
     }
 
@@ -8549,7 +8568,7 @@ export class WorkspaceService extends EventEmitter {
     args?: string[]
   ): Promise<Result<BashToolResult>> {
     // Block bash execution while workspace is being removed to prevent races with directory deletion.
-    // A common case: subagent calls agent_report → frontend's GitStatusStore triggers a git status
+    // A common case: subagent calls agent_report → frontend's status store triggers a jj status
     // refresh → executeBash arrives while remove() is deleting the directory → spawn fails with ENOENT.
     // removingWorkspaces is set for the entire duration of remove(), covering the window between
     // disk deletion and metadata invalidation.

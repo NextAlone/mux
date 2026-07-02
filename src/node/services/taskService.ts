@@ -32,7 +32,7 @@ import type { InitLogger, Runtime } from "@/node/runtime/Runtime";
 import { readPlanFile } from "@/node/utils/runtime/helpers";
 import {
   coerceNonEmptyString,
-  tryReadGitHeadCommitSha,
+  tryReadJjCurrentChangeId,
   findWorkspaceEntry,
 } from "@/node/services/taskUtils";
 import { validateWorkspaceName } from "@/common/utils/validation/workspaceValidation";
@@ -1042,7 +1042,7 @@ async function readTaskBaseCommitShaByProjectPath(params: {
 
   const taskBaseCommitShaByProjectPath: Record<string, string> = {};
   for (const projectRepo of projectRepos) {
-    const taskBaseCommitSha = await tryReadGitHeadCommitSha(params.runtime, projectRepo.repoCwd);
+    const taskBaseCommitSha = await tryReadJjCurrentChangeId(params.runtime, projectRepo.repoCwd);
     if (taskBaseCommitSha) {
       taskBaseCommitShaByProjectPath[projectRepo.projectPath] = taskBaseCommitSha;
     }
