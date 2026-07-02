@@ -1,5 +1,3 @@
-import * as fs from "fs/promises";
-import * as path from "path";
 import type { Runtime, WorkspaceInitParams, WorkspaceInitResult } from "./Runtime";
 import { LocalRuntime } from "./LocalRuntime";
 import { WorktreeRuntime } from "./WorktreeRuntime";
@@ -18,6 +16,7 @@ import { checkDevcontainerCliVersion } from "./devcontainerCli";
 import { buildDevcontainerConfigInfo, scanDevcontainerConfigs } from "./devcontainerConfigs";
 import { resolveCoderSSHHost } from "@/constants/coder";
 import { getErrorMessage } from "@/common/utils/errors";
+import { isInsideJjRepository } from "@/node/vcs/jj";
 
 // Global CoderService singleton - set during app init so all createRuntime calls can use it
 let globalCoderService: CoderService | undefined;
@@ -233,20 +232,6 @@ export function createRuntime(config: RuntimeConfig, options?: CreateRuntimeOpti
 }
 
 /**
- * Check if a project has a .git directory (is a git repository).
- */
-async function isGitRepository(projectPath: string): Promise<boolean> {
-  try {
-    const gitPath = path.join(projectPath, ".git");
-    const stat = await fs.stat(gitPath);
-    // .git can be a directory (normal repo) or a file (worktree)
-    return stat.isDirectory() || stat.isFile();
-  } catch {
-    return false;
-  }
-}
-
-/**
  * Check if Docker daemon is running and accessible.
  */
 async function isDockerAvailable(): Promise<boolean> {
@@ -274,21 +259,22 @@ type RuntimeAvailabilityMap = Record<RuntimeMode, RuntimeAvailabilityStatus>;
 export async function checkRuntimeAvailability(
   projectPath: string
 ): Promise<RuntimeAvailabilityMap> {
-  const [isGit, dockerAvailable, devcontainerCliInfo, devcontainerConfigs] = await Promise.all([
-    isGitRepository(projectPath),
-    isDockerAvailable(),
-    checkDevcontainerCliVersion(),
-    scanDevcontainerConfigs(projectPath),
-  ]);
+  const [isJjRepository, dockerAvailable, devcontainerCliInfo, devcontainerConfigs] =
+    await Promise.all([
+      isInsideJjRepository(projectPath),
+      isDockerAvailable(),
+      checkDevcontainerCliVersion(),
+      scanDevcontainerConfigs(projectPath),
+    ]);
 
   const devcontainerConfigInfo = buildDevcontainerConfigInfo(devcontainerConfigs);
 
-  const gitRequiredReason = "Requires git repository";
+  const jjRequiredReason = "Requires jj repository";
 
   // Determine devcontainer availability
   let devcontainerAvailability: RuntimeAvailabilityStatus;
-  if (!isGit) {
-    devcontainerAvailability = { available: false, reason: gitRequiredReason };
+  if (!isJjRepository) {
+    devcontainerAvailability = { available: false, reason: jjRequiredReason };
   } else if (!devcontainerCliInfo) {
     devcontainerAvailability = {
       available: false,
@@ -308,10 +294,10 @@ export async function checkRuntimeAvailability(
 
   return {
     local: { available: true },
-    worktree: isGit ? { available: true } : { available: false, reason: gitRequiredReason },
-    ssh: isGit ? { available: true } : { available: false, reason: gitRequiredReason },
-    docker: !isGit
-      ? { available: false, reason: gitRequiredReason }
+    worktree: isJjRepository ? { available: true } : { available: false, reason: jjRequiredReason },
+    ssh: isJjRepository ? { available: true } : { available: false, reason: jjRequiredReason },
+    docker: !isJjRepository
+      ? { available: false, reason: jjRequiredReason }
       : !dockerAvailable
         ? { available: false, reason: "Docker daemon not running" }
         : { available: true },

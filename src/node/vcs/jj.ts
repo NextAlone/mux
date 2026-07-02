@@ -1,0 +1,138 @@
+import * as disposableExec from "@/node/utils/disposableExec";
+
+const FALLBACK_TRUNK_BOOKMARKS = ["main", "master", "trunk", "develop", "default"];
+const JJ_MACHINE_ARGS = ["--no-pager", "--color", "never"] as const;
+const JJ_BOOKMARK_NAME_TEMPLATE = 'name ++ "\\n"';
+const JJ_FILE_PATH_TEMPLATE = 'path ++ "\\n"';
+
+function createUniqueSortedNames(names: Iterable<string>): string[] {
+  return Array.from(
+    new Set(
+      Array.from(names)
+        .map((name) => name.trim())
+        .filter((name) => name.length > 0)
+    )
+  ).sort((a, b) => a.localeCompare(b));
+}
+
+export function parseJjBookmarkNames(output: string): string[] {
+  return createUniqueSortedNames(output.split("\n"));
+}
+
+export function parseJjFileListOutput(output: string): string[] {
+  return output
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+}
+
+export function detectDefaultJjBookmark(args: {
+  bookmarks: string[];
+  currentBookmarks: string[];
+}): string {
+  const bookmarks = createUniqueSortedNames(args.bookmarks);
+  if (bookmarks.length === 0) {
+    throw new Error("No bookmarks available in repository");
+  }
+
+  const currentBookmarkSet = new Set(createUniqueSortedNames(args.currentBookmarks));
+  for (const bookmark of bookmarks) {
+    if (currentBookmarkSet.has(bookmark)) {
+      return bookmark;
+    }
+  }
+
+  const bookmarkSet = new Set(bookmarks);
+  for (const candidate of FALLBACK_TRUNK_BOOKMARKS) {
+    if (bookmarkSet.has(candidate)) {
+      return candidate;
+    }
+  }
+
+  return bookmarks[0];
+}
+
+async function listBookmarksForRevision(
+  projectPath: string,
+  revision?: string
+): Promise<string[]> {
+  const args = [
+    ...JJ_MACHINE_ARGS,
+    "--repository",
+    projectPath,
+    "--ignore-working-copy",
+    "bookmark",
+    "list",
+    "--template",
+    JJ_BOOKMARK_NAME_TEMPLATE,
+  ];
+
+  if (revision != null) {
+    args.push("--revision", revision);
+  }
+
+  using proc = disposableExec.execFileAsync("jj", args);
+  const { stdout } = await proc.result;
+  return parseJjBookmarkNames(stdout);
+}
+
+export async function isInsideJjRepository(projectPath: string): Promise<boolean> {
+  try {
+    using proc = disposableExec.execFileAsync("jj", [
+      ...JJ_MACHINE_ARGS,
+      "--repository",
+      projectPath,
+      "--ignore-working-copy",
+      "root",
+    ]);
+    await proc.result;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function listJjFiles(projectPath: string): Promise<string[]> {
+  using proc = disposableExec.execFileAsync("jj", [
+    ...JJ_MACHINE_ARGS,
+    "--repository",
+    projectPath,
+    "file",
+    "list",
+    "--template",
+    JJ_FILE_PATH_TEMPLATE,
+  ]);
+  const { stdout } = await proc.result;
+  return parseJjFileListOutput(stdout);
+}
+
+export async function listLocalBookmarks(projectPath: string): Promise<string[]> {
+  // User goal: manage even colocated repositories through jj-native semantics, so repository refs
+  // are read from jj bookmarks instead of Git branches.
+  return listBookmarksForRevision(projectPath);
+}
+
+export async function getCurrentBookmark(projectPath: string): Promise<string | null> {
+  try {
+    const bookmarks = await listBookmarksForRevision(projectPath, "@");
+    return bookmarks[0] ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export async function detectDefaultJjTrunkBookmark(
+  projectPath: string,
+  bookmarks?: string[]
+): Promise<string> {
+  const bookmarkList = bookmarks ?? (await listLocalBookmarks(projectPath));
+  const currentBookmarks = await listBookmarksForRevision(projectPath, "@");
+  try {
+    return detectDefaultJjBookmark({ bookmarks: bookmarkList, currentBookmarks });
+  } catch (error) {
+    if (error instanceof Error && error.message === "No bookmarks available in repository") {
+      throw new Error(`No bookmarks available in repository ${projectPath}`);
+    }
+    throw error;
+  }
+}
