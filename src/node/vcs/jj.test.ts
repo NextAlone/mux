@@ -3,7 +3,9 @@ import { afterEach, describe, expect, spyOn, test } from "bun:test";
 import * as disposableExec from "@/node/utils/disposableExec";
 
 import {
+  createJjWorkspace,
   detectDefaultJjBookmark,
+  forgetJjWorkspace,
   isInsideJjRepository,
   parseJjBookmarkNames,
   parseJjFileListOutput,
@@ -81,5 +83,59 @@ describe("jj bookmark helpers", () => {
     });
 
     await expect(isInsideJjRepository("/repo")).resolves.toBe(true);
+  });
+
+  test("creates a jj workspace at an explicit base revision", async () => {
+    execFileAsyncSpy = spyOn(disposableExec, "execFileAsync").mockImplementation((file, args) => {
+      expect(file).toBe("jj");
+      expect(args).toEqual([
+        "--no-pager",
+        "--color",
+        "never",
+        "--repository",
+        "/repo",
+        "workspace",
+        "add",
+        "--name",
+        "agent-task",
+        "--revision",
+        "main",
+        "--message",
+        "agent-task",
+        "/mux/src/repo/agent-task",
+      ]);
+      return createMockExecResult(Promise.resolve({ stdout: "", stderr: "" }));
+    });
+
+    await createJjWorkspace({
+      projectPath: "/repo",
+      workspacePath: "/mux/src/repo/agent-task",
+      workspaceName: "agent-task",
+      revision: "main",
+      message: "agent-task",
+    });
+  });
+
+  test("forgets a named jj workspace without touching its files", async () => {
+    execFileAsyncSpy = spyOn(disposableExec, "execFileAsync").mockImplementation((file, args) => {
+      expect(file).toBe("jj");
+      expect(args).toEqual([
+        "--no-pager",
+        "--color",
+        "never",
+        "--repository",
+        "/repo",
+        "--ignore-working-copy",
+        "workspace",
+        "forget",
+        "agent-task",
+      ]);
+      return createMockExecResult(Promise.resolve({ stdout: "", stderr: "" }));
+    });
+
+    await forgetJjWorkspace({
+      projectPath: "/repo",
+      workspaceName: "agent-task",
+    });
   });
 });
