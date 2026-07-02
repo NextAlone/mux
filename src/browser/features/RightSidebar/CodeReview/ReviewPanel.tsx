@@ -248,10 +248,6 @@ function toDetectedDiffBase(trunkBranch: string | null | undefined): string | nu
     return null;
   }
 
-  if (trimmed.startsWith("origin/")) {
-    return trimmed;
-  }
-
   const refsHeadsPrefix = "refs/heads/";
   const branchName = trimmed.startsWith(refsHeadsPrefix)
     ? trimmed.slice(refsHeadsPrefix.length)
@@ -2365,8 +2361,8 @@ export const ReviewPanel: React.FC<ReviewPanelProps> = ({
                 <Lightbulb aria-hidden="true" className="mt-0.5 h-3 w-3 shrink-0" />
                 <span>
                   The ref <code className="text-foreground">{filters.diffBase}</code> does not exist
-                  in this repository. Use the dropdown above to select a different base (e.g., HEAD,
-                  origin/master).
+                  in this repository. Use the dropdown above to select a different base (e.g., @-,
+                  main@origin).
                 </span>
               </div>
             )}

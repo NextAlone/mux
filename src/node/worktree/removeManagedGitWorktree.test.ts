@@ -3,26 +3,8 @@ import * as fs from "node:fs";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
-import * as disposableExec from "@/node/utils/disposableExec";
-import { GIT_NO_HOOKS_ENV } from "@/node/utils/gitNoHooksEnv";
+import * as jjVcs from "@/node/vcs/jj";
 import { removeManagedGitWorktree } from "./removeManagedGitWorktree";
-
-// eslint-disable-next-line @typescript-eslint/no-empty-function
-const noop = () => {};
-
-function createMockExecResult(
-  result: Promise<{ stdout: string; stderr: string }>
-): ReturnType<typeof disposableExec.execFileAsync> {
-  void result.catch(noop);
-  return {
-    result,
-    get promise() {
-      return result;
-    },
-    child: {},
-    [Symbol.dispose]: noop,
-  } as unknown as ReturnType<typeof disposableExec.execFileAsync>;
-}
 
 async function pathExists(targetPath: string): Promise<boolean> {
   return fs.promises
@@ -48,7 +30,7 @@ describe("removeManagedGitWorktree", () => {
     return tempRoot;
   }
 
-  it("falls back to recursive removal when git rejects a multi-project container path", async () => {
+  it("forgets the jj workspace and recursively removes a multi-project container path", async () => {
     const tempRoot = await createTempRoot();
     const projectPath = path.join(tempRoot, "project");
     const worktreePath = path.join(tempRoot, "_workspaces", "workspace-name");
@@ -56,24 +38,42 @@ describe("removeManagedGitWorktree", () => {
     await mkdir(nestedCheckoutPath, { recursive: true });
     await writeFile(path.join(nestedCheckoutPath, "README.md"), "nested checkout");
 
-    const execFileAsyncSpy = spyOn(disposableExec, "execFileAsync").mockImplementation(
-      (file, args, options) => {
-        expect(file).toBe("git");
-        expect(options).toEqual({ env: GIT_NO_HOOKS_ENV });
+    const forgetSpy = spyOn(jjVcs, "forgetJjWorkspace").mockImplementation(() => Promise.resolve());
 
-        if (args[3] === "remove") {
-          expect(args).toEqual(["-C", projectPath, "worktree", "remove", "--force", worktreePath]);
-          return createMockExecResult(Promise.reject(new Error("fatal: not a working tree")));
-        }
+    await removeManagedGitWorktree(projectPath, worktreePath);
 
-        expect(args).toEqual(["-C", projectPath, "worktree", "prune"]);
-        return createMockExecResult(Promise.resolve({ stdout: "", stderr: "" }));
-      }
+    expect(forgetSpy).toHaveBeenCalledWith({ projectPath, workspaceName: "workspace-name" });
+    expect(await pathExists(worktreePath)).toBe(false);
+  });
+
+  it("still removes the directory when the jj workspace was already forgotten", async () => {
+    const tempRoot = await createTempRoot();
+    const projectPath = path.join(tempRoot, "project");
+    const worktreePath = path.join(tempRoot, "workspace-name");
+    await mkdir(worktreePath, { recursive: true });
+
+    spyOn(jjVcs, "forgetJjWorkspace").mockImplementation(() =>
+      Promise.reject(new Error("Workspace not found"))
     );
 
     await removeManagedGitWorktree(projectPath, worktreePath);
 
-    expect(execFileAsyncSpy).toHaveBeenCalledTimes(2);
     expect(await pathExists(worktreePath)).toBe(false);
+  });
+
+  it("refuses to delete the project checkout itself", async () => {
+    const tempRoot = await createTempRoot();
+    const projectPath = path.join(tempRoot, "project");
+    await mkdir(projectPath, { recursive: true });
+    spyOn(jjVcs, "forgetJjWorkspace").mockImplementation(() => Promise.resolve());
+
+    let errorMessage = "";
+    try {
+      await removeManagedGitWorktree(projectPath, projectPath);
+    } catch (error) {
+      errorMessage = error instanceof Error ? error.message : String(error);
+    }
+    expect(errorMessage).toBe("Refusing to delete the project checkout as a managed workspace");
+    expect(await pathExists(projectPath)).toBe(true);
   });
 });

@@ -73,7 +73,6 @@ import type { InitLogger, WorkspaceInitResult } from "../node/runtime/Runtime";
 import { DockerRuntime } from "../node/runtime/DockerRuntime";
 import { createRuntime, runFullInit } from "../node/runtime/runtimeFactory";
 import type { Runtime } from "../node/runtime/Runtime";
-import { execSync } from "child_process";
 import { getParseOptions } from "./argv";
 import { EXPERIMENT_IDS } from "../common/constants/experiments";
 import { getErrorMessage } from "@/common/utils/errors";
@@ -88,6 +87,7 @@ import {
   GOAL_CONTINUATION_IDLE_CONSUMER_NAME,
 } from "@/constants/goals";
 import type { GoalRecordV1 } from "@/common/types/goal";
+import { detectDefaultTrunkBranch } from "@/node/git";
 
 // Display labels for CLI help (OFF, LOW, MED, HIGH, MAX).
 // Deduplicate because xhigh and max both display as "MAX" for default/Anthropic
@@ -672,11 +672,7 @@ async function main(): Promise<number> {
     // Detect trunk branch from repo
     let trunkBranch = "main";
     try {
-      const symbolic = execSync("git symbolic-ref refs/remotes/origin/HEAD", {
-        cwd: projectDir,
-        encoding: "utf-8",
-      }).trim();
-      trunkBranch = symbolic.replace("refs/remotes/origin/", "");
+      trunkBranch = await detectDefaultTrunkBranch(projectDir);
     } catch {
       // Fallback to main
     }

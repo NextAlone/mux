@@ -1,5 +1,5 @@
 /**
- * Debug command to test git status parsing against actual workspaces.
+ * Debug command to test jj status parsing against actual workspaces.
  *
  * This reuses the EXACT same code path as production to ensure they stay in sync.
  *
@@ -52,7 +52,7 @@ function testGitStatus(workspaceId: string, workspacePath: string) {
   console.log("=".repeat(80));
 
   try {
-    // Run the git status script
+    // Run the jj status script
     const output = execSync(GIT_STATUS_SCRIPT, {
       cwd: workspacePath,
       encoding: "utf-8",
@@ -66,7 +66,7 @@ function testGitStatus(workspaceId: string, workspacePath: string) {
     const parsed = parseGitStatusScriptOutput(output);
 
     if (!parsed) {
-      console.log("\n❌ FAILED: Could not parse script output");
+      console.log("\nFAILED: Could not parse script output");
       return;
     }
 
@@ -84,30 +84,11 @@ function testGitStatus(workspaceId: string, workspacePath: string) {
 
     console.log("\n--- PARSED RESULT ---");
     console.log(
-      `✅ Success: { base: ${primaryBranch}, ahead: ${ahead}, behind: ${behind}, dirty: ${dirty}, outgoing: +${outgoingAdditions}/-${outgoingDeletions}, incoming: +${incomingAdditions}/-${incomingDeletions} }`
+      `Success: { base: ${primaryBranch}, ahead: ${ahead}, behind: ${behind}, dirty: ${dirty}, outgoing: +${outgoingAdditions}/-${outgoingDeletions}, incoming: +${incomingAdditions}/-${incomingDeletions} }`
     );
-
-    // Verify with git rev-list
-    console.log("\n--- VERIFICATION (git rev-list) ---");
-    try {
-      const revList = execSync(`git rev-list --left-right --count HEAD...origin/${primaryBranch}`, {
-        cwd: workspacePath,
-        encoding: "utf-8",
-      }).trim();
-
-      const [verifyAhead, verifyBehind] = revList.split(/\s+/).map((n) => parseInt(n, 10));
-      console.log(`git rev-list: ahead=${verifyAhead}, behind=${verifyBehind}`);
-
-      if (verifyAhead !== ahead || verifyBehind !== behind) {
-        console.log("⚠️  WARNING: Mismatch between script output and rev-list!");
-      }
-    } catch (err: unknown) {
-      const error = err as Error;
-      console.log("Could not verify with git rev-list:", error.message);
-    }
   } catch (err: unknown) {
     const error = err as Error & { stderr?: string };
-    console.log("\n❌ ERROR running git command:");
+    console.log("\nERROR running jj status script:");
     console.log(error.message);
     if (error.stderr) {
       console.log("STDERR:", error.stderr);
@@ -117,7 +98,7 @@ function testGitStatus(workspaceId: string, workspacePath: string) {
 
 export function gitStatusCommand(workspaceId?: string) {
   const muxSrcDir = getMuxSrcDir();
-  console.log("🔍 Git Status Debug Tool");
+  console.log("Jj Status Debug Tool");
   console.log("Finding workspaces in:", muxSrcDir);
   console.log();
 
