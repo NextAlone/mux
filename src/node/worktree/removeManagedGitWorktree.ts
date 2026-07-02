@@ -1,14 +1,8 @@
 import * as fsPromises from "fs/promises";
+import * as path from "path";
 import { getErrorMessage } from "@/common/utils/errors";
-import { execFileAsync } from "@/node/utils/disposableExec";
-import { GIT_NO_HOOKS_ENV } from "@/node/utils/gitNoHooksEnv";
-
-const MISSING_WORKTREE_ERROR_PATTERNS = ["not a working tree", "does not exist", "no such file"];
-
-function isMissingWorktreeError(message: string): boolean {
-  const normalizedError = message.toLowerCase();
-  return MISSING_WORKTREE_ERROR_PATTERNS.some((pattern) => normalizedError.includes(pattern));
-}
+import { log } from "@/node/services/log";
+import { forgetJjWorkspace } from "@/node/vcs/jj";
 
 async function worktreePathExists(worktreePath: string): Promise<boolean> {
   try {
@@ -19,14 +13,20 @@ async function worktreePathExists(worktreePath: string): Promise<boolean> {
   }
 }
 
-async function pruneWorktreesBestEffort(projectPath: string): Promise<void> {
+async function forgetWorkspaceBestEffort(projectPath: string, worktreePath: string): Promise<void> {
+  const workspaceName = path.basename(worktreePath);
+  if (workspaceName.trim().length === 0) {
+    return;
+  }
+
   try {
-    using pruneProc = execFileAsync("git", ["-C", projectPath, "worktree", "prune"], {
-      env: GIT_NO_HOOKS_ENV,
+    await forgetJjWorkspace({ projectPath, workspaceName });
+  } catch (error) {
+    log.debug("Failed to forget managed jj workspace during cleanup", {
+      projectPath,
+      workspaceName,
+      error: getErrorMessage(error),
     });
-    await pruneProc.result;
-  } catch {
-    // Ignore prune errors during best-effort cleanup.
   }
 }
 
@@ -34,36 +34,25 @@ export async function removeManagedGitWorktree(
   projectPath: string,
   worktreePath: string
 ): Promise<void> {
+  const resolvedProjectPath = path.resolve(projectPath);
+  const resolvedWorktreePath = path.resolve(worktreePath);
+
+  if (resolvedProjectPath === resolvedWorktreePath) {
+    throw new Error("Refusing to delete the project checkout as a managed workspace");
+  }
+
+  await forgetWorkspaceBestEffort(projectPath, worktreePath);
+
   if (!(await worktreePathExists(worktreePath))) {
-    await pruneWorktreesBestEffort(projectPath);
     return;
   }
 
   try {
-    using removeProc = execFileAsync(
-      "git",
-      ["-C", projectPath, "worktree", "remove", "--force", worktreePath],
-      {
-        env: GIT_NO_HOOKS_ENV,
-      }
-    );
-    await removeProc.result;
+    await fsPromises.rm(resolvedWorktreePath, { recursive: true, force: true });
   } catch (error) {
-    const errorMessage = getErrorMessage(error);
     const worktreeStillExists = await worktreePathExists(worktreePath);
-
-    if (!worktreeStillExists) {
-      if (!isMissingWorktreeError(errorMessage)) {
-        throw error;
-      }
-
-      await pruneWorktreesBestEffort(projectPath);
-      return;
+    if (worktreeStillExists) {
+      throw error;
     }
-
-    // Multi-project workspaces persist a _workspaces/<name> container here instead of a git
-    // worktree root, so we still need recursive removal after git worktree remove rejects it.
-    await fsPromises.rm(worktreePath, { recursive: true, force: true });
-    await pruneWorktreesBestEffort(projectPath);
   }
 }
