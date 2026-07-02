@@ -6,6 +6,7 @@
 import type { APIClient } from "@/browser/contexts/API";
 import { normalizeRepoRootFilePath, repoRootBashOptions } from "@/browser/utils/executeBash";
 import type { FrontendWorkspaceMetadata } from "@/common/types/workspace";
+import { normalizeJjDiffBase } from "@/common/utils/git/diffParser";
 import { shellQuote } from "@/common/utils/shell";
 
 /** Number of lines to expand per click */
@@ -60,8 +61,7 @@ export async function readFileLines(
  * Determine which jj revision to use for reading file context.
  */
 export function getOldFileRef(diffBase: string, _includeUncommitted: boolean): string {
-  if (diffBase === "--staged" || diffBase === "HEAD") return "@-";
-  return diffBase;
+  return normalizeJjDiffBase(diffBase);
 }
 
 /**

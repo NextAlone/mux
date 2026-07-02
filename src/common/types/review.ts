@@ -95,7 +95,7 @@ export interface ReviewFilters {
   assistedShowReadHunks: boolean;
   /** File path filter (regex or glob pattern) */
   filePathFilter?: string;
-  /** Base reference to diff against (e.g., "HEAD", "main", "origin/main") */
+  /** Base revision to diff against (e.g., "@-", "main", "main@origin") */
   diffBase: string;
   /** Whether to include uncommitted changes (staged + unstaged) in the diff */
   includeUncommitted: boolean;

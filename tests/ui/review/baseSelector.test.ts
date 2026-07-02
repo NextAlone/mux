@@ -150,7 +150,7 @@ describeIntegration("ReviewPanel base selector", () => {
         });
         const expectedInitialBase =
           branchResult.recommendedTrunk && branchResult.recommendedTrunk.trim().length > 0
-            ? `origin/${branchResult.recommendedTrunk.trim()}`
+            ? branchResult.recommendedTrunk.trim()
             : WORKSPACE_DEFAULTS.reviewBase;
 
         await waitFor(
@@ -160,15 +160,15 @@ describeIntegration("ReviewPanel base selector", () => {
           { timeout: 5_000 }
         );
 
-        // Open dropdown and click HEAD~1
+        // Open dropdown and click a jj parent revision
         await openBaseSelectorDropdown(view.container);
-        await selectBaseSuggestion(view.container, "HEAD~1");
+        await selectBaseSuggestion(view.container, "@--");
         await waitForDropdownClose(view.container);
 
         // Verify the displayed value updated
         await waitFor(
           () => {
-            expect(getDisplayedBase(view.container)).toBe("HEAD~1");
+            expect(getDisplayedBase(view.container)).toBe("@--");
           },
           { timeout: 5_000 }
         );
@@ -191,7 +191,7 @@ describeIntegration("ReviewPanel base selector", () => {
         await setupReviewPanel(view, metadata, workspaceId);
 
         // Click through multiple suggestions
-        const selections = ["HEAD~1", "main", "origin/main"];
+        const selections = ["@--", "main", "main@origin"];
 
         for (const base of selections) {
           await openBaseSelectorDropdown(view.container);
@@ -207,7 +207,7 @@ describeIntegration("ReviewPanel base selector", () => {
         }
 
         // Final verification
-        expect(getDisplayedBase(view.container)).toBe("origin/main");
+        expect(getDisplayedBase(view.container)).toBe("main@origin");
       } finally {
         await cleanupView(view, cleanupDom);
       }
