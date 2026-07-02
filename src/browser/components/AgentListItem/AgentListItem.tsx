@@ -24,7 +24,11 @@ import {
   normalizeTaskGroupLabel,
 } from "@/common/utils/tools/taskGroups";
 import { EXPERIMENT_IDS } from "@/common/constants/experiments";
-import { isDevcontainerRuntime } from "@/common/types/runtime";
+import {
+  isDevcontainerRuntime,
+  isLocalProjectRuntime,
+  isWorktreeRuntime,
+} from "@/common/types/runtime";
 import { getWorkspaceLastReadKey } from "@/common/constants/storage";
 import type { FrontendWorkspaceMetadata } from "@/common/types/workspace";
 import React, { useState, useEffect, useRef, useCallback } from "react";
@@ -74,6 +78,7 @@ import { formatKeybind, KEYBINDS } from "@/browser/utils/ui/keybinds";
 import { WorkspaceHeartbeatModal } from "../WorkspaceHeartbeatModal";
 import { WorkspaceActionsMenuContent } from "../WorkspaceActionsMenuContent/WorkspaceActionsMenuContent";
 import { useAPI } from "@/browser/contexts/API";
+import { RuntimeBadge } from "../RuntimeBadge/RuntimeBadge";
 
 export interface WorkspaceSelection {
   projectPath: string;
@@ -702,6 +707,9 @@ function RegularAgentListItemInner(props: AgentListItemProps) {
   };
   const isDevcontainerWorkspace = isDevcontainerRuntime(metadata.runtimeConfig);
   const isRuntimeRunning = isDevcontainerWorkspace && runtimeStatus === "running";
+  const shouldShowSidebarRuntimeBadge =
+    metadata.runtimeConfig != null && !isLocalProjectRuntime(metadata.runtimeConfig);
+  const sidebarRuntimeLabel = isWorktreeRuntime(metadata.runtimeConfig) ? metadata.name : undefined;
   const titleColorClass =
     !isSelected && visualState === "idle"
       ? "text-content-primary"
@@ -1090,7 +1098,7 @@ function RegularAgentListItemInner(props: AgentListItemProps) {
             )}
 
             {!isInitializing && !isEditing && (
-              <div className="flex items-center gap-1">
+              <div className="flex min-w-0 items-center gap-1">
                 {shouldShowInlineArchivingStatus ? (
                   <div
                     className="text-muted flex shrink-0 items-center gap-1 text-xs whitespace-nowrap"
@@ -1100,20 +1108,34 @@ function RegularAgentListItemInner(props: AgentListItemProps) {
                     <span>Archiving...</span>
                   </div>
                 ) : (
-                  terminalActiveCount > 0 && (
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <div className="text-muted flex items-center gap-0.5">
-                          <WorkspaceTerminalIcon className="h-3 w-3" />
-                          <span className="text-[11px]">{terminalActiveCount}</span>
-                        </div>
-                      </TooltipTrigger>
-                      <TooltipContent side="right">
-                        {terminalActiveCount} terminal{terminalActiveCount !== 1 ? "s" : ""} running
-                        commands
-                      </TooltipContent>
-                    </Tooltip>
-                  )
+                  <>
+                    {terminalActiveCount > 0 && (
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <div className="text-muted flex items-center gap-0.5">
+                            <WorkspaceTerminalIcon className="h-3 w-3" />
+                            <span className="text-[11px]">{terminalActiveCount}</span>
+                          </div>
+                        </TooltipTrigger>
+                        <TooltipContent side="right">
+                          {terminalActiveCount} terminal{terminalActiveCount !== 1 ? "s" : ""}{" "}
+                          running commands
+                        </TooltipContent>
+                      </Tooltip>
+                    )}
+                    {shouldShowSidebarRuntimeBadge && (
+                      <RuntimeBadge
+                        runtimeConfig={metadata.runtimeConfig}
+                        workspaceName={metadata.name}
+                        workspacePath={namedWorkspacePath}
+                        tooltipSide="right"
+                        showLabel
+                        labelOverride={sidebarRuntimeLabel}
+                        testId={`workspace-runtime-badge-${workspaceId}`}
+                        className="max-w-[4.5rem] shrink-0"
+                      />
+                    )}
+                  </>
                 )}
               </div>
             )}

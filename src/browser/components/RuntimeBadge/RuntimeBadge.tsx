@@ -23,7 +23,11 @@ interface RuntimeBadgeProps {
   /** Workspace name to show in tooltip */
   workspaceName?: string;
   /** Tooltip position: "top" (default) or "bottom" */
-  tooltipSide?: "top" | "bottom";
+  tooltipSide?: "top" | "right" | "bottom";
+  /** Show a short text label next to the icon for dense lists like the project sidebar. */
+  showLabel?: boolean;
+  labelOverride?: string;
+  testId?: string;
 }
 
 /**
@@ -72,7 +76,7 @@ type RuntimeType = keyof typeof RUNTIME_BADGE_UI;
 
 function getRuntimeInfo(
   runtimeConfig?: RuntimeConfig
-): { type: RuntimeType; label: string } | null {
+): { type: RuntimeType; label: string; shortLabel: string } | null {
   if (isSSHRuntime(runtimeConfig)) {
     // Coder-backed SSH runtime gets special treatment
     if (runtimeConfig.coder) {
@@ -80,19 +84,20 @@ function getRuntimeInfo(
       return {
         type: "coder",
         label: `Coder Workspace: ${coderWorkspaceName ?? runtimeConfig.host}`,
+        shortLabel: "Coder",
       };
     }
     const hostname = extractSshHostname(runtimeConfig);
-    return { type: "ssh", label: `SSH: ${hostname ?? runtimeConfig.host}` };
+    return { type: "ssh", label: `SSH: ${hostname ?? runtimeConfig.host}`, shortLabel: "SSH" };
   }
   if (isWorktreeRuntime(runtimeConfig)) {
-    return { type: "worktree", label: "Worktree: isolated jj workspace" };
+    return { type: "worktree", label: "Worktree: isolated jj workspace", shortLabel: "JJ" };
   }
   if (isLocalProjectRuntime(runtimeConfig)) {
-    return { type: "local", label: "Local: project directory" };
+    return { type: "local", label: "Local: project directory", shortLabel: "Local" };
   }
   if (isDockerRuntime(runtimeConfig)) {
-    return { type: "docker", label: `Docker: ${runtimeConfig.image}` };
+    return { type: "docker", label: `Docker: ${runtimeConfig.image}`, shortLabel: "Docker" };
   }
   if (isDevcontainerRuntime(runtimeConfig)) {
     return {
@@ -100,6 +105,7 @@ function getRuntimeInfo(
       label: runtimeConfig.configPath
         ? `Dev container: ${runtimeConfig.configPath}`
         : "Dev container",
+      shortLabel: "Dev",
     };
   }
   return null;
@@ -112,6 +118,9 @@ export function RuntimeBadge({
   workspacePath,
   workspaceName,
   tooltipSide = "top",
+  showLabel = false,
+  labelOverride,
+  testId,
 }: RuntimeBadgeProps) {
   const info = getRuntimeInfo(runtimeConfig);
   if (!info) return null;
@@ -119,6 +128,7 @@ export function RuntimeBadge({
   const badgeUi = RUNTIME_BADGE_UI[info.type];
   const styles = isWorking ? badgeUi.badge.workingClass : badgeUi.badge.idleClass;
   const Icon = badgeUi.Icon;
+  const displayLabel = labelOverride?.trim() || info.shortLabel;
 
   return (
     <Tooltip>
@@ -129,8 +139,11 @@ export function RuntimeBadge({
             styles,
             className
           )}
+          data-testid={testId}
+          aria-label={`Runtime: ${displayLabel}`}
         >
           <Icon />
+          {showLabel && <span className="ml-1 truncate text-[10px] leading-3">{displayLabel}</span>}
         </span>
       </TooltipTrigger>
       <TooltipContent side={tooltipSide} align="start" className="max-w-[min(90vw,500px)]">

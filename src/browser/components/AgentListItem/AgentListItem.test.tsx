@@ -359,6 +359,31 @@ describe("AgentListItem", () => {
     expect(customTitle.view.getByText("My renamed run")).toBeTruthy();
   });
 
+  test("hides project-dir local runtime on workspace rows", () => {
+    const metadata = createMetadata({
+      runtimeConfig: { type: "local" },
+      name: "sidebar-runtime",
+      namedWorkspacePath: "/tmp/project/sidebar-runtime",
+    });
+    const { row } = renderWorkspaceItem({ metadata });
+
+    expect(within(row).queryByTestId(`workspace-runtime-badge-${metadata.id}`)).toBeNull();
+  });
+
+  test("shows concrete jj workspace name on isolated workspace rows", () => {
+    const metadata = createMetadata({
+      runtimeConfig: { type: "worktree", srcBaseDir: "/tmp/src" },
+      name: "sidebar-runtime",
+      title: "Generated summary",
+      namedWorkspacePath: "/tmp/project/sidebar-runtime",
+    });
+    const { row } = renderWorkspaceItem({ metadata });
+    const badge = within(row).getByTestId(`workspace-runtime-badge-${metadata.id}`);
+
+    expect(badge.textContent).toContain("sidebar-runtime");
+    expect(badge.getAttribute("aria-label")).toBe("Runtime: sidebar-runtime");
+  });
+
   test("shows workflow-only activity on idle workspace rows", () => {
     mockWorkspaceSidebarState = createWorkspaceSidebarState({ activeWorkflowRunCount: 1 });
 
