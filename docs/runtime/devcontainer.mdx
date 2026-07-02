@@ -13,10 +13,10 @@ Dev Container runtime runs each workspace in a container built from your project
 
 ## How it works
 
-1. Mux creates a git worktree on the host machine
+1. Mux creates a jj workspace on the host machine
 2. Runs `devcontainer up` to build/start the container
 3. Commands execute inside the container via `devcontainer exec`
-4. Deleting the workspace stops the container and removes the worktree
+4. Deleting the workspace stops the container and removes the workspace
 
 ## Configuration
 
@@ -38,7 +38,7 @@ Like the [Docker runtime](/runtime/docker), you can check "Share credentials" to
 
 ## Filesystem layout
 
-Worktrees live on the host at `~/.mux/src/<project>/<workspace>`. The container mounts this directory (location inside the container depends on your devcontainer.json `workspaceFolder`).
+Workspaces live on the host at `~/.mux/src/<project>/<workspace>`. The container mounts this directory (location inside the container depends on your devcontainer.json `workspaceFolder`).
 
 ## Notes
 

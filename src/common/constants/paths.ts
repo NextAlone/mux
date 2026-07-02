@@ -101,7 +101,7 @@ export function getMuxHome(): string {
 }
 
 /**
- * Get the directory where workspace git worktrees are stored.
+ * Get the directory where workspace jj checkouts are stored.
  * Example: ~/.mux/src/my-project/feature-branch
  *
  * @param rootDir - Optional root directory (defaults to getMuxHome())

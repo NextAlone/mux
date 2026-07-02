@@ -9,13 +9,39 @@ const BUN_EXECUTABLE = process.execPath;
 const TRUST_ENTRY = path.join(import.meta.dir, "trust.ts");
 const INDEX_ENTRY = path.join(import.meta.dir, "index.ts");
 
+async function runJj(cwd: string, args: string[]): Promise<void> {
+  const proc = Bun.spawn(
+    ["jj", "--config", "ui.paginate=never", "--config", "ui.color=never", ...args],
+    {
+      cwd,
+      stdout: "pipe",
+      stderr: "pipe",
+    }
+  );
+  const exitCode = await proc.exited;
+  if (exitCode !== 0) {
+    throw new Error(
+      `jj ${args.join(" ")} failed: ${(await new Response(proc.stderr).text()).trim()}`
+    );
+  }
+}
+
+async function initJjRepo(repo: string): Promise<void> {
+  await fs.mkdir(repo, { recursive: true });
+  await runJj(repo, ["git", "init", "--colocate"]);
+  await fs.writeFile(path.join(repo, "README.md"), "hello\n", "utf-8");
+  await runJj(repo, ["file", "track", "README.md"]);
+  await runJj(repo, ["commit", "-m", "init"]);
+}
+
 describe("mux trust CLI", () => {
-  test("normalizes implicit cwd to git root but preserves explicit --dir", async () => {
+  test("normalizes implicit cwd to jj root but preserves explicit --dir", async () => {
     using tmp = new DisposableTempDir("trust-cli-dir");
-    const repo = path.join(tmp.path, "repo");
+    const base = await fs.realpath(tmp.path);
+    const repo = path.join(base, "repo");
     const nested = path.join(repo, "packages", "app");
     await fs.mkdir(nested, { recursive: true });
-    await Bun.$`git init`.cwd(repo).quiet();
+    await runJj(repo, ["git", "init", "--colocate"]);
 
     expect(await resolveProjectDir({ cwd: nested })).toBe(repo);
     expect(await resolveProjectDir({ cwd: tmp.path, explicitDir: nested })).toBe(nested);
@@ -51,24 +77,18 @@ describe("mux trust CLI", () => {
     });
   }, 15_000);
 
-  test("revoke from a worktree also clears a direct trust entry for the worktree path", async () => {
-    using tmp = new DisposableTempDir("trust-cli-worktree-revoke");
+  test("revoke from a jj workspace also clears a direct trust entry for the workspace path", async () => {
+    using tmp = new DisposableTempDir("trust-cli-workspace-revoke");
     const base = await fs.realpath(tmp.path);
     const repo = path.join(base, "repo");
     const muxRoot = path.join(base, "mux-root");
-    const worktree = path.join(base, "worktree");
-    await fs.mkdir(repo, { recursive: true });
+    const workspace = path.join(base, "workspace");
     await fs.mkdir(muxRoot, { recursive: true });
-    await Bun.$`git init`.cwd(repo).quiet();
-    await Bun.$`git config user.email dogfood@example.com`.cwd(repo).quiet();
-    await Bun.$`git config user.name Dogfood`.cwd(repo).quiet();
-    await fs.writeFile(path.join(repo, "README.md"), "hello\n", "utf-8");
-    await Bun.$`git add README.md`.cwd(repo).quiet();
-    await Bun.$`git commit -m init`.cwd(repo).quiet();
-    await Bun.$`git worktree add ${worktree} -b feature`.cwd(repo).quiet();
+    await initJjRepo(repo);
+    await runJj(repo, ["workspace", "add", workspace, "-r", "@-", "--name", "feature"]);
 
-    // Older/manual configs (or a worktree added as its own project) can hold a
-    // direct trusted entry for the worktree path alongside the main repo entry.
+    // Older/manual configs (or a workspace added as its own project) can hold a
+    // direct trusted entry for the workspace path alongside the main repo entry.
     // Revoke must clear both; the direct entry alone would keep the checkout
     // trusted via resolveProjectTrusted's exact-path lookup.
     await fs.writeFile(
@@ -76,7 +96,7 @@ describe("mux trust CLI", () => {
       JSON.stringify({
         projects: [
           [repo, { workspaces: [], trusted: true }],
-          [worktree, { workspaces: [], trusted: true }],
+          [workspace, { workspaces: [], trusted: true }],
         ],
       }),
       "utf-8"
@@ -84,7 +104,7 @@ describe("mux trust CLI", () => {
     const env = { ...process.env, MUX_ROOT: muxRoot };
 
     const revokeResult =
-      await Bun.$`${BUN_EXECUTABLE} ${TRUST_ENTRY} --revoke --dir ${worktree} --json`
+      await Bun.$`${BUN_EXECUTABLE} ${TRUST_ENTRY} --revoke --dir ${workspace} --json`
         .env(env)
         .quiet();
     expect(revokeResult.exitCode).toBe(0);
@@ -94,7 +114,7 @@ describe("mux trust CLI", () => {
     };
     const trustByPath = new Map(config.projects.map(([p, c]) => [p, c.trusted]));
     expect(trustByPath.get(repo)).toBe(false);
-    expect(trustByPath.get(worktree)).toBe(false);
+    expect(trustByPath.get(workspace)).toBe(false);
   }, 15_000);
 
   test("fails loudly when the trust change cannot be persisted", async () => {
@@ -117,29 +137,23 @@ describe("mux trust CLI", () => {
     expect(result.stdout.toString()).toBe("");
   }, 15_000);
 
-  test("trust from a linked worktree records trust for the main repository", async () => {
-    using tmp = new DisposableTempDir("trust-cli-worktree");
-    // realpath: git reports physical paths (macOS /var -> /private/var) and the trust
+  test("trust from a linked jj workspace records trust for the main repository", async () => {
+    using tmp = new DisposableTempDir("trust-cli-workspace");
+    // realpath: jj reports physical paths (macOS /var -> /private/var) and the trust
     // entry written to config must match what trust resolution compares against.
     const base = await fs.realpath(tmp.path);
     const repo = path.join(base, "repo");
     const muxRoot = path.join(base, "mux-root");
-    const worktree = path.join(base, "worktree");
-    await fs.mkdir(repo, { recursive: true });
+    const workspace = path.join(base, "workspace");
     await fs.mkdir(muxRoot, { recursive: true });
-    await Bun.$`git init`.cwd(repo).quiet();
-    await Bun.$`git config user.email dogfood@example.com`.cwd(repo).quiet();
-    await Bun.$`git config user.name Dogfood`.cwd(repo).quiet();
-    await fs.writeFile(path.join(repo, "README.md"), "hello\n", "utf-8");
-    await Bun.$`git add README.md`.cwd(repo).quiet();
-    await Bun.$`git commit -m init`.cwd(repo).quiet();
-    await Bun.$`git worktree add ${worktree} -b feature`.cwd(repo).quiet();
+    await initJjRepo(repo);
+    await runJj(repo, ["workspace", "add", workspace, "-r", "@-", "--name", "feature"]);
 
-    const trustResult = await Bun.$`${BUN_EXECUTABLE} ${TRUST_ENTRY} --dir ${worktree} --json`
+    const trustResult = await Bun.$`${BUN_EXECUTABLE} ${TRUST_ENTRY} --dir ${workspace} --json`
       .env({ ...process.env, MUX_ROOT: muxRoot })
       .quiet();
     expect(trustResult.exitCode).toBe(0);
-    // Trust must land on the main repository path, not the ephemeral worktree path.
+    // Trust must land on the main repository path, not the ephemeral workspace path.
     expect(JSON.parse(trustResult.stdout.toString())).toEqual({
       projectPath: repo,
       trusted: true,

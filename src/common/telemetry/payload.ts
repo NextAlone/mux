@@ -51,7 +51,7 @@ export interface AppStartedPayload {
 
 /**
  * Runtime type for telemetry - derived from RuntimeMode to stay in sync.
- * Values: 'local' (project-dir), 'worktree' (git worktree isolation), 'ssh' (remote), 'docker' (container)
+ * Values: 'local' (project-dir), 'worktree' (jj workspace isolation), 'ssh' (remote), 'docker' (container)
  */
 export type TelemetryRuntimeType = RuntimeMode;
 

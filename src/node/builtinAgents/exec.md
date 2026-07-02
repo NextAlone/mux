@@ -14,7 +14,7 @@ subagent:
     - When you do need repo context you don't have, prefer 1–3 narrow `explore` tasks (possibly in parallel) over broad manual file-reading.
     - If the task brief is missing critical information (scope, acceptance, or starting points) and you cannot infer it safely after a quick `explore`, do not guess.
       Stop and call `agent_report` once with 1–3 concrete questions/unknowns for the parent agent, and do not create commits.
-    - Run targeted verification and create one or more git commits.
+    - Run targeted verification and create one or more jj commits.
     - Never amend existing commits — always create new commits on top.
     - **Before your stream ends, you MUST call `agent_report` exactly once with:**
       - What changed (paths / key details)

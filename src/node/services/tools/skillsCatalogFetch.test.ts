@@ -153,16 +153,14 @@ describe("fetchSkillContent", () => {
     execSpy = spyOn(disposableExec, "execFileAsync");
     execSpy.mockImplementation((_file: string, args: string[]) => {
       if (args.includes("--version")) {
-        return createMockExecResult(
-          Promise.resolve({ stdout: "git version 2.40.0\n", stderr: "" })
-        );
+        return createMockExecResult(Promise.resolve({ stdout: "jj 0.33.0\n", stderr: "" }));
       }
 
       if (args.includes("clone")) {
         return createMockExecResult(Promise.resolve({ stdout: "", stderr: "" }));
       }
 
-      if (args.includes("rev-parse")) {
+      if (args.includes("bookmark")) {
         return createMockExecResult(Promise.resolve({ stdout: "main\n", stderr: "" }));
       }
 
@@ -195,16 +193,14 @@ describe("fetchSkillContent", () => {
     execSpy = spyOn(disposableExec, "execFileAsync");
     execSpy.mockImplementation((_file: string, args: string[]) => {
       if (args.includes("--version")) {
-        return createMockExecResult(
-          Promise.resolve({ stdout: "git version 2.40.0\n", stderr: "" })
-        );
+        return createMockExecResult(Promise.resolve({ stdout: "jj 0.33.0\n", stderr: "" }));
       }
 
       if (args.includes("clone")) {
         return createMockExecResult(Promise.resolve({ stdout: "", stderr: "" }));
       }
 
-      if (args.includes("rev-parse")) {
+      if (args.includes("bookmark")) {
         return createMockExecResult(Promise.resolve({ stdout: "main\n", stderr: "" }));
       }
 
@@ -237,12 +233,10 @@ describe("fetchSkillContent", () => {
     execSpy = spyOn(disposableExec, "execFileAsync");
     execSpy.mockImplementation((_file: string, args: string[]) => {
       if (args.includes("--version")) {
-        return createMockExecResult(
-          Promise.resolve({ stdout: "git version 2.40.0\n", stderr: "" })
-        );
+        return createMockExecResult(Promise.resolve({ stdout: "jj 0.33.0\n", stderr: "" }));
       }
 
-      if (args.includes("rev-parse")) {
+      if (args.includes("bookmark")) {
         return createMockExecResult(Promise.resolve({ stdout: "main\n", stderr: "" }));
       }
 
@@ -278,12 +272,10 @@ describe("fetchSkillContent", () => {
     execSpy = spyOn(disposableExec, "execFileAsync");
     execSpy.mockImplementation((_file: string, args: string[]) => {
       if (args.includes("--version")) {
-        return createMockExecResult(
-          Promise.resolve({ stdout: "git version 2.40.0\n", stderr: "" })
-        );
+        return createMockExecResult(Promise.resolve({ stdout: "jj 0.33.0\n", stderr: "" }));
       }
 
-      if (args.includes("rev-parse")) {
+      if (args.includes("bookmark")) {
         return createMockExecResult(Promise.resolve({ stdout: "main\n", stderr: "" }));
       }
 
@@ -322,12 +314,10 @@ describe("fetchSkillContent", () => {
     execSpy = spyOn(disposableExec, "execFileAsync");
     execSpy.mockImplementation((_file: string, args: string[]) => {
       if (args.includes("--version")) {
-        return createMockExecResult(
-          Promise.resolve({ stdout: "git version 2.40.0\n", stderr: "" })
-        );
+        return createMockExecResult(Promise.resolve({ stdout: "jj 0.33.0\n", stderr: "" }));
       }
 
-      if (args.includes("rev-parse")) {
+      if (args.includes("bookmark")) {
         return createMockExecResult(Promise.resolve({ stdout: "main\n", stderr: "" }));
       }
 
@@ -359,12 +349,10 @@ describe("fetchSkillContent", () => {
     execSpy = spyOn(disposableExec, "execFileAsync");
     execSpy.mockImplementation((_file: string, args: string[]) => {
       if (args.includes("--version")) {
-        return createMockExecResult(
-          Promise.resolve({ stdout: "git version 2.40.0\n", stderr: "" })
-        );
+        return createMockExecResult(Promise.resolve({ stdout: "jj 0.33.0\n", stderr: "" }));
       }
 
-      if (args.includes("rev-parse")) {
+      if (args.includes("bookmark")) {
         return createMockExecResult(Promise.resolve({ stdout: "main\n", stderr: "" }));
       }
 
@@ -389,12 +377,10 @@ describe("fetchSkillContent", () => {
     execSpy = spyOn(disposableExec, "execFileAsync");
     execSpy.mockImplementation((_file: string, args: string[]) => {
       if (args.includes("--version")) {
-        return createMockExecResult(
-          Promise.resolve({ stdout: "git version 2.40.0\n", stderr: "" })
-        );
+        return createMockExecResult(Promise.resolve({ stdout: "jj 0.33.0\n", stderr: "" }));
       }
 
-      if (args.includes("rev-parse")) {
+      if (args.includes("bookmark")) {
         return createMockExecResult(Promise.resolve({ stdout: "main\n", stderr: "" }));
       }
 
@@ -412,23 +398,21 @@ describe("fetchSkillContent", () => {
     mkdtempSpy.mockRestore();
   });
 
-  it("throws clear error when git is unavailable", async () => {
+  it("throws clear error when jj is unavailable", async () => {
     execSpy = spyOn(disposableExec, "execFileAsync");
     execSpy.mockImplementation(() => {
-      return createMockExecResult(Promise.reject(new Error("spawn git ENOENT")));
+      return createMockExecResult(Promise.reject(new Error("spawn jj ENOENT")));
     });
 
     // eslint-disable-next-line @typescript-eslint/await-thenable -- Bun's expect().rejects.toThrow() is thenable at runtime
-    await expect(fetchSkillContent("owner", "repo", "skill")).rejects.toThrow("git is required");
+    await expect(fetchSkillContent("owner", "repo", "skill")).rejects.toThrow("jj is required");
   });
 
   it("throws clear error when clone fails", async () => {
     execSpy = spyOn(disposableExec, "execFileAsync");
     execSpy.mockImplementation((_file: string, args: string[]) => {
       if (args.includes("--version")) {
-        return createMockExecResult(
-          Promise.resolve({ stdout: "git version 2.40.0\n", stderr: "" })
-        );
+        return createMockExecResult(Promise.resolve({ stdout: "jj 0.33.0\n", stderr: "" }));
       }
 
       if (args.includes("clone")) {
@@ -453,9 +437,7 @@ describe("fetchSkillContent", () => {
     execSpy = spyOn(disposableExec, "execFileAsync");
     execSpy.mockImplementation((_file: string, args: string[]) => {
       if (args.includes("--version")) {
-        return createMockExecResult(
-          Promise.resolve({ stdout: "git version 2.40.0\n", stderr: "" })
-        );
+        return createMockExecResult(Promise.resolve({ stdout: "jj 0.33.0\n", stderr: "" }));
       }
 
       return createMockExecResult(Promise.resolve({ stdout: "", stderr: "" }));
@@ -489,12 +471,10 @@ describe("fetchSkillContent", () => {
     execSpy = spyOn(disposableExec, "execFileAsync");
     execSpy.mockImplementation((_file: string, args: string[]) => {
       if (args.includes("--version")) {
-        return createMockExecResult(
-          Promise.resolve({ stdout: "git version 2.40.0\n", stderr: "" })
-        );
+        return createMockExecResult(Promise.resolve({ stdout: "jj 0.33.0\n", stderr: "" }));
       }
 
-      if (args.includes("rev-parse")) {
+      if (args.includes("bookmark")) {
         return createMockExecResult(Promise.resolve({ stdout: "main\n", stderr: "" }));
       }
 
@@ -534,12 +514,10 @@ describe("fetchSkillContent", () => {
     execSpy = spyOn(disposableExec, "execFileAsync");
     execSpy.mockImplementation((_file: string, args: string[]) => {
       if (args.includes("--version")) {
-        return createMockExecResult(
-          Promise.resolve({ stdout: "git version 2.40.0\n", stderr: "" })
-        );
+        return createMockExecResult(Promise.resolve({ stdout: "jj 0.33.0\n", stderr: "" }));
       }
 
-      if (args.includes("rev-parse")) {
+      if (args.includes("bookmark")) {
         return createMockExecResult(Promise.resolve({ stdout: "main\n", stderr: "" }));
       }
 
@@ -570,12 +548,10 @@ describe("fetchSkillContent", () => {
     execSpy = spyOn(disposableExec, "execFileAsync");
     execSpy.mockImplementation((_file: string, args: string[]) => {
       if (args.includes("--version")) {
-        return createMockExecResult(
-          Promise.resolve({ stdout: "git version 2.40.0\n", stderr: "" })
-        );
+        return createMockExecResult(Promise.resolve({ stdout: "jj 0.33.0\n", stderr: "" }));
       }
 
-      if (args.includes("rev-parse")) {
+      if (args.includes("bookmark")) {
         return createMockExecResult(Promise.resolve({ stdout: "main\n", stderr: "" }));
       }
 
@@ -612,12 +588,10 @@ describe("fetchSkillContent", () => {
     execSpy = spyOn(disposableExec, "execFileAsync");
     execSpy.mockImplementation((_file: string, args: string[]) => {
       if (args.includes("--version")) {
-        return createMockExecResult(
-          Promise.resolve({ stdout: "git version 2.40.0\n", stderr: "" })
-        );
+        return createMockExecResult(Promise.resolve({ stdout: "jj 0.33.0\n", stderr: "" }));
       }
 
-      if (args.includes("rev-parse")) {
+      if (args.includes("bookmark")) {
         return createMockExecResult(Promise.resolve({ stdout: "main\n", stderr: "" }));
       }
 
@@ -654,12 +628,10 @@ describe("fetchSkillContent", () => {
     execSpy = spyOn(disposableExec, "execFileAsync");
     execSpy.mockImplementation((_file: string, args: string[]) => {
       if (args.includes("--version")) {
-        return createMockExecResult(
-          Promise.resolve({ stdout: "git version 2.40.0\n", stderr: "" })
-        );
+        return createMockExecResult(Promise.resolve({ stdout: "jj 0.33.0\n", stderr: "" }));
       }
 
-      if (args.includes("rev-parse")) {
+      if (args.includes("bookmark")) {
         return createMockExecResult(Promise.resolve({ stdout: "main\n", stderr: "" }));
       }
 
@@ -696,12 +668,10 @@ describe("fetchSkillContent", () => {
     execSpy = spyOn(disposableExec, "execFileAsync");
     execSpy.mockImplementation((_file: string, args: string[]) => {
       if (args.includes("--version")) {
-        return createMockExecResult(
-          Promise.resolve({ stdout: "git version 2.40.0\n", stderr: "" })
-        );
+        return createMockExecResult(Promise.resolve({ stdout: "jj 0.33.0\n", stderr: "" }));
       }
 
-      if (args.includes("rev-parse")) {
+      if (args.includes("bookmark")) {
         return createMockExecResult(Promise.resolve({ stdout: "main\n", stderr: "" }));
       }
 

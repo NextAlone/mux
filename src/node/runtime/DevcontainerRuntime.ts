@@ -48,13 +48,13 @@ export interface DevcontainerRuntimeOptions {
 /**
  * Devcontainer runtime implementation.
  *
- * This runtime creates git worktrees on the host and runs commands inside
+ * This runtime creates jj workspaces on the host and runs commands inside
  * a devcontainer built from the project's devcontainer.json configuration.
  *
  * Architecture:
  * - Worktree operations (create/delete/fork) → WorktreeManager (host filesystem)
  * - Command execution (exec) → devcontainer exec (inside container)
- * - File I/O → host fs (worktree is bind-mounted into container)
+ * - File I/O → host fs (workspace is bind-mounted into container)
  * - ensureReady → devcontainer up (starts/rebuilds container as needed)
  */
 export class DevcontainerRuntime extends LocalBaseRuntime {

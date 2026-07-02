@@ -1,26 +1,26 @@
 ---
 title: Worktree Runtime
-description: Isolated git worktree environments for parallel agent work
+description: Isolated jj workspace environments for parallel agent work
 ---
 
-Worktree runtime uses [git worktrees](https://git-scm.com/docs/git-worktree) on your local machine.
+Worktree runtime uses [jj workspaces](https://jj-vcs.github.io/jj/latest/working-copy/#workspaces) on your local machine.
 
-Each workspace gets its own directory, but worktrees share the same `.git` directory as your main checkout.
+Each workspace gets its own directory, while all workspaces share the same colocated jj repository.
 
 ## How worktrees work
 
-A worktree is a separate directory on the same filesystem as the main repository.
+A workspace is a separate directory on the same filesystem as the main repository.
 
-- It has its own working tree (files on disk) and checkout state.
-- It shares a `.git` with the main repository.
+- It has its own working copy commit and files on disk.
+- It shares repository history with the main checkout through jj.
 
-Because `.git` is shared, **commits created in any worktree are immediately visible to your other worktrees (including your main checkout).**
+Because the jj repository is shared, **changes created in any workspace are immediately visible to your other workspaces (including your main checkout).**
 
-Worktrees aren’t locked to a branch. The agent can switch branches, enter detached HEAD, or create new branches as needed. If you want to constrain branching behavior, do it via your [instruction files](/agents/instruction-files).
+Workspaces aren’t locked to a bookmark. The agent can create new changes and move bookmarks as needed. If you want to constrain bookmark behavior, do it via your [instruction files](/agents/instruction-files).
 
 ## Filesystem layout
 
-Worktree workspaces are stored in `~/.mux/src/<project-name>/<workspace-name>`.
+Worktree runtime workspaces are stored in `~/.mux/src/<project-name>/<workspace-name>`.
 
 Example layout:
 

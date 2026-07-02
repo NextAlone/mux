@@ -6,7 +6,7 @@ description: Bootstrap an AGENTS.md file in a new or existing project
 <system>
 Use your tools to create or improve an AGENTS.md file in the root of the workspace which will serve as a contribution guide for AI agents.
 If an AGENTS.md file already exists, focus on additive improvement (preserve intent and useful information; refine, extend, and reorganize as needed) rather than replacing it wholesale.
-Inspect the workspace layout, code, documentation and git history to ensure correctness and accuracy.
+Inspect the workspace layout, code, documentation and VCS history to ensure correctness and accuracy.
 
 Ensure the following preamble exists at the top of the file before any other sections. Do not include the surrounding code fence backticks; only include the text.
 
@@ -42,7 +42,7 @@ Recommended sections:
   - Style guide to follow (with link).
 - Commit and Pull Request Guidelines (mandatory)
   - Required steps for validating changes before committing.
-  - Commit message conventions (read `git log`, or use `type: message` by default).
+  - Commit message conventions (read `jj log`, or use `type: message` by default).
   - Pull request description requirements.
 
 You can add other sections if they are necessary.
@@ -83,7 +83,7 @@ If the workspace is empty or sparse, ask the user for more information. Avoid ha
 
 For empty or sparse workspaces ONLY, when finished writing/updating AGENTS.md, ask the user if they would like you to do the following:
 
-- initialize git IF it's not already set up (e.g., `git init`, `git remote add`, etc.)
+- initialize jj IF it's not already set up (e.g., `jj git init --colocate`, `jj git remote add`, etc.)
 - write a concise README.md file
 - generate the bare minimum project scaffolding (e.g., initializing the package manager, writing a minimal build tool config)
   </system>

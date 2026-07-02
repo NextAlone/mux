@@ -162,7 +162,7 @@ export const WorkspaceNameInRuntimeTooltip: Story = {
         }
 
         const tooltipWithin = within(tooltip as HTMLElement);
-        tooltipWithin.getByText("Worktree: isolated git worktree");
+        tooltipWithin.getByText("Worktree: isolated jj workspace");
         tooltipWithin.getByText("Name");
         tooltipWithin.getByText("bugfix/agent-report-rendering");
       },

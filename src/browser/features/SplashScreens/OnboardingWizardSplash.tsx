@@ -906,7 +906,7 @@ export function OnboardingWizardSplash(props: { onDismiss: () => void }) {
         <>
           <p>
             Each workspace can run in the environment that fits the job: keep it local, isolate with
-            a git worktree, run remotely over SSH, or use a per-workspace Docker container.
+            a jj workspace, run remotely over SSH, or use a per-workspace Docker container.
           </p>
 
           <div className="mt-3 grid gap-2">
@@ -914,7 +914,7 @@ export function OnboardingWizardSplash(props: { onDismiss: () => void }) {
               Work directly in your project directory.
             </Card>
             <Card icon={<WorktreeIcon size={14} />} title="Worktree">
-              Isolated git worktree under <code className="text-accent">~/.mux/src</code>.
+              Isolated jj workspace under <code className="text-accent">~/.mux/src</code>.
             </Card>
             <Card icon={<SSHIcon size={14} />} title="SSH">
               Remote clone and commands run on an SSH host.

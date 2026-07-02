@@ -86,7 +86,7 @@ function getRuntimeInfo(
     return { type: "ssh", label: `SSH: ${hostname ?? runtimeConfig.host}` };
   }
   if (isWorktreeRuntime(runtimeConfig)) {
-    return { type: "worktree", label: "Worktree: isolated git worktree" };
+    return { type: "worktree", label: "Worktree: isolated jj workspace" };
   }
   if (isLocalProjectRuntime(runtimeConfig)) {
     return { type: "local", label: "Local: project directory" };
