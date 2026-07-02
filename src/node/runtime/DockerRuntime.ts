@@ -32,8 +32,6 @@ import { RemoteRuntime, type SpawnResult } from "./RemoteRuntime";
 import { runInitHookOnRuntime, runWorkspaceInitHook } from "./initHook";
 import { getProjectName } from "@/node/utils/runtime/helpers";
 import { getErrorMessage } from "@/common/utils/errors";
-import { syncProjectViaGitBundle } from "./gitBundleSync";
-import { GIT_NO_HOOKS_ENV, gitNoHooksPrefix } from "@/node/utils/gitNoHooksEnv";
 import {
   getHostGitconfigPath,
   hasHostGitconfig,
@@ -45,6 +43,7 @@ import { syncRuntimeGitSubmodules } from "./submoduleSync";
 
 /** Hardcoded source directory inside container */
 const CONTAINER_SRC_DIR = "/src";
+const JJ = "jj --no-pager --color never";
 
 /**
  * Result of running a Docker command
@@ -556,7 +555,7 @@ export class DockerRuntime extends RemoteRuntime {
   private async checkExistingContainer(
     containerName: string,
     workspacePath: string,
-    branchName: string
+    _branchName: string
   ): Promise<ContainerCheckResult> {
     const exists = await runDockerCommand(`docker inspect ${containerName}`, 10000);
     if (exists.exitCode !== 0) return { action: "create" };
@@ -569,26 +568,16 @@ export class DockerRuntime extends RemoteRuntime {
       return { action: "cleanup", reason: "Removing stale container from previous attempt..." };
     }
 
-    // Container running - validate it has an initialized git repo
-    const gitCheck = await runDockerCommand(
-      `docker exec ${containerName} test -d ${workspacePath}/.git`,
+    // Container running - validate it has an initialized jj repo.
+    const jjCheck = await runDockerCommand(
+      `docker exec ${containerName} sh -c ${shescape.quote(`cd ${workspacePath} && ${JJ} root >/dev/null`)}`,
       5000
     );
-    if (gitCheck.exitCode !== 0) {
+    if (jjCheck.exitCode !== 0) {
       return {
         action: "cleanup",
         reason: "Container exists but repo not initialized, recreating...",
       };
-    }
-
-    // Verify correct branch is checked out
-    // (handles edge case: crash after clone but before checkout left container on wrong branch)
-    const branchCheck = await runDockerCommand(
-      `docker exec ${containerName} git -C ${workspacePath} rev-parse --abbrev-ref HEAD`,
-      5000
-    );
-    if (branchCheck.exitCode !== 0 || branchCheck.stdout.trim() !== branchName) {
-      return { action: "cleanup", reason: "Container exists but wrong branch, recreating..." };
     }
 
     return { action: "skip" };
@@ -734,7 +723,7 @@ export class DockerRuntime extends RemoteRuntime {
     // Setup credentials (gitconfig + gh auth)
     await this.setupCredentials(containerName, env);
 
-    // 2. Sync project to container using git bundle + docker cp
+    // 2. Sync the colocated jj checkout into the container.
     initLogger.logStep("Syncing project files to container...");
     try {
       await this.syncProjectToContainer(
@@ -742,8 +731,7 @@ export class DockerRuntime extends RemoteRuntime {
         containerName,
         workspacePath,
         initLogger,
-        abortSignal,
-        params.trusted
+        abortSignal
       );
     } catch (error) {
       await runDockerCommand(`docker rm -f ${containerName}`, 10000);
@@ -751,29 +739,19 @@ export class DockerRuntime extends RemoteRuntime {
     }
     initLogger.logStep("Files synced successfully");
 
-    // 3. Checkout branch
-    // Disable git hooks for untrusted projects (prevents post-checkout execution)
-    const nhp = gitNoHooksPrefix(params.trusted);
-    initLogger.logStep(`Checking out branch: ${branchName}`);
-    const checkoutCmd = `${nhp}git checkout ${shescape.quote(branchName)} 2>/dev/null || ${nhp}git checkout -b ${shescape.quote(branchName)} ${shescape.quote(trunkBranch)}`;
-
-    const checkoutStream = await this.exec(checkoutCmd, {
-      cwd: workspacePath,
-      timeout: 300,
+    // 3. Move the copied jj checkout onto the requested bookmark/change.
+    initLogger.logStep(`Creating jj workspace change for: ${branchName}`);
+    const checkoutResult = await this.createJjWorkspaceChange({
+      workspacePath,
+      bookmarkName: branchName,
+      fallbackBookmarkName: trunkBranch,
       abortSignal,
     });
-
-    const [stdout, stderr, exitCode] = await Promise.all([
-      streamToString(checkoutStream.stdout),
-      streamToString(checkoutStream.stderr),
-      checkoutStream.exitCode,
-    ]);
-
-    if (exitCode !== 0) {
+    if (!checkoutResult.success) {
       await runDockerCommand(`docker rm -f ${containerName}`, 10000);
-      throw new Error(`Failed to checkout branch: ${stderr || stdout}`);
+      throw new Error(checkoutResult.error);
     }
-    initLogger.logStep("Branch checked out successfully");
+    initLogger.logStep("jj workspace change created successfully");
 
     await this.materializeCheckedOutWorkspace({
       containerName,
@@ -828,62 +806,69 @@ export class DockerRuntime extends RemoteRuntime {
     containerName: string,
     workspacePath: string,
     initLogger: InitLogger,
-    abortSignal?: AbortSignal,
-    trusted?: boolean
+    abortSignal?: AbortSignal
   ): Promise<void> {
-    const timestamp = Date.now();
-    const bundleFilename = `mux-bundle-${timestamp}.bundle`;
-    const remoteBundlePath = `/tmp/${bundleFilename}`;
-    // Use os.tmpdir() for host path (Windows doesn't have /tmp)
-    const localBundlePath = path.join(os.tmpdir(), bundleFilename);
+    initLogger.logStep("Copying colocated jj repository to container...");
+    const copyResult = await runSpawnCommand(
+      "docker",
+      ["cp", `${projectPath.replace(/[\\/]+$/, "")}/.`, `${containerName}:${workspacePath}`],
+      300000,
+      abortSignal
+    );
+    if (copyResult.exitCode !== 0) {
+      throw new Error(copyResult.stderr || copyResult.stdout || "docker cp failed");
+    }
 
-    await syncProjectViaGitBundle({
-      projectPath,
-      workspacePath,
-      remoteTmpDir: "/tmp",
-      remoteBundlePath,
-      exec: (command, options) => this.exec(command, options),
-      quoteRemotePath: (path) => this.quoteForRemote(path),
-      initLogger,
-      abortSignal,
-      cloneStep: "Cloning repository in container...",
-      trusted,
-      createRemoteBundle: async ({ remoteBundlePath, initLogger, abortSignal }) => {
-        try {
-          if (abortSignal?.aborted) {
-            throw new Error("Sync operation aborted before starting");
-          }
+    const userInfo = await this.detectContainerUser(containerName, abortSignal);
+    const chownResult = await runDockerCommand(
+      `docker exec --user root ${containerName} chown -R ${userInfo.uid}:${userInfo.gid} ${shescape.quote(workspacePath)}`,
+      30000,
+      abortSignal
+    );
+    if (chownResult.exitCode !== 0) {
+      throw new Error(chownResult.stderr || chownResult.stdout || "Failed to fix workspace owner");
+    }
+  }
 
-          const bundleResult = await runDockerCommand(
-            `git -C "${projectPath}" bundle create "${localBundlePath}" --all`,
-            300000
-          );
+  private async createJjWorkspaceChange(args: {
+    workspacePath: string;
+    bookmarkName: string;
+    fallbackBookmarkName: string;
+    abortSignal?: AbortSignal;
+  }): Promise<{ success: true } | { success: false; error: string }> {
+    const candidates = [
+      args.bookmarkName,
+      `${args.bookmarkName}@origin`,
+      args.fallbackBookmarkName,
+      `${args.fallbackBookmarkName}@origin`,
+      "@",
+    ].filter((candidate, index, all) => candidate.length > 0 && all.indexOf(candidate) === index);
 
-          if (bundleResult.exitCode !== 0) {
-            throw new Error(`Failed to create bundle: ${bundleResult.stderr}`);
-          }
+    const script = [
+      "set -eu",
+      ...candidates.map((candidate) => {
+        const quoted = shescape.quote(candidate);
+        return `if ${JJ} log --no-graph -r ${quoted} -T 'change_id ++ "\\n"' -n 1 >/dev/null 2>&1; then ${JJ} new ${quoted}; exit $?; fi`;
+      }),
+      `echo "No jj bookmark or change found for ${args.bookmarkName}" >&2`,
+      "exit 1",
+    ].join("\n");
 
-          initLogger.logStep("Copying bundle to container...");
-          const copyResult = await runDockerCommand(
-            `docker cp "${localBundlePath}" ${containerName}:${remoteBundlePath}`,
-            300000
-          );
-
-          if (copyResult.exitCode !== 0) {
-            throw new Error(`Failed to copy bundle: ${copyResult.stderr}`);
-          }
-
-          return {
-            cleanupLocal: async () => {
-              await runDockerCommand(`rm -f "${localBundlePath}"`, 5000);
-            },
-          };
-        } catch (error) {
-          await runDockerCommand(`rm -f "${localBundlePath}"`, 5000);
-          throw error;
-        }
-      },
+    const result = await this.exec(script, {
+      cwd: args.workspacePath,
+      timeout: 300,
+      abortSignal: args.abortSignal,
     });
+    const [stdout, stderr, exitCode] = await Promise.all([
+      streamToString(result.stdout),
+      streamToString(result.stderr),
+      result.exitCode,
+    ]);
+
+    if (exitCode !== 0) {
+      return { success: false, error: stderr || stdout || "jj new failed" };
+    }
+    return { success: true };
   }
 
   // eslint-disable-next-line @typescript-eslint/require-await
@@ -957,9 +942,9 @@ export class DockerRuntime extends RemoteRuntime {
             }
           };
 
-          // Check for uncommitted changes
+          // Check for jj working-copy changes.
           const checkResult = await runDockerCommand(
-            `docker exec ${containerName} bash -c 'cd ${CONTAINER_SRC_DIR} && git diff --quiet --exit-code && git diff --quiet --cached --exit-code'`,
+            `docker exec ${containerName} bash -c 'cd ${CONTAINER_SRC_DIR} && test -z "$(${JJ} diff --summary 2>/dev/null)"'`,
             10000
           );
 
@@ -971,14 +956,14 @@ export class DockerRuntime extends RemoteRuntime {
             };
           }
 
-          // Check for unpushed commits (only if remotes exist - repos with no remotes would show all commits)
+          // Check for unpublished changes only if the jj Git backend has an origin remote.
           const hasRemotes = await runDockerCommand(
-            `docker exec ${containerName} bash -c 'cd ${CONTAINER_SRC_DIR} && git remote | grep -q .'`,
+            `docker exec ${containerName} bash -c 'cd ${CONTAINER_SRC_DIR} && ${JJ} git remote list 2>/dev/null | awk "{ print \\$1 }" | grep -qx origin'`,
             10000
           );
           if (hasRemotes.exitCode === 0) {
             const unpushedResult = await runDockerCommand(
-              `docker exec ${containerName} bash -c 'cd ${CONTAINER_SRC_DIR} && git log --branches --not --remotes --oneline'`,
+              `docker exec ${containerName} bash -c 'cd ${CONTAINER_SRC_DIR} && ${JJ} log --no-graph -r "remote_bookmarks(remote=origin)..@ & ~empty()" -T "change_id.shortest() ++ \\" \\" ++ description.first_line() ++ \\"\\\\n\\"" 2>/dev/null'`,
               10000
             );
 
@@ -1019,8 +1004,7 @@ export class DockerRuntime extends RemoteRuntime {
 
     const srcContainerName = getContainerName(projectPath, sourceWorkspaceName);
     const destContainerName = getContainerName(projectPath, newWorkspaceName);
-    const hostTempPath = path.join(os.tmpdir(), `mux-fork-${Date.now()}.bundle`);
-    const containerBundlePath = "/tmp/fork.bundle";
+    const hostTempDir = await fs.mkdtemp(path.join(os.tmpdir(), "mux-fork-"));
     let destContainerCreated = false;
     let forkSucceeded = false;
 
@@ -1040,51 +1024,39 @@ export class DockerRuntime extends RemoteRuntime {
         };
       }
 
-      // 2. Get current branch from source
-      initLogger.logStep("Detecting source workspace branch...");
+      // 2. Get current jj change from source.
+      initLogger.logStep("Detecting source workspace change...");
       throwIfAborted();
-      const branchResult = await runDockerCommand(
-        `docker exec ${srcContainerName} git -C ${CONTAINER_SRC_DIR} branch --show-current`,
+      const sourceChangeResult = await runDockerCommand(
+        `docker exec ${srcContainerName} sh -c ${shescape.quote(`cd ${CONTAINER_SRC_DIR} && ${JJ} log --no-graph -r @ -T 'change_id.shortest() ++ "\\n"' -n 1`)}`,
         30000,
         abortSignal
       );
-      const sourceBranch = branchResult.stdout.trim();
-      if (branchResult.exitCode !== 0 || sourceBranch.length === 0) {
+      const sourceBranch = sourceChangeResult.stdout.trim();
+      if (sourceChangeResult.exitCode !== 0 || sourceBranch.length === 0) {
         return {
           success: false,
-          error: "Failed to detect branch in source workspace (detached HEAD?)",
+          error: "Failed to detect jj change in source workspace",
         };
       }
 
-      // 3. Create git bundle inside source container
-      initLogger.logStep("Creating git bundle from source...");
-      throwIfAborted();
-      const bundleResult = await runDockerCommand(
-        `docker exec ${srcContainerName} git -C ${CONTAINER_SRC_DIR} bundle create ${containerBundlePath} --all`,
-        300000,
-        abortSignal
-      );
-      if (bundleResult.exitCode !== 0) {
-        return { success: false, error: `Failed to create git bundle: ${bundleResult.stderr}` };
-      }
-
-      // 4. Transfer bundle to host
-      initLogger.logStep("Copying bundle from source container...");
+      // 3. Transfer colocated jj checkout to host.
+      initLogger.logStep("Copying source jj checkout from container...");
       throwIfAborted();
       const cpOutResult = await runSpawnCommand(
         "docker",
-        ["cp", `${srcContainerName}:${containerBundlePath}`, hostTempPath],
+        ["cp", `${srcContainerName}:${CONTAINER_SRC_DIR}/.`, hostTempDir],
         300000,
         abortSignal
       );
       if (cpOutResult.exitCode !== 0) {
         return {
           success: false,
-          error: `Failed to copy bundle from source: ${cpOutResult.stderr}`,
+          error: `Failed to copy jj checkout from source: ${cpOutResult.stderr}`,
         };
       }
 
-      // 5. Create destination container
+      // 4. Create destination container.
       initLogger.logStep(`Creating container: ${destContainerName}...`);
       const dockerArgs = ["run", "-d", "--name", destContainerName];
       if (this.config.shareCredentials) {
@@ -1105,7 +1077,7 @@ export class DockerRuntime extends RemoteRuntime {
       }
       destContainerCreated = true;
 
-      // 5b. Detect container user and prepare directories (may be non-root)
+      // 4b. Detect container user and prepare directories (may be non-root).
       throwIfAborted();
       const destUser = await this.detectContainerUser(destContainerName, abortSignal);
       const mkdirResult = await this.prepareWorkspaceDirectories(
@@ -1120,42 +1092,23 @@ export class DockerRuntime extends RemoteRuntime {
         };
       }
 
-      // 6. Copy bundle into destination and clone
-      initLogger.logStep("Copying bundle to destination container...");
+      // 5. Copy colocated jj checkout into destination.
+      initLogger.logStep("Copying jj checkout to destination container...");
       throwIfAborted();
       const cpInResult = await runSpawnCommand(
         "docker",
-        ["cp", hostTempPath, `${destContainerName}:${containerBundlePath}`],
+        ["cp", `${hostTempDir}/.`, `${destContainerName}:${CONTAINER_SRC_DIR}`],
         300000,
         abortSignal
       );
       if (cpInResult.exitCode !== 0) {
         return {
           success: false,
-          error: `Failed to copy bundle to destination: ${cpInResult.stderr}`,
+          error: `Failed to copy jj checkout to destination: ${cpInResult.stderr}`,
         };
       }
 
-      initLogger.logStep("Cloning repository in destination...");
-      // Disable git hooks inside the container for untrusted projects
-      const noHooksEnvCmd = params.trusted
-        ? ""
-        : "env " +
-          Object.entries(GIT_NO_HOOKS_ENV)
-            .map(([k, v]) => `${k}=${v}`)
-            .join(" ") +
-          " ";
-      throwIfAborted();
-      const cloneResult = await runDockerCommand(
-        `docker exec ${destContainerName} ${noHooksEnvCmd}git clone ${containerBundlePath} ${CONTAINER_SRC_DIR}`,
-        300000,
-        abortSignal
-      );
-      if (cloneResult.exitCode !== 0) {
-        return { success: false, error: `Failed to clone from bundle: ${cloneResult.stderr}` };
-      }
-
-      // Ensure /src is owned by the container user (git clone may create as current user)
+      // Ensure /src is owned by the container user.
       const chownResult = await runDockerCommand(
         `docker exec --user root ${destContainerName} chown -R ${destUser.uid}:${destUser.gid} ${CONTAINER_SRC_DIR}`,
         30000,
@@ -1171,70 +1124,18 @@ export class DockerRuntime extends RemoteRuntime {
       // Store user info for this runtime instance
       this.storeContainerUserInfo(destUser);
 
-      // 7. Create local tracking branches (best-effort)
-      initLogger.logStep("Creating local tracking branches...");
-      try {
-        const remotesResult = await runDockerCommand(
-          `docker exec ${destContainerName} git -C ${CONTAINER_SRC_DIR} branch -r`,
-          30000
-        );
-        if (remotesResult.exitCode === 0) {
-          const remotes = remotesResult.stdout
-            .split("\n")
-            .map((b) => b.trim())
-            .filter((b) => b.startsWith("origin/") && !b.includes("HEAD"));
-
-          for (const remote of remotes) {
-            const localName = remote.replace("origin/", "");
-            await runDockerCommand(
-              `docker exec ${destContainerName} git -C ${CONTAINER_SRC_DIR} branch ${shescape.quote(localName)} ${shescape.quote(remote)} 2>/dev/null || true`,
-              10000
-            );
-          }
-        }
-      } catch {
-        // Ignore - best-effort
-      }
-
-      // 8. Preserve origin URL (best-effort)
-      try {
-        const originResult = await runDockerCommand(
-          `docker exec ${srcContainerName} git -C ${CONTAINER_SRC_DIR} remote get-url origin 2>/dev/null || true`,
-          10000
-        );
-        const originUrl = originResult.stdout.trim();
-        if (originUrl.length > 0) {
-          await runDockerCommand(
-            `docker exec ${destContainerName} git -C ${CONTAINER_SRC_DIR} remote set-url origin ${shescape.quote(originUrl)}`,
-            10000
-          );
-        } else {
-          await runDockerCommand(
-            `docker exec ${destContainerName} git -C ${CONTAINER_SRC_DIR} remote remove origin 2>/dev/null || true`,
-            10000
-          );
-        }
-      } catch {
-        // Ignore - best-effort
-      }
-
-      // 9. Checkout destination branch
-      // Disable git hooks for untrusted projects (prevents post-checkout execution)
-      const forkNhp = gitNoHooksPrefix(params.trusted);
-      initLogger.logStep(`Checking out branch: ${newWorkspaceName}`);
-      const checkoutCmd =
-        `${forkNhp}git checkout ${shescape.quote(newWorkspaceName)} 2>/dev/null || ` +
-        `${forkNhp}git checkout -b ${shescape.quote(newWorkspaceName)} ${shescape.quote(sourceBranch)}`;
+      // 6. Create an empty jj child change so the fork starts from the source state.
+      initLogger.logStep(`Creating forked jj workspace change: ${newWorkspaceName}`);
       throwIfAborted();
-      const checkoutResult = await runDockerCommand(
-        `docker exec ${destContainerName} bash -c ${shescape.quote(`cd ${CONTAINER_SRC_DIR} && ${checkoutCmd}`)}`,
+      const newResult = await runDockerCommand(
+        `docker exec ${destContainerName} sh -c ${shescape.quote(`cd ${CONTAINER_SRC_DIR} && ${JJ} new @`)}`,
         120000,
         abortSignal
       );
-      if (checkoutResult.exitCode !== 0) {
+      if (newResult.exitCode !== 0) {
         return {
           success: false,
-          error: `Failed to checkout forked branch: ${checkoutResult.stderr || checkoutResult.stdout}`,
+          error: `Failed to create forked jj change: ${newResult.stderr || newResult.stdout}`,
         };
       }
 
@@ -1246,26 +1147,15 @@ export class DockerRuntime extends RemoteRuntime {
     } catch (error) {
       return { success: false, error: getErrorMessage(error) };
     } finally {
-      // 10. Cleanup (best-effort, ignore errors)
+      // 7. Cleanup (best-effort, ignore errors)
       /* eslint-disable @typescript-eslint/no-empty-function */
-      // Clean up bundle in source container
-      await runDockerCommand(
-        `docker exec ${srcContainerName} rm -f ${containerBundlePath}`,
-        5000
-      ).catch(() => {});
-      // Clean up bundle in destination container (if it exists)
       if (destContainerCreated) {
-        await runDockerCommand(
-          `docker exec ${destContainerName} rm -f ${containerBundlePath}`,
-          5000
-        ).catch(() => {});
         // Remove orphaned destination container on failure
         if (!forkSucceeded) {
           await runDockerCommand(`docker rm -f ${destContainerName}`, 10000).catch(() => {});
         }
       }
-      // Clean up host temp file
-      await fs.unlink(hostTempPath).catch(() => {});
+      await fs.rm(hostTempDir, { recursive: true, force: true }).catch(() => {});
       /* eslint-enable @typescript-eslint/no-empty-function */
     }
   }
