@@ -70,7 +70,7 @@ describe("WorkspaceMcpOverridesService", () => {
     expect(await pathExists(path.join(workspacePath, ".mux", "mcp.local.jsonc"))).toBe(false);
   });
 
-  it("adds .mux/mcp.local.jsonc to git exclude when writing overrides", async () => {
+  it("adds .mux/mcp.local.jsonc to jj Git backend exclude when writing overrides", async () => {
     const projectPath = "/fake/project";
     const workspaceId = "ws-id";
     const workspaceName = "branch";
@@ -83,11 +83,21 @@ describe("WorkspaceMcpOverridesService", () => {
     await fs.mkdir(workspacePath, { recursive: true });
 
     const runtime = createRuntime({ type: "local" }, { projectPath: workspacePath });
-    const gitInitResult = await execBuffered(runtime, "git init", {
+    const gitInitResult = await execBuffered(
+      runtime,
+      "jj --no-pager --color never git init --colocate .",
+      {
+        cwd: workspacePath,
+        timeout: 10,
+      }
+    );
+    expect(gitInitResult.exitCode).toBe(0);
+
+    const gitRootResult = await execBuffered(runtime, "jj --no-pager --color never git root", {
       cwd: workspacePath,
       timeout: 10,
     });
-    expect(gitInitResult.exitCode).toBe(0);
+    expect(gitRootResult.exitCode).toBe(0);
 
     await config.editConfig((cfg) => {
       cfg.projects.set(projectPath, {
@@ -105,18 +115,7 @@ describe("WorkspaceMcpOverridesService", () => {
 
     const service = new WorkspaceMcpOverridesService(config);
 
-    const excludePathResult = await execBuffered(runtime, "git rev-parse --git-path info/exclude", {
-      cwd: workspacePath,
-      timeout: 10,
-    });
-    expect(excludePathResult.exitCode).toBe(0);
-
-    const excludePathRaw = excludePathResult.stdout.trim();
-    expect(excludePathRaw.length).toBeGreaterThan(0);
-
-    const excludePath = path.isAbsolute(excludePathRaw)
-      ? excludePathRaw
-      : path.join(workspacePath, excludePathRaw);
+    const excludePath = path.join(gitRootResult.stdout.trim(), "info", "exclude");
 
     const before = (await pathExists(excludePath)) ? await fs.readFile(excludePath, "utf-8") : "";
     expect(before).not.toContain(".mux/mcp.local.jsonc");

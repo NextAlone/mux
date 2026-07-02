@@ -18,45 +18,46 @@ export async function ensureGitInfoExclude(input: {
   assert(workspacePath.trim().length > 0, "workspacePath is required");
   assert(relativeDir.trim().length > 0, "relativeDir is required");
 
-  const inside = await execBuffered(runtime, "git rev-parse --is-inside-work-tree", {
+  const repoRootResult = await execBuffered(runtime, "jj --no-pager --color never root", {
     cwd: workspacePath,
     timeout: 5,
   });
-  if (inside.exitCode !== 0) {
-    const message = `${inside.stderr}\n${inside.stdout}`;
-    if (/not a git repository/i.test(message)) {
+  if (repoRootResult.exitCode !== 0) {
+    const message = `${repoRootResult.stderr}\n${repoRootResult.stdout}`;
+    if (/not a jj repo|not a git repository|no jj repo/i.test(message)) {
       return { status: "notGit" };
     }
-    return { status: "failed", error: message.trim() || "Could not determine Git workspace" };
+    return { status: "failed", error: message.trim() || "Could not determine jj workspace" };
   }
 
-  const [prefixResult, excludeResult] = await Promise.all([
-    execBuffered(runtime, "git rev-parse --show-prefix", { cwd: workspacePath, timeout: 5 }),
-    execBuffered(runtime, "git rev-parse --git-path info/exclude", {
-      cwd: workspacePath,
-      timeout: 5,
-    }),
-  ]);
-  if (prefixResult.exitCode !== 0) {
+  const gitRootResult = await execBuffered(runtime, "jj --no-pager --color never git root", {
+    cwd: workspacePath,
+    timeout: 5,
+  });
+  if (gitRootResult.exitCode !== 0) {
     return {
       status: "failed",
-      error: prefixResult.stderr.trim() || "Could not resolve Git prefix",
-    };
-  }
-  if (excludeResult.exitCode !== 0) {
-    return {
-      status: "failed",
-      error: excludeResult.stderr.trim() || "Could not resolve Git exclude path",
+      error: gitRootResult.stderr.trim() || "Could not resolve jj Git backend path",
     };
   }
 
-  const prefix = prefixResult.stdout
-    .trim()
-    .replace(/\\/g, "/")
-    .replace(/^\/+|\/+$/g, "");
+  const repoRoot = repoRootResult.stdout.trim();
+  const gitRoot = gitRootResult.stdout.trim();
+  if (!repoRoot || !gitRoot) {
+    return { status: "failed", error: "Could not resolve jj repository paths" };
+  }
+
+  let resolvedWorkspacePath = workspacePath;
+  try {
+    resolvedWorkspacePath = await runtime.resolvePath(workspacePath);
+  } catch {
+    resolvedWorkspacePath = workspacePath;
+  }
+
+  const prefix = relativeRuntimePath(repoRoot, resolvedWorkspacePath);
   const relative = relativeDir.replace(/\\/g, "/").replace(/^\/+|\/+$/g, "");
   const pattern = `/${[prefix, relative].filter(Boolean).join("/")}/`;
-  const excludePath = resolveRuntimePath(workspacePath, excludeResult.stdout.trim());
+  const excludePath = resolveRuntimePath(workspacePath, `${gitRoot}/info/exclude`);
 
   let existing = "";
   try {
@@ -83,4 +84,23 @@ function resolveRuntimePath(workspacePath: string, gitPath: string): string {
     return gitPath;
   }
   return `${workspacePath.replace(/[\\/]+$/u, "")}/${gitPath}`;
+}
+
+function relativeRuntimePath(rootPath: string, childPath: string): string {
+  const normalizedRoot = canonicalizeRuntimePath(rootPath);
+  const normalizedChild = canonicalizeRuntimePath(childPath);
+  if (normalizedChild === normalizedRoot) {
+    return "";
+  }
+  if (normalizedChild.startsWith(`${normalizedRoot}/`)) {
+    return normalizedChild.slice(normalizedRoot.length + 1).replace(/^\/+|\/+$/g, "");
+  }
+  return "";
+}
+
+function canonicalizeRuntimePath(filePath: string): string {
+  return filePath
+    .replace(/\\/g, "/")
+    .replace(/^\/private(?=\/var\/)/, "")
+    .replace(/\/+$/g, "");
 }

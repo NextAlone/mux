@@ -248,31 +248,32 @@ export class WorkspaceMcpOverridesService {
     runtimeConfig: RuntimeConfig | undefined
   ): Promise<void> {
     try {
-      const isInsideGitResult = await execBuffered(runtime, "git rev-parse --is-inside-work-tree", {
+      const repoRootResult = await execBuffered(runtime, "jj --no-pager --color never root", {
         cwd: workspacePath,
         timeout: 10,
       });
-      if (isInsideGitResult.exitCode !== 0 || isInsideGitResult.stdout.trim() !== "true") {
+      if (repoRootResult.exitCode !== 0) {
         return;
       }
 
-      const excludePathResult = await execBuffered(
+      const gitRootResult = await execBuffered(
         runtime,
-        "git rev-parse --git-path info/exclude",
+        "jj --no-pager --color never git root",
         {
           cwd: workspacePath,
           timeout: 10,
         }
       );
-      if (excludePathResult.exitCode !== 0) {
+      if (gitRootResult.exitCode !== 0) {
         return;
       }
 
-      const excludeFilePathRaw = excludePathResult.stdout.trim();
-      if (excludeFilePathRaw.length === 0) {
+      const gitRoot = gitRootResult.stdout.trim();
+      if (gitRoot.length === 0) {
         return;
       }
 
+      const excludeFilePathRaw = joinForRuntime(runtimeConfig, gitRoot, "info", "exclude");
       const excludeFilePath = isAbsoluteForRuntime(runtimeConfig, excludeFilePathRaw)
         ? excludeFilePathRaw
         : joinForRuntime(runtimeConfig, workspacePath, excludeFilePathRaw);
@@ -302,8 +303,8 @@ export class WorkspaceMcpOverridesService {
 
       await writeFileString(runtime, excludeFilePath, updated);
     } catch (error) {
-      // Best-effort only; never fail a workspace operation because git ignore couldn't be updated.
-      log.debug("[MCP] Failed to add workspace MCP overrides file to git exclude", {
+      // Best-effort only; never fail a workspace operation because local ignore couldn't be updated.
+      log.debug("[MCP] Failed to add workspace MCP overrides file to jj Git backend exclude", {
         workspacePath,
         error,
       });
