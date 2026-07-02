@@ -106,6 +106,46 @@ export async function listJjFiles(projectPath: string): Promise<string[]> {
   return parseJjFileListOutput(stdout);
 }
 
+export async function createJjWorkspace(args: {
+  projectPath: string;
+  workspacePath: string;
+  workspaceName: string;
+  revision: string;
+  message: string;
+}): Promise<void> {
+  using proc = disposableExec.execFileAsync("jj", [
+    ...JJ_MACHINE_ARGS,
+    "--repository",
+    args.projectPath,
+    "workspace",
+    "add",
+    "--name",
+    args.workspaceName,
+    "--revision",
+    args.revision,
+    "--message",
+    args.message,
+    args.workspacePath,
+  ]);
+  await proc.result;
+}
+
+export async function forgetJjWorkspace(args: {
+  projectPath: string;
+  workspaceName: string;
+}): Promise<void> {
+  using proc = disposableExec.execFileAsync("jj", [
+    ...JJ_MACHINE_ARGS,
+    "--repository",
+    args.projectPath,
+    "--ignore-working-copy",
+    "workspace",
+    "forget",
+    args.workspaceName,
+  ]);
+  await proc.result;
+}
+
 export async function listLocalBookmarks(projectPath: string): Promise<string[]> {
   // User goal: manage even colocated repositories through jj-native semantics, so repository refs
   // are read from jj bookmarks instead of Git branches.
