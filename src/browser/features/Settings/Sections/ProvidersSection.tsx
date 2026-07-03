@@ -88,15 +88,46 @@ const OPENAI_SERVICE_TIER_UNSET = "unset";
 
 type OpenAIServiceTier = ServiceTier;
 type OpenAIServiceTierSelectValue = typeof OPENAI_SERVICE_TIER_UNSET | OpenAIServiceTier;
+type OpenAIServiceTierMode = "api" | "codexOauth";
 
-function isOpenAIServiceTier(value: string): value is OpenAIServiceTier {
-  return (
-    value === "auto" ||
-    value === "default" ||
-    value === "flex" ||
-    value === "priority" ||
-    value === "fast"
-  );
+const OPENAI_API_SERVICE_TIER_OPTIONS = [
+  { value: OPENAI_SERVICE_TIER_UNSET, label: "Auto" },
+  { value: "priority", label: "Fast" },
+  { value: "flex", label: "Slow" },
+] satisfies Array<{ value: OpenAIServiceTierSelectValue; label: string }>;
+
+const CODEX_OAUTH_SERVICE_TIER_OPTIONS = [
+  { value: OPENAI_SERVICE_TIER_UNSET, label: "Normal" },
+  { value: "fast", label: "Fast" },
+] satisfies Array<{ value: OpenAIServiceTierSelectValue; label: string }>;
+
+function getOpenAIServiceTierMode(
+  codexOauthIsConnected: boolean,
+  codexOauthDefaultAuth: "oauth" | "apiKey"
+): OpenAIServiceTierMode {
+  return codexOauthIsConnected && codexOauthDefaultAuth === "oauth" ? "codexOauth" : "api";
+}
+
+function getOpenAIServiceTierOptions(mode: OpenAIServiceTierMode) {
+  return mode === "codexOauth" ? CODEX_OAUTH_SERVICE_TIER_OPTIONS : OPENAI_API_SERVICE_TIER_OPTIONS;
+}
+
+function getOpenAIServiceTierSelectValue(
+  value: OpenAIServiceTier | undefined,
+  mode: OpenAIServiceTierMode
+): OpenAIServiceTierSelectValue {
+  if (mode === "codexOauth") {
+    return value === "fast" ? "fast" : OPENAI_SERVICE_TIER_UNSET;
+  }
+
+  return value === "priority" || value === "flex" ? value : OPENAI_SERVICE_TIER_UNSET;
+}
+
+function isOpenAIServiceTierSelectable(
+  value: string,
+  mode: OpenAIServiceTierMode
+): value is OpenAIServiceTier {
+  return mode === "codexOauth" ? value === "fast" : value === "priority" || value === "flex";
 }
 
 interface CodexOauthDeviceFlow {
@@ -489,6 +520,17 @@ export function ProvidersSection() {
   const openaiApiKeySet = config?.openai?.apiKeySet === true || !!config?.openai?.apiKeySource;
   const codexOauthDefaultAuth =
     config?.openai?.codexOauthDefaultAuth === "apiKey" ? "apiKey" : "oauth";
+  const openaiServiceTierMode = getOpenAIServiceTierMode(
+    codexOauthIsConnected,
+    codexOauthDefaultAuth
+  );
+  const openaiServiceTierOptions = getOpenAIServiceTierOptions(openaiServiceTierMode);
+  const openaiServiceTierValue = getOpenAIServiceTierSelectValue(
+    openaiServiceTierSelectOverride === OPENAI_SERVICE_TIER_UNSET
+      ? undefined
+      : (openaiServiceTierSelectOverride ?? config?.openai?.serviceTier),
+    openaiServiceTierMode
+  );
   const codexOauthDefaultAuthIsEditable = codexOauthIsConnected && openaiApiKeySet;
 
   const codexOauthLoginInProgress =
@@ -2449,34 +2491,46 @@ export function ProvidersSection() {
                                       </TooltipTrigger>
                                       <TooltipContent>
                                         <div className="max-w-[260px]">
-                                          <div className="font-semibold">OpenAI service tier</div>
-                                          <div className="mt-1">
-                                            <span className="font-semibold">auto</span>: standard
-                                            behavior.
-                                          </div>
-                                          <div>
-                                            <span className="font-semibold">priority</span>: lower
-                                            latency, higher cost.
-                                          </div>
-                                          <div>
-                                            <span className="font-semibold">fast</span>: Codex OAuth
-                                            subscription fast lane.
-                                          </div>
-                                          <div>
-                                            <span className="font-semibold">flex</span>: lower cost,
-                                            higher latency.
-                                          </div>
+                                          {openaiServiceTierMode === "codexOauth" ? (
+                                            <>
+                                              <div className="font-semibold">
+                                                Codex OAuth service tier
+                                              </div>
+                                              <div className="mt-1">
+                                                <span className="font-semibold">Normal</span>: use
+                                                the subscription default.
+                                              </div>
+                                              <div>
+                                                <span className="font-semibold">Fast</span>: send{" "}
+                                                <code>service_tier=fast</code>.
+                                              </div>
+                                            </>
+                                          ) : (
+                                            <>
+                                              <div className="font-semibold">
+                                                OpenAI API service tier
+                                              </div>
+                                              <div className="mt-1">
+                                                <span className="font-semibold">Auto</span>: omit{" "}
+                                                <code>service_tier</code>.
+                                              </div>
+                                              <div>
+                                                <span className="font-semibold">Fast</span>: send{" "}
+                                                <code>service_tier=priority</code>.
+                                              </div>
+                                              <div>
+                                                <span className="font-semibold">Slow</span>: send{" "}
+                                                <code>service_tier=flex</code>.
+                                              </div>
+                                            </>
+                                          )}
                                         </div>
                                       </TooltipContent>
                                     </Tooltip>
                                   </TooltipProvider>
                                 </div>
                                 <Select
-                                  value={
-                                    openaiServiceTierSelectOverride ??
-                                    config?.openai?.serviceTier ??
-                                    OPENAI_SERVICE_TIER_UNSET
-                                  }
+                                  value={openaiServiceTierValue}
                                   onValueChange={(next) => {
                                     if (!api) return;
 
@@ -2493,7 +2547,9 @@ export function ProvidersSection() {
                                       return;
                                     }
 
-                                    if (!isOpenAIServiceTier(next)) {
+                                    if (
+                                      !isOpenAIServiceTierSelectable(next, openaiServiceTierMode)
+                                    ) {
                                       return;
                                     }
 
@@ -2506,18 +2562,15 @@ export function ProvidersSection() {
                                     });
                                   }}
                                 >
-                                  <SelectTrigger className="w-64">
+                                  <SelectTrigger className="w-full max-w-64">
                                     <SelectValue />
                                   </SelectTrigger>
                                   <SelectContent>
-                                    <SelectItem value={OPENAI_SERVICE_TIER_UNSET}>
-                                      Not configured (omit service_tier)
-                                    </SelectItem>
-                                    <SelectItem value="auto">auto</SelectItem>
-                                    <SelectItem value="default">default</SelectItem>
-                                    <SelectItem value="flex">flex</SelectItem>
-                                    <SelectItem value="priority">priority</SelectItem>
-                                    <SelectItem value="fast">fast</SelectItem>
+                                    {openaiServiceTierOptions.map((option) => (
+                                      <SelectItem key={option.value} value={option.value}>
+                                        {option.label}
+                                      </SelectItem>
+                                    ))}
                                   </SelectContent>
                                 </Select>
                               </div>

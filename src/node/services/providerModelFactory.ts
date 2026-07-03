@@ -769,8 +769,11 @@ export function normalizeCodexResponsesBody(
 
   // Codex-compatible Responses requests must disable storage and strip unsupported params.
   json.store = false;
-  if (options?.serviceTier != null) {
-    json.service_tier = options.serviceTier;
+  // Codex OAuth only accepts the subscription-tier values; API service tiers
+  // can already be present from the OpenAI SDK, so strip before optionally adding fast.
+  delete json.service_tier;
+  if (options?.serviceTier === "fast") {
+    json.service_tier = "fast";
   }
 
   for (const key of Object.keys(json)) {

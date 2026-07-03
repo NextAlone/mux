@@ -207,7 +207,7 @@ describe("normalizeCodexResponsesBody", () => {
     };
 
     expect(normalized.store).toBe(false);
-    expect(normalized.service_tier).toBe("priority");
+    expect(normalized.service_tier).toBeUndefined();
     expect(normalized.truncation).toBeUndefined();
     expect(normalized.temperature).toBe(0.2);
     expect(normalized.text).toEqual({ format: { type: "json_schema", name: "result" } });
@@ -243,6 +243,22 @@ describe("normalizeCodexResponsesBody", () => {
     ) as { service_tier?: unknown; store: boolean };
 
     expect(normalized.service_tier).toBe("fast");
+    expect(normalized.store).toBe(false);
+  });
+
+  it("does not forward OpenAI API service tiers to the Codex OAuth endpoint", () => {
+    const normalized = JSON.parse(
+      normalizeCodexResponsesBody(
+        JSON.stringify({
+          model: "gpt-5.5",
+          input: [{ role: "user", content: "Hello" }],
+          service_tier: "priority",
+        }),
+        { serviceTier: "flex" }
+      )
+    ) as { service_tier?: unknown; store: boolean };
+
+    expect(normalized.service_tier).toBeUndefined();
     expect(normalized.store).toBe(false);
   });
 });

@@ -1,4 +1,4 @@
-import type React from "react";
+import React from "react";
 import { cleanup, fireEvent, render, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
@@ -77,6 +77,118 @@ void mock.module("@/browser/contexts/PolicyContext", () => ({
     policy: null,
   }),
 }));
+
+void mock.module("@/browser/components/SelectPrimitive/SelectPrimitive", () => {
+  const SelectContext = React.createContext<{
+    value?: string;
+    disabled?: boolean;
+    open: boolean;
+    options: Map<string, React.ReactNode>;
+    onValueChange?: (value: string) => void;
+    setOpen: (open: boolean) => void;
+  } | null>(null);
+
+  function collectOptions(children: React.ReactNode, options = new Map<string, React.ReactNode>()) {
+    React.Children.forEach(children, (child) => {
+      if (!React.isValidElement<{ value?: string; children?: React.ReactNode }>(child)) {
+        return;
+      }
+
+      if (typeof child.props.value === "string") {
+        options.set(child.props.value, child.props.children);
+      }
+
+      if (child.props.children) {
+        collectOptions(child.props.children, options);
+      }
+    });
+
+    return options;
+  }
+
+  function Select(props: {
+    value?: string;
+    disabled?: boolean;
+    onValueChange?: (value: string) => void;
+    children: React.ReactNode;
+  }) {
+    const [open, setOpen] = React.useState(false);
+    const options = collectOptions(props.children);
+    return (
+      <SelectContext.Provider
+        value={{
+          value: props.value,
+          disabled: props.disabled,
+          open,
+          options,
+          onValueChange: props.onValueChange,
+          setOpen,
+        }}
+      >
+        {props.children}
+      </SelectContext.Provider>
+    );
+  }
+
+  const SelectTrigger = React.forwardRef<
+    HTMLButtonElement,
+    React.ComponentPropsWithoutRef<"button">
+  >((props, ref) => {
+    const context = React.useContext(SelectContext);
+    return (
+      <button
+        {...props}
+        ref={ref}
+        type="button"
+        role="combobox"
+        disabled={context?.disabled}
+        aria-expanded={context?.open ?? false}
+        onClick={(event) => {
+          props.onClick?.(event);
+          if (!context?.disabled) {
+            context?.setOpen(true);
+          }
+        }}
+      >
+        {props.children}
+      </button>
+    );
+  });
+  SelectTrigger.displayName = "MockSelectTrigger";
+
+  function SelectValue() {
+    const context = React.useContext(SelectContext);
+    return <span>{context?.options.get(context?.value ?? "") ?? context?.value ?? ""}</span>;
+  }
+
+  function SelectContent(props: { children: React.ReactNode }) {
+    const context = React.useContext(SelectContext);
+    return context?.open ? <div>{props.children}</div> : null;
+  }
+
+  function SelectItem(props: { value: string; children: React.ReactNode }) {
+    const context = React.useContext(SelectContext);
+    return (
+      <button
+        type="button"
+        onClick={() => {
+          context?.onValueChange?.(props.value);
+          context?.setOpen(false);
+        }}
+      >
+        {props.children}
+      </button>
+    );
+  }
+
+  return {
+    Select,
+    SelectTrigger,
+    SelectValue,
+    SelectContent,
+    SelectItem,
+  };
+});
 
 /* eslint-disable @typescript-eslint/no-require-imports */
 const actualWorkspaceContext =
@@ -205,6 +317,15 @@ function getProviderCard(button: HTMLElement): HTMLElement {
   return card;
 }
 
+function getProviderControlSection(card: HTMLElement, label: string): HTMLElement {
+  const labelElement = within(card).getByText(label);
+  const section = labelElement.parentElement?.parentElement;
+  if (!section) {
+    throw new Error(`Provider setting "${label}" was not rendered inside a section`);
+  }
+  return section;
+}
+
 describe("ProvidersSection", () => {
   let restoreDom: (() => void) | null = null;
 
@@ -304,6 +425,73 @@ describe("ProvidersSection", () => {
       expect(view.queryByRole("button", { name: "Add custom provider" })).toBeNull();
     });
     expect(view.getByRole("button", { name: "Add provider" })).toBeTruthy();
+  });
+
+  test("shows OpenAI API service tier choices when API auth is active", async () => {
+    const view = renderProvidersSection();
+    view.providersConfig.openai.codexOauthSet = true;
+    view.providersConfig.openai.codexOauthDefaultAuth = "apiKey";
+    const openAiButton = await view.findByRole("button", { name: /^OpenAI\b/ });
+
+    fireEvent.click(openAiButton);
+
+    const serviceTierSection = getProviderControlSection(
+      getProviderCard(openAiButton),
+      "Service tier"
+    );
+    const trigger = within(serviceTierSection).getByRole("combobox");
+    expect(trigger.textContent).toContain("Auto");
+
+    fireEvent.click(trigger);
+
+    expect(within(serviceTierSection).getByRole("button", { name: "Auto" })).toBeTruthy();
+    expect(within(serviceTierSection).getByRole("button", { name: "Fast" })).toBeTruthy();
+    expect(within(serviceTierSection).getByRole("button", { name: "Slow" })).toBeTruthy();
+    expect(within(serviceTierSection).queryByRole("button", { name: "Normal" })).toBeNull();
+
+    fireEvent.click(within(serviceTierSection).getByRole("button", { name: "Fast" }));
+
+    await waitFor(() => {
+      expect(view.setProviderConfig).toHaveBeenCalledWith({
+        provider: "openai",
+        keyPath: ["serviceTier"],
+        value: "priority",
+      });
+    });
+  });
+
+  test("shows Codex OAuth service tier choices when OAuth auth is active", async () => {
+    const view = renderProvidersSection();
+    view.providersConfig.openai.codexOauthSet = true;
+    view.providersConfig.openai.apiKeySet = false;
+    view.providersConfig.openai.serviceTier = "fast";
+    const openAiButton = await view.findByRole("button", { name: /^OpenAI\b/ });
+
+    fireEvent.click(openAiButton);
+
+    const serviceTierSection = getProviderControlSection(
+      getProviderCard(openAiButton),
+      "Service tier"
+    );
+    const trigger = within(serviceTierSection).getByRole("combobox");
+    expect(trigger.textContent).toContain("Fast");
+
+    fireEvent.click(trigger);
+
+    expect(within(serviceTierSection).getByRole("button", { name: "Normal" })).toBeTruthy();
+    expect(within(serviceTierSection).getByRole("button", { name: "Fast" })).toBeTruthy();
+    expect(within(serviceTierSection).queryByRole("button", { name: "Auto" })).toBeNull();
+    expect(within(serviceTierSection).queryByRole("button", { name: "Slow" })).toBeNull();
+
+    fireEvent.click(within(serviceTierSection).getByRole("button", { name: "Normal" }));
+
+    await waitFor(() => {
+      expect(view.setProviderConfig).toHaveBeenCalledWith({
+        provider: "openai",
+        keyPath: ["serviceTier"],
+        value: "",
+      });
+    });
   });
 
   test("closes the add form and shows a notice when refresh fails after add", async () => {
