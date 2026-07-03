@@ -26,10 +26,28 @@ export function LeftSidebar(props: LeftSidebarProps) {
     ...projectSidebarProps
   } = props;
   const isDesktop = isDesktopMode();
+  const [isCollapseTransitionPending, setIsCollapseTransitionPending] = React.useState(false);
+  const previousCollapsedRef = React.useRef(collapsed);
   // Match the CSS gate for the mobile "overlay" sidebar; we don't show a drag handle in that mode.
   const isMobileTouch =
     typeof window !== "undefined" &&
     window.matchMedia("(max-width: 768px) and (pointer: coarse)").matches;
+
+  React.useLayoutEffect(() => {
+    const wasCollapsed = previousCollapsedRef.current;
+    previousCollapsedRef.current = collapsed;
+
+    if (!collapsed || isResizing) {
+      setIsCollapseTransitionPending(false);
+      return;
+    }
+
+    if (!wasCollapsed) {
+      // The shell width animates for 200ms; keep expanded chrome mounted until
+      // that deterministic transition ends so the sidebar clips instead of flashing blank.
+      setIsCollapseTransitionPending(true);
+    }
+  }, [collapsed, isResizing]);
 
   const handleBeforeOpenSettings = () => {
     // Keep settings navigation escapable on touch devices by dismissing the
@@ -42,6 +60,16 @@ export function LeftSidebar(props: LeftSidebarProps) {
   const width = collapsed
     ? `${LEFT_SIDEBAR_COLLAPSED_WIDTH_PX}px`
     : `${widthPx ?? LEFT_SIDEBAR_DEFAULT_WIDTH_PX}px`;
+  const isVisuallyCollapsed = collapsed && !isCollapseTransitionPending;
+
+  const handleSidebarTransitionEnd = (event: React.TransitionEvent<HTMLDivElement>) => {
+    if (event.currentTarget !== event.target || event.propertyName !== "width") {
+      return;
+    }
+    if (collapsed) {
+      setIsCollapseTransitionPending(false);
+    }
+  };
 
   return (
     <>
@@ -65,19 +93,20 @@ export function LeftSidebar(props: LeftSidebarProps) {
           // In desktop mode when collapsed, start border below titlebar height (32px)
           // so it aligns with titlebar bottom edge and doesn't cut through traffic lights
           isDesktop &&
-            collapsed &&
+            isVisuallyCollapsed &&
             "border-r-0 after:absolute after:right-0 after:top-8 after:bottom-0 after:w-px after:bg-border"
         )}
         style={{ width }}
+        onTransitionEnd={handleSidebarTransitionEnd}
       >
-        {!collapsed && <TitleBar onBeforeOpenSettings={handleBeforeOpenSettings} />}
+        {!isVisuallyCollapsed && <TitleBar onBeforeOpenSettings={handleBeforeOpenSettings} />}
         <ProjectSidebar
           {...projectSidebarProps}
-          collapsed={collapsed}
+          collapsed={isVisuallyCollapsed}
           onToggleCollapsed={onToggleCollapsed}
         />
 
-        {!collapsed && !isMobileTouch && onStartResize && (
+        {!isVisuallyCollapsed && !isMobileTouch && onStartResize && (
           <div
             data-testid="left-sidebar-resize-handle"
             className={cn(
