@@ -367,7 +367,7 @@ export function RuntimeButtonGroup(props: RuntimeButtonGroupProps) {
 
     // User request: hide Settings-disabled runtimes (selection auto-switches elsewhere).
     // Keep the currently active runtime visible even if disabled to avoid trapping the user
-    // when the fallback can't find a replacement (e.g., non-git repo with Local disabled).
+    // when the fallback can't find a replacement (e.g., non-jj repo with Local disabled).
     const isEnablementDisabled = runtimeEnablement?.[option.value] === false;
     if (isEnablementDisabled && option.value !== props.value) {
       return false;
@@ -601,7 +601,7 @@ export function CreationControls(props: CreationControlsProps) {
         }
       }
       // Filter by availability to avoid selecting unavailable runtimes (e.g., Docker
-      // when daemon is down, devcontainer when config missing, non-git projects).
+      // when daemon is down, devcontainer when config missing, non-jj projects).
       if (isDevcontainerMissing && mode === RUNTIME_MODE.DEVCONTAINER) {
         return false;
       }

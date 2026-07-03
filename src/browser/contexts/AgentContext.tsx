@@ -40,7 +40,7 @@ export interface AgentContextValue {
   /** True while a refresh is in progress */
   refreshing: boolean;
   /**
-   * When true, agents are loaded from projectPath only (ignoring workspace worktree).
+   * When true, agents are loaded from projectPath only (ignoring the workspace checkout).
    * Useful for unbricking when iterating on agent files in a workspace.
    */
   disableWorkspaceAgents: boolean;

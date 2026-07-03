@@ -75,7 +75,7 @@ export function getInitHookPath(projectPath: string): string {
  * Used by both init hook and regular bash tool calls.
  * @param projectPath - Path to project root (local path for LocalRuntime, remote path for SSHRuntime)
  * @param runtime - Runtime type: "local", "worktree", "ssh", or "docker"
- * @param workspaceName - Name of the workspace (branch name or custom name)
+ * @param workspaceName - Name of the workspace (source bookmark or custom name)
  */
 export function getMuxEnv(
   projectPath: string,

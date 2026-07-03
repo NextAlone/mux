@@ -243,11 +243,11 @@ export interface MockORPCClientOptions {
     string,
     { success: true; tools: string[] } | { success: false; error: string }
   >;
-  /** Custom listBranches implementation (for testing non-git repos) */
+  /** Custom listBranches implementation (for testing non-jj repos) */
   listBranches?: (input: {
     projectPath: string;
   }) => Promise<{ branches: string[]; recommendedTrunk: string | null }>;
-  /** Custom runtimeAvailability response (for testing non-git repos) */
+  /** Custom runtimeAvailability response (for testing non-jj repos) */
   runtimeAvailability?: {
     local: { available: true } | { available: false; reason: string };
     worktree: { available: true } | { available: false; reason: string };

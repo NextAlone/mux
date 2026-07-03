@@ -13,7 +13,7 @@ const getIndicatorColor = (columnIndex: number): string => {
     case 0:
       return "#6bcc6b"; // Green for HEAD
     case 1:
-      return "#6ba3cc"; // Blue for the remote trunk bookmark
+      return "#6ba3cc"; // Blue for the remote source bookmark
     case 2:
       return "#b66bcc"; // Purple for the remote workspace bookmark
     default:

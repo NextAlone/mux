@@ -33,7 +33,7 @@ export type WorkspaceMetadata = z.infer<typeof WorkspaceMetadataSchema>;
 export type ProjectRef = z.infer<typeof ProjectRefSchema>;
 
 /**
- * Repository status for a workspace (ahead/behind relative to the remote trunk bookmark)
+ * Repository status for a workspace (ahead/behind relative to the remote source bookmark)
  */
 export type GitStatus = z.infer<typeof GitStatusSchema>;
 

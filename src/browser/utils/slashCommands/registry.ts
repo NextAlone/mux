@@ -314,7 +314,7 @@ const forkCommandDefinition: SlashCommandDefinition = {
 const newCommandDefinition: SlashCommandDefinition = {
   key: "new",
   description:
-    "Create a new workspace from the project's trunk bookmark. Optionally include a start message.",
+    "Create a new workspace from the project's source bookmark. Optionally include a start message.",
   inputHint: SLASH_COMMAND_HINTS.new,
   handler: ({ rawInput }): ParsedCommand => {
     // Mirror /fork: everything after /new is the optional start message.

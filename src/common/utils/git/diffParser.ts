@@ -197,7 +197,7 @@ export function buildGitDiffCommand(
   pathFilter: string,
   command: "diff" | "numstat" | "name-status"
 ): string {
-  // SECURITY: diffBase can come from repository branch names (including auto-detected trunk refs).
+  // SECURITY: diffBase can come from repository refs/bookmarks (including auto-detected sources).
   // Quote it before embedding in shell command strings to prevent command injection.
   const baseRevision = normalizeJjDiffBase(diffBase);
   const quotedDiffBase = shellQuote(baseRevision);

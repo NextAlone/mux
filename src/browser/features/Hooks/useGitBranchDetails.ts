@@ -204,7 +204,7 @@ printf '__MUX_BRANCH_DATA__BEGIN_DIRTY_FILES__\\n%s\\n__MUX_BRANCH_DATA__END_DIR
       });
 
       if (!result.success) {
-        setErrorMessage(`Branch info unavailable: ${result.error}`);
+        setErrorMessage(`Bookmark info unavailable: ${result.error}`);
         setCommits(null);
         return;
       }
@@ -213,14 +213,14 @@ printf '__MUX_BRANCH_DATA__BEGIN_DIRTY_FILES__\\n%s\\n__MUX_BRANCH_DATA__END_DIR
         const errorMsg = result.data.output
           ? result.data.output.trim()
           : (result.data.error ?? "Unknown error");
-        setErrorMessage(`Branch info unavailable: ${errorMsg}`);
+        setErrorMessage(`Bookmark info unavailable: ${errorMsg}`);
         setCommits(null);
         return;
       }
 
       const parseResult = parseGitBranchScriptOutput(result.data.output ?? "");
       if (!parseResult.success) {
-        setErrorMessage(`Branch info unavailable: ${parseResult.error}`);
+        setErrorMessage(`Bookmark info unavailable: ${parseResult.error}`);
         setBranchHeaders(null);
         setCommits(null);
         setDirtyFiles(null);
@@ -259,7 +259,7 @@ printf '__MUX_BRANCH_DATA__BEGIN_DIRTY_FILES__\\n%s\\n__MUX_BRANCH_DATA__END_DIR
         timestamp: Date.now(),
       };
     } catch (error) {
-      setErrorMessage(`Failed to fetch branch info: ${getErrorMessage(error)}`);
+      setErrorMessage(`Failed to fetch bookmark info: ${getErrorMessage(error)}`);
       setCommits(null);
     } finally {
       setIsLoading(false);

@@ -44,7 +44,7 @@ export function stripTrailingSlashes(inputPath: string): string {
 
 /**
  * Validate that a project path exists and is a directory.
- * Git repository status is checked separately - non-git repos are valid
+ * Repository status is checked separately - non-repository paths are valid
  * but will be restricted to local runtime only.
  * Automatically expands tilde and normalizes the path.
  *

@@ -1321,7 +1321,7 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
       if (!api) throw new Error("API not connected");
       console.assert(
         typeof trunkBranch === "string" && trunkBranch.trim().length > 0,
-        "Expected trunk bookmark to be provided when creating a workspace"
+        "Expected source bookmark to be provided when creating a workspace"
       );
       const result = await api.workspace.create({
         projectPath,

@@ -1071,11 +1071,11 @@ export const workspace = {
       projectPath: z.string(),
       /**
        * Workspace bookmark name. When omitted, the backend auto-generates a name
-       * based on the trunk bookmark (e.g., "main-1", "main-2"), similar to how
+       * based on the source bookmark (e.g., "main-1", "main-2"), similar to how
        * /fork derives a name from the parent workspace.
        */
       branchName: z.string().optional(),
-      /** Trunk bookmark to fork from - only required for worktree/SSH runtimes, ignored for local */
+      /** Source bookmark to fork from - only required for JJ Workspace/SSH runtimes, ignored for local */
       trunkBranch: z.string().optional(),
       /** Human-readable title (e.g., "Fix plan mode over SSH") - optional for backwards compat */
       title: z.string().optional(),
@@ -1814,7 +1814,7 @@ const AgentDiscoveryInputSchema = z
   .object({
     projectPath: z.string().optional(),
     workspaceId: z.string().optional(),
-    /** When true, skip workspace worktree and discover from projectPath (but still use workspace runtime) */
+    /** When true, skip the workspace checkout and discover from projectPath (but still use workspace runtime) */
     disableWorkspaceAgents: z.boolean().optional(),
     /** When true, include agents disabled by front-matter (for Settings UI). */
     includeDisabled: z.boolean().optional(),

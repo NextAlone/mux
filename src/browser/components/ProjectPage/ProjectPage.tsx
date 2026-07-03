@@ -292,7 +292,7 @@ export const ProjectPage: React.FC<ProjectPageProps> = ({
             {/* Main content - vertically centered with reduced gaps */}
             <div className="flex min-h-[50vh] flex-col items-center justify-center px-4 py-6">
               <div className="flex w-full max-w-3xl flex-col gap-4">
-                {/* Git init banner - shown above ChatInput when not a git repo */}
+                {/* JJ init banner - shown above ChatInput when not a jj repo */}
                 {isNonGitRepo && (
                   <GitInitBanner projectPath={projectPath} onSuccess={handleGitInitSuccess} />
                 )}

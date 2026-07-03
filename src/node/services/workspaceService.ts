@@ -264,7 +264,7 @@ import { getErrorMessage } from "@/common/utils/errors";
 const MAX_WORKSPACE_NAME_COLLISION_RETRIES = 3;
 
 /**
- * Base name used when /new auto-generates a branch name. Numbered suffixes
+ * Base name used when /new auto-generates a workspace/bookmark name. Numbered suffixes
  * (`workspace-1`, `workspace-2`, ...) come from {@link generateForkBranchName}
  * so the existing fork-style numbering helpers stay the single source of truth.
  */
@@ -749,7 +749,7 @@ function deriveForkFamilyBaseName(metadata: { name: string; forkFamilyBaseName?:
 }
 
 /**
- * Generate a unique fork branch name from a stable fork family base name.
+ * Generate a unique fork workspace/bookmark name from a stable fork family base name.
  * Scans existing workspace names for both the new `{base}-{N}` pattern and the legacy
  * `{base}-fork-{N}` pattern so numbering continues cleanly across upgrades.
  */
@@ -3081,7 +3081,7 @@ export class WorkspaceService extends EventEmitter {
       );
     }
 
-    // Auto-generate a branch name when the caller omits one (used by /new to
+    // Auto-generate a workspace/bookmark name when the caller omits one (used by /new to
     // mirror /fork's seamless creation flow). Mirrors fork's auto-naming: scan
     // existing workspace names AND local git branches so numbering is stable.
     // Bookmarks/managed checkouts are owned by the parent project, so always read from
@@ -3099,7 +3099,7 @@ export class WorkspaceService extends EventEmitter {
           existingNamesSet.add(localBranch);
         }
       } catch (error) {
-        log.debug("Failed to list local branches for /new auto-name preflight", {
+        log.debug("Failed to list local bookmarks for /new auto-name preflight", {
           projectPath: owningProjectPath,
           error: getErrorMessage(error),
         });
@@ -4071,7 +4071,7 @@ export class WorkspaceService extends EventEmitter {
             configSnapshot.projects.get(stripTrailingSlashes(projectPath))?.trusted ?? false;
           const deleteResult = await runtime.deleteWorkspace(
             projectPath,
-            metadata.name, // use branch name
+            metadata.name, // use workspace/bookmark name
             force,
             undefined, // abortSignal
             trusted
@@ -5719,7 +5719,7 @@ export class WorkspaceService extends EventEmitter {
             workspaceMetadata: hookMetadata,
           });
         if (!restoreResult.success) {
-          log.debug("Failed to restore worktree archive snapshot during unarchive", {
+          log.debug("Failed to restore checkout archive snapshot during unarchive", {
             workspaceId,
             error: restoreResult.error,
           });
@@ -6451,24 +6451,24 @@ export class WorkspaceService extends EventEmitter {
         );
       }
 
-      // Auto-generate branch name (and title) when user omits one (seamless fork).
+      // Auto-generate workspace/bookmark name (and title) when user omits one (seamless fork).
       // Uses pattern: {parentName}-{N} for branch, "{parentTitle} (N)" for title.
       const isAutoName = newName == null;
-      // Fetch all metadata upfront for both branch name and title collision checks.
+      // Fetch all metadata upfront for both workspace/bookmark name and title collision checks.
       const allMetadata = isAutoName ? await this.config.getAllWorkspaceMetadata() : [];
       let resolvedName: string;
       if (isAutoName) {
         const existingNamesSet = new Set(
           allMetadata.filter((m) => m.projectPath === foundProjectPath).map((m) => m.name)
         );
-        // Also include local branch names to avoid silently reusing stale branches that
+        // Also include local bookmark names to avoid silently reusing stale sources that
         // were left behind on disk but no longer exist in config metadata.
         try {
           for (const branchName of await listLocalBranches(foundProjectPath)) {
             existingNamesSet.add(branchName);
           }
         } catch (error) {
-          log.debug("Failed to list local branches for fork auto-name preflight", {
+          log.debug("Failed to list local bookmarks for fork auto-name preflight", {
             projectPath: foundProjectPath,
             error: getErrorMessage(error),
           });
@@ -6657,7 +6657,7 @@ export class WorkspaceService extends EventEmitter {
           }
 
           // Forking from a prior assistant response intentionally discards any later in-flight
-          // state so the new workspace resumes cleanly at the chosen branch point.
+          // state so the new workspace resumes cleanly at the chosen source point.
           await fsPromises.rm(path.join(newSessionDir, "partial.json"), { force: true });
           if (this.sessionTimingService) {
             await this.sessionTimingService.clearTimingFile(newWorkspaceId);

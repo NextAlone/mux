@@ -204,8 +204,8 @@ const buildRuntimeFromChoice = (choice: RuntimeChoice): ParsedRuntime => {
  * Loads saved preferences when projectPath changes, persists all changes automatically
  *
  * @param projectPath - Path to the project (used as key prefix for localStorage)
- * @param branches - Available bookmarks (used to set default trunk bookmark)
- * @param recommendedTrunk - Backend-recommended trunk bookmark
+ * @param branches - Available bookmarks (used to set default source bookmark)
+ * @param recommendedTrunk - Backend-recommended source bookmark
  * @returns Settings object and setters
  */
 export function useDraftWorkspaceSettings(
@@ -295,7 +295,7 @@ export function useDraftWorkspaceSettings(
   const parsedDefault = buildRuntimeFromChoice(settingsDefaultRuntime);
   const defaultRuntimeMode: RuntimeMode = parsedDefault?.mode ?? RUNTIME_MODE.WORKTREE;
 
-  // Project-scoped trunk bookmark preference (persisted per project)
+  // Project-scoped source bookmark preference (persisted per project)
   const [trunkBranch, setTrunkBranch] = usePersistedState<string>(
     getTrunkBranchKey(projectPath),
     "",
@@ -516,7 +516,7 @@ export function useDraftWorkspaceSettings(
     devcontainerShareCredentials: lastDevcontainerShareCredentials,
   };
 
-  // Initialize trunk bookmark from backend recommendation or first bookmark
+  // Initialize source bookmark from backend recommendation or first bookmark
   useEffect(() => {
     if (branches.length > 0 && (!trunkBranch || !branches.includes(trunkBranch))) {
       const defaultBranch = recommendedTrunk ?? branches[0];

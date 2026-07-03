@@ -90,7 +90,7 @@ export class WorktreeManager {
       if (!startPoint && !branchExists && !localBookmarks.includes(trunkBranch)) {
         return {
           success: false,
-          error: `Trunk bookmark "${trunkBranch}" does not exist locally`,
+          error: `Source bookmark "${trunkBranch}" does not exist locally`,
         };
       }
       await createJjWorkspace({
@@ -200,7 +200,7 @@ export class WorktreeManager {
       if (await hasJjWorkspaceChanges(workspacePath)) {
         return {
           success: false,
-          error: "Workspace has uncommitted changes",
+          error: "Workspace has working-copy changes",
         };
       }
     } catch (error) {
@@ -269,7 +269,7 @@ export class WorktreeManager {
     workspaceName: string,
     branchName: string
   ): Promise<void> {
-    // Divergent workspace and branch names rely on this mapping for safe stale-worktree
+    // Divergent workspace and source names rely on this mapping for safe stale-checkout
     // cleanup, so callers must see persistence failures instead of silently proceeding.
     const branchMap = await this.readWorkspaceBranchMap(projectPath);
     branchMap[workspaceName] = branchName;
@@ -282,7 +282,7 @@ export class WorktreeManager {
     newWorkspaceName: string,
     branchName: string | null
   ): Promise<void> {
-    // Rename can leave the branch name different from the workspace directory, so keep the
+    // Rename can leave the source name different from the workspace directory, so keep the
     // mapping update on the main control path rather than silently ignoring write failures.
     const branchMap = await this.readWorkspaceBranchMap(projectPath);
     const resolvedBranchName = branchName?.trim() ?? branchMap[oldWorkspaceName]?.trim();
@@ -313,7 +313,7 @@ export class WorktreeManager {
       delete branchMap[workspaceName];
       await this.writeWorkspaceBranchMap(projectPath, branchMap);
     } catch (error) {
-      log.debug("Failed to delete workspace branch mapping", {
+      log.debug("Failed to delete workspace source mapping", {
         projectPath,
         workspaceName,
         error: getErrorMessage(error),

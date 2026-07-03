@@ -206,7 +206,7 @@ export const WorkspaceMetadataSchema = z.object({
   }),
   taskTrunkBranch: z.string().optional().meta({
     description:
-      "Trunk bookmark used to create/init this agent task workspace (used for restart-safe init on queued tasks).",
+      "Source bookmark used to create/init this agent task workspace (used for restart-safe init on queued tasks).",
   }),
   archivedAt: z.string().optional().meta({
     description:
@@ -308,21 +308,21 @@ export const PostCompactionStateSchema = z.object({
 export const GitStatusSchema = z.object({
   /** Current bookmark name (empty string if no active bookmark or not a jj repo) */
   branch: z.string(),
-  /** Commit divergence relative to the remote trunk bookmark */
+  /** Commit divergence relative to the remote source bookmark */
   ahead: z.number(),
   behind: z.number(),
-  dirty: z.boolean().meta({ description: "Whether there are uncommitted working-copy changes" }),
+  dirty: z.boolean().meta({ description: "Whether there are working-copy changes" }),
 
   /**
    * Line deltas for changes unique to this workspace.
-   * Computed vs the merge-base with the remote trunk bookmark.
+   * Computed vs the merge-base with the remote source bookmark.
    *
-   * Note: outgoing includes committed changes + uncommitted working-copy changes.
+   * Note: outgoing includes committed changes + working-copy changes.
    */
   outgoingAdditions: z.number(),
   outgoingDeletions: z.number(),
 
-  /** Line deltas for changes that exist on the remote trunk bookmark but not locally */
+  /** Line deltas for changes that exist on the remote source bookmark but not locally */
   incomingAdditions: z.number(),
   incomingDeletions: z.number(),
 });
