@@ -1,5 +1,5 @@
 import { useRef, useEffect, useState, useCallback, useLayoutEffect } from "react";
-import { init, Terminal, FitAddon } from "ghostty-web";
+import { init, Terminal, FitAddon, type ITheme } from "ghostty-web";
 import { useAPI } from "@/browser/contexts/API";
 import { usePersistedState } from "@/browser/hooks/usePersistedState";
 import {
@@ -77,6 +77,27 @@ function resolveTerminalFontFamily(fontFamily: string, fontSize: number): string
 
 const TERMINAL_FONT_LOAD_TEST_STRING = "abcdefghijklmnopqrstuvwxyz0123456789";
 const TERMINAL_ICON_LOAD_TEST_STRING = String.fromCodePoint(0xf024b);
+const AYU_LIGHT_TERMINAL_THEME = {
+  background: "#fafafa",
+  foreground: "#5c6773",
+  cursor: "#ff9940",
+  black: "#000000",
+  red: "#f07178",
+  green: "#86b300",
+  yellow: "#f2ae49",
+  blue: "#55b4d4",
+  magenta: "#a37acc",
+  cyan: "#4cbf99",
+  white: "#ffffff",
+  brightBlack: "#828c99",
+  brightRed: "#f07178",
+  brightGreen: "#86b300",
+  brightYellow: "#f2ae49",
+  brightBlue: "#55b4d4",
+  brightMagenta: "#a37acc",
+  brightCyan: "#4cbf99",
+  brightWhite: "#ffffff",
+} satisfies ITheme;
 
 async function preloadTerminalWebfonts(
   resolvedFontFamily: string,
@@ -434,7 +455,9 @@ export function TerminalView({
 
         // Resolve CSS variables for xterm.js (canvas rendering doesn't support CSS vars)
         const styles = getComputedStyle(document.documentElement);
-        const terminalBg = styles.getPropertyValue("--color-terminal-bg").trim() || "#1e1e1e";
+        const terminalBg =
+          styles.getPropertyValue("--color-terminal-bg").trim() ||
+          AYU_LIGHT_TERMINAL_THEME.background;
 
         const resolvedFontFamily = resolveTerminalFontFamily(
           terminalFontConfig.fontFamily,
@@ -446,7 +469,9 @@ export function TerminalView({
         if (cancelled) {
           return;
         }
-        const terminalFg = styles.getPropertyValue("--color-terminal-fg").trim() || "#d4d4d4";
+        const terminalFg =
+          styles.getPropertyValue("--color-terminal-fg").trim() ||
+          AYU_LIGHT_TERMINAL_THEME.foreground;
 
         terminal = new Terminal({
           fontSize: terminalFontConfig.fontSize,
@@ -454,6 +479,7 @@ export function TerminalView({
           // Start with no blinking - we enable it on focus
           cursorBlink: false,
           theme: {
+            ...AYU_LIGHT_TERMINAL_THEME,
             background: terminalBg,
             foreground: terminalFg,
           },

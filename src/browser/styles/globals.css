@@ -289,8 +289,8 @@
     --color-syntax-error: hsl(355 65% 65%); /* #e06c75 - One Dark error red */
 
     /* Terminal */
-    --color-terminal-bg: hsl(0 0% 12%); /* #1e1e1e */
-    --color-terminal-fg: hsl(0 0% 83%); /* #d4d4d4 */
+    --color-terminal-bg: #fafafa; /* Ayu Light background */
+    --color-terminal-fg: #5c6773; /* Ayu Light foreground */
 
     /* Info (blue accent for in-progress states) */
     --color-info: hsl(207 90% 54%); /* #2196f3 */
@@ -1018,8 +1018,8 @@
   --color-code-type: #3aa99f;
   --color-code-keyword: #4385be;
 
-  --color-terminal-bg: #100f0f;
-  --color-terminal-fg: #cecdc3;
+  --color-terminal-bg: #fafafa;
+  --color-terminal-fg: #5c6773;
 
   --color-toast-success-bg: color-mix(in srgb, var(--color-accent) 13%, var(--color-background) 87%);
   --color-toast-success-text: color-mix(in srgb, var(--color-accent), white 22%);
@@ -2615,4 +2615,3 @@ input[type="checkbox"] {
 .titlebar-safe-left-gutter-4 { --titlebar-safe-left-gutter: 1rem; }      /* px-4 */
 .titlebar-safe-right-gutter-3 { --titlebar-safe-right-gutter: 0.75rem; } /* px-3 */
 .titlebar-safe-right-gutter-2 { --titlebar-safe-right-gutter: 0.5rem; }  /* px-2 */
-

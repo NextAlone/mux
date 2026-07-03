@@ -14,10 +14,7 @@ interface MockTerminalOptions {
   fontSize: number;
   fontFamily: string;
   cursorBlink: boolean;
-  theme: {
-    background: string;
-    foreground: string;
-  };
+  theme: Record<string, string>;
 }
 
 interface MockRouter {
@@ -203,5 +200,37 @@ describe("TerminalView", () => {
     expect(firstOnExit).toHaveBeenCalledTimes(0);
     expect(secondOnExit).toHaveBeenCalledTimes(1);
     expect(secondOnExit.mock.calls[0]?.[0]).toBe(7);
+  });
+
+  test("initializes the terminal with Ayu Light colors", async () => {
+    const onExit = mock((_exitCode: number) => undefined);
+
+    renderTerminal(onExit);
+
+    await waitFor(() => {
+      expect(terminalInstances[0]).toBeDefined();
+    });
+
+    expect(terminalInstances[0]?.options.theme).toMatchObject({
+      background: "#fafafa",
+      foreground: "#5c6773",
+      cursor: "#ff9940",
+      black: "#000000",
+      red: "#f07178",
+      green: "#86b300",
+      yellow: "#f2ae49",
+      blue: "#55b4d4",
+      magenta: "#a37acc",
+      cyan: "#4cbf99",
+      white: "#ffffff",
+      brightBlack: "#828c99",
+      brightRed: "#f07178",
+      brightGreen: "#86b300",
+      brightYellow: "#f2ae49",
+      brightBlue: "#55b4d4",
+      brightMagenta: "#a37acc",
+      brightCyan: "#4cbf99",
+      brightWhite: "#ffffff",
+    });
   });
 });
