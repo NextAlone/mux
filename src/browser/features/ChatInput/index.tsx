@@ -97,7 +97,6 @@ import {
 } from "@/browser/utils/slashCommands/suggestions";
 import { resolveSlashCommandExperimentValue } from "@/browser/utils/slashCommands/experimentVisibility";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/browser/components/Tooltip/Tooltip";
-import { Switch } from "@/browser/components/Switch/Switch";
 import { AgentModePicker } from "@/browser/components/AgentModePicker/AgentModePicker";
 import { ContextUsageIndicatorButton } from "@/browser/components/ContextUsageIndicatorButton/ContextUsageIndicatorButton";
 import {
@@ -134,7 +133,7 @@ import {
   type ModelSelectorRef,
 } from "@/browser/components/ModelSelector/ModelSelector";
 import { useModelsFromSettings } from "@/browser/hooks/useModelsFromSettings";
-import { SendHorizontal } from "lucide-react";
+import { SendHorizontal, Zap } from "lucide-react";
 import { AttachFileButton } from "./AttachFileButton";
 import { VimTextArea } from "@/browser/components/VimTextArea/VimTextArea";
 import { ChatAttachments, type ChatAttachment } from "@/browser/features/ChatInput/ChatAttachments";
@@ -278,17 +277,29 @@ const OpenAIFastModeToggle: React.FC<OpenAIFastModeToggleProps> = (props) => {
   const checked = isOpenAIFastServiceTier(props.serviceTier);
 
   return (
-    <div className="text-muted hover:bg-hover hover:text-foreground hover:border-border-light flex h-7 shrink-0 items-center gap-1 rounded-sm border border-transparent bg-transparent px-1.5 transition-colors duration-150">
-      <span className="text-[11px] leading-none font-medium">Fast</span>
-      <Switch
-        checked={checked}
-        onCheckedChange={props.onCheckedChange}
-        disabled={props.disabled}
-        size="sm"
-        aria-label="Toggle OpenAI fast mode"
-        tooltip="Send service_tier=priority for OpenAI fast mode"
-      />
-    </div>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        {/* Keep Fast icon-only so it matches the compact footer toolbar controls. */}
+        <button
+          type="button"
+          onClick={() => props.onCheckedChange(!checked)}
+          disabled={props.disabled}
+          aria-pressed={checked}
+          aria-label="Toggle OpenAI fast mode"
+          className={cn(
+            "hover:bg-hover hover:border-border-light inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-sm border border-transparent bg-transparent transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-50",
+            checked ? "text-accent" : "text-muted/50 hover:text-muted"
+          )}
+        >
+          <Zap className="h-4 w-4" strokeWidth={1.8} />
+        </button>
+      </TooltipTrigger>
+      <TooltipContent>
+        <strong>OpenAI fast mode</strong>
+        <br />
+        {checked ? "On" : "Off"} - sends service_tier=priority
+      </TooltipContent>
+    </Tooltip>
   );
 };
 

@@ -21,8 +21,7 @@ const clampPercent = (value: number) => Math.max(0, Math.min(100, value));
 
 const ContextUsageRing: React.FC<{
   data: TokenMeterData;
-  autoCompactionThreshold?: number;
-}> = ({ data, autoCompactionThreshold }) => {
+}> = ({ data }) => {
   let consumedPercent = 0;
   const ringSegments = data.segments
     .map((segment) => {
@@ -75,18 +74,6 @@ const ContextUsageRing: React.FC<{
             />
           );
         })}
-        {autoCompactionThreshold != null && autoCompactionThreshold < 100 && (
-          <line
-            x1={CONTEXT_RING_SIZE / 2}
-            y1={1.25}
-            x2={CONTEXT_RING_SIZE / 2}
-            y2={3.25}
-            stroke="var(--color-plan-mode)"
-            strokeWidth={1.25}
-            strokeLinecap="round"
-            transform={`rotate(${clampPercent(autoCompactionThreshold) * 3.6} ${CONTEXT_RING_SIZE / 2} ${CONTEXT_RING_SIZE / 2})`}
-          />
-        )}
       </g>
     </svg>
   );
@@ -256,7 +243,6 @@ export const ContextUsageIndicatorButton: React.FC<ContextUsageIndicatorButtonPr
   idleCompaction,
   model,
 }) => {
-  const isAutoCompactionEnabled = autoCompaction && autoCompaction.threshold < 100;
   const idleHours = idleCompaction?.hours;
   const isIdleCompactionEnabled = idleHours !== null && idleHours !== undefined;
 
@@ -307,12 +293,7 @@ export const ContextUsageIndicatorButton: React.FC<ContextUsageIndicatorButtonPr
               type="button"
             >
               {/* The chat footer uses a low-chrome toolbar; a ring keeps context state visible without adding another wide pill. */}
-              <ContextUsageRing
-                data={data}
-                autoCompactionThreshold={
-                  isAutoCompactionEnabled ? autoCompaction.threshold : undefined
-                }
-              />
+              <ContextUsageRing data={data} />
               {isIdleCompactionEnabled && (
                 <span className="bg-background border-border-light absolute -right-0.5 -bottom-0.5 flex h-3 w-3 items-center justify-center rounded-full border">
                   <Hourglass className="text-muted h-2 w-2" />
