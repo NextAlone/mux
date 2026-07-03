@@ -3,7 +3,7 @@ import * as fs from "node:fs/promises";
 import * as path from "node:path";
 
 /**
- * Discovers git repository roots within a workspace path.
+ * Discovers repository roots within a workspace path.
  *
  * For single-project workspaces (workspace itself has .git), returns [workspacePath].
  * For multi-project workspaces (children have .git), returns each child path.
@@ -40,7 +40,7 @@ export async function discoverGitRoots(workspacePath: string): Promise<string[]>
       await fs.access(path.join(workspacePath, ".git"));
       roots.push(workspacePath);
     } catch {
-      // Workspace is not a git repository.
+      // Workspace is not a repository.
     }
   }
 

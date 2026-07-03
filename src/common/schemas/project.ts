@@ -31,7 +31,7 @@ export const WorktreeArchiveSnapshotProjectSchema = z.object({
     .meta({ description: "Workspace bookmark name captured for this project." }),
   trunkBranch: z
     .string()
-    .meta({ description: "Trunk bookmark used to compute the restore fallback." }),
+    .meta({ description: "Source bookmark used to compute the restore fallback." }),
   baseSha: z.string().meta({ description: "Legacy restore base revision." }),
   headSha: z.string().meta({ description: "Legacy head revision captured at archive time." }),
   committedPatchPath: z.string().optional().meta({
@@ -184,7 +184,7 @@ export const WorkspaceConfigSchema = z.object({
   }),
   taskTrunkBranch: z.string().optional().meta({
     description:
-      "Trunk bookmark used to create/init this agent task workspace (used for restart-safe init on queued tasks).",
+      "Source bookmark used to create/init this agent task workspace (used for restart-safe init on queued tasks).",
   }),
   taskIsolation: z
     .enum(["fork", "none"])

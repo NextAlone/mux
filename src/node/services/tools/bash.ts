@@ -859,7 +859,7 @@ export function buildBashToolDescription(cwd: string, projects: ProjectRef[]): s
       `${baseDesc}\n` +
       `Runs in ${cwd} — a multi-project workspace containing:\n` +
       `${projectList}\n` +
-      "Each subdirectory is an independent git repo. " +
+      "Each subdirectory is an independent repository. " +
       "Use cd or path prefixes to work in a specific project."
     );
   }

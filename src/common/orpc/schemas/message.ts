@@ -186,6 +186,6 @@ export const MuxMessageSchema = z.object({
 
 export const BranchListResultSchema = z.object({
   branches: z.array(z.string()),
-  /** Recommended trunk bookmark, or null for non-jj directories */
+  /** Recommended source bookmark, or null for non-jj directories */
   recommendedTrunk: z.string().nullable(),
 });

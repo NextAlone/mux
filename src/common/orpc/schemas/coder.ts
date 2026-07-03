@@ -4,7 +4,7 @@ import { z } from "zod";
 export const CoderWorkspaceConfigSchema = z.object({
   /**
    * Coder workspace name.
-   * - For new workspaces: omit or undefined (backend derives from mux branch name)
+   * - For new workspaces: omit or undefined (backend derives from mux workspace name)
    * - For existing workspaces: required (the selected Coder workspace name)
    * - After creation: populated with the actual Coder workspace name for reference
    */

@@ -769,8 +769,8 @@ export class GitStatusStore {
 
   /**
    * Get a unique fetch key for a workspace.
-   * For local workspaces: project name (shared git repo)
-   * For SSH workspaces: workspace ID (each has its own git repo)
+   * For local workspaces: project name (shared repository)
+   * For SSH workspaces: workspace ID (each has its own repository)
    */
   private getFetchKey(metadata: FrontendWorkspaceMetadata): string {
     const isSSH = isSSHRuntime(metadata.runtimeConfig);

@@ -116,7 +116,7 @@ export class WorktreeArchiveSnapshotService {
 
     const workspaceName = getPersistedWorkspaceName(workspaceEntry.workspace);
     if (!workspaceName) {
-      return Err("Workspace is missing its persisted branch name");
+      return Err("Workspace is missing its persisted source name");
     }
 
     const projectRepos = getWorkspaceProjectRepos({
@@ -179,7 +179,7 @@ export class WorktreeArchiveSnapshotService {
 
     const workspaceName = getPersistedWorkspaceName(workspaceEntry.workspace);
     if (!workspaceName) {
-      return Err("Workspace is missing its persisted branch name");
+      return Err("Workspace is missing its persisted source name");
     }
 
     const projectRepos = getWorkspaceProjectRepos({
@@ -256,7 +256,7 @@ export class WorktreeArchiveSnapshotService {
 
     const workspaceName = getPersistedWorkspaceName(workspaceEntry.workspace);
     if (!workspaceName) {
-      return Err("Workspace is missing its persisted branch name");
+      return Err("Workspace is missing its persisted source name");
     }
 
     const sessionDir = this.config.getSessionDir(args.workspaceId);
@@ -454,7 +454,7 @@ export class WorktreeArchiveSnapshotService {
     const persistedWorkspacePath = workspaceEntry.workspace.path;
     const workspaceName = getPersistedWorkspaceName(workspaceEntry.workspace);
     if (!workspaceName) {
-      return Err("Workspace is missing its persisted branch name");
+      return Err("Workspace is missing its persisted source name");
     }
 
     const createdWorkspaces: CreatedRestoreWorkspace[] = [];
@@ -495,7 +495,7 @@ export class WorktreeArchiveSnapshotService {
         ]);
         if (branchRefSha && branchRefSha !== projectSnapshot.headSha) {
           throw new Error(
-            `Refusing to restore ${projectSnapshot.projectName}: local branch ${restoreBranchName} no longer matches the archived snapshot.`
+            `Refusing to restore ${projectSnapshot.projectName}: local source ${restoreBranchName} no longer matches the archived snapshot.`
           );
         }
 
@@ -618,7 +618,7 @@ export class WorktreeArchiveSnapshotService {
       await this.clearSnapshotState(args.workspaceId, snapshot);
       return Ok("restored");
     } catch (error) {
-      log.debug("Failed to restore worktree archive snapshot", {
+      log.debug("Failed to restore checkout archive snapshot", {
         workspaceId: args.workspaceId,
         error: getErrorMessage(error),
       });
@@ -632,7 +632,7 @@ export class WorktreeArchiveSnapshotService {
         return Err(`Failed to restore archive snapshot: ${getErrorMessage(error)}`);
       }
 
-      log.debug("Keeping restored worktree despite snapshot cleanup/writeback failure", {
+      log.debug("Keeping restored checkout despite snapshot cleanup/writeback failure", {
         workspaceId: args.workspaceId,
         error: getErrorMessage(error),
       });
@@ -975,7 +975,7 @@ export class WorktreeArchiveSnapshotService {
           createdWorkspace.workspacePath
         );
       } catch (error) {
-        log.debug("Failed to clean up partially restored worktree snapshot", {
+        log.debug("Failed to clean up partially restored checkout snapshot", {
           projectPath: createdWorkspace.projectPath,
           workspacePath: createdWorkspace.workspacePath,
           error: getErrorMessage(error),

@@ -1124,7 +1124,7 @@ export class ProjectService {
 
   async listBranches(projectPath: string): Promise<BranchListResult> {
     if (typeof projectPath !== "string" || projectPath.trim().length === 0) {
-      throw new Error("Project path is required to list branches");
+      throw new Error("Project path is required to list bookmarks");
     }
     try {
       const validation = await validateProjectPath(projectPath);
@@ -1151,7 +1151,7 @@ export class ProjectService {
       const recommendedTrunk = await detectDefaultTrunkBranch(normalizedPath, branches);
       return { branches, recommendedTrunk };
     } catch (error) {
-      log.error("Failed to list branches:", error);
+      log.error("Failed to list bookmarks:", error);
       throw error instanceof Error ? error : new Error(String(error));
     }
   }
@@ -1355,7 +1355,7 @@ export class ProjectService {
   /**
    * Re-home a workspace into a sub-project (or back to the parent with null).
    * This intentionally changes only the cwd/prompt context pointer; the parent
-   * project keeps owning the checkout and branch because sub-projects share one git repo.
+   * project keeps owning the checkout and source bookmark because sub-projects share one repository.
    */
   async assignWorkspaceToSubProject(
     projectPath: string,

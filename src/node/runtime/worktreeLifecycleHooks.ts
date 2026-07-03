@@ -35,7 +35,7 @@ export function createWorktreeArchiveHook(options: {
       Array.isArray(workspaceMetadata.projects) &&
       workspaceMetadata.projects.length > 1
     ) {
-      log.debug("Skipping snapshot worktree cleanup for multi-project archive", {
+      log.debug("Skipping snapshot checkout cleanup for multi-project archive", {
         workspaceId: workspaceMetadata.id,
       });
       return Ok(undefined);

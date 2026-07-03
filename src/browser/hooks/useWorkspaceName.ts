@@ -109,7 +109,7 @@ const DEFAULT_PERSISTED_STATE: WorkspaceNamePersistedState = {
  * Used by DraftAgentListItem to show the title in the sidebar without
  * duplicating knowledge of the persisted state structure.
  *
- * For auto-generated identities, prefers title (human-readable) over name (git-safe branch name).
+ * For auto-generated identities, prefers title (human-readable) over name (repository-safe workspace name).
  * This matches how real workspaces display: metadata.title ?? metadata.name.
  */
 export function getDisplayTitleFromPersistedState(state: unknown): string {

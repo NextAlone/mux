@@ -9,7 +9,7 @@ const SKIPPED_METADATA_DIRS = new Set([".git", ".jj"]);
 /**
  * Parse .muxignore and return negation patterns (without the ! prefix).
  * Only !-prefixed lines are actionable — they identify gitignored files
- * that should be copied into worktree workspaces.
+ * that should be copied into JJ Workspace checkouts.
  */
 export function parseMuxignorePatterns(content: string): string[] {
   return content

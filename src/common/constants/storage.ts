@@ -293,7 +293,7 @@ export function getPinnedAgentIdKey(scopeId: string): string {
 /**
  * Get the localStorage key for "disable workspace agents" toggle per scope.
  * When true, workspace-specific agents are disabled - only built-in and global agents are loaded.
- * Useful for "unbricking" when iterating on agent files in a workspace worktree.
+ * Useful for "unbricking" when iterating on agent files in a workspace checkout.
  * Format: "disableWorkspaceAgents:{scopeId}"
  */
 export function getDisableWorkspaceAgentsKey(scopeId: string): string {
@@ -309,8 +309,8 @@ export function getRuntimeKey(projectPath: string): string {
 }
 
 /**
- * Get the localStorage key for trunk bookmark preference for a project
- * Stores the last used trunk bookmark when creating a workspace
+ * Get the localStorage key for source bookmark preference for a project
+ * Stores the last used source bookmark when creating a workspace
  * Format: "trunkBranch:{projectPath}"
  */
 export function getTrunkBranchKey(projectPath: string): string {

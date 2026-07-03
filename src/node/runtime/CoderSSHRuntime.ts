@@ -441,7 +441,7 @@ export class CoderSSHRuntime extends SSHRuntime {
 
   /**
    * Finalize runtime config after collision handling.
-   * Derives Coder workspace name from branch name and computes SSH host.
+   * Derives Coder workspace name from mux workspace name and computes SSH host.
    */
   async finalizeConfig(
     finalBranchName: string,

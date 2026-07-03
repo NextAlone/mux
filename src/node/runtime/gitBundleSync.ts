@@ -160,8 +160,8 @@ export async function syncProjectViaGitBundle(params: GitBundleSyncParams): Prom
       throw new Error(`Failed to clone repository: ${cloneStderr || cloneStdout}`);
     }
 
-    // Create local tracking branches.
-    initLogger.logStep("Creating local tracking branches...");
+    // Create local tracking refs.
+    initLogger.logStep("Preparing local tracking refs...");
     const trackingStream = await exec(TRACKING_BRANCHES_COMMAND, {
       cwd: workspacePath,
       timeout: 30,

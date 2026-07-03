@@ -1506,7 +1506,7 @@ export class Config {
 
   /**
    * Get the workspace directory path for a given directory name.
-   * The directory name is the workspace name (branch name).
+   * The directory name is the workspace name.
    */
 
   /**
@@ -1530,7 +1530,7 @@ export class Config {
         "Please upgrade mux to use this workspace.";
     }
 
-    // Mark worktree workspaces with missing checkout directories as transcript-only.
+    // Mark JJ Workspace checkouts with missing directories as transcript-only.
     // Queued/starting agent tasks can briefly exist without a provisioned checkout, so keep
     // those workspaces interactive until the checkout is created.
     const workspacePathExists = await fs.promises
@@ -1635,7 +1635,7 @@ export class Config {
    * Workspace paths are computed on-demand from projectPath + workspace name using
    * config.getWorkspacePath(projectPath, directoryName). This ensures a single source of truth.
    *
-   * - Worktree directory name: uses workspace.name (the branch name)
+   * - Workspace directory name: uses workspace.name
    * - Workspace ID: stable random identifier for identity and sessions (not used for directories)
    *
    * Backend: Uses getWorkspacePath(metadata.projectPath, metadata.name) for workspace directory paths

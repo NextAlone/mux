@@ -27,19 +27,19 @@ import type { Result } from "@/common/types/result";
  *   - projectName: basename(projectPath)
  *     Example: "/Users/me/git/my-project" → "my-project"
  *
- *   - workspaceName: branch name or custom name
+ *   - workspaceName: source bookmark or custom name
  *     Example: "feature-123" or "main"
  *
  * Full Example (Local):
  *   srcBaseDir:    ~/.mux/src (expanded to /home/user/.mux/src)
- *   projectPath:   /Users/me/git/my-project (local git repo)
+ *   projectPath:   /Users/me/src/my-project (local repository)
  *   projectName:   my-project (extracted)
  *   workspaceName: feature-123
  *   → Workspace:   /home/user/.mux/src/my-project/feature-123
  *
  * Full Example (SSH):
  *   srcBaseDir:    /home/user/workspace (absolute path required)
- *   projectPath:   /Users/me/git/my-project (local git repo)
+ *   projectPath:   /Users/me/src/my-project (local repository)
  *   projectName:   my-project (extracted)
  *   workspaceName: feature-123
  *   → Workspace:   /home/user/workspace/my-project/feature-123
@@ -149,7 +149,7 @@ export interface FileStat {
  * Used to report progress during workspace creation and init hook execution.
  */
 export interface InitLogger {
-  /** Log a creation step (e.g., "Creating worktree", "Syncing files") */
+  /** Log a creation step (e.g., "Creating workspace", "Syncing files") */
   logStep(message: string): void;
   /** Log stdout line from init hook */
   logStdout(line: string): void;
@@ -171,7 +171,7 @@ export interface WorkspaceCreationParams {
   branchName: string;
   /** Source bookmark to base new work on */
   trunkBranch: string;
-  /** Directory name to use for workspace (typically branch name) */
+  /** Directory name to use for workspace (typically workspace name) */
   directoryName: string;
   /** Optional explicit start point (commit/branch/ref) for the checkout branch. */
   startPoint?: string;
@@ -557,16 +557,16 @@ export interface Runtime {
   /**
    * Delete workspace directory
    * - WorktreeRuntime: Forgets/removes a jj workspace checkout
-   * - SSHRuntime: Checks for uncommitted changes unless force is true, then uses rm -rf
+   * - SSHRuntime: Checks for working-copy changes unless force is true, then uses rm -rf
    * Runtime computes workspace path internally from workdir + projectPath + workspaceName.
    *
    * **CRITICAL: Implementations must NEVER auto-apply --force or skip dirty checks without explicit force=true.**
-   * If workspace has uncommitted changes and force=false, implementations MUST return error.
+   * If workspace has working-copy changes and force=false, implementations MUST return error.
    * The force flag is the user's explicit intent - implementations must not override it.
    *
    * @param projectPath Project root path (local path, used to extract project name)
    * @param workspaceName Workspace name to delete
-   * @param force If true, force deletion even with uncommitted changes or special conditions (submodules, etc.)
+   * @param force If true, force deletion even with working-copy changes or special conditions (submodules, etc.)
    * @param abortSignal Optional abort signal for cancellation
    * @returns Promise resolving to Result with deleted path on success, or error message
    */

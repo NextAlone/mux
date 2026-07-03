@@ -891,7 +891,7 @@ export const ReviewPanel: React.FC<ReviewPanelProps> = ({
   const workspaceDiffBaseKey = STORAGE_KEYS.reviewDiffBase(workspaceId);
 
   // Per-project default base (shared across workspaces in the same project).
-  // Falls back to a static value only if trunk detection fails.
+  // Falls back to a static value only if source bookmark detection fails.
   const [defaultBase, setDefaultBase] = usePersistedState<string>(
     projectDefaultBaseKey,
     WORKSPACE_DEFAULTS.reviewBase,
@@ -924,7 +924,7 @@ export const ReviewPanel: React.FC<ReviewPanelProps> = ({
   // don't start on the hard-coded fallback. Existing jj selections are preserved.
   //
   // IMPORTANT: workspace task source metadata may represent a fork source bookmark, not
-  // the repository's canonical trunk. So we only apply metadata source to the workspace-
+  // the repository's canonical source. So we only apply metadata source to the workspace-
   // scoped diff base, while the project default comes from listBranches().recommendedTrunk.
   useEffect(() => {
     const persistedProjectBase = readPersistedString(projectDefaultBaseKey);
@@ -966,7 +966,7 @@ export const ReviewPanel: React.FC<ReviewPanelProps> = ({
         }
         if (!detectedBase) {
           // Persist fallback once so repeated metadata updates don't keep re-trying
-          // trunk detection for repos that currently have no usable recommended trunk.
+          // source bookmark detection for repos with no usable recommended source.
           if (
             readPersistedString(projectDefaultBaseKey) === undefined ||
             isLegacyGitDiffBase(readPersistedString(projectDefaultBaseKey))
@@ -1211,7 +1211,7 @@ export const ReviewPanel: React.FC<ReviewPanelProps> = ({
 
   const handleDiffBaseInteraction = useCallback(
     (value: string) => {
-      // Persist immediately so async trunk detection can observe explicit selections,
+      // Persist immediately so async source bookmark detection can observe explicit selections,
       // even when the selected value matches the current fallback base.
       setDiffBase(value);
     },

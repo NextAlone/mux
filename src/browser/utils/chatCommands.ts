@@ -1387,7 +1387,7 @@ export interface CreateWorkspaceOptions {
   client: RouterClient<AppRouter>;
   projectPath: string;
   /**
-   * Workspace branch name. When omitted, the backend auto-generates one
+   * Workspace/bookmark name. When omitted, the backend auto-generates one
    * (e.g., "workspace-1", "workspace-2") so /new can mirror /fork's
    * seamless creation flow.
    */
@@ -1418,7 +1418,7 @@ export interface CreateWorkspaceResult {
 export async function createNewWorkspace(
   options: CreateWorkspaceOptions
 ): Promise<CreateWorkspaceResult> {
-  // Get recommended trunk if not provided
+  // Get recommended source bookmark if not provided
   let effectiveTrunk = options.trunkBranch;
   if (!effectiveTrunk) {
     const { recommendedTrunk } = await options.client.projects.listBranches({
@@ -1663,7 +1663,7 @@ export interface CommandHandlerResult {
  * Handle /new command execution.
  *
  * Mirrors /fork's seamless flow: no modal, no required workspace name. The
- * backend auto-generates a branch name, and when a start message is supplied
+ * backend auto-generates a workspace/bookmark name, and when a start message is supplied
  * we ask it to fill in the workspace title from that message via
  * `pendingAutoTitle`.
  */

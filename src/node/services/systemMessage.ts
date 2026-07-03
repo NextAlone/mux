@@ -384,8 +384,8 @@ async function readSingleProjectContextInstructions(
 ): Promise<InstructionSet[]> {
   // Read parent + sub-project AGENTS.md from the workspace's *own* checkout
   // (via the runtime). For worktree/SSH/Docker flows the parent project's host
-  // path is a different checkout than the workspace branch — mixing the two
-  // would inject contradictory or stale guidance and prevent workspace-branch
+  // path is a different checkout than the workspace source — mixing the two
+  // would inject contradictory or stale guidance and prevent workspace-local
   // edits from overriding parent guidance. The workspace root is by
   // construction the parent project's checkout, and any registered
   // sub-project's relative path is stable across checkouts of the same repo.

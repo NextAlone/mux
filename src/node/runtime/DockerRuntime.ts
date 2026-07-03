@@ -952,7 +952,7 @@ export class DockerRuntime extends RemoteRuntime {
             await stopIfWeStartedIt();
             return {
               success: false,
-              error: "Workspace contains uncommitted changes. Use force flag to delete anyway.",
+              error: "Workspace contains working-copy changes. Use force flag to delete anyway.",
             };
           }
 

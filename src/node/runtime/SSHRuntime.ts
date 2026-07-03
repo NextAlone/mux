@@ -2943,7 +2943,7 @@ export class SSHRuntime extends RemoteRuntime {
           initLogger.logStep(`Branch "${trunkBranch}" not found on origin; using local state.`);
         } else {
           initLogger.logStderr(
-            `Note: Could not fetch from origin (${fetchStderr}), using local branch state`
+            `Note: Could not fetch from origin (${fetchStderr}), using local source state`
           );
         }
         return false;
@@ -2954,7 +2954,7 @@ export class SSHRuntime extends RemoteRuntime {
     } catch (error) {
       const errorMsg = getErrorMessage(error);
       initLogger.logStderr(
-        `Note: Could not fetch from origin (${errorMsg}), using local branch state`
+        `Note: Could not fetch from origin (${errorMsg}), using local source state`
       );
       return false;
     }
@@ -3028,7 +3028,7 @@ export class SSHRuntime extends RemoteRuntime {
       if (mergeExitCode !== 0) {
         // Fast-forward not possible (diverged branches) - just warn
         initLogger.logStderr(
-          `Note: Fast-forward skipped (${mergeStderr || "branches diverged"}), using local branch state`
+          `Note: Fast-forward skipped (${mergeStderr || "refs diverged"}), using local source state`
         );
       } else {
         initLogger.logStep("Fast-forwarded to latest origin successfully");
@@ -3036,7 +3036,7 @@ export class SSHRuntime extends RemoteRuntime {
     } catch (error) {
       // Non-fatal: log and continue
       const errorMsg = getErrorMessage(error);
-      initLogger.logStderr(`Note: Fast-forward failed (${errorMsg}), using local branch state`);
+      initLogger.logStderr(`Note: Fast-forward failed (${errorMsg}), using local source state`);
     }
   }
 
@@ -3149,7 +3149,7 @@ export class SSHRuntime extends RemoteRuntime {
       if (checkExitCode === 1) {
         return {
           success: false,
-          error: "Workspace contains uncommitted changes. Use force flag to delete anyway.",
+          error: "Workspace contains working-copy changes. Use force flag to delete anyway.",
         };
       }
 

@@ -664,7 +664,7 @@ export class GitPatchArtifactService {
                 projectName: projectRepo.projectName,
                 storageKey: projectRepo.storageKey,
                 status: "failed",
-                error: "Task base change missing and could not determine trunk bookmark fallback.",
+                error: "Task base change missing and could not determine source bookmark fallback.",
               });
               continue;
             }

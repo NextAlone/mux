@@ -1,7 +1,7 @@
 import type { RuntimeConfig } from "@/common/types/runtime";
 
 /**
- * Default runtime configuration for worktree workspaces.
+ * Default runtime configuration for JJ Workspace checkouts.
  * Uses jj workspaces for workspace isolation.
  * Used when no runtime config is specified.
  */
