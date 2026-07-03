@@ -425,6 +425,62 @@ test("selected-workspace revision actions create from current jj changes", async
   });
 });
 
+test("selected-workspace local revision action reuses the current checkout", async () => {
+  await withTestWindow(async () => {
+    const create = mock(() =>
+      Promise.resolve({
+        success: true as const,
+        metadata: {
+          id: "new-local",
+          name: "local",
+          projectName: "a",
+          projectPath: "/repo/a",
+          namedWorkspacePath: "/repo/a",
+          runtimeConfig: { type: "local" as const },
+        },
+      })
+    );
+    const getBranchesForProject = mock(() =>
+      Promise.resolve({
+        branches: ["main"],
+        recommendedTrunk: "main",
+      })
+    );
+    const workspaceMetadata = new Map<string, FrontendWorkspaceMetadata>([
+      [
+        "w1",
+        {
+          id: "w1",
+          name: "local",
+          projectName: "a",
+          projectPath: "/repo/a",
+          namedWorkspacePath: "/repo/a",
+          runtimeConfig: { type: "local" },
+        },
+      ],
+    ]);
+    const actions = getActions({
+      api: workspaceApi({ create }),
+      getBranchesForProject,
+      workspaceMetadata,
+    });
+
+    const currentAction = actions.find((action) => action.id === "ws:new-from:@");
+    const parentAction = actions.find((action) => action.id === "ws:new-from:@-");
+
+    expect(currentAction).toBeDefined();
+    expect(parentAction).toBeUndefined();
+
+    await Promise.resolve(currentAction?.run());
+
+    expect(getBranchesForProject).not.toHaveBeenCalled();
+    expect(create).toHaveBeenCalledWith({
+      projectPath: "/repo/a",
+      runtimeConfig: { type: "local" },
+    });
+  });
+});
+
 test("buildCoreSources includes archive merged workspaces in project action", () => {
   const actions = getActions();
   const archiveAction = actions.find((a) => a.id === "ws:archive-merged-in-project");

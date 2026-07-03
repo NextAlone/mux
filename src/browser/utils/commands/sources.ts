@@ -350,15 +350,17 @@ export function buildCoreSources(p: BuildSourcesParams): Array<() => CommandActi
     const metadata = p.workspaceMetadata.get(selected.workspaceId);
     const targetProjectPath = metadata?.subProjectPath ?? selected.projectPath;
     const workspaceLabel = metadata?.title ?? metadata?.name ?? selected.namedWorkspacePath;
-    const runtimeConfig =
-      metadata?.runtimeConfig.type === "local" ? undefined : metadata?.runtimeConfig;
+    const runtimeConfig = metadata?.runtimeConfig;
+    const isLocalRuntime = runtimeConfig?.type === "local";
     const isParentRevision = revision === "@-";
 
     return {
       id: CommandIds.workspaceNewFromRevision(revision),
-      title: isParentRevision
-        ? "Create Workspace from Parent Change (@-)"
-        : "Create Workspace from Current Change (@)",
+      title: isLocalRuntime
+        ? "Create Local Workspace from Current Checkout"
+        : isParentRevision
+          ? "Create Workspace from Parent Change (@-)"
+          : "Create Workspace from Current Change (@)",
       subtitle: `from ${workspaceLabel}`,
       section: section.workspaces,
       keywords: [
@@ -366,11 +368,31 @@ export function buildCoreSources(p: BuildSourcesParams): Array<() => CommandActi
         "jj",
         "new workspace",
         "current change",
+        ...(isLocalRuntime ? ["current checkout", "local"] : []),
         isParentRevision ? "parent change" : "working change",
       ],
       run: async () => {
         if (!p.api) {
           showCommandFeedbackToast({ type: "error", message: "API is not connected" });
+          return;
+        }
+
+        if (isLocalRuntime) {
+          const result = await p.api.workspace.create({
+            projectPath: targetProjectPath,
+            runtimeConfig,
+          });
+          if (!result.success) {
+            showCommandFeedbackToast({ type: "error", message: result.error });
+            return;
+          }
+
+          p.onSelectWorkspace({
+            projectPath: result.metadata.projectPath,
+            projectName: result.metadata.projectName,
+            namedWorkspacePath: result.metadata.namedWorkspacePath,
+            workspaceId: result.metadata.id,
+          });
           return;
         }
 
@@ -414,7 +436,9 @@ export function buildCoreSources(p: BuildSourcesParams): Array<() => CommandActi
     if (selected) {
       list.push(createWorkspaceForSelectedProjectAction(selected));
       list.push(createWorkspaceFromRevisionAction(selected, "@"));
-      list.push(createWorkspaceFromRevisionAction(selected, "@-"));
+      if (p.workspaceMetadata.get(selected.workspaceId)?.runtimeConfig.type !== "local") {
+        list.push(createWorkspaceFromRevisionAction(selected, "@-"));
+      }
     }
 
     // Switch to workspace
