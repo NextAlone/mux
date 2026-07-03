@@ -176,7 +176,7 @@ async function waitForMultiProjectChip(
   const canvas = within(canvasElement);
   const chip = await canvas.findByRole(
     "button",
-    { name: /open multi-project git status details/i },
+    { name: /open multi-project repository status details/i },
     { timeout: 10000 }
   );
 
@@ -237,8 +237,8 @@ export const DialogOpen: Story = {
     const body = within(canvasElement.ownerDocument.body);
     const dialog = await waitFor(() => {
       const foundDialog = body.getByRole("dialog");
-      if (!foundDialog.textContent?.includes("Multi-project git status")) {
-        throw new Error("Multi-project git status dialog not rendered yet.");
+      if (!foundDialog.textContent?.includes("Multi-project repository status")) {
+        throw new Error("Multi-project repository status dialog not rendered yet.");
       }
       return foundDialog;
     });

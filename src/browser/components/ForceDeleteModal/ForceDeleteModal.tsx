@@ -91,14 +91,14 @@ export const ForceDeleteModal: React.FC<ForceDeleteModalProps> = ({
           <DialogDescription>The workspace could not be removed normally</DialogDescription>
         </DialogHeader>
         <ErrorSection>
-          <ErrorLabel>Git Error</ErrorLabel>
+          <ErrorLabel>Repository Error</ErrorLabel>
           <ErrorCodeBlock>{error}</ErrorCodeBlock>
         </ErrorSection>
 
         <WarningBox>
           <WarningTitle>This action cannot be undone</WarningTitle>
           <WarningText>
-            Force deleting will permanently remove the workspace and its local branch, and{" "}
+            Force deleting will permanently remove the workspace and its local checkout, and{" "}
             {error.includes("unpushed commits:")
               ? "discard the unpushed commits shown above"
               : "may discard uncommitted work or lose data"}

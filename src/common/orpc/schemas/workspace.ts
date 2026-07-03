@@ -11,7 +11,7 @@ import {
 } from "@/constants/heartbeat";
 
 export const ProjectRefSchema = z.object({
-  projectPath: z.string().meta({ description: "Absolute path to the project's main git repo" }),
+  projectPath: z.string().meta({ description: "Absolute path to the project's main jj repo" }),
   projectName: z
     .string()
     .meta({ description: "Display name for the project (typically derived from projectPath)" }),
@@ -108,7 +108,8 @@ export const WorkspaceMetadataSchema = z.object({
       "Stable unique identifier (10 hex chars for new workspaces, legacy format for old)",
   }),
   name: z.string().meta({
-    description: 'Git branch / directory name (e.g., "plan-a1b2") - used for path computation',
+    description:
+      'Workspace/bookmark directory name (e.g., "plan-a1b2") - used for path computation',
   }),
   title: z.string().optional().meta({
     description:
@@ -226,14 +227,14 @@ export const WorkspaceMetadataSchema = z.object({
     }),
   subProjectPath: z.string().optional().meta({
     description:
-      "Sub-project path that provides cwd and AGENTS.md context while sharing the parent project's worktree.",
+      "Sub-project path that provides cwd and AGENTS.md context while sharing the parent project's checkout.",
   }),
 });
 
 export const FrontendWorkspaceMetadataSchema = WorkspaceMetadataSchema.extend({
   namedWorkspacePath: z
     .string()
-    .meta({ description: "Worktree path (uses workspace name as directory)" }),
+    .meta({ description: "Managed checkout path (uses workspace name as directory)" }),
   incompatibleRuntime: z.string().optional().meta({
     description:
       "If set, this workspace has an incompatible runtime configuration (e.g., from a newer version of mux). The workspace should be displayed but interactions should show this error message.",
@@ -247,7 +248,7 @@ export const FrontendWorkspaceMetadataSchema = WorkspaceMetadataSchema.extend({
   }),
   transcriptOnly: z.boolean().optional().meta({
     description:
-      "True if this workspace's checkout directory is missing (worktree deleted). Chat history is available but the workspace cannot run commands.",
+      "True if this workspace's checkout directory is missing (managed checkout deleted). Chat history is available but the workspace cannot run commands.",
   }),
 });
 
@@ -307,23 +308,21 @@ export const PostCompactionStateSchema = z.object({
 export const GitStatusSchema = z.object({
   /** Current bookmark name (empty string if no active bookmark or not a jj repo) */
   branch: z.string(),
-  /** Commit divergence relative to origin's primary branch */
+  /** Commit divergence relative to the remote trunk bookmark */
   ahead: z.number(),
   behind: z.number(),
-  dirty: z
-    .boolean()
-    .meta({ description: "Whether there are uncommitted changes (staged or unstaged)" }),
+  dirty: z.boolean().meta({ description: "Whether there are uncommitted working-copy changes" }),
 
   /**
    * Line deltas for changes unique to this workspace.
-   * Computed vs the merge-base with origin's primary branch.
+   * Computed vs the merge-base with the remote trunk bookmark.
    *
-   * Note: outgoing includes committed changes + uncommitted changes (working tree).
+   * Note: outgoing includes committed changes + uncommitted working-copy changes.
    */
   outgoingAdditions: z.number(),
   outgoingDeletions: z.number(),
 
-  /** Line deltas for changes that exist on origin's primary branch but not locally */
+  /** Line deltas for changes that exist on the remote trunk bookmark but not locally */
   incomingAdditions: z.number(),
   incomingDeletions: z.number(),
 });

@@ -206,7 +206,7 @@ export function buildRuntimeString(parsed: ParsedRuntime): string | undefined {
         : RUNTIME_MODE.DEVCONTAINER;
     }
     case RUNTIME_MODE.WORKTREE:
-      // Worktree is default, no string needed
+      // JJ Workspace is default, no string needed.
       return undefined;
   }
 }
@@ -240,7 +240,7 @@ export function buildRuntimeConfig(parsed: ParsedRuntime): RuntimeConfig | undef
         shareCredentials: parsed.shareCredentials,
       };
     case RUNTIME_MODE.WORKTREE:
-      // Worktree uses system default config
+      // JJ Workspace uses system default config.
       return undefined;
   }
 }
@@ -273,7 +273,7 @@ export function isDevcontainerRuntime(
 }
 
 /**
- * Type guard to check if a runtime config uses worktree semantics.
+ * Type guard to check if a runtime config uses JJ workspace semantics.
  * This includes both explicit "worktree" type AND legacy "local" with srcBaseDir.
  */
 export function isWorktreeRuntime(
@@ -283,7 +283,7 @@ export function isWorktreeRuntime(
   | Extract<RuntimeConfig, { type: "local"; srcBaseDir: string }> {
   if (!config) return false;
   if (config.type === "worktree") return true;
-  // Legacy: "local" with srcBaseDir is treated as worktree
+  // Legacy: "local" with srcBaseDir is treated as JJ Workspace.
   if (config.type === "local" && "srcBaseDir" in config && config.srcBaseDir) return true;
   return false;
 }

@@ -38,10 +38,10 @@ export const WorktreeArchiveSnapshotProjectSchema = z.object({
     description: "Legacy session-dir-relative path to committed-history patch artifacts.",
   }),
   stagedPatchPath: z.string().optional().meta({
-    description: "Session-dir-relative path to the staged tracked diff artifact.",
+    description: "Session-dir-relative path to the archived tracked diff artifact.",
   }),
   unstagedPatchPath: z.string().optional().meta({
-    description: "Session-dir-relative path to the unstaged tracked diff artifact.",
+    description: "Session-dir-relative path to the archived working-copy diff artifact.",
   }),
 });
 
@@ -69,7 +69,7 @@ export const WorkspaceConfigSchema = z.object({
     description: "Stable workspace ID (10 hex chars for new workspaces) - optional for legacy",
   }),
   name: z.string().optional().meta({
-    description: 'Git branch / directory name (e.g., "plan-a1b2") - optional for legacy',
+    description: 'Workspace/bookmark directory name (e.g., "plan-a1b2") - optional for legacy',
   }),
   title: z.string().optional().meta({
     description:
@@ -215,12 +215,12 @@ export const WorkspaceConfigSchema = z.object({
   }),
   worktreeArchiveSnapshot: WorktreeArchiveSnapshotSchema.optional().meta({
     description:
-      "Durable restore metadata captured before archive-time worktree deletion. Present only while an archived snapshot is awaiting restore.",
+      "Durable restore metadata captured before archive-time checkout deletion. Present only while an archived snapshot is awaiting restore.",
   }),
   projects: z.array(ProjectRefSchema).optional(),
   subProjectPath: z.string().optional().meta({
     description:
-      "Sub-project path that provides cwd and AGENTS.md context while sharing the parent project's worktree.",
+      "Sub-project path that provides cwd and AGENTS.md context while sharing the parent project's checkout.",
   }),
 });
 

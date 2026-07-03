@@ -1321,7 +1321,7 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
       if (!api) throw new Error("API not connected");
       console.assert(
         typeof trunkBranch === "string" && trunkBranch.trim().length > 0,
-        "Expected trunk branch to be provided when creating a workspace"
+        "Expected trunk bookmark to be provided when creating a workspace"
       );
       const result = await api.workspace.create({
         projectPath,
@@ -1419,7 +1419,7 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
 
   /**
    * Update workspace title (formerly "rename").
-   * Unlike the old rename which changed the git branch/directory name,
+   * Unlike the old rename which changed the bookmark/directory name,
    * this only updates the display title and can be called during streaming.
    *
    * Note: This is simpler than the old rename because the workspace ID doesn't change.

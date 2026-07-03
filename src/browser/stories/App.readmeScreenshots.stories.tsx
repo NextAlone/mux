@@ -196,7 +196,7 @@ function createReadmeGitDivergenceExecutor(gitStatus: Map<string, GitStatusFixtu
 
     const showBranchLines: string[] = [
       `! [HEAD] ${headCommit}`,
-      ` ! [origin/main] ${originCommit}`,
+      ` ! [main@origin] ${originCommit}`,
       "--",
     ];
     const commitHashes: string[] = [];
@@ -697,7 +697,7 @@ export const AgentStatusSidebar: AppStory = {
 };
 
 // README: docs/img/git-status.webp
-// Git divergence details now open in a dialog (not hover tooltip). The capture
+// Repository divergence details now open in a dialog (not hover tooltip). The capture
 // script opens the dialog and switches modes to keep README output deterministic.
 export const GitStatusPopover: AppStory = {
   tags: ["!test"],
@@ -748,7 +748,7 @@ export const GitStatusPopover: AppStory = {
           ["ws-dirty", { dirty: 3, outgoingAdditions: 42, outgoingDeletions: 8 }],
         ]);
 
-        const remoteLog = `* 4fb13bc (origin/main) fix(db): rollback after partial apply
+        const remoteLog = `* 4fb13bc (main@origin) fix(db): rollback after partial apply
 * d0a9a44 feat(metrics): emit advisory lock wait timing
 * b4f71de refactor(ci): run migration smoke tests post-merge
 * 7e3ab22 docs(db): add zero-downtime migration checklist
@@ -771,19 +771,19 @@ export const GitStatusPopover: AppStory = {
             createStaticChatHandler([
               createUserMessage(
                 "msg-1",
-                "Can you investigate why refactor/db diverged from origin/main and tell me whether we should rebase or merge?",
+                "Can you investigate why refactor/db diverged from main@origin and tell me whether we should rebase?",
                 {
                   historySequence: 1,
                   timestamp: STABLE_TIMESTAMP - 140_000,
                 }
               ),
-              createAssistantMessage("msg-2", "Checking branch divergence now.", {
+              createAssistantMessage("msg-2", "Checking bookmark divergence now.", {
                 historySequence: 2,
                 timestamp: STABLE_TIMESTAMP - 130_000,
                 toolCalls: [
                   createTodoWriteTool(
                     "call-status-1",
-                    "Inspecting local vs origin commits to prepare a safe rebase plan"
+                    "Inspecting local vs remote commits to prepare a safe rebase plan"
                   ),
                 ],
               }),
@@ -793,8 +793,8 @@ export const GitStatusPopover: AppStory = {
                 toolCalls: [
                   createBashTool(
                     "call-bash-1",
-                    "git fetch --prune origin",
-                    "From github.com:coder/mux\n   18f2a3d..4fb13bc  main       -> origin/main"
+                    "jj git fetch --remote origin",
+                    "Fetched 1 remote bookmark from origin\nmain@origin: 18f2a3d -> 4fb13bc"
                   ),
                 ],
               }),
@@ -802,38 +802,30 @@ export const GitStatusPopover: AppStory = {
                 historySequence: 4,
                 timestamp: STABLE_TIMESTAMP - 110_000,
                 toolCalls: [
-                  createBashTool(
-                    "call-bash-2",
-                    "git log --graph --oneline --decorate HEAD..origin/main",
-                    remoteLog
-                  ),
+                  createBashTool("call-bash-2", "jj log -r '@..main@origin' --no-graph", remoteLog),
                 ],
               }),
               createAssistantMessage("msg-5", "Local-only commits:", {
                 historySequence: 5,
                 timestamp: STABLE_TIMESTAMP - 100_000,
                 toolCalls: [
-                  createBashTool(
-                    "call-bash-3",
-                    "git log --graph --oneline --decorate origin/main..HEAD",
-                    localLog
-                  ),
+                  createBashTool("call-bash-3", "jj log -r 'main@origin..@' --no-graph", localLog),
                 ],
               }),
-              createAssistantMessage("msg-6", "Dirty working tree summary:", {
+              createAssistantMessage("msg-6", "Working-copy summary:", {
                 historySequence: 6,
                 timestamp: STABLE_TIMESTAMP - 90_000,
                 toolCalls: [
                   createBashTool(
                     "call-bash-4",
-                    "git status --short",
+                    "jj diff --summary",
                     " M src/node/services/migrations/runner.ts\n M src/node/services/migrations/planner.ts\n M src/node/services/migrations/lock.ts\n M src/common/utils/migrations/formatDiff.ts\n M tests/ipc/migrations.integration.test.ts\n?? docs/migrations/rollback-playbook.md"
                   ),
                 ],
               }),
               createAssistantMessage(
                 "msg-7",
-                "Recommendation: stash dirty files, rebase refactor/db onto origin/main, resolve migration planner conflicts, then replay local commits in order.",
+                "Recommendation: commit the working-copy changes, rebase refactor/db onto main@origin, resolve migration planner conflicts, then replay local commits in order.",
                 {
                   historySequence: 7,
                   timestamp: STABLE_TIMESTAMP - 80_000,

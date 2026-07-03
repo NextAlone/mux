@@ -309,8 +309,8 @@ export function getRuntimeKey(projectPath: string): string {
 }
 
 /**
- * Get the localStorage key for trunk branch preference for a project
- * Stores the last used trunk branch when creating a workspace
+ * Get the localStorage key for trunk bookmark preference for a project
+ * Stores the last used trunk bookmark when creating a workspace
  * Format: "trunkBranch:{projectPath}"
  */
 export function getTrunkBranchKey(projectPath: string): string {
@@ -371,7 +371,7 @@ export const PROVIDER_OPTIONS_GOOGLE_KEY = "provider_options_google";
 export const VIM_ENABLED_KEY = "vimEnabled";
 
 /**
- * Git status indicator display mode (global)
+ * Repository status indicator display mode (global)
  * Stores: "line-delta" | "divergence"
  */
 
@@ -546,7 +546,7 @@ export function getReviewDefaultBaseKey(projectPath: string): string {
 }
 
 /**
- * Global code review behavior for including uncommitted changes.
+ * Global code review behavior for including working-copy changes.
  * Format: "review-include-uncommitted"
  */
 export const REVIEW_INCLUDE_UNCOMMITTED_KEY = "review-include-uncommitted";

@@ -952,7 +952,7 @@ describeIntegration("Runtime integration tests", () => {
         const sourceWorkspacePath = getRemoteWorkspacePath(layout, sourceWorkspaceName);
         const newWorkspacePath = getRemoteWorkspacePath(layout, newWorkspaceName);
 
-        // Create a source workspace repo with a non-trunk branch checked out.
+        // Create a source workspace repo with a non-trunk bookmark checked out.
         await execSSH(
           runtime,
           [

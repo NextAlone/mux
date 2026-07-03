@@ -51,7 +51,7 @@ for required in "$WAIT_CODEX_SCRIPT" "$WAIT_CODER_AGENTS_REVIEW_SCRIPT" "$WAIT_C
   fi
 done
 
-for required_cmd in gh jq git; do
+for required_cmd in gh jq jj; do
   if ! command -v "$required_cmd" >/dev/null 2>&1; then
     echo "❌ Missing required command: $required_cmd" >&2
     exit 1
@@ -116,22 +116,14 @@ load_repo_context() {
 }
 
 assert_clean_and_synced_branch() {
-  if ! git diff-index --quiet HEAD --; then
-    echo "❌ Error: You have uncommitted changes in your working directory." >&2
-    echo "" >&2
-    git status --short >&2
-    echo "" >&2
-    echo "Please commit or stash your changes before checking PR status." >&2
-    return 1
-  fi
-
+  assert_jj_clean_working_copy || return 1
   assert_branch_synced || return 1
 }
 
 load_repo_context
 assert_clean_and_synced_branch
 
-# Child scripts reuse this context to avoid repeated gh repo lookups and duplicate git fetch calls.
+# Child scripts reuse this context to avoid repeated gh repo lookups and duplicate jj fetch calls.
 export MUX_GH_OWNER
 export MUX_GH_REPO
 export MUX_SKIP_FETCH_SYNC=1

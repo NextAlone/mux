@@ -594,8 +594,8 @@ export function getEffectiveReviewIncludeUncommitted(params: {
   assistedOnly: boolean;
   includeUncommitted: boolean;
 }): boolean {
-  // Agent-pinned regions commonly point at the agent's latest working-tree edits.
-  // Assisted mode opts into uncommitted changes so accepted pins cannot disappear
+  // Agent-pinned regions commonly point at the agent's latest working-copy edits.
+  // Assisted mode opts into working-copy changes so accepted pins cannot disappear
   // solely because the user's review toggle was left off.
   return params.assistedOnly ? true : params.includeUncommitted;
 }
@@ -1230,7 +1230,7 @@ export const ReviewPanel: React.FC<ReviewPanelProps> = ({
     });
   }, [diffBase]);
 
-  // Git status uses diffBase too; refresh immediately when it changes.
+  // Repository status uses diffBase too; refresh immediately when it changes.
   const lastGitStatusBaseRef = useRef<string | null>(null);
   useEffect(() => {
     if (lastGitStatusBaseRef.current !== null && lastGitStatusBaseRef.current !== diffBase) {
@@ -2587,7 +2587,7 @@ export const ReviewPanel: React.FC<ReviewPanelProps> = ({
                       ? assistedHunks.length === 0
                         ? "The agent hasn't pinned any hunks."
                         : assistedMatchByHunkId.size === 0
-                          ? "None of the agent-flagged hunks match the current diff. The branch may have moved since the agent flagged them."
+                          ? "None of the agent-flagged hunks match the current diff. The bookmark may have moved since the agent flagged them."
                           : debouncedSearchTerm.trim()
                             ? // Search-driven empty state takes precedence over
                               // the read-state copy: claiming "all read" when

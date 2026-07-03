@@ -1,13 +1,13 @@
 ---
-title: Worktree Runtime
+title: JJ Workspace Runtime
 description: Isolated jj workspace environments for parallel agent work
 ---
 
-Worktree runtime uses [jj workspaces](https://jj-vcs.github.io/jj/latest/working-copy/#workspaces) on your local machine.
+JJ Workspace runtime uses [jj workspaces](https://jj-vcs.github.io/jj/latest/working-copy/#workspaces) on your local machine.
 
 Each workspace gets its own directory, while all workspaces share the same colocated jj repository.
 
-## How worktrees work
+## How JJ workspaces work
 
 A workspace is a separate directory on the same filesystem as the main repository.
 
@@ -20,7 +20,7 @@ Workspaces aren’t locked to a bookmark. The agent can create new changes and m
 
 ## Filesystem layout
 
-Worktree runtime workspaces are stored in `~/.mux/src/<project-name>/<workspace-name>`.
+JJ Workspace runtime checkouts are stored in `~/.mux/src/<project-name>/<workspace-name>`.
 
 Example layout:
 

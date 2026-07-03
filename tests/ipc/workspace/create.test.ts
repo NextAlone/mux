@@ -288,31 +288,31 @@ describeIntegration("WORKSPACE_CREATE with both runtimes", () => {
         );
 
         runTest(
-          "creates new branch from specified trunk branch, not from default branch",
+          "creates new bookmark from specified trunk bookmark, not from default bookmark",
           async () => {
             const env = await createTestEnvironment();
             const tempGitRepo = await createTempGitRepo();
 
             try {
-              // Create a custom trunk branch with a unique commit
+              // Create a custom trunk bookmark with a unique commit.
               const customTrunkBranch = "custom-trunk";
               await execAsync(
                 `git checkout -b ${customTrunkBranch} && echo "custom-trunk-content" > trunk-file.txt && git add . && git commit -m "Custom trunk commit"`,
                 { cwd: tempGitRepo }
               );
 
-              // Create a different branch (which will become the default if we checkout to it)
+              // Create a different bookmark (which will become the default if we checkout to it).
               const otherBranch = "other-branch";
               await execAsync(
                 `git checkout -b ${otherBranch} && echo "other-content" > other-file.txt && git add . && git commit -m "Other branch commit"`,
                 { cwd: tempGitRepo }
               );
 
-              // Switch back to the original default branch
+              // Switch back to the original default bookmark.
               const defaultBranch = await detectDefaultTrunkBranch(tempGitRepo);
               await execAsync(`git checkout ${defaultBranch}`, { cwd: tempGitRepo });
 
-              // Now create a workspace specifying custom-trunk as the trunk branch
+              // Now create a workspace specifying custom-trunk as the trunk bookmark.
               const newBranchName = generateBranchName("from-custom-trunk");
               const runtimeConfig = getRuntimeConfig(newBranchName);
 
@@ -320,7 +320,7 @@ describeIntegration("WORKSPACE_CREATE with both runtimes", () => {
                 env,
                 tempGitRepo,
                 newBranchName,
-                customTrunkBranch, // Specify custom trunk branch
+                customTrunkBranch, // Specify custom trunk bookmark.
                 runtimeConfig
               );
 

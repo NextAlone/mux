@@ -157,7 +157,7 @@ export interface ProjectsConfig {
   coderWorkspaceArchiveBehavior?: CoderWorkspaceArchiveBehavior;
 
   /**
-   * What to do with mux-managed worktree checkouts when a chat is archived.
+   * What to do with mux-managed checkouts when a chat is archived.
    *
    * - `"keep"`: leave the checkout on disk.
    * - `"delete"`: delete the checkout without a restore snapshot.

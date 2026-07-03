@@ -63,16 +63,7 @@ if [ "$SKIP_FETCH_SYNC" != "0" ] && [ "$SKIP_FETCH_SYNC" != "1" ]; then
 fi
 
 if [ "$SKIP_FETCH_SYNC" = "0" ]; then
-  # Check for dirty working tree
-  if ! git diff-index --quiet HEAD --; then
-    echo "❌ Error: You have uncommitted changes in your working directory." >&2
-    echo "" >&2
-    git status --short >&2
-    echo "" >&2
-    echo "Please commit or stash your changes before checking PR status." >&2
-    exit 1
-  fi
-
+  assert_jj_clean_working_copy || exit 1
   assert_branch_synced || exit 1
 fi
 
@@ -158,9 +149,10 @@ CHECK_PR_CHECKS_ONCE() {
     echo "❌ PR is behind base branch. Rebase needed."
     echo ""
     echo "Run:"
-    echo "  git fetch origin"
-    echo "  git rebase origin/main"
-    echo "  git push --force-with-lease"
+    echo "  jj git fetch --remote origin"
+    echo "  jj retrunk"
+    echo "  jj tug"
+    echo "  jj git push --remote origin"
     return 1
   fi
 
@@ -248,8 +240,8 @@ CHECK_PR_CHECKS_ONCE() {
     echo "   make test"
     echo ""
     echo "💡 To re-run a subset of integration tests faster with workflow_dispatch:"
-    echo "   gh workflow run ci.yml --ref $(git rev-parse --abbrev-ref HEAD) -f test_filter=\"tests/integration/specificTest.test.ts\""
-    echo "   gh workflow run ci.yml --ref $(git rev-parse --abbrev-ref HEAD) -f test_filter=\"-t 'specific test name'\""
+    echo "   gh workflow run ci.yml --ref <bookmark> -f test_filter=\"tests/integration/specificTest.test.ts\""
+    echo "   gh workflow run ci.yml --ref <bookmark> -f test_filter=\"-t 'specific test name'\""
     return 1
   fi
 

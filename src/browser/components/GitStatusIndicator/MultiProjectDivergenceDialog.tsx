@@ -117,17 +117,21 @@ export const MultiProjectDivergenceDialog: React.FC<MultiProjectDivergenceDialog
         className="bg-modal-bg text-foreground border-separator-light z-[10000] w-[min(92vw,860px)] min-w-0 overflow-auto px-3 py-2 font-mono text-[11px] shadow-lg"
       >
         <DialogHeader className="mb-2 gap-1">
-          <DialogTitle className="text-foreground text-sm">Multi-project git status</DialogTitle>
+          <DialogTitle className="text-foreground text-sm">
+            Multi-project repository status
+          </DialogTitle>
           {getHeaderSummary(summary)}
           {isRefreshing && (
             <div className="text-muted animate-pulse font-mono text-[11px]">
-              Refreshing git status…
+              Refreshing repository status…
             </div>
           )}
         </DialogHeader>
 
         {summary === null ? (
-          <div className="text-muted-light py-2">Loading git status for workspace repos…</div>
+          <div className="text-muted-light py-2">
+            Loading repository status for workspace repos…
+          </div>
         ) : summary.totalProjectCount === 0 ? (
           <div className="text-muted-light py-2">No repos are tracked in this workspace.</div>
         ) : (
@@ -139,7 +143,7 @@ export const MultiProjectDivergenceDialog: React.FC<MultiProjectDivergenceDialog
                     Project
                   </th>
                   <th scope="col" className="px-2 py-1 font-medium">
-                    Branch
+                    Bookmark
                   </th>
                   <th scope="col" className="px-2 py-1 font-medium">
                     Ahead
@@ -173,7 +177,7 @@ export const MultiProjectDivergenceDialog: React.FC<MultiProjectDivergenceDialog
                         <td className="px-2 py-1.5" colSpan={6}>
                           <span className="text-warning inline-flex items-center gap-1">
                             <AlertTriangle aria-hidden="true" className="h-3 w-3 shrink-0" />
-                            <span>{project.error ?? "Git status unavailable"}</span>
+                            <span>{project.error ?? "Repository status unavailable"}</span>
                           </span>
                         </td>
                       </tr>

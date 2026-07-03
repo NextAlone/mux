@@ -196,7 +196,7 @@ function createGitStatusExecutor(gitStatus?: Map<string, GitStatusFixture>) {
 
     const showBranchLines: string[] = [];
     showBranchLines.push(`! [HEAD] ${headCommit}`);
-    showBranchLines.push(` ! [origin/main] ${originCommit}`);
+    showBranchLines.push(` ! [main@origin] ${originCommit}`);
     showBranchLines.push("--");
 
     for (let i = 0; i < ahead; i++) {
@@ -938,7 +938,7 @@ export const LongWorkspaceNames: AppStory = {
           }),
         ];
 
-        // Set up git status to verify GitStatusIndicator remains visible
+        // Set up repository status to verify GitStatusIndicator remains visible
         const gitStatus = new Map<string, GitStatusFixture>([
           ["ws-short", { ahead: 1 }],
           ["ws-medium", { dirty: 3 }],
@@ -960,9 +960,9 @@ export const LongWorkspaceNames: AppStory = {
 };
 
 /**
- * Sidebar rows should not render git status indicators.
- * This story seeds diverse git states to ensure rows remain visually stable
- * even when workspace git data changes.
+ * Sidebar rows should not render repository status indicators.
+ * This story seeds diverse repository states to ensure rows remain visually stable
+ * even when workspace repository data changes.
  */
 export const GitStatusVariations: AppStory = {
   render: () => (
@@ -1050,8 +1050,8 @@ export const GitStatusVariations: AppStory = {
     // renders the git divergence control in this left-sidebar-only story shell.
     await userEvent.click(row);
 
-    if (within(row).queryByLabelText("View git divergence details") !== null) {
-      throw new Error("Sidebar rows should not render git divergence indicators");
+    if (within(row).queryByLabelText("View repository divergence details") !== null) {
+      throw new Error("Sidebar rows should not render repository divergence indicators");
     }
   },
 };
@@ -1060,7 +1060,7 @@ export const GitStatusVariations: AppStory = {
  * All runtime badge variations showing different runtime types.
  * Each type has distinct colors:
  * - SSH: blue theme
- * - Worktree: purple theme
+ * - JJ Workspace: purple theme
  * - Local: gray theme
  *
  * The streaming workspaces show the "working" state with pulse animation.

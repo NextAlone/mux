@@ -26,7 +26,7 @@ export function SSHIcon({ size = 10, className }: IconProps) {
   );
 }
 
-/** Git branch icon for worktree runtime */
+/** Branching checkout icon for JJ Workspace runtime. */
 export function WorktreeIcon({ size = 10, className }: IconProps) {
   return (
     <svg
@@ -38,10 +38,10 @@ export function WorktreeIcon({ size = 10, className }: IconProps) {
       strokeWidth="1.5"
       strokeLinecap="round"
       strokeLinejoin="round"
-      aria-label="Worktree Runtime"
+      aria-label="JJ Workspace Runtime"
       className={className}
     >
-      {/* Simplified git branch: vertical line with branch off */}
+      {/* Branching workspace glyph: vertical line with a side path. */}
       <g transform="translate(-1 0)">
         <circle cx="7" cy="3" r="2" />
         <circle cx="7" cy="13" r="2" />

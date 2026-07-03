@@ -308,7 +308,7 @@ export const InstructionsTabLabel: React.FC<InstructionsTabLabelProps> = ({ work
           {displayCount}
           {chatInstructionsActive && (
             // Orange asterisk mirrors the "dirty / has unsaved changes" cue used
-            // by the git status indicator — a glanceable signal that the agent
+            // by the repository status indicator — a glanceable signal that the agent
             // is receiving ephemeral chat-scoped instructions in addition to
             // whatever AGENTS.md files contribute to this workspace.
             <span className="text-warning">*</span>

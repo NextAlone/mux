@@ -26,7 +26,7 @@ import {
 } from "./RuntimeStatusStore";
 
 /**
- * External store for git status of all workspaces.
+ * External store for repository status of all workspaces.
  *
  * Architecture:
  * - Lives outside React lifecycle (stable references)
@@ -142,7 +142,7 @@ export class GitStatusStore {
   }
 
   /**
-   * Subscribe to git status changes (any workspace).
+   * Subscribe to repository status changes (any workspace).
    * Delegates to MapStore's subscribeAny.
    */
   subscribe = this.statuses.subscribeAny;
@@ -160,7 +160,7 @@ export class GitStatusStore {
   }
 
   /**
-   * Subscribe to git status changes for a specific workspace.
+   * Subscribe to repository status changes for a specific workspace.
    * Only notified when this workspace's status changes.
    */
   subscribeKey = (workspaceId: string, listener: () => void) => {
@@ -181,7 +181,7 @@ export class GitStatusStore {
   };
 
   /**
-   * Get git status for a specific workspace.
+   * Get repository status for a specific workspace.
    * Returns cached status or null if never fetched.
    */
   getStatus(workspaceId: string): GitStatus | null {
@@ -262,8 +262,8 @@ export class GitStatusStore {
   }
 
   /**
-   * Check if any git status fetch is currently in-flight.
-   * Use this to ensure no background fetch can race with operations that change git state.
+   * Check if any repository status fetch is currently in-flight.
+   * Use this to ensure no background fetch can race with operations that change repository state.
    */
   isAnyRefreshInFlight(): boolean {
     return this.refreshController.isRefreshing;
@@ -364,7 +364,7 @@ export class GitStatusStore {
   }
 
   /**
-   * Update git status for all workspaces.
+   * Update repository status for all workspaces.
    */
   private async updateGitStatus(): Promise<void> {
     if (this.workspaceMetadata.size === 0 || !this.isActive) {
@@ -390,7 +390,7 @@ export class GitStatusStore {
     const workspacesMap = new Map(workspaces.map((ws) => [ws.id, ws]));
     this.tryFetchWorkspaces(workspacesMap);
 
-    // Query git status for each workspace.
+    // Query repository status for each workspace.
     // Rate limit: Process in batches to prevent bash process explosion.
     const results: Array<SingleWorkspaceStatusUpdate | MultiWorkspaceStatusUpdate> = [];
 
@@ -518,7 +518,7 @@ export class GitStatusStore {
   }
 
   /**
-   * Compare two git statuses for equality.
+   * Compare two repository statuses for equality.
    * Returns true if they're effectively the same.
    */
   private areStatusesEqual(a: GitStatus | null, b: GitStatus | null): boolean {
@@ -573,7 +573,7 @@ export class GitStatusStore {
   }
 
   /**
-   * Check git status for a single workspace.
+   * Check repository status for a single workspace.
    */
   private async checkWorkspaceStatus(
     metadata: FrontendWorkspaceMetadata
@@ -583,7 +583,7 @@ export class GitStatusStore {
       return { kind: "single", workspaceId: metadata.id, status: null };
     }
 
-    // Passive git status is skipped for devcontainer workspaces whose runtime is
+    // Passive repository status is skipped for devcontainer workspaces whose runtime is
     // not already running, matching the same contract as passive fetch.
     if (
       !canRunPassiveRuntimeCommand(
@@ -596,7 +596,7 @@ export class GitStatusStore {
         this.refreshController.requestImmediate();
       });
       // Passive runtime gating means we have no fresh snapshot, not that the last known
-      // git status became invalid. Preserve cached branch/status data until an explicit
+      // repository status became invalid. Preserve cached bookmark/status data until an explicit
       // user action or a running runtime produces a newer result.
       return {
         kind: "single",
@@ -672,7 +672,7 @@ export class GitStatusStore {
         },
       };
     } catch (err) {
-      // Silently fail - git status failures shouldn't crash the UI
+      // Silently fail - repository status failures shouldn't crash the UI.
       console.debug(`[gitStatus] Exception for ${metadata.id}:`, err);
       return { kind: "single", workspaceId: metadata.id, status: null };
     }
@@ -702,7 +702,7 @@ export class GitStatusStore {
         this.runtimeStatusStore.getStatus(metadata.id)
       )
     ) {
-      // Multi-project git status goes through the runtime-backed backend path,
+      // Multi-project repository status goes through the runtime-backed backend path,
       // so passive refreshes must not wake stopped runtimes.
       return {
         kind: "multi",
@@ -720,11 +720,20 @@ export class GitStatusStore {
           workspaceId: metadata.id,
           baseRef,
         });
-      assert(results.length > 0, `Expected project git statuses for workspace ${metadata.id}`);
+      assert(
+        results.length > 0,
+        `Expected project repository statuses for workspace ${metadata.id}`
+      );
 
       const normalizedResults = results.map((row) => {
-        assert(row.projectPath.trim().length > 0, "Project git status rows require a projectPath");
-        assert(row.projectName.trim().length > 0, "Project git status rows require a projectName");
+        assert(
+          row.projectPath.trim().length > 0,
+          "Project repository status rows require a projectPath"
+        );
+        assert(
+          row.projectName.trim().length > 0,
+          "Project repository status rows require a projectName"
+        );
         return {
           projectPath: row.projectPath,
           projectName: row.projectName,
@@ -736,7 +745,7 @@ export class GitStatusStore {
       const expectedProjects = getProjects(metadata);
       assert(
         normalizedResults.length === expectedProjects.length,
-        `Expected ${expectedProjects.length} project git status rows for workspace ${metadata.id}`
+        `Expected ${expectedProjects.length} project repository status rows for workspace ${metadata.id}`
       );
 
       return {
@@ -1090,7 +1099,7 @@ export class GitStatusStore {
 
   /**
    * Subscribe to file-modifying tool completions from WorkspaceStore.
-   * Triggers debounced git status refresh when files change.
+   * Triggers debounced repository status refresh when files change.
    * Idempotent: only subscribes once, subsequent calls are no-ops.
    */
   subscribeToFileModifications(
@@ -1129,11 +1138,11 @@ function getGitStoreInstance(): GitStatusStore {
 }
 
 /**
- * Hook to get git status for a specific workspace.
+ * Hook to get repository status for a specific workspace.
  * Only re-renders when THIS workspace's status changes.
  *
  * Uses per-key subscription for surgical updates - only notified when
- * this specific workspace's git status changes.
+ * this specific workspace's repository status changes.
  */
 export function useGitStatus(workspaceId: string): GitStatus | null {
   const store = getGitStoreInstance();
@@ -1163,7 +1172,7 @@ export function useMultiProjectGitSummary(workspaceId: string): MultiProjectGitS
 }
 
 /**
- * Hook to check if a workspace's git status is currently being refreshed.
+ * Hook to check if a workspace's repository status is currently being refreshed.
  * Use this to show shimmer/loading effects while preserving old status.
  */
 export function useGitStatusRefreshing(workspaceId: string): boolean {
@@ -1183,8 +1192,8 @@ export function useGitStatusStoreRaw(): GitStatusStore {
 }
 
 /**
- * Invalidate git status for a workspace, triggering an immediate refresh.
- * Call this after operations that change git state (e.g., branch switch).
+ * Invalidate repository status for a workspace, triggering an immediate refresh.
+ * Call this after operations that change repository state (e.g., bookmark switch).
  */
 export function invalidateGitStatus(workspaceId: string): void {
   const store = getGitStoreInstance();

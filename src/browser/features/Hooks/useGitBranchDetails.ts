@@ -78,7 +78,7 @@ function parseGitBranchScriptOutput(rawOutput: string): ParsedScriptResult {
     SECTION_MARKERS.showBranchEnd
   );
   if (showBranch === null) {
-    return { success: false, error: "Missing branch details from git script output." };
+    return { success: false, error: "Missing bookmark details from repository status output." };
   }
 
   const datesRaw = extractSection(
@@ -87,7 +87,7 @@ function parseGitBranchScriptOutput(rawOutput: string): ParsedScriptResult {
     SECTION_MARKERS.datesEnd
   );
   if (datesRaw === null) {
-    return { success: false, error: "Missing commit dates from git script output." };
+    return { success: false, error: "Missing commit dates from repository status output." };
   }
 
   const dirtyRaw = extractSection(
@@ -96,7 +96,10 @@ function parseGitBranchScriptOutput(rawOutput: string): ParsedScriptResult {
     SECTION_MARKERS.dirtyEnd
   );
   if (dirtyRaw === null) {
-    return { success: false, error: "Missing dirty file list from git script output." };
+    return {
+      success: false,
+      error: "Missing working-copy file list from repository status output.",
+    };
   }
 
   const dates = datesRaw
@@ -106,8 +109,8 @@ function parseGitBranchScriptOutput(rawOutput: string): ParsedScriptResult {
     .map((line) => {
       const [hash, ...dateParts] = line.split("|");
       const date = dateParts.join("|").trim();
-      debugAssert(hash.length > 0, "Expected git log output to provide a commit hash.");
-      debugAssert(date.length > 0, "Expected git log output to provide a commit date.");
+      debugAssert(hash.length > 0, "Expected repository log output to provide a commit hash.");
+      debugAssert(date.length > 0, "Expected repository log output to provide a commit date.");
       return { hash, date };
     });
 
@@ -143,8 +146,8 @@ export interface GitBranchDetailsResult {
  * Hook for fetching jj change details (dirty files for now).
  * Implements caching (5s TTL) and debouncing (200ms) to avoid excessive IPC calls.
  *
- * @param workspaceId - Workspace to fetch git details for
- * @param gitStatus - Current git status (used to determine if dirty files should be fetched)
+ * @param workspaceId - Workspace to fetch repository details for
+ * @param gitStatus - Current repository status (used to determine if dirty files should be fetched)
  * @param enabled - Whether to fetch data (typically when tooltip should be shown)
  */
 export function useGitBranchDetails(

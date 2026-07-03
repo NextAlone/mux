@@ -31,7 +31,7 @@ function formatCategoryCount(count: number, noun: string): string {
 
 function buildTooltip(summary: MultiProjectGitSummary | null): string {
   if (summary === null) {
-    return "Git status is loading for this workspace's repos.";
+    return "Repository status is loading for this workspace's repos.";
   }
 
   const parts: string[] = [];
@@ -40,7 +40,7 @@ function buildTooltip(summary: MultiProjectGitSummary | null): string {
   }
   if (summary.dirtyProjectCount > 0) {
     parts.push(
-      `${summary.dirtyProjectCount} ${summary.dirtyProjectCount === 1 ? "has" : "have"} uncommitted changes`
+      `${summary.dirtyProjectCount} ${summary.dirtyProjectCount === 1 ? "has" : "have"} working-copy changes`
     );
   }
   if (summary.unknownProjectCount > 0) {
@@ -145,7 +145,7 @@ export const MultiProjectGitStatusIndicator: React.FC<MultiProjectGitStatusIndic
               presentation.className,
               isRefreshing && "animate-pulse"
             )}
-            aria-label="Open multi-project git status details"
+            aria-label="Open multi-project repository status details"
             onKeyDown={stopKeyboardPropagation}
             onClick={(event) => {
               event.stopPropagation();

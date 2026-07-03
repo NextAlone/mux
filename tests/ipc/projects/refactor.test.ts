@@ -58,9 +58,9 @@ describeIntegration("ProjectService IPC Handlers", () => {
 
     const client = resolveOrpcClient(env);
     const result = await client.projects.listBranches({ projectPath });
-    // The current branch is feature-branch
+    // The current bookmark is feature-branch.
     expect(result.branches).toContain("feature-branch");
-    // The trunk branch inference might depend on available branches.
+    // The trunk bookmark inference might depend on available bookmarks.
     expect(result.recommendedTrunk).toBeTruthy();
 
     await cleanupTestEnvironment(env);

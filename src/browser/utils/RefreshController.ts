@@ -56,7 +56,7 @@ export interface RefreshControllerOptions {
 
   /**
    * Whether to proactively refresh on focus, not just flush pending.
-   * Enable for stores that need to catch external changes (e.g., git status).
+   * Enable for stores that need to catch external changes (e.g., repository status).
    * Default: false (only flush pending refreshes)
    */
   refreshOnFocus?: boolean;

@@ -9,7 +9,7 @@ cd "$PROJECT_ROOT"
 
 # Check for PNG files in docs - suggest WebP instead
 echo "Checking for PNG files in docs..."
-PNG_FILES=$(git ls-files 'docs/*.png' 'docs/**/*.png' 2>/dev/null || true)
+PNG_FILES=$(jj file list docs 2>/dev/null | grep -E '^docs/.*[.]png$' || true)
 if [ -n "$PNG_FILES" ]; then
   echo "❌ Error: PNG files found in docs directory. Please use WebP format instead:"
   echo "$PNG_FILES"

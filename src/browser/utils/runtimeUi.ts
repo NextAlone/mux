@@ -106,7 +106,7 @@ export const RUNTIME_UI = {
     },
   },
   worktree: {
-    label: "Worktree",
+    label: "JJ Workspace",
     description: "Isolated jj workspace in ~/.mux/src",
     docsPath: "/runtime/worktree",
     Icon: WorktreeIcon,

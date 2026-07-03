@@ -288,7 +288,7 @@ export function useCreationWorkspace({
   // Destructure name state functions for use in callbacks
   const { waitForGeneration } = workspaceNameState;
 
-  // Load branches - used on mount and after git init
+  // Load bookmarks - used on mount and after jj init.
   // Returns a cleanup function to track mounted state
   const loadBranches = useCallback(async () => {
     if (!projectPath.length || !api) return;
@@ -298,13 +298,13 @@ export function useCreationWorkspace({
       setBranches(result.branches);
       setRecommendedTrunk(result.recommendedTrunk);
     } catch (err) {
-      console.error("Failed to load branches:", err);
+      console.error("Failed to load bookmarks:", err);
     } finally {
       setBranchesLoaded(true);
     }
   }, [projectPath, api]);
 
-  // Load branches and runtime availability on mount with mounted guard
+  // Load bookmarks and runtime availability on mount with mounted guard.
   useEffect(() => {
     if (!projectPath.length || !api) return;
     let mounted = true;
@@ -312,7 +312,7 @@ export function useCreationWorkspace({
     setRuntimeAvailabilityState({ status: "loading" });
     const doLoad = async () => {
       try {
-        // Use allSettled so failures are independent - branches can load even if availability fails
+        // Use allSettled so failures are independent - bookmarks can load even if availability fails.
         const [branchResult, availabilityResult] = await Promise.allSettled([
           api.projects.listBranches({ projectPath }),
           api.projects.runtimeAvailability({ projectPath }),
@@ -322,7 +322,7 @@ export function useCreationWorkspace({
           setBranches(branchResult.value.branches);
           setRecommendedTrunk(branchResult.value.recommendedTrunk);
         } else {
-          console.error("Failed to load branches:", branchResult.reason);
+          console.error("Failed to load bookmarks:", branchResult.reason);
         }
         if (availabilityResult.status === "fulfilled") {
           setRuntimeAvailabilityState({ status: "loaded", data: availabilityResult.value });

@@ -1319,10 +1319,10 @@ async function handleForkCommand(
  * Supports formats:
  * - "ssh <host>" or "ssh <user@host>" -> SSH runtime
  * - "docker <image>" -> Docker container runtime
- * - "worktree" -> Worktree runtime (jj workspaces)
+ * - "worktree" -> JJ Workspace runtime
  * - "local" -> Local runtime (project-dir, no isolation)
  * - "devcontainer <configPath>" -> Dev container runtime
- * - undefined -> Worktree runtime (default)
+ * - undefined -> JJ Workspace runtime (default)
  */
 export function parseRuntimeString(runtime: string | undefined): RuntimeConfig | undefined {
   // Use shared parser from common/types/runtime

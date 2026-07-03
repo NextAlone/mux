@@ -34,14 +34,14 @@ export const ToolHooksOutput: Story = {
 export const ToolHooksOutputExpanded: Story = {
   args: {
     output:
-      "post-hook: git status check\nM  src/app.ts\nM  src/utils.ts\nM  src/config.ts\n\n3 files modified by formatter",
+      "post-hook: repository status check\nM  src/app.ts\nM  src/utils.ts\nM  src/config.ts\n\n3 files modified by formatter",
     durationMs: 85,
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     const hookButton = await canvas.findByText("hook output");
     await userEvent.click(hookButton);
-    await canvas.findByText(/post-hook: git status check/);
+    await canvas.findByText(/post-hook: repository status check/);
   },
   parameters: {
     docs: {

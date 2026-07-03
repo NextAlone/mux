@@ -17,7 +17,7 @@ export function validateWorkspaceName(name: string): { valid: boolean; error?: s
   if (!validPattern.test(name)) {
     return {
       valid: false,
-      // Workspace names become folder names, git branches, and session directories,
+      // Workspace names become folder names, jj bookmarks, and session directories,
       // so they need to be filesystem-safe across platforms.
       error:
         "Workspace names can only contain lowercase letters, numbers, hyphens, and underscores",

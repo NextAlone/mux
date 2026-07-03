@@ -113,7 +113,7 @@ export const ProjectPage: React.FC<ProjectPageProps> = ({
         if (cancelled) return;
         setHasBranches(result.branches.length > 0);
       } catch (err) {
-        console.error("Failed to load branches:", err);
+        console.error("Failed to load bookmarks:", err);
         if (cancelled) return;
         setHasBranches(true); // On error, don't show banner
       } finally {

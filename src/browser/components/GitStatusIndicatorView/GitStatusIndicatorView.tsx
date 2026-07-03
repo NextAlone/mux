@@ -13,9 +13,9 @@ const getIndicatorColor = (branch: number): string => {
     case 0:
       return "#6bcc6b"; // Green for HEAD
     case 1:
-      return "#6ba3cc"; // Blue for origin/main
+      return "#6ba3cc"; // Blue for the remote trunk bookmark
     case 2:
-      return "#b66bcc"; // Purple for origin/branch
+      return "#b66bcc"; // Purple for the remote workspace bookmark
     default:
       return "#6b6b6b"; // Gray fallback
   }
@@ -60,13 +60,13 @@ export interface GitStatusIndicatorViewProps {
   onBaseChange: (value: string) => void;
   /** When true, shows blue pulsing styling to indicate agent is working */
   isWorking?: boolean;
-  /** When true, shows shimmer effect to indicate git status is refreshing */
+  /** When true, shows shimmer effect to indicate repository status is refreshing */
   isRefreshing?: boolean;
 }
 
 /**
- * Pure presentation component for git status indicator.
- * Displays git status (ahead/behind/dirty) and opens divergence details in a dialog.
+ * Pure presentation component for repository status indicator.
+ * Displays jj status (ahead/behind/dirty) and opens divergence details in a dialog.
  * All data is passed as props - no IPC calls or side effects.
  */
 export const GitStatusIndicatorView: React.FC<GitStatusIndicatorViewProps> = ({
@@ -86,7 +86,7 @@ export const GitStatusIndicatorView: React.FC<GitStatusIndicatorViewProps> = ({
   isWorking = false,
   isRefreshing = false,
 }) => {
-  // Handle null gitStatus (initial loading state)
+  // Handle null gitStatus (initial loading state).
   if (!gitStatus) {
     return (
       <span
@@ -127,7 +127,7 @@ export const GitStatusIndicatorView: React.FC<GitStatusIndicatorViewProps> = ({
     );
   };
 
-  // Render branch header showing which column corresponds to which branch
+  // Render bookmark headers showing which column corresponds to which bookmark.
   const renderBranchHeaders = () => {
     if (!branchHeaders || branchHeaders.length === 0) {
       return null;
@@ -165,7 +165,7 @@ export const GitStatusIndicatorView: React.FC<GitStatusIndicatorViewProps> = ({
 
     return (
       <div className="border-separator-light mb-2 border-b pb-2">
-        <div className="text-git-dirty mb-1 font-mono font-semibold">Uncommitted changes:</div>
+        <div className="text-git-dirty mb-1 font-mono font-semibold">Working copy changes:</div>
         <div className="flex flex-col gap-px">
           {displayFiles.map((line, index) => (
             <div
@@ -229,7 +229,7 @@ export const GitStatusIndicatorView: React.FC<GitStatusIndicatorViewProps> = ({
   const additionsColor = isWorking ? "text-success-light" : "text-muted";
   const deletionsColor = isWorking ? "text-warning-light" : "text-muted";
 
-  // Dialog content with git divergence details
+  // Dialog content with repository divergence details.
   const dialogContent = (
     <>
       <div className="border-separator-light mb-2 flex flex-col gap-1 border-b pb-2">
@@ -242,7 +242,7 @@ export const GitStatusIndicatorView: React.FC<GitStatusIndicatorViewProps> = ({
               if (!value) return;
               onModeChange(value as GitStatusIndicatorMode);
             }}
-            aria-label="Git status indicator mode"
+            aria-label="Repository status indicator mode"
             size="sm"
           >
             <ToggleGroupItem value="line-delta" aria-label="Show line delta" size="sm">
@@ -349,7 +349,7 @@ export const GitStatusIndicatorView: React.FC<GitStatusIndicatorViewProps> = ({
           statusColor,
           isRefreshing && "animate-pulse"
         )}
-        aria-label="View git divergence details"
+        aria-label="View repository divergence details"
         onKeyDown={stopKeyboardPropagation}
         onClick={(e) => {
           e.stopPropagation();
@@ -365,7 +365,9 @@ export const GitStatusIndicatorView: React.FC<GitStatusIndicatorViewProps> = ({
         className="bg-modal-bg text-foreground border-separator-light z-[10000] w-[min(92vw,860px)] min-w-0 overflow-auto px-3 py-2 font-mono text-[11px] whitespace-pre shadow-[0_4px_12px_rgba(0,0,0,0.5)]"
       >
         <DialogHeader className="mb-1">
-          <DialogTitle className="text-foreground text-sm">Git divergence details</DialogTitle>
+          <DialogTitle className="text-foreground text-sm">
+            Repository divergence details
+          </DialogTitle>
         </DialogHeader>
         {dialogContent}
       </DialogContent>

@@ -44,9 +44,9 @@ interface HunkViewerProps {
   searchConfig?: SearchHighlightConfig;
   /** Callback when review note composition state changes (receives hunkId for stable reference) */
   onComposingChange?: (hunkId: string, isComposing: boolean) => void;
-  /** Diff base for determining which git ref to read from */
+  /** Diff base for determining which repository ref to read from */
   diffBase: string;
-  /** Whether uncommitted changes are included in the diff */
+  /** Whether working-copy changes are included in the diff */
   includeUncommitted: boolean;
   /** Action callbacks for inline review notes */
   reviewActions?: ReviewActionCallbacks;

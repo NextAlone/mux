@@ -145,16 +145,16 @@ export function setupSimpleChatStory(opts: SimpleChatSetupOptions): APIClient {
       }
     : baseOnChat;
 
-  // Compose executeBash: use custom if provided, otherwise fall back to git status executor
+  // Compose executeBash: use custom if provided, otherwise fall back to repository status executor
   const gitStatusExecutor = createGitStatusExecutor(gitStatus, gitDiff);
   const executeBash = opts.executeBash
     ? async (wsId: string, script: string) => {
-        // Try custom handler first, fall back to git status executor
+        // Try custom handler first, fall back to repository status executor
         const customResult = await opts.executeBash!(wsId, script);
         if (customResult.output || customResult.exitCode !== 0) {
           return customResult;
         }
-        // Fall back to git status executor for git commands
+        // Fall back to repository status executor for VCS commands
         return gitStatusExecutor(wsId, script);
       }
     : gitStatusExecutor;

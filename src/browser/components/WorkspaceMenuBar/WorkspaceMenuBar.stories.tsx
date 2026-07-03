@@ -82,8 +82,8 @@ function createDevcontainerClient(runtimeStatus: "running" | "stopped" | "unknow
     ["dc-2", "fix/sidebar-overflow"],
   ]);
   const gitStatus = new Map([
-    // Passive git status is gated behind runtime eligibility — stopped/unknown
-    // devcontainers have no git status data until the runtime starts.
+    // Passive repository status is gated behind runtime eligibility — stopped/unknown
+    // devcontainers have no repository status data until the runtime starts.
     ...(runtimeStatus === "running" ? [["dc-1", { ahead: 2, dirty: 1 }] as const] : []),
     ["dc-2", { ahead: 0, behind: 3 }],
   ]);

@@ -186,9 +186,9 @@ const BulkProgressModal: React.FC<{
       itemLabel: "workspace",
     },
     deleteWorktree: {
-      inProgressTitle: "Deleting Managed Worktrees",
+      inProgressTitle: "Deleting Managed Checkouts",
       actionPast: "deleted",
-      itemLabel: "managed worktree",
+      itemLabel: "managed checkout",
     },
   };
   const labels = actionLabels[operation.type];
@@ -593,7 +593,7 @@ export const ArchivedWorkspaces: React.FC<ArchivedWorkspacesProps> = ({
                   ...prev,
                   errors: [
                     ...prev.errors,
-                    `Failed to delete managed worktree for ${ws?.name ?? id}${result.error ? `: ${result.error}` : ""}`,
+                    `Failed to delete managed checkout for ${ws?.name ?? id}${result.error ? `: ${result.error}` : ""}`,
                   ],
                 }
               : prev
@@ -604,7 +604,7 @@ export const ArchivedWorkspaces: React.FC<ArchivedWorkspacesProps> = ({
           prev
             ? {
                 ...prev,
-                errors: [...prev.errors, `Failed to delete managed worktree for ${ws?.name ?? id}`],
+                errors: [...prev.errors, `Failed to delete managed checkout for ${ws?.name ?? id}`],
               }
             : prev
         );
@@ -648,7 +648,7 @@ export const ArchivedWorkspaces: React.FC<ArchivedWorkspacesProps> = ({
 
       deleteWorktreeError.showError(
         workspaceId,
-        result.error ?? "Failed to delete managed worktree",
+        result.error ?? "Failed to delete managed checkout",
         anchor
       );
     } catch (error) {
@@ -736,7 +736,7 @@ export const ArchivedWorkspaces: React.FC<ArchivedWorkspacesProps> = ({
       />
       <PopoverError
         error={deleteWorktreeError.error}
-        prefix="Failed to delete managed worktree"
+        prefix="Failed to delete managed checkout"
         onDismiss={deleteWorktreeError.clearError}
       />
       {bulkOperation && (
@@ -772,7 +772,7 @@ export const ArchivedWorkspaces: React.FC<ArchivedWorkspacesProps> = ({
               {bulkDeleteConfirm ? (
                 <>
                   <span className="text-muted text-xs">
-                    Delete permanently (also deletes local branches)?
+                    Delete permanently (also deletes local checkouts)?
                   </span>
                   <button
                     onClick={() => void handleBulkDelete()}
@@ -826,7 +826,7 @@ export const ArchivedWorkspaces: React.FC<ArchivedWorkspacesProps> = ({
                       </button>
                     </TooltipTrigger>
                     <TooltipContent>
-                      Delete selected permanently (local branches too)
+                      Delete selected permanently (local checkouts too)
                     </TooltipContent>
                   </Tooltip>
                   <button
@@ -863,7 +863,7 @@ export const ArchivedWorkspaces: React.FC<ArchivedWorkspacesProps> = ({
                     <Search className="text-muted pointer-events-none absolute top-1/2 left-2 h-4 w-4 -translate-y-1/2" />
                     <input
                       type="text"
-                      placeholder="Search archived workspaces or branches..."
+                      placeholder="Search archived workspaces or bookmarks..."
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
                       className="bg-bg-dark placeholder:text-muted text-foreground focus:border-border-light w-full rounded border border-transparent py-1.5 pr-3 pl-8 text-sm focus:outline-none"
@@ -996,7 +996,9 @@ export const ArchivedWorkspaces: React.FC<ArchivedWorkspacesProps> = ({
                                   <Trash2 className="h-4 w-4" />
                                 </button>
                               </TooltipTrigger>
-                              <TooltipContent>Delete permanently (local branch too)</TooltipContent>
+                              <TooltipContent>
+                                Delete permanently (local checkout too)
+                              </TooltipContent>
                             </Tooltip>
                           </div>
                         </div>

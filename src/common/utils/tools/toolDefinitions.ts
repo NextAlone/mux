@@ -256,7 +256,7 @@ const TaskIsolationSchema = z.enum(TASK_ISOLATION_VALUES);
 const TASK_ISOLATION_PARAM_DESCRIPTION =
   'Workspace isolation for the sub-agent. "fork" (the default) runs it in an isolated copy of this ' +
   'workspace created from committed state. "none" runs it directly in this workspace\'s checkout, ' +
-  "sharing the working tree (including uncommitted changes) and skipping the fork + init overhead. " +
+  "sharing working-copy changes and skipping the fork + init overhead. " +
   'Use "none" only for read-only analysis (e.g. the explore agent) or when you instruct the sub-agent ' +
   "to avoid editing shared files, since it can otherwise modify the same files concurrently. Omit to fork.";
 
@@ -264,27 +264,27 @@ function getTaskRuntimeVisibilityGuidance(runtimeMode: RuntimeMode | undefined):
   switch (runtimeMode) {
     case RUNTIME_MODE.LOCAL:
       return (
-        "In local runtime, sub-agents share the same working directory as the parent, so they can see uncommitted changes. " +
+        "In local runtime, sub-agents share the same working directory as the parent, so they can see working-copy changes. " +
         "Be careful: they can also modify the same files concurrently."
       );
     case RUNTIME_MODE.WORKTREE:
       return (
-        "In worktree runtime, sub-agents start from a forked workspace based on committed state. " +
-        "Uncommitted changes from the parent are not available. Commit any changes you want the sub-agent to consider before spawning a task."
+        "In JJ Workspace runtime, sub-agents start from a forked workspace based on committed state. " +
+        "Working-copy changes from the parent are not available. Commit any changes you want the sub-agent to consider before spawning a task."
       );
     case RUNTIME_MODE.DOCKER:
       return (
         "In Docker runtime, sub-agents start from a new workspace created from the repository's committed state. " +
-        "Uncommitted changes from the parent are not available. Commit any changes you want the sub-agent to consider before spawning a task."
+        "Working-copy changes from the parent are not available. Commit any changes you want the sub-agent to consider before spawning a task."
       );
     case RUNTIME_MODE.DEVCONTAINER:
       return (
         "In devcontainer runtime, sub-agents start from a forked workspace based on committed state. " +
-        "Uncommitted changes from the parent are not available. Commit any changes you want the sub-agent to consider before spawning a task."
+        "Working-copy changes from the parent are not available. Commit any changes you want the sub-agent to consider before spawning a task."
       );
     case RUNTIME_MODE.SSH:
       return (
-        "In SSH runtime, sub-agents usually start from committed state. Some fallback fork paths may copy the working tree, but do not rely on that ambiguity. " +
+        "In SSH runtime, sub-agents usually start from committed state. Some fallback fork paths may copy the working copy, but do not rely on that ambiguity. " +
         "If the child must see your latest changes, commit them before spawning the task."
       );
     default:
@@ -296,13 +296,13 @@ export function buildTaskToolDescription(runtimeMode: RuntimeMode | undefined): 
   const isolationGuidance = runtimeModeSupportsSharedTaskWorkspace(runtimeMode)
     ? "\n\nWorkspace isolation: by default each sub-agent runs in a forked copy of this workspace. " +
       'On this runtime you may pass isolation: "none" to run the sub-agent directly in this workspace\'s ' +
-      "checkout (shared working tree, including uncommitted changes), skipping the fork + init overhead. " +
+      "checkout (shared working copy changes included), skipping the fork + init overhead. " +
       'Reserve isolation: "none" for read-only analysis (e.g. the explore agent) or when you instruct the ' +
       "sub-agent to avoid editing shared files, since concurrent edits to the same files are possible. "
     : "";
   return (
     "Spawn a sub-agent task (child workspace). " +
-    "\n\nIMPORTANT: Whether a sub-agent can see uncommitted changes depends on the runtime. " +
+    "\n\nIMPORTANT: Whether a sub-agent can see working-copy changes depends on the runtime. " +
     `${getTaskRuntimeVisibilityGuidance(runtimeMode)} ` +
     "\n\nProvide agentId (preferred) or subagent_type, prompt, title, run_in_background, and optional n or variants. " +
     `Use n when you want several agents to try the same prompt independently. Use variants when you want several agents to run the same prompt template with a different ${TASK_VARIANT_PLACEHOLDER} substituted into each run. ` +
@@ -1058,7 +1058,7 @@ export const TaskWorkspaceLifecycleTargetSchema = z
 export const TaskWorkspaceLifecycleToolArgsSchema = z
   .object({
     action: TaskWorkspaceLifecycleActionSchema.describe(
-      'Lifecycle action to perform: "archive" is the safe default, "delete_worktree" reclaims disk after archive, and "remove" irreversibly deletes archived workspace metadata/session state.'
+      'Lifecycle action to perform: "archive" is the safe default, "delete_worktree" deletes the managed checkout after archive, and "remove" irreversibly deletes archived workspace metadata/session state.'
     ),
     targets: z
       .array(TaskWorkspaceLifecycleTargetSchema)
@@ -2077,7 +2077,7 @@ export const TOOL_DEFINITIONS = {
   },
   task_workspace_lifecycle: {
     description:
-      'Archive, delete the managed worktree for, or remove full workspaces that the current workspace created via task(kind="workspace"). ' +
+      'Archive, delete the managed checkout for, or remove full workspaces that the current workspace created via task(kind="workspace"). ' +
       "This tool is scoped by durable workspace-turn ownership records; it cannot act on arbitrary user workspaces. " +
       'Use action="archive" as the safe default when child work is complete. Use delete_worktree only after archive to reclaim disk while preserving transcript metadata. ' +
       "Use remove only for irreversible cleanup of already archived owned workspaces. Active workspace turns are refused unless interrupt_active is true, and force never bypasses ownership, archive, or confirmation checks.",

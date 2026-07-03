@@ -276,8 +276,8 @@ export const NonGitRepository: AppStory = {
 };
 
 /**
- * Non-git repository success flow - demonstrates clicking "Run git init"
- * which shows a success message explaining Worktree and Remote are now available.
+ * Non-jj repository success flow - demonstrates clicking the jj init action
+ * which shows a success message explaining JJ Workspace and Remote are now available.
  */
 export const NonGitRepositorySuccess: AppStory = {
   render: () => (
