@@ -69,14 +69,12 @@ import type { RuntimeConfig } from "@/common/types/runtime";
 import { getRuntimeTypeForTelemetry } from "@/common/telemetry";
 import { useAIViewKeybinds } from "@/browser/hooks/useAIViewKeybinds";
 import { QueuedMessage } from "@/browser/features/Messages/QueuedMessage";
-import { CompactionWarning } from "../CompactionWarning/CompactionWarning";
 import { ContextSwitchWarning as ContextSwitchWarningBanner } from "../ContextSwitchWarning/ContextSwitchWarning";
 import {
   ConcurrentLocalWarningDecoration,
   useConcurrentLocalStreamingWorkspaceName,
 } from "../ConcurrentLocalWarning/ConcurrentLocalWarning";
 import { BackgroundProcessesBanner } from "../BackgroundProcessesBanner/BackgroundProcessesBanner";
-import { checkAutoCompaction } from "@/common/utils/compaction/autoCompactionCheck";
 import { cancelCompaction } from "@/browser/utils/compaction/handler";
 import type { ContextSwitchWarning } from "@/browser/utils/compaction/contextSwitchCheck";
 import { useProviderOptions } from "@/browser/hooks/useProviderOptions";
@@ -522,24 +520,6 @@ const ChatPaneContent: React.FC<ChatPaneContentProps> = (props) => {
     tailProposePlanIndex === -1
       ? null
       : (operationalBundleInfos?.[tailProposePlanIndex]?.key ?? null);
-
-  const autoCompactionResult = useMemo(
-    () =>
-      checkAutoCompaction(
-        workspaceUsage,
-        pendingModel,
-        use1M,
-        autoCompactionThreshold / 100,
-        undefined,
-        providersConfig
-      ),
-    [workspaceUsage, pendingModel, use1M, providersConfig, autoCompactionThreshold]
-  );
-
-  // Show warning when: shouldShowWarning flag is true AND not currently compacting.
-  // Context-switch warning takes priority so we don't show competing banners.
-  const shouldShowCompactionWarning =
-    !isCompacting && autoCompactionResult.shouldShowWarning && !contextSwitchWarning;
 
   // Vim mode state - needed for keybind selection (Ctrl+C in vim, Esc otherwise)
   const [vimEnabled] = usePersistedState<boolean>(VIM_ENABLED_KEY, false, { listener: true });
@@ -1645,8 +1625,6 @@ const ChatPaneContent: React.FC<ChatPaneContentProps> = (props) => {
                     shouldShowReviewsBanner={shouldShowReviewsBanner}
                     concurrentLocalStreamingWorkspaceName={concurrentLocalStreamingWorkspaceName}
                     canInterrupt={canInterrupt}
-                    autoCompactionResult={autoCompactionResult}
-                    shouldShowCompactionWarning={shouldShowCompactionWarning}
                     contextSwitchWarning={contextSwitchWarning}
                     onContextSwitchCompact={handleContextSwitchCompact}
                     onContextSwitchDismiss={handleContextSwitchDismiss}
@@ -1711,8 +1689,6 @@ interface ChatInputPaneProps {
   shouldShowReviewsBanner: boolean;
   concurrentLocalStreamingWorkspaceName: string | null;
   canInterrupt: boolean;
-  autoCompactionResult: ReturnType<typeof checkAutoCompaction>;
-  shouldShowCompactionWarning: boolean;
   contextSwitchWarning: ContextSwitchWarning | null;
   onContextSwitchCompact: () => void;
   onContextSwitchDismiss: () => void;
@@ -1743,18 +1719,6 @@ const ChatInputPane: React.FC<ChatInputPaneProps> = (props) => {
     decorationEntries.push(createChatInputDecorationStackItem(entry));
   };
 
-  if (props.shouldShowCompactionWarning) {
-    addDecorationEntry({
-      key: "compaction-warning",
-      node: (
-        <CompactionWarning
-          usagePercentage={props.autoCompactionResult.usagePercentage}
-          thresholdPercentage={props.autoCompactionResult.thresholdPercentage}
-          isStreaming={props.canInterrupt}
-        />
-      ),
-    });
-  }
   if (props.contextSwitchWarning) {
     addDecorationEntry({
       key: "context-switch-warning",
