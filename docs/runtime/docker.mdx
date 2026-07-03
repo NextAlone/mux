@@ -14,7 +14,7 @@ Docker runtime runs each workspace in a separate Docker container, providing ful
 ## How it works
 
 1. When you create a Docker workspace, Mux starts a container from your chosen image
-2. Your project code is synced to `/src` inside the container via git bundle
+2. Your project code is synced to `/src` inside the container via a repository bundle
 3. Commands run inside the container with `docker exec`
 4. Deleting the workspace removes the container
 
@@ -28,7 +28,7 @@ Select Docker in the workspace creation UI and specify an image:
 
 ## Credential sharing
 
-Check "Share credentials" when creating a Docker workspace to enable git authentication:
+Check "Share credentials" when creating a Docker workspace to enable repository authentication:
 
 - **SSH agent forwarding** — Your SSH keys work inside the container without copying private keys
 - **Git config** — Host `~/.gitconfig` is copied into the container so git has your identity and settings

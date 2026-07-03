@@ -27,8 +27,8 @@ const DEVCONTAINER_RUNTIME = {
 };
 
 /**
- * Build a mock executor that handles BranchSelector's `git rev-parse --abbrev-ref HEAD`
- * plus GitStatusStore's consolidated status script, using a per-workspace branch map.
+ * Build a mock executor that handles BranchSelector's jj bookmark probes plus
+ * GitStatusStore's consolidated status script, using a per-workspace bookmark map.
  */
 function createBranchAwareExecutor(
   branches: Map<string, string>,
@@ -36,8 +36,16 @@ function createBranchAwareExecutor(
 ) {
   const baseExecutor = createGitStatusExecutor(gitStatus);
   return (workspaceId: string, script: string) => {
-    // BranchSelector uses `git rev-parse --abbrev-ref HEAD` to detect the current branch
-    if (script.includes("git rev-parse --abbrev-ref HEAD")) {
+    if (script.includes("jj --no-pager --color never root")) {
+      return Promise.resolve({
+        success: true as const,
+        output: "true",
+        exitCode: 0,
+        wall_duration_ms: 10,
+      });
+    }
+
+    if (script.includes("latest(::@ & bookmarks())")) {
       const branch = branches.get(workspaceId) ?? "main";
       return Promise.resolve({
         success: true as const,
@@ -46,6 +54,25 @@ function createBranchAwareExecutor(
         wall_duration_ms: 10,
       });
     }
+
+    if (script.includes("jj --no-pager --color never bookmark list")) {
+      return Promise.resolve({
+        success: true as const,
+        output: Array.from(branches.values()).join("\n"),
+        exitCode: 0,
+        wall_duration_ms: 10,
+      });
+    }
+
+    if (script.includes("jj --no-pager --color never git remote list")) {
+      return Promise.resolve({
+        success: true as const,
+        output: "",
+        exitCode: 0,
+        wall_duration_ms: 10,
+      });
+    }
+
     return baseExecutor(workspaceId, script);
   };
 }
@@ -76,7 +103,7 @@ function createDevcontainerClient(runtimeStatus: "running" | "stopped" | "unknow
   collapseLeftSidebar();
 
   const branches = new Map([
-    // dc-1 branch is only available from git when the runtime is running;
+    // dc-1 bookmark is only available when the runtime is running;
     // otherwise BranchSelector falls back to branchCache / workspaceName.
     ...(runtimeStatus === "running" ? [["dc-1", "feature/lazy-start"] as const] : []),
     ["dc-2", "fix/sidebar-overflow"],
@@ -101,7 +128,7 @@ function createDevcontainerClient(runtimeStatus: "running" | "stopped" | "unknow
 
 /**
  * Devcontainer workspace with a running container.
- * The top bar shows a "Container running" indicator next to the branch selector.
+ * The top bar shows a "Container running" indicator next to the bookmark selector.
  */
 export const DevcontainerRunning: AppStory = {
   parameters: {

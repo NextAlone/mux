@@ -418,7 +418,7 @@ export class DockerRuntime extends RemoteRuntime {
   async createWorkspace(params: WorkspaceCreationParams): Promise<WorkspaceCreationResult> {
     const { projectPath, directoryName } = params;
 
-    // Container identity should follow the workspace entry name rather than the git branch.
+    // Container identity should follow the workspace entry name rather than a source bookmark.
     // The two are usually equal today, but the runtime contract keeps them distinct.
     const containerName = getContainerName(projectPath, directoryName);
 

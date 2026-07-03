@@ -72,7 +72,7 @@ function CredentialSharingCheckbox(props: {
         disabled={props.disabled}
         className="accent-accent"
       />
-      <span className="text-muted">Share credentials (SSH, Git)</span>
+      <span className="text-muted">Share credentials (SSH, repository auth)</span>
       <DocsLink path={props.docsPath} />
     </label>
   );
@@ -101,7 +101,7 @@ function NameErrorDisplay(props: { error: WorkspaceNameUIError }) {
 
 interface CreationControlsProps {
   branches: string[];
-  /** Whether branches have finished loading (to distinguish loading vs non-git repo) */
+  /** Whether bookmarks have finished loading (to distinguish loading vs non-jj repo) */
   branchesLoaded: boolean;
   trunkBranch: string;
   onTrunkBranchChange: (branch: string) => void;
@@ -518,7 +518,7 @@ export function RuntimeButtonGroup(props: RuntimeButtonGroupProps) {
 
 /**
  * Prominent controls shown above the input during workspace creation.
- * Displays project name as header, workspace name with magic wand, and runtime/branch selectors.
+ * Displays project name as header, workspace name with magic wand, and runtime/bookmark selectors.
  */
 export function CreationControls(props: CreationControlsProps) {
   const { userProjects } = useProjectContext();
@@ -850,7 +850,7 @@ export function CreationControls(props: CreationControlsProps) {
       {/* Runtime and source bookmark controls */}
       <div className="flex flex-col gap-1.5" data-component="RuntimeTypeGroup">
         <div className="flex flex-wrap items-end gap-x-3 gap-y-2">
-          {/* Workspace Type + Source Branch share a row on mobile */}
+          {/* Workspace Type + Source Bookmark share a row on mobile */}
           <div className="flex w-full items-end gap-3 md:contents md:w-auto">
             <div className="flex min-w-0 flex-1 flex-col gap-1.5 md:flex-initial">
               <div className="flex items-center gap-1.5">
@@ -965,7 +965,7 @@ export function CreationControls(props: CreationControlsProps) {
             >
               <label className="text-muted-foreground flex items-center gap-1 text-xs font-medium">
                 <GitBranch className="h-3.5 w-3.5" />
-                Source Branch
+                Source Bookmark
               </label>
               {props.branchesLoaded ? (
                 <RadixSelect

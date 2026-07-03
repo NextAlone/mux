@@ -158,7 +158,7 @@ function estimateBase64DataUrlBytes(dataUrl: string): number | null {
 
 interface UseCreationWorkspaceReturn {
   branches: string[];
-  /** Whether listBranches has completed (to distinguish loading vs non-git repo) */
+  /** Whether listBranches has completed (to distinguish loading vs non-jj repo) */
   branchesLoaded: boolean;
   trunkBranch: string;
   setTrunkBranch: (branch: string) => void;
@@ -186,7 +186,7 @@ interface UseCreationWorkspaceReturn {
   nameState: WorkspaceNameState;
   /** The confirmed identity being used for creation (null until generation resolves) */
   creatingWithIdentity: WorkspaceIdentity | null;
-  /** Reload branches (e.g., after git init) */
+  /** Reload bookmarks (e.g., after jj git init) */
   reloadBranches: () => Promise<void>;
   /** Runtime availability state for each mode (loading/failed/loaded) */
   runtimeAvailabilityState: RuntimeAvailabilityState;
@@ -205,7 +205,7 @@ export type RuntimeAvailabilityState =
 /**
  * Hook for managing workspace creation state and logic
  * Handles:
- * - Branch selection
+ * - Bookmark selection
  * - Runtime configuration (local vs SSH)
  * - Workspace name generation
  * - Message sending with workspace creation
@@ -766,7 +766,7 @@ export function useCreationWorkspace({
     nameState: workspaceNameState,
     // The confirmed identity being used for creation (null until generation resolves)
     creatingWithIdentity,
-    // Reload branches (e.g., after git init)
+    // Reload bookmarks (e.g., after jj git init)
     reloadBranches: loadBranches,
     // Runtime availability state for each mode
     runtimeAvailabilityState,

@@ -523,10 +523,10 @@ export const WorkspaceMenuBar: React.FC<WorkspaceMenuBarProps> = ({
         />
         <span className="min-w-0 truncate font-mono text-xs">{projectLabel}</span>
         <div className="flex items-center gap-1">
-          {/* BranchSelector keeps workspace-scoped local UI state (current branch fallback,
+          {/* BranchSelector keeps workspace-scoped local UI state (current bookmark fallback,
               open popover contents, remote expansion). Key it by workspace identity so
               switching workspaces resets that state instead of leaking the previous
-              workspace's branch presentation into the next one. */}
+              workspace's bookmark presentation into the next one. */}
           <BranchSelector
             key={workspaceId}
             workspaceId={workspaceId}

@@ -1592,7 +1592,7 @@ export class WorkspaceService extends EventEmitter {
   // Tracks workspaces currently being renamed to prevent streaming during rename
   private readonly renamingWorkspaces = new Set<string>();
 
-  // Cache for @file mention autocomplete (git ls-files output).
+  // Cache for @file mention autocomplete (repository file-list output).
   private readonly fileCompletionsCache = new Map<string, FileCompletionsCacheEntry>();
   // Tracks workspaces currently being removed to prevent new sessions/streams during deletion.
   private readonly removingWorkspaces = new Set<string>();

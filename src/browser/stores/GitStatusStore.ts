@@ -34,8 +34,8 @@ import {
  *   - Initial subscription triggers immediate fetch
  *   - File-modifying tools trigger debounced refresh (3s)
  *   - Window focus triggers refresh for visible workspaces
- *   - Explicit invalidation (branch switch, etc.)
- * - Manages git fetch with exponential backoff
+ *   - Explicit invalidation (bookmark switch, etc.)
+ * - Manages repository fetch with exponential backoff
  * - Notifies subscribers when status changes
  * - Components only re-render when their specific workspace status changes
  *
@@ -931,7 +931,7 @@ export class GitStatusStore {
     const result = await this.client.workspace.executeBash({
       workspaceId,
       script: GIT_FETCH_SCRIPT,
-      // Passive fetches use the runtime path because git fetch / git ls-remote
+      // Passive fetches use the runtime path because repository remotes
       // may need remote credentials that only exist inside the runtime. These
       // background fetches are only scheduled when that runtime is already running.
       options: repoRootBashOptions(30, repoRootProjectPath),

@@ -53,6 +53,7 @@ let mockGitStatus: GitStatus | null = null;
 const invalidateGitStatusMock = mock(() => undefined);
 const clearGitStatusMock = mock(() => undefined);
 const copyToClipboardMock = mock(() => Promise.resolve());
+let restoreSpies: Array<() => void> = [];
 
 const PopoverContext = createContext<{
   open: boolean;
@@ -74,6 +75,11 @@ function bashSuccess(output: string): ExecuteBashResult {
   };
 }
 
+function trackSpy<T extends { mockRestore: () => void }>(spy: T): T {
+  restoreSpies.push(() => spy.mockRestore());
+  return spy;
+}
+
 describe("BranchSelector", () => {
   let originalWindow: typeof globalThis.window;
   let originalDocument: typeof globalThis.document;
@@ -93,6 +99,7 @@ describe("BranchSelector", () => {
     globalThis.location = dom.location as unknown as Location;
 
     mockGitStatus = null;
+    restoreSpies = [];
     invalidateGitStatusMock.mockClear();
     clearGitStatusMock.mockClear();
     copyToClipboardMock.mockClear();
@@ -102,7 +109,7 @@ describe("BranchSelector", () => {
       },
     };
 
-    spyOn(APIModule, "useAPI").mockImplementation(() => ({
+    trackSpy(spyOn(APIModule, "useAPI")).mockImplementation(() => ({
       api: mockApi as unknown as APIClient,
       status: "connected" as const,
       error: null,
@@ -110,15 +117,17 @@ describe("BranchSelector", () => {
       retry: () => undefined,
     }));
 
-    spyOn(GitStatusStoreModule, "useGitStatus").mockImplementation(() => mockGitStatus);
-    spyOn(GitStatusStoreModule, "invalidateGitStatus").mockImplementation(invalidateGitStatusMock);
-    spyOn(GitStatusStoreModule, "clearGitStatus").mockImplementation(clearGitStatusMock);
-    spyOn(CopyToClipboardModule, "useCopyToClipboard").mockImplementation(() => ({
+    trackSpy(spyOn(GitStatusStoreModule, "useGitStatus")).mockImplementation(() => mockGitStatus);
+    trackSpy(spyOn(GitStatusStoreModule, "invalidateGitStatus")).mockImplementation(
+      invalidateGitStatusMock
+    );
+    trackSpy(spyOn(GitStatusStoreModule, "clearGitStatus")).mockImplementation(clearGitStatusMock);
+    trackSpy(spyOn(CopyToClipboardModule, "useCopyToClipboard")).mockImplementation(() => ({
       copied: false,
       copyToClipboard: copyToClipboardMock,
     }));
 
-    spyOn(PopoverModule, "Popover").mockImplementation(((props: {
+    trackSpy(spyOn(PopoverModule, "Popover")).mockImplementation(((props: {
       open: boolean;
       onOpenChange: (open: boolean) => void;
       children: ReactNode;
@@ -127,7 +136,7 @@ describe("BranchSelector", () => {
         {props.children}
       </PopoverContext.Provider>
     )) as unknown as typeof PopoverModule.Popover);
-    spyOn(PopoverModule, "PopoverTrigger").mockImplementation(((props: {
+    trackSpy(spyOn(PopoverModule, "PopoverTrigger")).mockImplementation(((props: {
       asChild?: boolean;
       children: ReactNode;
     }) => {
@@ -146,19 +155,21 @@ describe("BranchSelector", () => {
       }
       return <button onClick={() => popover.onOpenChange(!popover.open)}>{props.children}</button>;
     }) as unknown as typeof PopoverModule.PopoverTrigger);
-    spyOn(PopoverModule, "PopoverContent").mockImplementation(((props: { children: ReactNode }) => {
+    trackSpy(spyOn(PopoverModule, "PopoverContent")).mockImplementation(((props: {
+      children: ReactNode;
+    }) => {
       const popover = useContext(PopoverContext);
       return popover.open ? <div>{props.children}</div> : null;
     }) as unknown as typeof PopoverModule.PopoverContent);
 
-    spyOn(TooltipModule, "Tooltip").mockImplementation(((props: { children: ReactNode }) => (
-      <>{props.children}</>
-    )) as unknown as typeof TooltipModule.Tooltip);
-    spyOn(TooltipModule, "TooltipTrigger").mockImplementation(((props: {
+    trackSpy(spyOn(TooltipModule, "Tooltip")).mockImplementation(((props: {
+      children: ReactNode;
+    }) => <>{props.children}</>) as unknown as typeof TooltipModule.Tooltip);
+    trackSpy(spyOn(TooltipModule, "TooltipTrigger")).mockImplementation(((props: {
       children: ReactNode;
       asChild?: boolean;
     }) => <>{props.children}</>) as unknown as typeof TooltipModule.TooltipTrigger);
-    spyOn(TooltipModule, "TooltipContent").mockImplementation(((props: {
+    trackSpy(spyOn(TooltipModule, "TooltipContent")).mockImplementation(((props: {
       children: ReactNode;
       side?: string;
     }) => <>{props.children}</>) as unknown as typeof TooltipModule.TooltipContent);
@@ -166,7 +177,10 @@ describe("BranchSelector", () => {
 
   afterEach(() => {
     cleanup();
-    mock.restore();
+    for (const restore of [...restoreSpies].reverse()) {
+      restore();
+    }
+    restoreSpies = [];
     globalThis.window = originalWindow;
     globalThis.document = originalDocument;
     globalThis.localStorage = originalLocalStorage;

@@ -16,7 +16,7 @@ import { createArchivedWorkspace, NOW } from "@/browser/stories/mocks/workspaces
 import { LEFT_SIDEBAR_COLLAPSED_KEY } from "@/common/constants/storage";
 import type { ProjectConfig } from "@/node/config";
 
-// Integration: stories render full app to test ProjectPage workspace creation flows, git init banners, and provider configuration.
+// Integration: stories render full app to test ProjectPage workspace creation flows, jj init banners, and provider configuration.
 export default {
   ...appMeta,
   title: "Components/ProjectPage",
@@ -238,10 +238,10 @@ export const CreateWorkspaceWithSections: AppStory = {
 };
 
 /**
- * Non-git repository - shows git init banner prompting user to initialize git.
- * Banner is displayed above the ChatInput when the project directory is not a git repo.
+ * Non-jj repository - shows jj init banner prompting user to initialize jj.
+ * Banner is displayed above the ChatInput when the project directory is not a jj repo.
  */
-export const NonGitRepository: AppStory = {
+export const NonJjRepository: AppStory = {
   render: () => (
     <AppWithMocks
       setup={() => {
@@ -249,15 +249,15 @@ export const NonGitRepository: AppStory = {
         return createMockORPCClient({
           projects: new Map([projectWithNoWorkspaces("/Users/dev/new-project")]),
           workspaces: [],
-          // Return empty branches (indicates non-git repo)
+          // Return empty bookmarks (indicates non-jj repo)
           listBranches: () => Promise.resolve({ branches: [], recommendedTrunk: null }),
-          // Mark non-local runtimes as unavailable for non-git repos
+          // Mark non-local runtimes as unavailable for non-jj repos
           // Dev container hidden (no config found) rather than disabled
           runtimeAvailability: {
             local: { available: true },
-            worktree: { available: false, reason: "Requires git repository" },
-            ssh: { available: false, reason: "Requires git repository" },
-            docker: { available: false, reason: "Requires git repository" },
+            worktree: { available: false, reason: "Requires jj repository" },
+            ssh: { available: false, reason: "Requires jj repository" },
+            docker: { available: false, reason: "Requires jj repository" },
             devcontainer: { available: false, reason: "No devcontainer.json found" },
           },
         });
@@ -279,7 +279,7 @@ export const NonGitRepository: AppStory = {
  * Non-jj repository success flow - demonstrates clicking the jj init action
  * which shows a success message explaining JJ Workspace and Remote are now available.
  */
-export const NonGitRepositorySuccess: AppStory = {
+export const NonJjRepositorySuccess: AppStory = {
   render: () => (
     <AppWithMocks
       setup={() => {
@@ -287,18 +287,18 @@ export const NonGitRepositorySuccess: AppStory = {
         return createMockORPCClient({
           projects: new Map([projectWithNoWorkspaces("/Users/dev/new-project")]),
           workspaces: [],
-          // Always return empty branches so banner stays visible after success
+          // Always return empty bookmarks so banner stays visible after success
           listBranches: () => Promise.resolve({ branches: [], recommendedTrunk: null }),
-          // Mark non-local runtimes as unavailable for non-git repos
+          // Mark non-local runtimes as unavailable for non-jj repos
           // Dev container hidden (no config found) rather than disabled
           runtimeAvailability: {
             local: { available: true },
-            worktree: { available: false, reason: "Requires git repository" },
-            ssh: { available: false, reason: "Requires git repository" },
-            docker: { available: false, reason: "Requires git repository" },
+            worktree: { available: false, reason: "Requires jj repository" },
+            ssh: { available: false, reason: "Requires jj repository" },
+            docker: { available: false, reason: "Requires jj repository" },
             devcontainer: { available: false, reason: "No devcontainer.json found" },
           },
-          // Simulate git init success
+          // Simulate jj init success
           gitInit: () => Promise.resolve({ success: true as const }),
         });
       }}
@@ -313,7 +313,7 @@ export const NonGitRepositorySuccess: AppStory = {
     const banner = await canvas.findByTestId("git-init-banner", {}, { timeout: 10000 });
     banner.scrollIntoView({ block: "center" });
 
-    // Click the git init button to trigger success flow
+    // Click the jj init button to trigger success flow
     const button = await canvas.findByTestId("git-init-button");
     await userEvent.click(button);
 
@@ -327,10 +327,10 @@ export const NonGitRepositorySuccess: AppStory = {
 };
 
 /**
- * Non-git repository with in-progress state - demonstrates the loading UI
- * while git init is running.
+ * Non-jj repository with in-progress state - demonstrates the loading UI
+ * while jj init is running.
  */
-export const NonGitRepositoryInProgress: AppStory = {
+export const NonJjRepositoryInProgress: AppStory = {
   render: () => (
     <AppWithMocks
       setup={() => {
@@ -342,9 +342,9 @@ export const NonGitRepositoryInProgress: AppStory = {
           // Dev container hidden (no config found) rather than disabled
           runtimeAvailability: {
             local: { available: true },
-            worktree: { available: false, reason: "Requires git repository" },
-            ssh: { available: false, reason: "Requires git repository" },
-            docker: { available: false, reason: "Requires git repository" },
+            worktree: { available: false, reason: "Requires jj repository" },
+            ssh: { available: false, reason: "Requires jj repository" },
+            docker: { available: false, reason: "Requires jj repository" },
             devcontainer: { available: false, reason: "No devcontainer.json found" },
           },
           // Never resolve - keeps in loading state
@@ -377,10 +377,10 @@ export const NonGitRepositoryInProgress: AppStory = {
 };
 
 /**
- * Non-git repository with error state - demonstrates the error message
- * when git init fails.
+ * Non-jj repository with error state - demonstrates the error message
+ * when jj init fails.
  */
-export const NonGitRepositoryError: AppStory = {
+export const NonJjRepositoryError: AppStory = {
   render: () => (
     <AppWithMocks
       setup={() => {
@@ -392,9 +392,9 @@ export const NonGitRepositoryError: AppStory = {
           // Dev container hidden (no config found) rather than disabled
           runtimeAvailability: {
             local: { available: true },
-            worktree: { available: false, reason: "Requires git repository" },
-            ssh: { available: false, reason: "Requires git repository" },
-            docker: { available: false, reason: "Requires git repository" },
+            worktree: { available: false, reason: "Requires jj repository" },
+            ssh: { available: false, reason: "Requires jj repository" },
+            docker: { available: false, reason: "Requires jj repository" },
             devcontainer: { available: false, reason: "No devcontainer.json found" },
           },
           // Return error

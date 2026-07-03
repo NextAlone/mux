@@ -4,6 +4,7 @@ set -e
 
 DOCS_DIR="/tmp/ai-sdk-docs"
 TEMP_DIR="$(mktemp -d)"
+ARCHIVE_URL="https://codeload.github.com/vercel/ai/tar.gz/refs/heads/main"
 
 cleanup() {
   rm -rf "$TEMP_DIR"
@@ -12,15 +13,18 @@ trap cleanup EXIT
 
 echo "Fetching Vercel AI SDK documentation..."
 
-cd "$TEMP_DIR"
-git init -q
-git remote add origin https://github.com/vercel/ai.git
-git config core.sparseCheckout true
-mkdir -p .git/info
-echo "content/*" >.git/info/sparse-checkout
+ARCHIVE_PATH="$TEMP_DIR/vercel-ai.tar.gz"
+EXTRACT_DIR="$TEMP_DIR/extract"
+mkdir -p "$EXTRACT_DIR"
 
-git fetch --depth=1 origin main
-git checkout main
+curl -fsSL "$ARCHIVE_URL" -o "$ARCHIVE_PATH"
+tar -xzf "$ARCHIVE_PATH" -C "$EXTRACT_DIR"
+CONTENT_DIR="$(find "$EXTRACT_DIR" -maxdepth 2 -type d -name content -print -quit)"
+
+if [ -z "$CONTENT_DIR" ]; then
+  echo "Error: content directory not found in archive"
+  exit 1
+fi
 
 if [ -d "$DOCS_DIR" ]; then
   echo "Removing existing ai-sdk-docs directory..."
@@ -29,13 +33,8 @@ fi
 
 mkdir -p "$DOCS_DIR"
 
-if [ -d "content" ]; then
-  echo "Copying documentation to $DOCS_DIR..."
-  cp -r content/* "$DOCS_DIR/"
-  echo "Documentation updated successfully!"
-else
-  echo "Error: content directory not found in repository"
-  exit 1
-fi
+echo "Copying documentation to $DOCS_DIR..."
+cp -r "$CONTENT_DIR"/* "$DOCS_DIR/"
+echo "Documentation updated successfully!"
 
 echo "Vercel AI SDK documentation has been updated in $DOCS_DIR"

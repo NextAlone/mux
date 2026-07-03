@@ -111,7 +111,7 @@ Messages wrapped in <mux_subagent_report> are internal sub-agent outputs from Mu
 /**
  * Build environment context XML block describing the workspace.
  * @param workspacePath - Workspace directory path
- * @param runtimeType - Runtime type (local, worktree, ssh, docker)
+ * @param runtimeType - Runtime type (local, worktree/JJ Workspace, ssh, docker)
  */
 function buildEnvironmentContext(
   workspacePath: string,
@@ -131,7 +131,7 @@ function buildEnvironmentContext(
 
   switch (runtimeType) {
     case RUNTIME_MODE.LOCAL:
-      // Local runtime works directly in project directory - may or may not be git
+      // Local runtime works directly in project directory - may or may not be a jj checkout.
       description = `You are working in a directory at ${workspacePath}`;
       lines = [
         "- Tools run here automatically",
@@ -140,7 +140,7 @@ function buildEnvironmentContext(
       break;
 
     case RUNTIME_MODE.WORKTREE:
-      // Worktree runtime creates a jj workspace locally.
+      // JJ Workspace runtime creates a jj workspace locally.
       description = `You are in a jj workspace at ${workspacePath}`;
       lines = [
         ...vcsCommonLines,

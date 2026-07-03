@@ -1141,9 +1141,9 @@ export class ProjectService {
 
       const branches = await listLocalBranches(normalizedPath);
 
-      // Empty branches means the repo is unborn (git init but no commits yet)
-      // Return empty branches - frontend will show the git init banner since no branches exist
-      // After user creates a commit, branches will populate
+      // Empty bookmarks means the jj repo is unborn (initialized but no committed change yet).
+      // Return empty bookmarks - frontend will show the jj init banner since no bookmarks exist.
+      // After the user creates a commit/bookmark, the list will populate.
       if (branches.length === 0) {
         return { branches: [], recommendedTrunk: null };
       }

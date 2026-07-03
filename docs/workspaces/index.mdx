@@ -12,13 +12,13 @@ Each workspace has its own chat history and, depending on runtime, its own worki
 Runtimes decide where a workspace runs and how isolated its filesystem is:
 
 - **[Local](/runtime/local)**: Runs directly in your project directory. No filesystem isolation.
-- **[Worktree](/runtime/worktree)**: Creates a local jj workspace for per-workspace isolation while still sharing repository history.
+- **[JJ Workspace](/runtime/worktree)**: Creates a local jj workspace for per-workspace isolation while still sharing repository history.
 - **[SSH](/runtime/ssh)**: Runs on a remote host over SSH (useful for security isolation and heavy parallelism).
 
 ## Key concepts
 
 - **Bookmark flexibility**: A workspace can create new changes and move bookmarks as needed.
-- **Commit visibility**: Local + worktree runtimes share the same jj repository. Commits made in one workspace are immediately visible to your other workspaces and your main checkout.
+- **Commit visibility**: Local + JJ Workspace runtimes share the same jj repository. Commits made in one workspace are immediately visible to your other workspaces and your main checkout.
 - **Parallel execution**: Multiple workspaces can work on different tasks concurrently.
 
 ## Reviewing changes
@@ -36,14 +36,14 @@ A few common workflows (from "agent edits only" → "agent owns the PR"):
 Some changes (especially UI ones) are faster to review by running the workspace locally.
 
 1. Ask the agent to commit when it’s ready for review.
-2. If the workspace is a **worktree**, open the workspace directory directly or create a new jj workspace from the relevant bookmark:
+2. If the workspace uses **JJ Workspace** runtime, open the workspace directory directly or create a new jj workspace from the relevant bookmark:
 
    ```bash
    jj workspace add ../review-workspace <workspace-bookmark>
    ```
 
 <Note>
-  jj workspaces allow multiple independent working copies without branch checkout conflicts.
+  jj workspaces allow multiple independent working copies without bookmark checkout conflicts.
 </Note>
 
 If you want faster iteration between commits, open the workspace directory and run a dev server (for example `bun dev`) there directly.
