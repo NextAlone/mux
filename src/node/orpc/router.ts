@@ -3970,7 +3970,9 @@ export const router = (authToken?: string) => {
             input.runtimeConfig,
             input.subProjectPath,
             input.pendingAutoTitle,
-            input.tags
+            input.tags,
+            input.startPoint,
+            input.startPointWorkspaceId
           );
           if (!result.success) {
             return { success: false, error: result.error };

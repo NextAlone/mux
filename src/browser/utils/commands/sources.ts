@@ -343,6 +343,69 @@ export function buildCoreSources(p: BuildSourcesParams): Array<() => CommandActi
     };
   };
 
+  const createWorkspaceFromRevisionAction = (
+    selected: NonNullable<BuildSourcesParams["selectedWorkspace"]>,
+    revision: "@" | "@-"
+  ): CommandAction => {
+    const metadata = p.workspaceMetadata.get(selected.workspaceId);
+    const targetProjectPath = metadata?.subProjectPath ?? selected.projectPath;
+    const workspaceLabel = metadata?.title ?? metadata?.name ?? selected.namedWorkspacePath;
+    const runtimeConfig =
+      metadata?.runtimeConfig.type === "local" ? undefined : metadata?.runtimeConfig;
+    const isParentRevision = revision === "@-";
+
+    return {
+      id: CommandIds.workspaceNewFromRevision(revision),
+      title: isParentRevision
+        ? "Create Workspace from Parent Change (@-)"
+        : "Create Workspace from Current Change (@)",
+      subtitle: `from ${workspaceLabel}`,
+      section: section.workspaces,
+      keywords: [
+        revision,
+        "jj",
+        "new workspace",
+        "current change",
+        isParentRevision ? "parent change" : "working change",
+      ],
+      run: async () => {
+        if (!p.api) {
+          showCommandFeedbackToast({ type: "error", message: "API is not connected" });
+          return;
+        }
+
+        const branchInfo = await p.getBranchesForProject(targetProjectPath);
+        const trunkBranch = branchInfo.recommendedTrunk ?? branchInfo.branches[0];
+        if (!trunkBranch) {
+          showCommandFeedbackToast({
+            type: "error",
+            message: "No source bookmark is available for this project",
+          });
+          return;
+        }
+
+        const result = await p.api.workspace.create({
+          projectPath: targetProjectPath,
+          trunkBranch,
+          startPoint: revision,
+          startPointWorkspaceId: selected.workspaceId,
+          ...(runtimeConfig ? { runtimeConfig } : {}),
+        });
+        if (!result.success) {
+          showCommandFeedbackToast({ type: "error", message: result.error });
+          return;
+        }
+
+        p.onSelectWorkspace({
+          projectPath: result.metadata.projectPath,
+          projectName: result.metadata.projectName,
+          namedWorkspacePath: result.metadata.namedWorkspacePath,
+          workspaceId: result.metadata.id,
+        });
+      },
+    };
+  };
+
   // Workspaces
   actions.push(() => {
     const list: CommandAction[] = [];
@@ -350,6 +413,8 @@ export function buildCoreSources(p: BuildSourcesParams): Array<() => CommandActi
     const selected = p.selectedWorkspace;
     if (selected) {
       list.push(createWorkspaceForSelectedProjectAction(selected));
+      list.push(createWorkspaceFromRevisionAction(selected, "@"));
+      list.push(createWorkspaceFromRevisionAction(selected, "@-"));
     }
 
     // Switch to workspace

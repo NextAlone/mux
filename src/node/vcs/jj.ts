@@ -238,6 +238,13 @@ export async function hasJjWorkspaceChanges(workspacePath: string): Promise<bool
 }
 
 export async function getCurrentJjChangeId(workspacePath: string): Promise<string | null> {
+  return resolveJjRevisionChangeId(workspacePath, "@");
+}
+
+export async function resolveJjRevisionChangeId(
+  workspacePath: string,
+  revision: string
+): Promise<string | null> {
   using proc = disposableExec.execFileAsync("jj", [
     ...JJ_MACHINE_ARGS,
     "--repository",
@@ -245,7 +252,7 @@ export async function getCurrentJjChangeId(workspacePath: string): Promise<strin
     "log",
     "--no-graph",
     "-r",
-    "@",
+    revision,
     "-T",
     JJ_CHANGE_ID_TEMPLATE,
     "-n",

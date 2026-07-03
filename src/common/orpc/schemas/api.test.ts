@@ -276,6 +276,24 @@ describe("workspace.createMultiProject schema", () => {
   });
 });
 
+describe("workspace.create schema", () => {
+  it("accepts a jj start point resolved from an existing workspace", () => {
+    const result = workspace.create.input.safeParse({
+      projectPath: "/tmp/project-a",
+      trunkBranch: "main",
+      startPoint: "@-",
+      startPointWorkspaceId: "workspace-1",
+    });
+
+    expect(result.success).toBe(true);
+    if (!result.success) {
+      throw new Error("Expected workspace.create schema validation to pass");
+    }
+    expect(result.data.startPoint).toBe("@-");
+    expect(result.data.startPointWorkspaceId).toBe("workspace-1");
+  });
+});
+
 describe("config.saveConfig schema", () => {
   it("accepts payloads that omit taskSettings", () => {
     const result = config.saveConfig.input.safeParse({ agentAiDefaults: {} });

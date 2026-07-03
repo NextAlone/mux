@@ -366,6 +366,65 @@ test("selected-workspace create action targets the workspace sub-project", async
   expect(onStartWorkspaceCreation).toHaveBeenCalledWith("/repo/a/packages/api");
 });
 
+test("selected-workspace revision actions create from current jj changes", async () => {
+  await withTestWindow(async () => {
+    const create = mock(() =>
+      Promise.resolve({
+        success: true as const,
+        metadata: {
+          id: "new-ws",
+          name: "mux-1",
+          projectName: "a",
+          projectPath: "/repo/a",
+          namedWorkspacePath: "/repo/a/mux-1",
+          runtimeConfig: DEFAULT_RUNTIME_CONFIG,
+        },
+      })
+    );
+    const onSelectWorkspace = mock();
+    const actions = getActions({
+      api: workspaceApi({ create }),
+      onSelectWorkspace,
+      getBranchesForProject: () =>
+        Promise.resolve({
+          branches: ["main"],
+          recommendedTrunk: "main",
+        }),
+    });
+
+    const currentAction = actions.find((action) => action.id === "ws:new-from:@");
+    const parentAction = actions.find((action) => action.id === "ws:new-from:@-");
+
+    expect(currentAction).toBeDefined();
+    expect(parentAction).toBeDefined();
+
+    await Promise.resolve(currentAction?.run());
+
+    expect(create).toHaveBeenNthCalledWith(1, {
+      projectPath: "/repo/a",
+      trunkBranch: "main",
+      startPoint: "@",
+      startPointWorkspaceId: "w1",
+      runtimeConfig: DEFAULT_RUNTIME_CONFIG,
+    });
+    expect(onSelectWorkspace).toHaveBeenCalledWith({
+      projectPath: "/repo/a",
+      projectName: "a",
+      namedWorkspacePath: "/repo/a/mux-1",
+      workspaceId: "new-ws",
+    });
+
+    await Promise.resolve(parentAction?.run());
+    expect(create).toHaveBeenNthCalledWith(2, {
+      projectPath: "/repo/a",
+      trunkBranch: "main",
+      startPoint: "@-",
+      startPointWorkspaceId: "w1",
+      runtimeConfig: DEFAULT_RUNTIME_CONFIG,
+    });
+  });
+});
+
 test("buildCoreSources includes archive merged workspaces in project action", () => {
   const actions = getActions();
   const archiveAction = actions.find((a) => a.id === "ws:archive-merged-in-project");
