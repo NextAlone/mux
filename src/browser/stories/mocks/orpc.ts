@@ -68,6 +68,11 @@ import type {
 import type { CoderWorkspaceArchiveBehavior } from "@/common/config/coderArchiveBehavior";
 import type { WorktreeArchiveBehavior } from "@/common/config/worktreeArchiveBehavior";
 import {
+  DEFAULT_WORKSPACE_CHECKOUT_LOCATION,
+  normalizeWorkspaceCheckoutLocationConfig,
+  type WorkspaceCheckoutLocationConfig,
+} from "@/common/config/workspaceCheckoutLocation";
+import {
   normalizeUserPreferences,
   type UserPreferences,
 } from "@/common/config/schemas/userPreferences";
@@ -139,6 +144,8 @@ export interface MockORPCClientOptions {
   coderWorkspaceArchiveBehavior?: CoderWorkspaceArchiveBehavior;
   /** What to do with mux-managed checkouts when archiving a chat. */
   worktreeArchiveBehavior?: WorktreeArchiveBehavior;
+  /** Where new local JJ workspace checkouts are created. */
+  workspaceCheckoutLocation?: WorkspaceCheckoutLocationConfig;
   /** Initial full-width transcript toggle for config.getConfig */
   chatTranscriptFullWidth?: boolean;
   /** Initial runtime enablement for config.getConfig */
@@ -380,6 +387,8 @@ export function createMockORPCClient(options: MockORPCClientOptions = {}): APICl
     agentAiDefaults: initialAgentAiDefaults,
     coderWorkspaceArchiveBehavior: initialCoderWorkspaceArchiveBehavior = "stop",
     worktreeArchiveBehavior: initialWorktreeArchiveBehavior = "keep",
+    workspaceCheckoutLocation:
+      initialWorkspaceCheckoutLocation = DEFAULT_WORKSPACE_CHECKOUT_LOCATION,
     chatTranscriptFullWidth: initialChatTranscriptFullWidth = false,
     runtimeEnablement: initialRuntimeEnablement,
     defaultRuntime: initialDefaultRuntime,
@@ -512,6 +521,9 @@ export function createMockORPCClient(options: MockORPCClientOptions = {}): APICl
   let muxGatewayModels: string[] | undefined = undefined;
   let coderWorkspaceArchiveBehavior = initialCoderWorkspaceArchiveBehavior;
   let worktreeArchiveBehavior = initialWorktreeArchiveBehavior;
+  let workspaceCheckoutLocation = normalizeWorkspaceCheckoutLocationConfig(
+    initialWorkspaceCheckoutLocation
+  );
   let chatTranscriptFullWidth = initialChatTranscriptFullWidth;
   let runtimeEnablement: Record<string, boolean> = initialRuntimeEnablement ?? {
     local: true,
@@ -714,6 +726,7 @@ export function createMockORPCClient(options: MockORPCClientOptions = {}): APICl
           routeOverrides,
           coderWorkspaceArchiveBehavior,
           worktreeArchiveBehavior,
+          workspaceCheckoutLocation,
           runtimeEnablement,
           defaultRuntime,
           agentAiDefaults,
@@ -814,6 +827,11 @@ export function createMockORPCClient(options: MockORPCClientOptions = {}): APICl
       }) => {
         coderWorkspaceArchiveBehavior = input.coderWorkspaceArchiveBehavior;
         worktreeArchiveBehavior = input.worktreeArchiveBehavior;
+        notifyConfigChanged();
+        return Promise.resolve(undefined);
+      },
+      updateWorkspaceCheckoutLocation: (input: WorkspaceCheckoutLocationConfig) => {
+        workspaceCheckoutLocation = normalizeWorkspaceCheckoutLocationConfig(input);
         notifyConfigChanged();
         return Promise.resolve(undefined);
       },

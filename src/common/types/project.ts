@@ -5,6 +5,7 @@
 
 import type { CoderWorkspaceArchiveBehavior } from "@/common/config/coderArchiveBehavior";
 import type { WorktreeArchiveBehavior } from "@/common/config/worktreeArchiveBehavior";
+import type { WorkspaceCheckoutLocationConfig } from "@/common/config/workspaceCheckoutLocation";
 import type {
   AppConfigMigrations,
   ModelFallbacks,
@@ -74,6 +75,8 @@ export interface ProjectsConfig {
    * When unset, falls back to getMuxProjectsDir() (~/.mux/projects).
    */
   defaultProjectDir?: string;
+  /** Where new local JJ workspace checkouts are created. Existing workspaces keep their path. */
+  workspaceCheckoutLocation?: WorkspaceCheckoutLocationConfig;
   /** IDs of splash screens that have been viewed */
   viewedSplashScreens?: string[];
   /** User preferences shared across local browser origins through ~/.mux/config.json. */

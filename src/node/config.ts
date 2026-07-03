@@ -39,6 +39,7 @@ import { normalizeAgentAiDefaults } from "@/common/types/agentAiDefaults";
 import {
   isWorktreeRuntime,
   RUNTIME_ENABLEMENT_IDS,
+  type RuntimeConfig,
   type RuntimeEnablementId,
 } from "@/common/types/runtime";
 import { DEFAULT_RUNTIME_CONFIG } from "@/common/constants/workspace";
@@ -55,6 +56,12 @@ import {
   isWorktreeArchiveBehavior,
   type WorktreeArchiveBehavior,
 } from "@/common/config/worktreeArchiveBehavior";
+import {
+  DEFAULT_WORKSPACE_CHECKOUT_LOCATION,
+  isDefaultWorkspaceCheckoutLocationConfig,
+  normalizeWorkspaceCheckoutLocationConfig,
+} from "@/common/config/workspaceCheckoutLocation";
+import { Err, Ok, type Result } from "@/common/types/result";
 import { PlatformPaths } from "@/common/utils/paths";
 import {
   HEARTBEAT_CONTEXT_MODE_VALUES,
@@ -1061,6 +1068,9 @@ export class Config {
           serverSshHost: parsed.serverSshHost,
           serverAuthGithubOwner: parseOptionalNonEmptyString(parsed.serverAuthGithubOwner),
           defaultProjectDir: parseOptionalNonEmptyString(parsed.defaultProjectDir),
+          workspaceCheckoutLocation: normalizeWorkspaceCheckoutLocationConfig(
+            parsed.workspaceCheckoutLocation
+          ),
           viewedSplashScreens: parsed.viewedSplashScreens,
           userPreferences,
           layoutPresets,
@@ -1122,6 +1132,7 @@ export class Config {
       // semantics (later loads never re-apply the defaults).
       modelFallbacks: { ...DEFAULT_MODEL_FALLBACKS },
       migrations: { defaultModelFallbacksSeeded: true },
+      workspaceCheckoutLocation: DEFAULT_WORKSPACE_CHECKOUT_LOCATION,
     };
   }
 
@@ -1273,6 +1284,12 @@ export class Config {
       if (defaultProjectDir) {
         data.defaultProjectDir = defaultProjectDir;
       }
+      const workspaceCheckoutLocation = normalizeWorkspaceCheckoutLocationConfig(
+        config.workspaceCheckoutLocation
+      );
+      if (!isDefaultWorkspaceCheckoutLocationConfig(workspaceCheckoutLocation)) {
+        data.workspaceCheckoutLocation = workspaceCheckoutLocation;
+      }
       const userPreferences = normalizeUserPreferences(config.userPreferences);
       if (userPreferences) {
         data.userPreferences = userPreferences;
@@ -1418,6 +1435,41 @@ export class Config {
 
   getLlmDebugLogsEnabled(): boolean {
     return this.loadConfigOrDefault().llmDebugLogs === true;
+  }
+
+  resolveWorkspaceCheckoutRuntimeConfig(
+    projectPath: string
+  ): Result<Extract<RuntimeConfig, { type: "worktree" }>> {
+    const checkoutLocation = normalizeWorkspaceCheckoutLocationConfig(
+      this.loadConfigOrDefault().workspaceCheckoutLocation
+    );
+    const normalizedProjectPath = stripTrailingSlashes(projectPath);
+
+    switch (checkoutLocation.mode) {
+      case "muxPublic":
+        return Ok({ type: "worktree", srcBaseDir: this.srcDir });
+      case "projectWorktrees":
+        return Ok({
+          type: "worktree",
+          srcBaseDir: path.join(normalizedProjectPath, ".worktrees"),
+          workspacePathLayout: "flat",
+        });
+      case "projectWorkspaces":
+        return Ok({
+          type: "worktree",
+          srcBaseDir: path.join(normalizedProjectPath, ".workspaces"),
+          workspacePathLayout: "flat",
+        });
+      case "customPublic": {
+        const customPath = checkoutLocation.customPath?.trim();
+        if (!customPath) {
+          return Err(
+            "Custom workspace checkout directory is not configured. Set it in Settings → General → Workspace path."
+          );
+        }
+        return Ok({ type: "worktree", srcBaseDir: customPath });
+      }
+    }
   }
 
   async setUpdateChannel(channel: UpdateChannel): Promise<void> {

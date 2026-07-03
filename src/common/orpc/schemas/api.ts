@@ -3,6 +3,7 @@ import { UIModeSchema } from "../../types/mode";
 import { z } from "zod";
 import { CODER_ARCHIVE_BEHAVIORS } from "@/common/config/coderArchiveBehavior";
 import { WORKTREE_ARCHIVE_BEHAVIORS } from "@/common/config/worktreeArchiveBehavior";
+import { WORKSPACE_CHECKOUT_LOCATION_MODES } from "@/common/config/workspaceCheckoutLocation";
 import { HEARTBEAT_MAX_INTERVAL_MS, HEARTBEAT_MIN_INTERVAL_MS } from "@/constants/heartbeat";
 import { DEFAULT_GOAL_DEFAULTS } from "@/constants/goals";
 import { EXPERIMENT_IDS } from "@/common/constants/experiments";
@@ -2161,6 +2162,13 @@ const GoalDefaultsConfigSchema = z.object({
     .default(DEFAULT_GOAL_DEFAULTS.alwaysRequireExplicitBudget),
 });
 
+const WorkspaceCheckoutLocationConfigSchema = z
+  .object({
+    mode: z.enum(WORKSPACE_CHECKOUT_LOCATION_MODES),
+    customPath: z.string().optional(),
+  })
+  .strict();
+
 const booleanToggleRoute = {
   input: z
     .object({
@@ -2189,6 +2197,7 @@ export const config = {
       advisorMaxUsesPerTurn: AdvisorMaxUsesPerTurnSchema.optional(),
       advisorMaxOutputTokens: AdvisorMaxOutputTokensSchema.optional(),
       hiddenModels: z.array(z.string()).optional(),
+      workspaceCheckoutLocation: WorkspaceCheckoutLocationConfigSchema,
       coderWorkspaceArchiveBehavior: z.enum(CODER_ARCHIVE_BEHAVIORS),
       worktreeArchiveBehavior: z.enum(WORKTREE_ARCHIVE_BEHAVIORS),
       runtimeEnablement: z.record(z.string(), z.boolean()),
@@ -2276,6 +2285,10 @@ export const config = {
         worktreeArchiveBehavior: z.enum(WORKTREE_ARCHIVE_BEHAVIORS),
       })
       .strict(),
+    output: z.void(),
+  },
+  updateWorkspaceCheckoutLocation: {
+    input: WorkspaceCheckoutLocationConfigSchema,
     output: z.void(),
   },
   updateOnePasswordAccountName: {

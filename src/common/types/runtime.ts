@@ -3,7 +3,7 @@
  */
 
 import type { z } from "zod";
-import type { RuntimeConfigSchema } from "../orpc/schemas";
+import type { RuntimeConfigSchema, WorktreeWorkspacePathLayoutSchema } from "../orpc/schemas";
 import { RuntimeEnablementIdSchema, RuntimeModeSchema } from "../orpc/schemas";
 import type { CoderWorkspaceConfig } from "../orpc/schemas/coder";
 
@@ -100,6 +100,8 @@ export const DEVCONTAINER_RUNTIME_PREFIX = "devcontainer ";
 export const CODER_RUNTIME_PLACEHOLDER = "coder://";
 
 export type RuntimeConfig = z.infer<typeof RuntimeConfigSchema>;
+
+export type WorktreeWorkspacePathLayout = z.infer<typeof WorktreeWorkspacePathLayoutSchema>;
 
 /**
  * Parsed runtime result - discriminated union based on mode.

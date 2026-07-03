@@ -37,6 +37,14 @@ describe("WorktreeRuntime workspacePath override", () => {
     expect(derivedSibling).toContain("sibling");
   });
 
+  it("uses flat layout when configured for project-local checkout directories", () => {
+    const srcBaseDir = path.join(rootDir, "repo", ".worktrees");
+    const projectPath = path.join(rootDir, "repo");
+    const runtime = new WorktreeRuntime(srcBaseDir, { workspacePathLayout: "flat" });
+
+    expect(runtime.getWorkspacePath(projectPath, "feature")).toBe(path.join(srcBaseDir, "feature"));
+  });
+
   it("reports ready when the shared checkout is a git repo even though the derived path is absent", async () => {
     const srcBaseDir = path.join(rootDir, "src");
     const projectPath = path.join(rootDir, "repo");

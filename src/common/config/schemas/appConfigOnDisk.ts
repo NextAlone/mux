@@ -6,6 +6,7 @@ import { RuntimeEnablementOverridesSchema } from "../../schemas/runtimeEnablemen
 import { ThinkingLevelSchema } from "../../types/thinking";
 import { CODER_ARCHIVE_BEHAVIORS } from "../coderArchiveBehavior";
 import { WORKTREE_ARCHIVE_BEHAVIORS } from "../worktreeArchiveBehavior";
+import { WORKSPACE_CHECKOUT_LOCATION_MODES } from "../workspaceCheckoutLocation";
 import { UserPreferencesSchema } from "./userPreferences";
 import { TaskSettingsSchema } from "./taskSettings";
 import { HEARTBEAT_MAX_INTERVAL_MS, HEARTBEAT_MIN_INTERVAL_MS } from "@/constants/heartbeat";
@@ -84,6 +85,11 @@ export const AppConfigMigrationsSchema = z
 
 export const UpdateChannelSchema = z.enum(["stable", "nightly"]);
 
+export const WorkspaceCheckoutLocationConfigSchema = z.object({
+  mode: z.enum(WORKSPACE_CHECKOUT_LOCATION_MODES),
+  customPath: z.string().optional(),
+});
+
 export const AppConfigOnDiskSchema = z
   .object({
     projects: z.array(z.tuple([z.string(), ProjectConfigSchema])).optional(),
@@ -95,6 +101,7 @@ export const AppConfigOnDiskSchema = z
     serverSshHost: z.string().optional(),
     serverAuthGithubOwner: z.string().optional(),
     defaultProjectDir: z.string().optional(),
+    workspaceCheckoutLocation: WorkspaceCheckoutLocationConfigSchema.optional(),
     viewedSplashScreens: z.array(z.string()).optional(),
     layoutPresets: z.unknown().optional(),
     userPreferences: UserPreferencesSchema.optional(),
@@ -168,5 +175,6 @@ export type ModelFallbackTrigger = z.infer<typeof ModelFallbackTriggerSchema>;
 export type ModelFallbackEntry = z.infer<typeof ModelFallbackEntrySchema>;
 export type ModelFallbacks = z.infer<typeof ModelFallbacksSchema>;
 export type UpdateChannel = z.infer<typeof UpdateChannelSchema>;
+export type WorkspaceCheckoutLocationConfig = z.infer<typeof WorkspaceCheckoutLocationConfigSchema>;
 
 export type AppConfigOnDisk = z.infer<typeof AppConfigOnDiskSchema>;

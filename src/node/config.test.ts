@@ -814,6 +814,85 @@ describe("Config", () => {
     });
   });
 
+  describe("workspaceCheckoutLocation", () => {
+    it("defaults new JJ workspaces to the existing mux public directory layout", () => {
+      const result = config.resolveWorkspaceCheckoutRuntimeConfig("/repo/demo");
+
+      expect(result).toEqual({
+        success: true,
+        data: { type: "worktree", srcBaseDir: config.srcDir },
+      });
+    });
+
+    it("uses a flat project .worktrees directory for new JJ workspaces", async () => {
+      const projectPath = path.join(tempDir, "demo");
+
+      await config.editConfig((cfg) => {
+        cfg.workspaceCheckoutLocation = { mode: "projectWorktrees" };
+        return cfg;
+      });
+
+      const result = config.resolveWorkspaceCheckoutRuntimeConfig(projectPath);
+
+      expect(result).toEqual({
+        success: true,
+        data: {
+          type: "worktree",
+          srcBaseDir: path.join(projectPath, ".worktrees"),
+          workspacePathLayout: "flat",
+        },
+      });
+    });
+
+    it("uses a flat project .workspaces directory for new JJ workspaces", async () => {
+      const projectPath = path.join(tempDir, "demo");
+
+      await config.editConfig((cfg) => {
+        cfg.workspaceCheckoutLocation = { mode: "projectWorkspaces" };
+        return cfg;
+      });
+
+      const result = config.resolveWorkspaceCheckoutRuntimeConfig(projectPath);
+
+      expect(result).toEqual({
+        success: true,
+        data: {
+          type: "worktree",
+          srcBaseDir: path.join(projectPath, ".workspaces"),
+          workspacePathLayout: "flat",
+        },
+      });
+    });
+
+    it("uses the custom public directory when configured", async () => {
+      await config.editConfig((cfg) => {
+        cfg.workspaceCheckoutLocation = { mode: "customPublic", customPath: "~/mux-src" };
+        return cfg;
+      });
+
+      const result = config.resolveWorkspaceCheckoutRuntimeConfig("/repo/demo");
+
+      expect(result).toEqual({
+        success: true,
+        data: { type: "worktree", srcBaseDir: "~/mux-src" },
+      });
+    });
+
+    it("fails explicitly when custom public directory is selected without a path", async () => {
+      await config.editConfig((cfg) => {
+        cfg.workspaceCheckoutLocation = { mode: "customPublic" };
+        return cfg;
+      });
+
+      const result = config.resolveWorkspaceCheckoutRuntimeConfig("/repo/demo");
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error).toContain("Custom workspace checkout directory is not configured");
+      }
+    });
+  });
+
   describe("model preferences", () => {
     it("should preserve explicit gateway-scoped defaultModel and hiddenModels", async () => {
       await config.editConfig((cfg) => {

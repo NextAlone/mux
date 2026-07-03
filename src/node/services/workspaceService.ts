@@ -3166,10 +3166,17 @@ export class WorkspaceService extends EventEmitter {
 
     // Create runtime for workspace creation
     // Default to JJ Workspace runtime for backward compatibility.
-    let finalRuntimeConfig: RuntimeConfig = runtimeConfig ?? {
-      type: "worktree",
-      srcBaseDir: this.config.srcDir,
-    };
+    let finalRuntimeConfig: RuntimeConfig;
+    if (runtimeConfig) {
+      finalRuntimeConfig = runtimeConfig;
+    } else {
+      const defaultRuntimeConfig =
+        this.config.resolveWorkspaceCheckoutRuntimeConfig(owningProjectPath);
+      if (!defaultRuntimeConfig.success) {
+        return Err(defaultRuntimeConfig.error);
+      }
+      finalRuntimeConfig = defaultRuntimeConfig.data;
+    }
 
     if (this.policyService?.isEnforced()) {
       if (!this.policyService.isRuntimeAllowed(finalRuntimeConfig)) {
@@ -3468,10 +3475,18 @@ export class WorkspaceService extends EventEmitter {
 
       const workspaceId = this.config.generateStableId();
 
-      let finalRuntimeConfig: RuntimeConfig = runtimeConfig ?? {
-        type: "worktree",
-        srcBaseDir: this.config.srcDir,
-      };
+      let finalRuntimeConfig: RuntimeConfig;
+      if (runtimeConfig) {
+        finalRuntimeConfig = runtimeConfig;
+      } else {
+        const defaultRuntimeConfig = this.config.resolveWorkspaceCheckoutRuntimeConfig(
+          primaryProject.projectPath
+        );
+        if (!defaultRuntimeConfig.success) {
+          return Err(defaultRuntimeConfig.error);
+        }
+        finalRuntimeConfig = defaultRuntimeConfig.data;
+      }
 
       if (this.policyService?.isEnforced()) {
         if (!this.policyService.isRuntimeAllowed(finalRuntimeConfig)) {

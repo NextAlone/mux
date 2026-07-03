@@ -20,18 +20,24 @@ import {
   renameJjWorkspace,
 } from "@/node/vcs/jj";
 import { syncMuxignoreFiles } from "./muxignore";
+import type { WorktreeWorkspacePathLayout } from "@/common/types/runtime";
 
 const JJ_WORKSPACE_MAP_FILENAME = "mux-workspaces.json";
 
 export class WorktreeManager {
   private readonly srcBaseDir: string;
+  private readonly workspacePathLayout: WorktreeWorkspacePathLayout;
 
-  constructor(srcBaseDir: string) {
+  constructor(srcBaseDir: string, workspacePathLayout: WorktreeWorkspacePathLayout = "by-project") {
     // Expand tilde to actual home directory path for local file system operations
     this.srcBaseDir = expandTilde(srcBaseDir);
+    this.workspacePathLayout = workspacePathLayout;
   }
 
   getWorkspacePath(projectPath: string, workspaceName: string): string {
+    if (this.workspacePathLayout === "flat") {
+      return path.join(this.srcBaseDir, workspaceName);
+    }
     const projectName = getProjectName(projectPath);
     return path.join(this.srcBaseDir, projectName, workspaceName);
   }

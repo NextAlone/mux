@@ -104,6 +104,13 @@ describe("WorktreeManager constructor", () => {
     const expected = path.join(os.homedir(), "project", "branch");
     expect(workspacePath).toBe(expected);
   });
+
+  it("should support flat workspace paths for project-local checkout directories", () => {
+    const manager = new WorktreeManager("/repo/.worktrees", "flat");
+    const workspacePath = manager.getWorkspacePath("/repo", "branch");
+
+    expect(workspacePath).toBe(path.join("/repo/.worktrees", "branch"));
+  });
 });
 
 describe("WorktreeManager.createWorkspace", () => {
@@ -350,7 +357,13 @@ describe("WorktreeManager.renameWorkspace", () => {
       }
       expect(result.oldPath).toBe(oldPath);
       expect(result.newPath).toBe(newPath);
-      await expect(fsPromises.access(oldPath)).rejects.toThrow();
+      let oldPathExists = true;
+      try {
+        await fsPromises.access(oldPath);
+      } catch {
+        oldPathExists = false;
+      }
+      expect(oldPathExists).toBe(false);
       let newPathExists = true;
       try {
         await fsPromises.access(newPath);
@@ -474,8 +487,21 @@ describe("WorktreeManager.deleteWorkspace", () => {
       const result = await manager.deleteWorkspace(projectPath, workspaceName, true, true);
 
       expect(result.success).toBe(true);
-      await expect(fsPromises.access(workspacePath)).rejects.toThrow();
-      await expect(fsPromises.access(workspaceMapPath)).rejects.toThrow();
+      let workspacePathExists = true;
+      try {
+        await fsPromises.access(workspacePath);
+      } catch {
+        workspacePathExists = false;
+      }
+      expect(workspacePathExists).toBe(false);
+
+      let workspaceMapPathExists = true;
+      try {
+        await fsPromises.access(workspaceMapPath);
+      } catch {
+        workspaceMapPathExists = false;
+      }
+      expect(workspaceMapPathExists).toBe(false);
 
       for (const [file] of execFileAsyncSpy.mock.calls) {
         expect(file).toBe("jj");

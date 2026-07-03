@@ -2,6 +2,7 @@ import { z } from "zod";
 import { CoderWorkspaceConfigSchema } from "./coder";
 
 export const RuntimeModeSchema = z.enum(["local", "worktree", "ssh", "docker", "devcontainer"]);
+export const WorktreeWorkspacePathLayoutSchema = z.enum(["by-project", "flat"]);
 
 export { RuntimeEnablementIdSchema } from "@/common/schemas/ids";
 
@@ -62,6 +63,10 @@ export const RuntimeConfigSchema = z.union([
     srcBaseDir: z.string().meta({
       description: "Base directory where all workspaces are stored (legacy JJ workspace config)",
     }),
+    workspacePathLayout: WorktreeWorkspacePathLayoutSchema.optional().meta({
+      description:
+        "How workspace paths are derived from srcBaseDir. Defaults to by-project for compatibility.",
+    }),
     bgOutputDir: bgOutputDirField,
   }),
   // New project-dir local (no srcBaseDir)
@@ -75,6 +80,10 @@ export const RuntimeConfigSchema = z.union([
     srcBaseDir: z
       .string()
       .meta({ description: "Base directory where all workspaces are stored (e.g., ~/.mux/src)" }),
+    workspacePathLayout: WorktreeWorkspacePathLayoutSchema.optional().meta({
+      description:
+        "How workspace paths are derived from srcBaseDir. Defaults to by-project for compatibility.",
+    }),
     bgOutputDir: bgOutputDirField,
   }),
   // SSH runtime

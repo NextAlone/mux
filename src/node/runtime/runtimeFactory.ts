@@ -143,7 +143,10 @@ export function createRuntime(config: RuntimeConfig, options?: CreateRuntimeOpti
       // or new "local" without srcBaseDir (= project-dir semantics)
       if (hasSrcBaseDir(config)) {
         // Legacy: "local" with srcBaseDir is treated as worktree
-        return new WorktreeRuntime(config.srcBaseDir, runtimeIdentity);
+        return new WorktreeRuntime(config.srcBaseDir, {
+          ...runtimeIdentity,
+          workspacePathLayout: config.workspacePathLayout,
+        });
       }
       // Project-dir: uses project path directly, no isolation
       if (!runtimeIdentity.projectPath) {
@@ -154,7 +157,10 @@ export function createRuntime(config: RuntimeConfig, options?: CreateRuntimeOpti
       return new LocalRuntime(runtimeIdentity.projectPath);
 
     case "worktree":
-      return new WorktreeRuntime(config.srcBaseDir, runtimeIdentity);
+      return new WorktreeRuntime(config.srcBaseDir, {
+        ...runtimeIdentity,
+        workspacePathLayout: config.workspacePathLayout,
+      });
 
     case "ssh": {
       // Normalize Coder host before transport creation so both transport

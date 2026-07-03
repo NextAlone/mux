@@ -51,6 +51,13 @@ import {
   isWorktreeArchiveBehavior,
   type WorktreeArchiveBehavior,
 } from "@/common/config/worktreeArchiveBehavior";
+import {
+  DEFAULT_WORKSPACE_CHECKOUT_LOCATION,
+  isWorkspaceCheckoutLocationMode,
+  normalizeWorkspaceCheckoutLocationConfig,
+  type WorkspaceCheckoutLocationConfig,
+  type WorkspaceCheckoutLocationMode,
+} from "@/common/config/workspaceCheckoutLocation";
 
 function getTerminalFontAvailabilityWarning(config: TerminalFontConfig): string | undefined {
   if (typeof document === "undefined") {
@@ -137,6 +144,23 @@ const WORKTREE_ARCHIVE_BEHAVIOR_OPTIONS: Array<{
   { value: "delete", label: "Delete checkout" },
   { value: "snapshot", label: "Snapshot and delete" },
 ];
+const WORKSPACE_CHECKOUT_LOCATION_OPTIONS: Array<{
+  value: WorkspaceCheckoutLocationMode;
+  label: string;
+}> = [
+  { value: "muxPublic", label: "Mux shared directory" },
+  { value: "projectWorktrees", label: "Project .worktrees" },
+  { value: "projectWorkspaces", label: "Project .workspaces" },
+  { value: "customPublic", label: "Custom shared directory" },
+];
+
+function buildWorkspaceCheckoutLocation(
+  mode: WorkspaceCheckoutLocationMode,
+  customPath: string
+): WorkspaceCheckoutLocationConfig {
+  const trimmedCustomPath = customPath.trim();
+  return trimmedCustomPath ? { mode, customPath: trimmedCustomPath } : { mode };
+}
 
 // Browser mode: window.api is not set (only exists in Electron via preload)
 const isBrowserMode = typeof window !== "undefined" && !window.api;
@@ -180,6 +204,10 @@ export function GeneralSection() {
   const [sshHostLoaded, setSshHostLoaded] = useState(false);
   const [defaultProjectDir, setDefaultProjectDir] = useState("");
   const [cloneDirLoaded, setCloneDirLoaded] = useState(false);
+  const [workspaceCheckoutLocationMode, setWorkspaceCheckoutLocationMode] =
+    useState<WorkspaceCheckoutLocationMode>(DEFAULT_WORKSPACE_CHECKOUT_LOCATION.mode);
+  const [workspaceCheckoutCustomPath, setWorkspaceCheckoutCustomPath] = useState("");
+  const [workspacePathSettingsLoaded, setWorkspacePathSettingsLoaded] = useState(false);
   // Track whether the initial load succeeded to prevent saving empty string
   // (which would clear the config) when the initial fetch failed.
   const [cloneDirLoadedOk, setCloneDirLoadedOk] = useState(false);
@@ -202,6 +230,7 @@ export function GeneralSection() {
 
   const chatTranscriptFullWidthLoadNonceRef = useRef(0);
   const llmDebugLogsLoadNonceRef = useRef(0);
+  const workspaceCheckoutLocationLoadNonceRef = useRef(0);
 
   // updateCoderPrefs writes config.json on the backend. Serialize (and coalesce) updates so rapid
   // selections can't race and persist a stale value via out-of-order writes.
@@ -224,6 +253,8 @@ export function GeneralSection() {
     const archiveBehaviorNonce = ++archiveBehaviorLoadNonceRef.current;
     const chatTranscriptFullWidthNonce = ++chatTranscriptFullWidthLoadNonceRef.current;
     const llmDebugLogsNonce = ++llmDebugLogsLoadNonceRef.current;
+    const workspaceCheckoutLocationNonce = ++workspaceCheckoutLocationLoadNonceRef.current;
+    setWorkspacePathSettingsLoaded(false);
 
     void api.config
       .getConfig()
@@ -246,6 +277,15 @@ export function GeneralSection() {
           setArchiveSettingsLoaded(true);
         }
 
+        if (workspaceCheckoutLocationNonce === workspaceCheckoutLocationLoadNonceRef.current) {
+          const nextWorkspaceCheckoutLocation = normalizeWorkspaceCheckoutLocationConfig(
+            cfg.workspaceCheckoutLocation
+          );
+          setWorkspaceCheckoutLocationMode(nextWorkspaceCheckoutLocation.mode);
+          setWorkspaceCheckoutCustomPath(nextWorkspaceCheckoutLocation.customPath ?? "");
+          setWorkspacePathSettingsLoaded(true);
+        }
+
         // Use independent nonces so appearance/debug toggles do not discard archive updates.
         if (chatTranscriptFullWidthNonce === chatTranscriptFullWidthLoadNonceRef.current) {
           const enabled = cfg.chatTranscriptFullWidth === true;
@@ -265,6 +305,9 @@ export function GeneralSection() {
           // Fall back to the safe defaults already in state so the controls can recover after a
           // config read failure and the next user change can persist a fresh value.
           setArchiveSettingsLoaded(true);
+        }
+        if (workspaceCheckoutLocationNonce === workspaceCheckoutLocationLoadNonceRef.current) {
+          setWorkspacePathSettingsLoaded(true);
         }
       });
   }, [api]);
@@ -340,6 +383,45 @@ export function GeneralSection() {
       queueArchiveBehaviorUpdate();
     },
     [api, archiveSettingsLoaded, queueArchiveBehaviorUpdate]
+  );
+
+  const persistWorkspaceCheckoutLocation = useCallback(
+    (location: WorkspaceCheckoutLocationConfig) => {
+      if (!workspacePathSettingsLoaded || !api?.config?.updateWorkspaceCheckoutLocation) {
+        return;
+      }
+
+      void api.config.updateWorkspaceCheckoutLocation(location).catch(() => {
+        // Best-effort persistence; keep the user's visible selection.
+      });
+    },
+    [api, workspacePathSettingsLoaded]
+  );
+
+  const handleWorkspaceCheckoutLocationModeChange = useCallback(
+    (value: string) => {
+      if (!isWorkspaceCheckoutLocationMode(value)) {
+        return;
+      }
+
+      workspaceCheckoutLocationLoadNonceRef.current++;
+      setWorkspaceCheckoutLocationMode(value);
+      persistWorkspaceCheckoutLocation(
+        buildWorkspaceCheckoutLocation(value, workspaceCheckoutCustomPath)
+      );
+    },
+    [persistWorkspaceCheckoutLocation, workspaceCheckoutCustomPath]
+  );
+
+  const handleWorkspaceCheckoutCustomPathBlur = useCallback(
+    (nextCustomPath: string) => {
+      setWorkspaceCheckoutCustomPath(nextCustomPath);
+      workspaceCheckoutLocationLoadNonceRef.current++;
+      persistWorkspaceCheckoutLocation(
+        buildWorkspaceCheckoutLocation(workspaceCheckoutLocationMode, nextCustomPath)
+      );
+    },
+    [persistWorkspaceCheckoutLocation, workspaceCheckoutLocationMode]
   );
 
   const handleChatTranscriptFullWidthChange = (checked: boolean) => {
@@ -774,7 +856,7 @@ export function GeneralSection() {
       <div>
         <h3 className="text-foreground mb-4 text-sm font-medium">Projects</h3>
         <div className="space-y-4">
-          <div className="flex items-center justify-between gap-4">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
             <div className="flex-1">
               <div className="text-foreground text-sm">Default project directory</div>
               <div className="text-muted text-xs">
@@ -789,9 +871,61 @@ export function GeneralSection() {
               onBlur={handleCloneDirBlur}
               placeholder="~/.mux/projects"
               disabled={!cloneDirLoaded}
-              className="border-border-medium bg-background-secondary h-9 w-80"
+              className="border-border-medium bg-background-secondary h-9 w-full sm:w-80"
             />
           </div>
+
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+            <div className="flex-1">
+              <div className="text-foreground text-sm">Workspace path</div>
+              <div className="text-muted text-xs">
+                Location for new local JJ workspace checkouts
+              </div>
+            </div>
+            <Select
+              value={workspaceCheckoutLocationMode}
+              onValueChange={handleWorkspaceCheckoutLocationModeChange}
+              disabled={
+                !api?.config?.updateWorkspaceCheckoutLocation || !workspacePathSettingsLoaded
+              }
+            >
+              <SelectTrigger className="border-border-medium bg-background-secondary hover:bg-hover h-9 w-full cursor-pointer rounded-md border px-3 text-sm transition-colors sm:w-auto">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {WORKSPACE_CHECKOUT_LOCATION_OPTIONS.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {workspaceCheckoutLocationMode === "customPublic" && (
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+              <div className="flex-1">
+                <div className="text-foreground text-sm">Custom workspace directory</div>
+                <div className="text-muted text-xs">
+                  New checkouts use &lt;directory&gt;/&lt;project&gt;/&lt;workspace&gt;
+                </div>
+              </div>
+              <Input
+                value={workspaceCheckoutCustomPath}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                  setWorkspaceCheckoutCustomPath(e.target.value)
+                }
+                onBlur={(e: React.FocusEvent<HTMLInputElement>) =>
+                  handleWorkspaceCheckoutCustomPathBlur(e.currentTarget.value)
+                }
+                placeholder="~/.mux/src"
+                disabled={
+                  !api?.config?.updateWorkspaceCheckoutLocation || !workspacePathSettingsLoaded
+                }
+                className="border-border-medium bg-background-secondary h-9 w-full sm:w-80"
+              />
+            </div>
+          )}
         </div>
       </div>
     </div>

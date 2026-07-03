@@ -13,6 +13,7 @@ import { runWorkspaceInitHook } from "./initHook";
 import { LocalBaseRuntime } from "./LocalBaseRuntime";
 import { isGitRepository } from "@/node/utils/pathUtils";
 import { WorktreeManager } from "@/node/worktree/WorktreeManager";
+import type { WorktreeWorkspacePathLayout } from "@/common/types/runtime";
 
 /**
  * Worktree runtime implementation that executes commands and file operations
@@ -37,10 +38,11 @@ export class WorktreeRuntime extends LocalBaseRuntime {
       projectPath?: string;
       workspaceName?: string;
       workspacePath?: string;
+      workspacePathLayout?: WorktreeWorkspacePathLayout;
     }
   ) {
     super();
-    this.worktreeManager = new WorktreeManager(srcBaseDir);
+    this.worktreeManager = new WorktreeManager(srcBaseDir, options?.workspacePathLayout);
     this.currentProjectPath = options?.projectPath;
     this.currentWorkspaceName = options?.workspaceName;
     this.currentWorkspacePath = options?.workspacePath;

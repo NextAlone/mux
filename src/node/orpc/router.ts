@@ -1,5 +1,6 @@
 import { os, ORPCError } from "@orpc/server";
 import { DEFAULT_CODER_ARCHIVE_BEHAVIOR } from "@/common/config/coderArchiveBehavior";
+import { normalizeWorkspaceCheckoutLocationConfig } from "@/common/config/workspaceCheckoutLocation";
 import * as schemas from "@/common/orpc/schemas";
 import { EXPERIMENT_IDS } from "@/common/constants/experiments";
 import type { ORPCContext } from "./context";
@@ -1009,6 +1010,9 @@ export const router = (authToken?: string) => {
             advisorMaxUsesPerTurn: config.advisorMaxUsesPerTurn,
             advisorMaxOutputTokens: config.advisorMaxOutputTokens,
             hiddenModels: config.hiddenModels,
+            workspaceCheckoutLocation: normalizeWorkspaceCheckoutLocationConfig(
+              config.workspaceCheckoutLocation
+            ),
             coderWorkspaceArchiveBehavior:
               config.coderWorkspaceArchiveBehavior ?? DEFAULT_CODER_ARCHIVE_BEHAVIOR,
             worktreeArchiveBehavior: config.worktreeArchiveBehavior ?? "keep",
@@ -1237,6 +1241,15 @@ export const router = (authToken?: string) => {
               worktreeArchiveBehavior: input.worktreeArchiveBehavior,
             };
           });
+        }),
+      updateWorkspaceCheckoutLocation: t
+        .input(schemas.config.updateWorkspaceCheckoutLocation.input)
+        .output(schemas.config.updateWorkspaceCheckoutLocation.output)
+        .handler(async ({ context, input }) => {
+          await context.config.editConfig((config) => ({
+            ...config,
+            workspaceCheckoutLocation: normalizeWorkspaceCheckoutLocationConfig(input),
+          }));
         }),
       updateOnePasswordAccountName: t
         .input(schemas.config.updateOnePasswordAccountName.input)

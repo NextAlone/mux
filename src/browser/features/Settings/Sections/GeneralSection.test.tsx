@@ -13,10 +13,15 @@ import {
   DEFAULT_WORKTREE_ARCHIVE_BEHAVIOR,
   type WorktreeArchiveBehavior,
 } from "@/common/config/worktreeArchiveBehavior";
+import {
+  DEFAULT_WORKSPACE_CHECKOUT_LOCATION,
+  type WorkspaceCheckoutLocationConfig,
+} from "@/common/config/workspaceCheckoutLocation";
 
 interface MockConfig {
   coderWorkspaceArchiveBehavior: CoderWorkspaceArchiveBehavior;
   worktreeArchiveBehavior: WorktreeArchiveBehavior;
+  workspaceCheckoutLocation: WorkspaceCheckoutLocationConfig;
   chatTranscriptFullWidth: boolean;
   llmDebugLogs: boolean;
 }
@@ -28,6 +33,7 @@ interface MockAPIClient {
       coderWorkspaceArchiveBehavior: CoderWorkspaceArchiveBehavior;
       worktreeArchiveBehavior: WorktreeArchiveBehavior;
     }) => Promise<void>;
+    updateWorkspaceCheckoutLocation: (input: WorkspaceCheckoutLocationConfig) => Promise<void>;
     updateChatTranscriptFullWidth: (input: { enabled: boolean }) => Promise<void>;
     updateLlmDebugLogs: (input: { enabled: boolean }) => Promise<void>;
   };
@@ -170,6 +176,7 @@ import { GeneralSection } from "./GeneralSection";
 interface RenderGeneralSectionOptions {
   coderWorkspaceArchiveBehavior?: CoderWorkspaceArchiveBehavior;
   worktreeArchiveBehavior?: WorktreeArchiveBehavior;
+  workspaceCheckoutLocation?: WorkspaceCheckoutLocationConfig;
   chatTranscriptFullWidth?: boolean;
 }
 
@@ -187,12 +194,16 @@ interface MockAPISetup {
   updateChatTranscriptFullWidthMock: ReturnType<
     typeof mock<(input: { enabled: boolean }) => Promise<void>>
   >;
+  updateWorkspaceCheckoutLocationMock: ReturnType<
+    typeof mock<(input: WorkspaceCheckoutLocationConfig) => Promise<void>>
+  >;
 }
 
 function createMockAPI(configOverrides: Partial<MockConfig> = {}): MockAPISetup {
   const config: MockConfig = {
     coderWorkspaceArchiveBehavior: DEFAULT_CODER_ARCHIVE_BEHAVIOR,
     worktreeArchiveBehavior: DEFAULT_WORKTREE_ARCHIVE_BEHAVIOR,
+    workspaceCheckoutLocation: DEFAULT_WORKSPACE_CHECKOUT_LOCATION,
     chatTranscriptFullWidth: false,
     llmDebugLogs: false,
     ...configOverrides,
@@ -216,12 +227,18 @@ function createMockAPI(configOverrides: Partial<MockConfig> = {}): MockAPISetup 
 
     return Promise.resolve();
   });
+  const updateWorkspaceCheckoutLocationMock = mock((input: WorkspaceCheckoutLocationConfig) => {
+    config.workspaceCheckoutLocation = input;
+
+    return Promise.resolve();
+  });
 
   return {
     api: {
       config: {
         getConfig: getConfigMock,
         updateCoderPrefs: updateCoderPrefsMock,
+        updateWorkspaceCheckoutLocation: updateWorkspaceCheckoutLocationMock,
         updateChatTranscriptFullWidth: updateChatTranscriptFullWidthMock,
         updateLlmDebugLogs: mock(({ enabled }: { enabled: boolean }) => {
           config.llmDebugLogs = enabled;
@@ -241,6 +258,7 @@ function createMockAPI(configOverrides: Partial<MockConfig> = {}): MockAPISetup 
     getConfigMock,
     updateCoderPrefsMock,
     updateChatTranscriptFullWidthMock,
+    updateWorkspaceCheckoutLocationMock,
   };
 }
 
@@ -263,10 +281,16 @@ describe("GeneralSection", () => {
   });
 
   function renderGeneralSection(options: RenderGeneralSectionOptions = {}) {
-    const { api, updateCoderPrefsMock, updateChatTranscriptFullWidthMock } = createMockAPI({
+    const {
+      api,
+      updateCoderPrefsMock,
+      updateChatTranscriptFullWidthMock,
+      updateWorkspaceCheckoutLocationMock,
+    } = createMockAPI({
       chatTranscriptFullWidth: options.chatTranscriptFullWidth,
       coderWorkspaceArchiveBehavior: options.coderWorkspaceArchiveBehavior,
       worktreeArchiveBehavior: options.worktreeArchiveBehavior,
+      workspaceCheckoutLocation: options.workspaceCheckoutLocation,
     });
     mockApi = api;
 
@@ -276,7 +300,12 @@ describe("GeneralSection", () => {
       </ThemeProvider>
     );
 
-    return { updateCoderPrefsMock, updateChatTranscriptFullWidthMock, view };
+    return {
+      updateCoderPrefsMock,
+      updateChatTranscriptFullWidthMock,
+      updateWorkspaceCheckoutLocationMock,
+      view,
+    };
   }
 
   function getSelectTrigger(view: ReturnType<typeof render>, label: string): HTMLElement {
@@ -387,6 +416,41 @@ describe("GeneralSection", () => {
       expect(updateCoderPrefsMock).toHaveBeenCalledWith({
         coderWorkspaceArchiveBehavior: "delete",
         worktreeArchiveBehavior: "snapshot",
+      });
+    });
+  });
+
+  test("loads and persists the workspace checkout location", async () => {
+    const { updateWorkspaceCheckoutLocationMock, view } = renderGeneralSection({
+      workspaceCheckoutLocation: { mode: "projectWorktrees" },
+    });
+
+    await waitFor(() => {
+      expect(getSelectTrigger(view, "Workspace path").textContent).toContain("Project .worktrees");
+    });
+
+    await chooseSelectOption(view, "Workspace path", "Project .workspaces");
+
+    await waitFor(() => {
+      expect(updateWorkspaceCheckoutLocationMock).toHaveBeenCalledWith({
+        mode: "projectWorkspaces",
+      });
+    });
+  });
+
+  test("persists a custom workspace checkout directory on blur", async () => {
+    const { updateWorkspaceCheckoutLocationMock, view } = renderGeneralSection({
+      workspaceCheckoutLocation: { mode: "customPublic", customPath: "~/mux-src" },
+    });
+
+    const input = await waitFor(() => view.getByDisplayValue("~/mux-src"));
+    fireEvent.change(input, { target: { value: "~/custom-mux-src" } });
+    fireEvent.blur(input);
+
+    await waitFor(() => {
+      expect(updateWorkspaceCheckoutLocationMock).toHaveBeenCalledWith({
+        mode: "customPublic",
+        customPath: "~/custom-mux-src",
       });
     });
   });
