@@ -712,7 +712,7 @@ export function useCreationWorkspace({
         description:
           "Creating a workspace will execute repository scripts. Only trust projects from sources you trust.",
         warning:
-          "This includes .mux/init, .mux/tool_env, .mux/tool_pre, .mux/tool_post, and git hooks.",
+          "This includes .mux/init, .mux/tool_env, .mux/tool_pre, .mux/tool_post, and repository hooks.",
         confirmLabel: "Trust and continue",
         cancelLabel: "Don't create",
         onConfirm: async () => {

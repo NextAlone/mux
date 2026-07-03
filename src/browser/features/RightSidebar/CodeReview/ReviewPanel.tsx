@@ -6,9 +6,9 @@
  *
  * Two-tier pipeline:
  *
- * 1. Git-level filters (affect data fetching):
- *    - diffBase: target branch/commit to diff against
- *    - includeUncommitted: include working directory changes
+ * 1. Repository-level filters (affect data fetching):
+ *    - diffBase: target bookmark/revision to diff against
+ *    - includeUncommitted: include working-copy changes
  *    - selectedFilePath: CRITICAL for truncation handling - when full diff
  *      exceeds bash output limits, path filter retrieves specific files
  *
@@ -17,7 +17,7 @@
  *    - searchTerm: substring match on filenames + hunk content
  *
  * Why hybrid? Performance and necessity:
- * - selectedFilePath MUST be git-level (truncation recovery)
+ * - selectedFilePath MUST be repository-level (truncation recovery)
  * - search/read filters are better frontend (more flexible, simpler UX)
  * - Frontend filtering is fast even for 1000+ hunks (<5ms)
  */
@@ -132,7 +132,7 @@ interface ReviewPanelProps {
   onReviewNote?: (data: ReviewNoteData) => void;
   /** Trigger to focus panel (increment to trigger) */
   focusTrigger?: number;
-  /** Workspace is still being created (git operations in progress) */
+  /** Workspace is still being created (repository operations in progress) */
   isCreating?: boolean;
   /** Callback to report stats changes (for tab badge) */
   onStatsChange?: (stats: ReviewPanelStats) => void;
@@ -1667,9 +1667,9 @@ export const ReviewPanel: React.FC<ReviewPanelProps> = ({
             });
             if (cancelled) return null;
 
-            // Git-level filters (affect what data is fetched):
+            // Repository-level filters (affect what data is fetched):
             // - diffBase: what to diff against
-            // - includeUncommitted: include working directory changes
+            // - includeUncommitted: include working-copy changes
             // - selectedFilePath / assisted pins: ESSENTIAL for truncation and
             //   multi-project parity; path filters retrieve specific files' hunks.
             return executeWorkspaceBashAndCache({
@@ -2360,8 +2360,9 @@ export const ReviewPanel: React.FC<ReviewPanelProps> = ({
               <div className="text-muted mt-3 flex items-start gap-2 border-t border-current/20 pt-3 font-sans text-[11px]">
                 <Lightbulb aria-hidden="true" className="mt-0.5 h-3 w-3 shrink-0" />
                 <span>
-                  The ref <code className="text-foreground">{filters.diffBase}</code> does not exist
-                  in this repository. Use the dropdown above to select a different base (e.g., @-,
+                  The revision or bookmark{" "}
+                  <code className="text-foreground">{filters.diffBase}</code> does not exist in this
+                  repository. Use the dropdown above to select a different base (e.g., @-,
                   main@origin).
                 </span>
               </div>

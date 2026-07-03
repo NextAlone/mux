@@ -217,7 +217,7 @@ interface RightSidebarProps {
   isResizing?: boolean;
   /** Callback when user adds a review note from Code Review tab */
   onReviewNote?: (data: ReviewNoteData) => void;
-  /** Workspace is still being created (git operations in progress) */
+  /** Workspace is still being created (repository operations in progress) */
   isCreating?: boolean;
   /** Hide + inactivate sidebar while immersive review overlay is active. */
   immersiveHidden?: boolean;

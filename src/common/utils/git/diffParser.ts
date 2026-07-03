@@ -187,7 +187,7 @@ export function extractAllHunks(fileDiffs: FileDiff[]): DiffHunk[] {
  * until the surrounding review UI is renamed from Git to jj terminology.
  *
  * @param diffBase - Base revision ("@-", "main", "main@origin")
- * @param includeUncommitted - Include uncommitted working directory changes
+ * @param includeUncommitted - Include working-copy changes
  * @param pathFilter - Optional path filter (e.g., ' -- "src/foo.ts"')
  * @param command - "diff" (unified), "numstat" (file stats), or "name-status" (file status)
  */

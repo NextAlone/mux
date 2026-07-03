@@ -95,7 +95,7 @@ export const ReviewControls: React.FC<ReviewControlsProps> = ({
     onFiltersChange((prev) => ({ ...prev, diffBase: value }));
   };
 
-  const handleUncommittedToggle = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleWorkingCopyToggle = (e: React.ChangeEvent<HTMLInputElement>) => {
     const checked = e.target.checked;
     onFiltersChange((prev) => ({ ...prev, includeUncommitted: checked }));
   };
@@ -194,14 +194,14 @@ export const ReviewControls: React.FC<ReviewControlsProps> = ({
 
       <div className="bg-border-light h-3 w-px" />
 
-      {/* Uncommitted is force-enabled while Assisted is on so agent pins that
-          target uncommitted edits cannot disappear because of a stale toggle.
+      {/* Working copy changes are force-enabled while Assisted is on so agent pins that
+          target live edits cannot disappear because of a stale toggle.
           We render the checkbox in a disabled state (rather than hiding it)
           so the user can tell why the value isn't editable. */}
       <TooltipIfPresent
         tooltip={
           filters.assistedOnly
-            ? "Always on while Assisted is enabled — agent pins often target uncommitted edits"
+            ? "Always on while Assisted is enabled — agent pins often target working-copy edits"
             : undefined
         }
         side="bottom"
@@ -213,12 +213,12 @@ export const ReviewControls: React.FC<ReviewControlsProps> = ({
               : "text-muted hover:text-foreground cursor-pointer"
           }`}
         >
-          <span>Uncommitted:</span>
+          <span>Working copy:</span>
           <input
             type="checkbox"
             checked={filters.assistedOnly ? true : filters.includeUncommitted}
             disabled={filters.assistedOnly}
-            onChange={handleUncommittedToggle}
+            onChange={handleWorkingCopyToggle}
             className={`h-3 w-3 ${filters.assistedOnly ? "cursor-not-allowed" : "cursor-pointer"}`}
           />
         </label>

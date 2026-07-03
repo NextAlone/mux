@@ -59,8 +59,8 @@ export const Destructive: Story = {
           <WarningBox>
             <WarningTitle>This permanently deletes the project</WarningTitle>
             <WarningText>
-              All workspaces, worktrees, and chat history for this project will be removed from
-              disk.
+              All workspaces, managed checkouts, and chat history for this project will be removed
+              from disk.
             </WarningText>
           </WarningBox>
           <DialogFooter>
