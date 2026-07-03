@@ -642,6 +642,7 @@ describe("ProviderModelFactory GitHub Copilot", () => {
         expires: Date.now() + 60_000,
         accountId: "test-account-id",
       };
+      const recordedUsagePercent: { value: string | null } = { value: null };
 
       const baseFetch = (
         input: Parameters<typeof fetch>[0],
@@ -671,6 +672,8 @@ describe("ProviderModelFactory GitHub Copilot", () => {
             {
               headers: {
                 "Content-Type": "application/json",
+                "x-codex-primary-used-percent": "75",
+                "x-codex-primary-window-minutes": "300",
               },
             }
           )
@@ -687,6 +690,9 @@ describe("ProviderModelFactory GitHub Copilot", () => {
 
       const codexOauthService = Object.create(CodexOauthService.prototype) as CodexOauthService;
       codexOauthService.getValidAuth = () => Promise.resolve(Ok(auth));
+      codexOauthService.recordUsageHeaders = (headers: Headers) => {
+        recordedUsagePercent.value = headers.get("x-codex-primary-used-percent");
+      };
       factory.codexOauthService = codexOauthService;
 
       PROVIDER_REGISTRY.openai = async () => {
@@ -754,6 +760,7 @@ describe("ProviderModelFactory GitHub Copilot", () => {
         expect(headers.get("authorization")).toBe("Bearer test-access-token");
         expect(headers.get("chatgpt-account-id")).toBe("test-account-id");
         expect(headers.get("content-type")).toBe("application/json");
+        expect(recordedUsagePercent.value).toBe("75");
       } finally {
         PROVIDER_REGISTRY.openai = originalOpenAIRegistry;
       }

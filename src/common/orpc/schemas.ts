@@ -309,6 +309,8 @@ export {
   copilotOauth,
   muxGovernorOauth,
   codexOauth,
+  CodexUsageSnapshotSchema,
+  CodexUsageWindowSchema,
   policy,
   providers,
   ProvidersConfigMapSchema,

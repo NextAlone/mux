@@ -48,6 +48,8 @@ export type UpdateStatus = z.infer<typeof schemas.UpdateStatusSchema>;
 export type DesktopPrereqStatus = z.infer<typeof schemas.desktop.getPrereqStatus.output>;
 export type ChatMuxMessage = z.infer<typeof schemas.ChatMuxMessageSchema>;
 export type WorkspaceStatsSnapshot = z.infer<typeof schemas.WorkspaceStatsSnapshotSchema>;
+export type CodexUsageSnapshot = z.infer<typeof schemas.CodexUsageSnapshotSchema>;
+export type CodexUsageWindow = z.infer<typeof schemas.CodexUsageWindowSchema>;
 export type WorkspaceActivitySnapshot = z.infer<typeof schemas.WorkspaceActivitySnapshotSchema>;
 export type FrontendWorkspaceMetadataSchemaType = z.infer<
   typeof schemas.FrontendWorkspaceMetadataSchema

@@ -2517,6 +2517,77 @@ export const router = (authToken?: string) => {
         }),
     },
     codexOauth: {
+      getUsageSnapshot: t
+        .input(schemas.codexOauth.getUsageSnapshot.input)
+        .output(schemas.codexOauth.getUsageSnapshot.output)
+        .handler(({ context }) => {
+          return context.codexOauthService.getUsageSnapshot();
+        }),
+      subscribeUsageSnapshot: t
+        .input(schemas.codexOauth.subscribeUsageSnapshot.input)
+        .output(schemas.codexOauth.subscribeUsageSnapshot.output)
+        .handler(async function* ({ context, signal }) {
+          if (signal?.aborted) {
+            return;
+          }
+
+          let buffered = context.codexOauthService.getUsageSnapshot();
+          let hasBuffered = true;
+          let resolveNext: ((value: typeof buffered) => void) | null = null;
+          let ended = false;
+
+          const push = (snapshot: typeof buffered) => {
+            if (ended) return;
+            if (resolveNext) {
+              const resolve = resolveNext;
+              resolveNext = null;
+              resolve(snapshot);
+              return;
+            }
+            buffered = snapshot;
+            hasBuffered = true;
+          };
+
+          const unsubscribe = context.codexOauthService.onUsageSnapshotChanged(push);
+          const onAbort = () => {
+            ended = true;
+            if (resolveNext) {
+              const resolve = resolveNext;
+              resolveNext = null;
+              resolve(null);
+            }
+          };
+
+          if (signal) {
+            if (signal.aborted) {
+              onAbort();
+            } else {
+              signal.addEventListener("abort", onAbort, { once: true });
+            }
+          }
+
+          try {
+            while (!ended) {
+              if (hasBuffered) {
+                hasBuffered = false;
+                yield buffered;
+                continue;
+              }
+
+              const next = await new Promise<typeof buffered>((resolve) => {
+                resolveNext = resolve;
+              });
+              if (ended) {
+                return;
+              }
+              yield next;
+            }
+          } finally {
+            ended = true;
+            signal?.removeEventListener("abort", onAbort);
+            unsubscribe();
+          }
+        }),
       startDesktopFlow: t
         .input(schemas.codexOauth.startDesktopFlow.input)
         .output(schemas.codexOauth.startDesktopFlow.output)

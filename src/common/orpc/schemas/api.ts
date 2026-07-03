@@ -478,8 +478,36 @@ export const muxGovernorOauth = {
   },
 };
 
+export const CodexUsageWindowSchema = z.object({
+  label: z.enum(["5h", "1w"]),
+  usedPercent: z.number().min(0).max(100),
+  remainingPercent: z.number().min(0).max(100),
+  resetAt: z.number().nullable(),
+});
+
+export const CodexUsageSnapshotSchema = z.object({
+  source: z.literal("headers"),
+  updatedAt: z.number(),
+  remainingPercent: z.number().min(0).max(100),
+  windows: z.object({
+    fiveHour: CodexUsageWindowSchema.nullable(),
+    weekly: CodexUsageWindowSchema.nullable(),
+  }),
+});
+
+export type CodexUsageWindow = z.infer<typeof CodexUsageWindowSchema>;
+export type CodexUsageSnapshot = z.infer<typeof CodexUsageSnapshotSchema>;
+
 // Codex OAuth (ChatGPT subscription auth)
 export const codexOauth = {
+  getUsageSnapshot: {
+    input: z.void(),
+    output: CodexUsageSnapshotSchema.nullable(),
+  },
+  subscribeUsageSnapshot: {
+    input: z.void(),
+    output: eventIterator(CodexUsageSnapshotSchema.nullable()),
+  },
   startDesktopFlow: {
     input: z.void(),
     output: ResultSchema(z.object({ flowId: z.string(), authorizeUrl: z.string() }), z.string()),

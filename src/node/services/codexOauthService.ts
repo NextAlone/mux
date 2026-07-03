@@ -28,6 +28,8 @@ import { createDeferred } from "@/node/utils/oauthUtils";
 import { startLoopbackServer } from "@/node/utils/oauthLoopbackServer";
 import { OAuthFlowManager } from "@/node/utils/oauthFlowManager";
 import { getErrorMessage } from "@/common/utils/errors";
+import { parseCodexUsageSnapshotFromHeaders } from "@/common/utils/codexUsage";
+import type { CodexUsageSnapshot } from "@/common/orpc/types";
 
 const DEFAULT_DESKTOP_TIMEOUT_MS = 5 * 60 * 1000;
 const DEFAULT_DEVICE_TIMEOUT_MS = 15 * 60 * 1000;
@@ -101,6 +103,8 @@ export class CodexOauthService {
   private readonly deviceFlows = new Map<string, DeviceFlow>();
 
   private readonly refreshMutex = new AsyncMutex();
+  private usageSnapshot: CodexUsageSnapshot | null = null;
+  private readonly usageListeners = new Set<(snapshot: CodexUsageSnapshot | null) => void>();
 
   // In-memory cache so getValidAuth() skips disk reads when tokens are valid.
   // Invalidated on every write (exchange, refresh, disconnect).
@@ -115,7 +119,34 @@ export class CodexOauthService {
   async disconnect(): Promise<Result<void, string>> {
     // Clear stored ChatGPT OAuth tokens so Codex-only models are hidden again.
     this.cachedAuth = null;
+    this.setUsageSnapshot(null);
     return await this.providerService.setConfigValue("openai", ["codexOauth"], undefined);
+  }
+
+  getUsageSnapshot(): CodexUsageSnapshot | null {
+    return this.usageSnapshot;
+  }
+
+  onUsageSnapshotChanged(listener: (snapshot: CodexUsageSnapshot | null) => void): () => void {
+    this.usageListeners.add(listener);
+    return () => {
+      this.usageListeners.delete(listener);
+    };
+  }
+
+  recordUsageHeaders(headers: Headers): void {
+    const snapshot = parseCodexUsageSnapshotFromHeaders(headers);
+    if (!snapshot) {
+      return;
+    }
+    this.setUsageSnapshot(snapshot);
+  }
+
+  private setUsageSnapshot(snapshot: CodexUsageSnapshot | null): void {
+    this.usageSnapshot = snapshot;
+    for (const listener of this.usageListeners) {
+      listener(snapshot);
+    }
   }
 
   async startDesktopFlow(): Promise<Result<{ flowId: string; authorizeUrl: string }, string>> {

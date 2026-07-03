@@ -1,13 +1,19 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { cleanup, render } from "@testing-library/react";
+import { cleanup, fireEvent, render } from "@testing-library/react";
 import { GlobalWindow } from "happy-dom";
 
+import type { CodexUsageSnapshot } from "@/common/orpc/schemas/api";
 import type { WorkspaceStatsSnapshot } from "@/common/orpc/schemas/workspaceStats";
 
 let currentSnapshot: WorkspaceStatsSnapshot | null = null;
+let currentCodexUsageSnapshot: CodexUsageSnapshot | null = null;
 
 void mock.module("@/browser/stores/WorkspaceStore", () => ({
   useWorkspaceStatsSnapshot: () => currentSnapshot,
+}));
+
+void mock.module("@/browser/stores/CodexUsageStore", () => ({
+  useCodexUsageSnapshot: () => currentCodexUsageSnapshot,
 }));
 
 import { LastResponseStatsBarrier } from "./LastResponseStatsBarrier";
@@ -40,6 +46,7 @@ describe("LastResponseStatsBarrier", () => {
     globalThis.window = new GlobalWindow() as unknown as Window & typeof globalThis;
     globalThis.document = globalThis.window.document;
     currentSnapshot = null;
+    currentCodexUsageSnapshot = null;
   });
 
   afterEach(() => {
@@ -58,6 +65,44 @@ describe("LastResponseStatsBarrier", () => {
     expect(view.getByTestId("last-response-stats").textContent).toContain("~100 tokens");
     expect(view.getByTestId("last-response-stats").textContent).toContain("25");
     expect(view.getByTestId("last-response-stats").textContent).toContain("t/s");
+  });
+
+  test("renders Codex remaining usage summary and details when quota is known", () => {
+    currentSnapshot = completedSnapshot();
+    currentCodexUsageSnapshot = {
+      source: "headers",
+      updatedAt: new Date(2026, 6, 4, 1, 0, 0).getTime(),
+      remainingPercent: 8,
+      windows: {
+        fiveHour: {
+          label: "5h",
+          usedPercent: 75,
+          remainingPercent: 25,
+          resetAt: new Date(2026, 6, 4, 1, 26, 0).getTime(),
+        },
+        weekly: {
+          label: "1w",
+          usedPercent: 92,
+          remainingPercent: 8,
+          resetAt: new Date(2026, 6, 7, 0, 0, 0).getTime(),
+        },
+      },
+    };
+
+    const view = render(<LastResponseStatsBarrier workspaceId="ws-1" />);
+
+    const toggle = view.getByRole("button", { name: /Codex 剩余用量 8%/ });
+    expect(toggle.textContent).toContain("5h");
+    expect(toggle.textContent).toContain("25%");
+    expect(toggle.textContent).toContain("1w");
+    expect(toggle.textContent).toContain("8%");
+
+    fireEvent.click(toggle);
+
+    expect(view.getAllByText("剩余用量").length).toBeGreaterThan(0);
+    expect(view.getByText("5 小时")).toBeTruthy();
+    expect(view.getByText("1 周")).toBeTruthy();
+    expect(view.getByText("Jul 7")).toBeTruthy();
   });
 
   test("hides while a stream is active", () => {
