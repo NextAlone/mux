@@ -1077,6 +1077,14 @@ export const workspace = {
       branchName: z.string().optional(),
       /** Source bookmark to fork from - only required for JJ Workspace/SSH runtimes, ignored for local */
       trunkBranch: z.string().optional(),
+      /**
+       * Optional jj revision used as the base for the new workspace. When
+       * `startPointWorkspaceId` is set, this is resolved in that workspace first
+       * so relative revsets like "@" and "@-" mean the visible source workspace.
+       */
+      startPoint: z.string().optional(),
+      /** Existing workspace whose jj repo should resolve `startPoint` before creation. */
+      startPointWorkspaceId: z.string().optional(),
       /** Human-readable title (e.g., "Fix plan mode over SSH") - optional for backwards compat */
       title: z.string().optional(),
       runtimeConfig: RuntimeConfigSchema.optional(),

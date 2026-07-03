@@ -220,7 +220,7 @@ import {
 } from "@/node/services/bashMonitorWakeStore";
 import type { WorkspaceLifecycleHooks } from "@/node/services/workspaceLifecycleHooks";
 import type { TaskService } from "@/node/services/taskService";
-import { findWorkspaceEntry } from "@/node/services/taskUtils";
+import { findWorkspaceEntry, tryResolveJjChangeId } from "@/node/services/taskUtils";
 import type { WorktreeArchiveSnapshotService } from "@/node/services/worktreeArchiveSnapshotService";
 
 import { DisposableTempDir } from "@/node/services/tempDir";
@@ -3039,6 +3039,48 @@ export class WorkspaceService extends EventEmitter {
     }
   }
 
+  private async resolveWorkspaceCreateStartPoint(
+    startPoint: string | undefined,
+    startPointWorkspaceId: string | undefined,
+    owningProjectPath: string
+  ): Promise<Result<string | undefined>> {
+    const trimmedStartPoint = startPoint?.trim();
+    const normalizedWorkspaceId = startPointWorkspaceId?.trim();
+
+    if (!trimmedStartPoint) {
+      return normalizedWorkspaceId
+        ? Err("Start point is required when a source workspace is provided")
+        : Ok(undefined);
+    }
+
+    if (!normalizedWorkspaceId) {
+      return Ok(trimmedStartPoint);
+    }
+
+    const sourceMetadata = await this.getInfo(normalizedWorkspaceId);
+    if (!sourceMetadata) {
+      return Err("Source workspace not found");
+    }
+    if (sourceMetadata.projectPath !== owningProjectPath) {
+      return Err("Source workspace must belong to the same project");
+    }
+
+    try {
+      const { runtime, workspacePath } = createRuntimeContextForWorkspace(sourceMetadata);
+      const resolvedChangeId = await tryResolveJjChangeId(
+        runtime,
+        workspacePath,
+        trimmedStartPoint
+      );
+      if (!resolvedChangeId) {
+        return Err(`Revision "${trimmedStartPoint}" does not exist in the source workspace`);
+      }
+      return Ok(resolvedChangeId);
+    } catch (error) {
+      return Err(`Failed to resolve start point: ${getErrorMessage(error)}`);
+    }
+  }
+
   async create(
     projectPath: string,
     branchName: string | undefined,
@@ -3047,7 +3089,9 @@ export class WorkspaceService extends EventEmitter {
     runtimeConfig?: RuntimeConfig,
     subProjectPath?: string,
     pendingAutoTitle?: boolean,
-    tags?: Record<string, string>
+    tags?: Record<string, string>,
+    startPoint?: string,
+    startPointWorkspaceId?: string
   ): Promise<Result<{ metadata: FrontendWorkspaceMetadata }>> {
     if (tags != null) {
       for (const [tagKey, tagValue] of Object.entries(tags)) {
@@ -3140,6 +3184,16 @@ export class WorkspaceService extends EventEmitter {
       return Err("Source bookmark is required for JJ Workspace and SSH runtimes");
     }
 
+    const startPointResult = await this.resolveWorkspaceCreateStartPoint(
+      startPoint,
+      startPointWorkspaceId,
+      owningProjectPath
+    );
+    if (!startPointResult.success) {
+      return Err(startPointResult.error);
+    }
+    const resolvedStartPoint = startPointResult.data;
+
     let runtime;
     try {
       runtime = createRuntime(finalRuntimeConfig, { projectPath: owningProjectPath });
@@ -3210,6 +3264,7 @@ export class WorkspaceService extends EventEmitter {
           abortSignal: initAbortController.signal,
           env: createEnv,
           trusted: projectConfig.trusted ?? false,
+          startPoint: resolvedStartPoint,
         });
 
         if (createResult.success) break;

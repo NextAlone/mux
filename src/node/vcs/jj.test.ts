@@ -17,6 +17,7 @@ import {
   parseJjBookmarkNames,
   parseJjFileListOutput,
   renameJjWorkspace,
+  resolveJjRevisionChangeId,
 } from "./jj";
 
 // eslint-disable-next-line @typescript-eslint/no-empty-function
@@ -90,7 +91,7 @@ describe("jj bookmark helpers", () => {
       return createMockExecResult(Promise.resolve({ stdout: "/repo\n", stderr: "" }));
     });
 
-    await expect(isInsideJjRepository("/repo")).resolves.toBe(true);
+    expect(await isInsideJjRepository("/repo")).toBe(true);
   });
 
   test("returns the normalized jj root path", async () => {
@@ -108,7 +109,7 @@ describe("jj bookmark helpers", () => {
       return createMockExecResult(Promise.resolve({ stdout: "/repo\n", stderr: "" }));
     });
 
-    await expect(getJjRoot("/repo/subdir")).resolves.toBe("/repo");
+    expect(await getJjRoot("/repo/subdir")).toBe("/repo");
   });
 
   test("creates a jj workspace at an explicit base revision", async () => {
@@ -202,7 +203,7 @@ describe("jj bookmark helpers", () => {
       return createMockExecResult(Promise.resolve({ stdout: "M src/main.ts\n", stderr: "" }));
     });
 
-    await expect(hasJjWorkspaceChanges("/mux/src/repo/agent-task")).resolves.toBe(true);
+    expect(await hasJjWorkspaceChanges("/mux/src/repo/agent-task")).toBe(true);
   });
 
   test("returns the current jj change id from a workspace checkout", async () => {
@@ -226,7 +227,31 @@ describe("jj bookmark helpers", () => {
       return createMockExecResult(Promise.resolve({ stdout: "kqpnwost\n", stderr: "" }));
     });
 
-    await expect(getCurrentJjChangeId("/mux/src/repo/source-task")).resolves.toBe("kqpnwost");
+    expect(await getCurrentJjChangeId("/mux/src/repo/source-task")).toBe("kqpnwost");
+  });
+
+  test("resolves an arbitrary jj revision to a stable change id", async () => {
+    execFileAsyncSpy = spyOn(disposableExec, "execFileAsync").mockImplementation((file, args) => {
+      expect(file).toBe("jj");
+      expect(args).toEqual([
+        "--no-pager",
+        "--color",
+        "never",
+        "--repository",
+        "/mux/src/repo/source-task",
+        "log",
+        "--no-graph",
+        "-r",
+        "@-",
+        "-T",
+        'change_id.shortest() ++ "\\n"',
+        "-n",
+        "1",
+      ]);
+      return createMockExecResult(Promise.resolve({ stdout: "mwqvutnp\n", stderr: "" }));
+    });
+
+    expect(await resolveJjRevisionChangeId("/mux/src/repo/source-task", "@-")).toBe("mwqvutnp");
   });
 
   test("builds colocated jj git clone arguments", () => {
