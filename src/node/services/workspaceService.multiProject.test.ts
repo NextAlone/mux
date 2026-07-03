@@ -1510,7 +1510,7 @@ describe("WorkspaceService multi-project lifecycle", () => {
       } as unknown as AIService;
       const preflightWorkspaceAMock = mock(() => Promise.resolve({ success: true as const }));
       const preflightWorkspaceBMock = mock(() =>
-        Promise.resolve({ success: false as const, error: "Workspace has uncommitted changes" })
+        Promise.resolve({ success: false as const, error: "Workspace has working-copy changes" })
       );
       const deleteWorkspaceAMock = mock(() =>
         Promise.resolve({ success: true as const, deletedPath: "/tmp/deleted-a" })
@@ -1551,7 +1551,7 @@ describe("WorkspaceService multi-project lifecycle", () => {
           return;
         }
         expect(result.error).toContain(
-          "Failed to delete multi-project workspace from disk: [project-b] Workspace has uncommitted changes"
+          "Failed to delete multi-project workspace from disk: [project-b] Workspace has working-copy changes"
         );
         expect(preflightWorkspaceAMock).toHaveBeenCalledWith(projectAPath, workspaceName, true);
         expect(preflightWorkspaceBMock).toHaveBeenCalledWith(projectBPath, workspaceName, true);

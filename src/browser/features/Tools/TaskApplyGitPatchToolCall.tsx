@@ -29,8 +29,8 @@ interface TaskApplyGitPatchToolCallProps {
   status?: ToolStatus;
 }
 
-function formatCommitCount(count: number): string {
-  return `${count} ${count === 1 ? "commit" : "commits"}`;
+function formatAppliedChangeCount(count: number): string {
+  return `${count} ${count === 1 ? "change" : "changes"}`;
 }
 
 function formatShortSha(sha: string): string {
@@ -227,7 +227,7 @@ export const TaskApplyGitPatchProjectResultCard: React.FC<{
         </span>
         {appliedCommitCount > 0 && (
           <span className="text-secondary text-[10px]">
-            {isDryRun ? "Would apply" : "Applied"} {formatCommitCount(appliedCommitCount)}
+            {isDryRun ? "Would apply" : "Applied"} {formatAppliedChangeCount(appliedCommitCount)}
           </span>
         )}
       </div>
@@ -245,7 +245,7 @@ export const TaskApplyGitPatchProjectResultCard: React.FC<{
 
       {projectResult.appliedCommits && projectResult.appliedCommits.length > 0 && (
         <div className="flex flex-col gap-1">
-          <span className="text-secondary font-medium">Commits</span>
+          <span className="text-secondary font-medium">Changes</span>
           <div className="flex flex-col gap-1">
             {projectResult.appliedCommits.map((commit, index) => (
               <div
@@ -379,8 +379,8 @@ export const TaskApplyGitPatchToolCall: React.FC<TaskApplyGitPatchToolCallProps>
         {successResult && (
           <span className="text-secondary ml-2 text-[10px] whitespace-nowrap">
             {projectResults && projectResults.length > 1 && appliedProjectCount != null
-              ? `${appliedProjectCount} projects, ${formatCommitCount(appliedCommitCount)}`
-              : formatCommitCount(appliedCommitCount)}
+              ? `${appliedProjectCount} projects, ${formatAppliedChangeCount(appliedCommitCount)}`
+              : formatAppliedChangeCount(appliedCommitCount)}
           </span>
         )}
         {errorPreview && (
@@ -453,8 +453,8 @@ export const TaskApplyGitPatchToolCall: React.FC<TaskApplyGitPatchToolCallProps>
                     </span>
                     <span className="text-text font-mono">
                       {projectResults && projectResults.length > 1 && appliedProjectCount != null
-                        ? `${appliedProjectCount} projects, ${formatCommitCount(appliedCommitCount)}`
-                        : formatCommitCount(appliedCommitCount)}
+                        ? `${appliedProjectCount} projects, ${formatAppliedChangeCount(appliedCommitCount)}`
+                        : formatAppliedChangeCount(appliedCommitCount)}
                     </span>
                   </div>
                 </div>
@@ -477,7 +477,7 @@ export const TaskApplyGitPatchToolCall: React.FC<TaskApplyGitPatchToolCallProps>
                 fallbackAppliedCommits &&
                 fallbackAppliedCommits.length > 0 && (
                   <DetailSection>
-                    <DetailLabel>Commits</DetailLabel>
+                    <DetailLabel>Changes</DetailLabel>
                     <div className="bg-code-bg flex flex-col gap-1 rounded px-2 py-1.5 text-[11px] leading-[1.4]">
                       {fallbackAppliedCommits.map((commit, index) => (
                         <div

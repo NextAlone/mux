@@ -8211,7 +8211,7 @@ describe("WorkspaceService deleteWorktree", () => {
 
     expect(result.success).toBe(false);
     if (!result.success) {
-      expect(result.error).toBe("Only archived workspaces can delete their managed worktree");
+      expect(result.error).toBe("Only archived workspaces can delete their managed checkout");
     }
     expect(
       await fsPromises
@@ -8232,7 +8232,7 @@ describe("WorkspaceService deleteWorktree", () => {
     expect(result.success).toBe(false);
     if (!result.success) {
       expect(result.error).toBe(
-        "Deleting a managed worktree is only supported for worktree runtimes"
+        "Deleting a managed checkout is only supported for JJ Workspace runtimes"
       );
     }
   });

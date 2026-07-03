@@ -57,11 +57,11 @@ describe("buildBashToolDescription", () => {
 
     expect(noProjectsDescription).toContain(TOOL_DEFINITIONS.bash.description);
     expect(noProjectsDescription).toContain(`Runs in ${cwd} - no cd needed`);
-    expect(noProjectsDescription).not.toContain("independent git repo");
+    expect(noProjectsDescription).not.toContain("independent repository");
 
     expect(oneProjectDescription).toContain(TOOL_DEFINITIONS.bash.description);
     expect(oneProjectDescription).toContain(`Runs in ${cwd} - no cd needed`);
-    expect(oneProjectDescription).not.toContain("independent git repo");
+    expect(oneProjectDescription).not.toContain("independent repository");
   });
 
   it("includes project listing for multi-project workspaces", () => {
@@ -70,7 +70,7 @@ describe("buildBashToolDescription", () => {
     expect(description).toContain(`Runs in ${cwd} — a multi-project workspace containing:`);
     expect(description).toContain("  - frontend/ → /workspace/root/frontend");
     expect(description).toContain("  - backend/ → /workspace/root/backend");
-    expect(description).toContain("independent git repo");
+    expect(description).toContain("independent repository");
   });
 
   it("includes project paths for multi-project workspaces", () => {

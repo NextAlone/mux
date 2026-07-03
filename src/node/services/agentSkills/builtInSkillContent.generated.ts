@@ -7584,7 +7584,7 @@ export const BUILTIN_SKILL_FILES: Record<string, Record<string, string>> = {
       "  - If unmet: stop and report back; do not expand scope to create prerequisites.",
       "- Acceptance: <bullets / checks>",
       "- Deliverables:",
-      "  - Commits: <what to commit>",
+      "  - Changes: <what to land>",
       "  - Verification: <commands to run>",
       "- Constraints:",
       "  - Do not expand scope.",

@@ -170,7 +170,7 @@ describe("MultiProjectGitStatusIndicator", () => {
     expect(dialog.textContent).toContain("feature/a");
     expect(dialog.textContent).toContain("+5");
     expect(dialog.textContent).toContain("-2");
-    expect(dialog.textContent).toContain("Dirty");
+    expect(dialog.textContent).toContain("Working copy");
 
     fireEvent.click(body.getByRole("button", { name: "Close" }));
 
