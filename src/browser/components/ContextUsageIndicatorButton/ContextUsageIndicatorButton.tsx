@@ -257,7 +257,7 @@ export const ContextUsageIndicatorButton: React.FC<ContextUsageIndicatorButtonPr
                   <TokenMeter
                     segments={data.segments}
                     orientation="horizontal"
-                    className="h-3"
+                    className="border-border-medium h-3 border"
                     trackClassName="bg-dark"
                   />
                   {isAutoCompactionEnabled && (
@@ -268,7 +268,7 @@ export const ContextUsageIndicatorButton: React.FC<ContextUsageIndicatorButtonPr
                 /* Empty meter placeholder - allows access to settings with no usage */
                 <div
                   data-context-usage-meter
-                  className="bg-dark relative h-3 w-14 rounded-full [@container(max-width:420px)]:hidden"
+                  className="border-border-medium bg-dark relative h-3 w-14 rounded-full border [@container(max-width:420px)]:hidden"
                 />
               )}
 

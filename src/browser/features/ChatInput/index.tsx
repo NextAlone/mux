@@ -97,6 +97,7 @@ import {
 } from "@/browser/utils/slashCommands/suggestions";
 import { resolveSlashCommandExperimentValue } from "@/browser/utils/slashCommands/experimentVisibility";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/browser/components/Tooltip/Tooltip";
+import { Switch } from "@/browser/components/Switch/Switch";
 import { AgentModePicker } from "@/browser/components/AgentModePicker/AgentModePicker";
 import { ContextUsageIndicatorButton } from "@/browser/components/ContextUsageIndicatorButton/ContextUsageIndicatorButton";
 import {
@@ -107,6 +108,12 @@ import {
 import { getPlaceholderTip } from "./placeholderTips";
 import { useProviderOptions } from "@/browser/hooks/useProviderOptions";
 import { useProvidersConfig } from "@/browser/hooks/useProvidersConfig";
+import {
+  getOpenAIFastServiceTier,
+  isOpenAIFastServiceTier,
+  shouldShowOpenAIFastModeToggle,
+  type OpenAIServiceTier,
+} from "@/browser/utils/openaiServiceTier";
 import { useAutoCompactionSettings } from "@/browser/hooks/useAutoCompactionSettings";
 import { useIdleCompactionHours } from "@/browser/hooks/useIdleCompactionHours";
 import { calculateTokenMeterData } from "@/common/utils/tokens/tokenMeterUtils";
@@ -255,6 +262,35 @@ function isInputMethodCompositionEvent(event: React.KeyboardEvent): boolean {
   // IME candidate confirmation can surface as Enter; let the input method own it.
   return nativeEvent.isComposing || nativeEvent.keyCode === 229 || nativeEvent.which === 229;
 }
+
+interface OpenAIFastModeToggleProps {
+  modelString: string;
+  serviceTier: OpenAIServiceTier | undefined;
+  disabled: boolean;
+  onCheckedChange: (checked: boolean) => void;
+}
+
+const OpenAIFastModeToggle: React.FC<OpenAIFastModeToggleProps> = (props) => {
+  if (!shouldShowOpenAIFastModeToggle(props.modelString)) {
+    return null;
+  }
+
+  const checked = isOpenAIFastServiceTier(props.serviceTier);
+
+  return (
+    <div className="border-border-light bg-background-secondary/50 flex h-6 shrink-0 items-center gap-1 rounded-sm border px-1.5">
+      <span className="text-muted text-[11px] leading-none font-medium">Fast</span>
+      <Switch
+        checked={checked}
+        onCheckedChange={props.onCheckedChange}
+        disabled={props.disabled}
+        size="sm"
+        aria-label="Toggle OpenAI fast mode"
+        tooltip="Send service_tier=priority for OpenAI fast mode"
+      />
+    </div>
+  );
+};
 
 const ChatInputInner: React.FC<ChatInputProps> = (props) => {
   const { api } = useAPI();
@@ -761,7 +797,32 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
   const workspaceIdForUsage = variant === "workspace" ? props.workspaceId : "";
   const usage = useWorkspaceUsage(workspaceIdForUsage);
   const { has1MContext } = useProviderOptions();
-  const { config: providersConfig } = useProvidersConfig();
+  const {
+    config: providersConfig,
+    updateOptimistically: updateProvidersConfigOptimistically,
+    refresh: refreshProvidersConfig,
+  } = useProvidersConfig();
+  const openaiServiceTier = providersConfig?.openai?.serviceTier;
+  const handleOpenAIFastModeChange = useCallback(
+    (checked: boolean) => {
+      if (!api) {
+        return;
+      }
+
+      const nextServiceTier = checked ? getOpenAIFastServiceTier() : undefined;
+      updateProvidersConfigOptimistically("openai", { serviceTier: nextServiceTier });
+      api.providers
+        .setProviderConfig({
+          provider: "openai",
+          keyPath: ["serviceTier"],
+          value: nextServiceTier ?? "",
+        })
+        .catch(() => {
+          refreshProvidersConfig().catch(() => undefined);
+        });
+    },
+    [api, refreshProvidersConfig, updateProvidersConfigOptimistically]
+  );
   const lastUsage = usage?.liveUsage ?? usage?.lastContextUsage;
   // Token counts come from usage metadata, but context limits/1M eligibility should
   // follow the currently selected model unless a stream is actively running.
@@ -3440,10 +3501,16 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
 
                 {/* On narrow layouts, hide the thinking paddles to prevent control overlap. */}
                 <div
-                  className="flex shrink-0 items-center [@container(max-width:420px)]:[&_[data-thinking-paddle]]:hidden"
+                  className="flex shrink-0 items-center gap-1 [@container(max-width:420px)]:[&_[data-thinking-paddle]]:hidden"
                   data-component="ThinkingSliderGroup"
                 >
                   <ThinkingSliderComponent modelString={baseModel} />
+                  <OpenAIFastModeToggle
+                    modelString={baseModel}
+                    serviceTier={openaiServiceTier}
+                    disabled={!api}
+                    onCheckedChange={handleOpenAIFastModeChange}
+                  />
                 </div>
               </div>
 

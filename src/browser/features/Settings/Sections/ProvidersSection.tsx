@@ -78,57 +78,18 @@ import type {
   AddCustomOpenAICompatibleProviderInput,
   ProviderConfigInfo,
 } from "@/common/orpc/types";
-import type { ServiceTier } from "@/common/config/schemas/providersConfig";
+import {
+  getOpenAIServiceTierMode,
+  getOpenAIServiceTierOptions,
+  getOpenAIServiceTierSelectValue,
+  isOpenAIServiceTierSelectable,
+  OPENAI_SERVICE_TIER_UNSET,
+  type OpenAIServiceTierSelectValue,
+} from "@/browser/utils/openaiServiceTier";
 
 type MuxGatewayLoginStatus = "idle" | "starting" | "waiting" | "success" | "error";
 type CodexOauthFlowStatus = "idle" | "starting" | "waiting" | "error";
 type CopilotLoginStatus = "idle" | "starting" | "waiting" | "success" | "error";
-
-const OPENAI_SERVICE_TIER_UNSET = "unset";
-
-type OpenAIServiceTier = ServiceTier;
-type OpenAIServiceTierSelectValue = typeof OPENAI_SERVICE_TIER_UNSET | OpenAIServiceTier;
-type OpenAIServiceTierMode = "api" | "codexOauth";
-
-const OPENAI_API_SERVICE_TIER_OPTIONS = [
-  { value: OPENAI_SERVICE_TIER_UNSET, label: "Auto" },
-  { value: "priority", label: "Fast" },
-  { value: "flex", label: "Slow" },
-] satisfies Array<{ value: OpenAIServiceTierSelectValue; label: string }>;
-
-const CODEX_OAUTH_SERVICE_TIER_OPTIONS = [
-  { value: OPENAI_SERVICE_TIER_UNSET, label: "Normal" },
-  { value: "fast", label: "Fast" },
-] satisfies Array<{ value: OpenAIServiceTierSelectValue; label: string }>;
-
-function getOpenAIServiceTierMode(
-  codexOauthIsConnected: boolean,
-  codexOauthDefaultAuth: "oauth" | "apiKey"
-): OpenAIServiceTierMode {
-  return codexOauthIsConnected && codexOauthDefaultAuth === "oauth" ? "codexOauth" : "api";
-}
-
-function getOpenAIServiceTierOptions(mode: OpenAIServiceTierMode) {
-  return mode === "codexOauth" ? CODEX_OAUTH_SERVICE_TIER_OPTIONS : OPENAI_API_SERVICE_TIER_OPTIONS;
-}
-
-function getOpenAIServiceTierSelectValue(
-  value: OpenAIServiceTier | undefined,
-  mode: OpenAIServiceTierMode
-): OpenAIServiceTierSelectValue {
-  if (mode === "codexOauth") {
-    return value === "fast" ? "fast" : OPENAI_SERVICE_TIER_UNSET;
-  }
-
-  return value === "priority" || value === "flex" ? value : OPENAI_SERVICE_TIER_UNSET;
-}
-
-function isOpenAIServiceTierSelectable(
-  value: string,
-  mode: OpenAIServiceTierMode
-): value is OpenAIServiceTier {
-  return mode === "codexOauth" ? value === "fast" : value === "priority" || value === "flex";
-}
 
 interface CodexOauthDeviceFlow {
   flowId: string;
@@ -2502,7 +2463,7 @@ export function ProvidersSection() {
                                               </div>
                                               <div>
                                                 <span className="font-semibold">Fast</span>: send{" "}
-                                                <code>service_tier=fast</code>.
+                                                <code>service_tier=priority</code>.
                                               </div>
                                             </>
                                           ) : (

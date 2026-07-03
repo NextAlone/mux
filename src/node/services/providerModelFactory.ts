@@ -769,11 +769,12 @@ export function normalizeCodexResponsesBody(
 
   // Codex-compatible Responses requests must disable storage and strip unsupported params.
   json.store = false;
-  // Codex OAuth only accepts the subscription-tier values; API service tiers
-  // can already be present from the OpenAI SDK, so strip before optionally adding fast.
+  // pi-codex-fast matches the official Codex fast path by sending priority.
+  // Strip SDK-emitted API tiers first, then map both the current and legacy
+  // persisted fast values onto the Codex wire value.
   delete json.service_tier;
-  if (options?.serviceTier === "fast") {
-    json.service_tier = "fast";
+  if (options?.serviceTier === "priority" || options?.serviceTier === "fast") {
+    json.service_tier = "priority";
   }
 
   for (const key of Object.keys(json)) {

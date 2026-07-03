@@ -21,6 +21,7 @@ import { InterruptedBarrier } from "@/browser/features/Messages/ChatBarrier/Inte
 import { useResumeStream } from "@/browser/hooks/useResumeStream";
 import { EditCutoffBarrier } from "@/browser/features/Messages/ChatBarrier/EditCutoffBarrier";
 import { StreamingBarrier } from "@/browser/features/Messages/ChatBarrier/StreamingBarrier";
+import { LastResponseStatsBarrier } from "@/browser/features/Messages/ChatBarrier/LastResponseStatsBarrier";
 import { RetryBarrier } from "@/browser/features/Messages/ChatBarrier/RetryBarrier";
 import { PinnedTodoList } from "../PinnedTodoList/PinnedTodoList";
 import { ChatInputDecorationStackLane, TranscriptTailStackLane } from "./LayoutStackLane";
@@ -1117,6 +1118,14 @@ const ChatPaneContent: React.FC<ChatPaneContentProps> = (props) => {
             onCancelCompaction={handleCancelCompactionFromBarrier}
           />
         ),
+      })
+    );
+  }
+  if (!shouldShowStreamingBarrier && !showRetryBarrierUI && !shouldShowQueuedAgentTaskPrompt) {
+    transcriptTailItems.push(
+      createTranscriptTailStackItem({
+        key: "last-response-stats",
+        node: <LastResponseStatsBarrier workspaceId={workspaceId} />,
       })
     );
   }

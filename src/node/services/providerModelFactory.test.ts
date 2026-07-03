@@ -231,7 +231,7 @@ describe("normalizeCodexResponsesBody", () => {
     expect(normalized.store).toBe(false);
   });
 
-  it("injects Codex fast service tier after SDK provider option validation", () => {
+  it("injects priority for Codex fast mode after SDK provider option validation", () => {
     const normalized = JSON.parse(
       normalizeCodexResponsesBody(
         JSON.stringify({
@@ -242,7 +242,22 @@ describe("normalizeCodexResponsesBody", () => {
       )
     ) as { service_tier?: unknown; store: boolean };
 
-    expect(normalized.service_tier).toBe("fast");
+    expect(normalized.service_tier).toBe("priority");
+    expect(normalized.store).toBe(false);
+  });
+
+  it("forwards priority service tier to the Codex OAuth endpoint", () => {
+    const normalized = JSON.parse(
+      normalizeCodexResponsesBody(
+        JSON.stringify({
+          model: "gpt-5.5",
+          input: [{ role: "user", content: "Hello" }],
+        }),
+        { serviceTier: "priority" }
+      )
+    ) as { service_tier?: unknown; store: boolean };
+
+    expect(normalized.service_tier).toBe("priority");
     expect(normalized.store).toBe(false);
   });
 
@@ -732,7 +747,7 @@ describe("ProviderModelFactory GitHub Copilot", () => {
           service_tier?: unknown;
           truncation?: unknown;
         };
-        expect(normalizedBody.service_tier).toBe("fast");
+        expect(normalizedBody.service_tier).toBe("priority");
         expect(normalizedBody.truncation).toBeUndefined();
 
         const headers = new Headers(requests[0]?.init?.headers);
