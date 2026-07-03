@@ -94,7 +94,7 @@ export const ProjectPage: React.FC<ProjectPageProps> = ({
   const hasProviders = hasConfiguredProvider(providersConfig);
   const shouldShowAgentsInitBanner = !providersLoading && hasProviders && showAgentsInitNudge;
 
-  // Jj repository state for the banner
+  // JJ repository state for the banner
   const [branchesLoaded, setBranchesLoaded] = useState(false);
   const [hasBranches, setHasBranches] = useState(true); // Assume jj repo until proven otherwise
   const [branchRefreshKey, setBranchRefreshKey] = useState(0);

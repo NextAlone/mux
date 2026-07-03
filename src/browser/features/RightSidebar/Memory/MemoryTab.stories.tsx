@@ -78,7 +78,7 @@ const MEMORY_FILES: MemoryFileInfo[] = [
   {
     path: "/memories/workspace/scratch.md",
     scope: "workspace",
-    description: "Notes for the current branch work",
+    description: "Notes for the current workspace work",
     pinned: false,
     accessCount: 1,
     lastAccessedAt: Date.now() - 60_000,

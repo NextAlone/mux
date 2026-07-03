@@ -1,5 +1,5 @@
 /**
- * BaseSelectorPopover - Dropdown for selecting diff base (similar to BranchSelector)
+ * BaseSelectorPopover - Dropdown for selecting a jj diff base.
  *
  * Uses conditional rendering (not Radix Portal) to enable testing in happy-dom.
  * Pattern follows AgentModePicker.

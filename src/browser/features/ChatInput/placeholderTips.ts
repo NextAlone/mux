@@ -52,7 +52,7 @@ export const PLACEHOLDER_TIPS: readonly string[] = [
   "Try /haiku <msg> to send just this message on a different model",
   "Try /+high <msg> to crank up reasoning for this message only",
   "Try /compact to summarize the conversation when context gets tight",
-  "Try /fork <start> to branch this chat into a new workspace",
+  "Try /fork <start> to fork this chat into a new workspace",
   "Try /plan to view or edit the current plan inline",
   "Try /clear --soft to reset context while keeping the chat visible",
   "Try /new <start> to start a fresh workspace from the trunk bookmark",

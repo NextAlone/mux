@@ -547,7 +547,7 @@ export function getReviewDefaultBaseKey(projectPath: string): string {
 
 /**
  * Global code review behavior for including working-copy changes.
- * Format: "review-include-uncommitted"
+ * Format: "review-include-uncommitted" (legacy key for the working-copy review toggle)
  */
 export const REVIEW_INCLUDE_UNCOMMITTED_KEY = "review-include-uncommitted";
 

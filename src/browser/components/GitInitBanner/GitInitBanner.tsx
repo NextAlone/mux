@@ -50,10 +50,10 @@ export function GitInitBanner(props: GitInitBannerProps) {
         <Check className="h-5 w-5 shrink-0 text-green-500" />
         <div className="flex flex-1 flex-col gap-0.5">
           <span className="text-sm font-medium text-green-500" data-testid="git-init-success">
-            Jj repository initialized
+            JJ repository initialized
           </span>
           <span className="text-muted-foreground text-xs">
-            You can now use JJ workspace and Remote runtimes for isolated workspaces
+            You can now use JJ Workspace and remote runtimes for isolated workspaces
           </span>
         </div>
       </div>
@@ -72,7 +72,7 @@ export function GitInitBanner(props: GitInitBannerProps) {
         </span>
         <span className="text-muted-foreground text-xs">
           Run <code className="bg-bg-dark-hover rounded px-1 font-mono">jj git init</code> to enable
-          JJ workspace and Remote runtimes
+          JJ Workspace and remote runtimes
         </span>
         {error && (
           <span className="text-xs text-red-500" data-testid="git-init-error">

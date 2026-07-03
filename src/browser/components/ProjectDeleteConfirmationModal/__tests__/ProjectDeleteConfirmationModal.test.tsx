@@ -77,13 +77,13 @@ describe("ProjectDeleteConfirmationModal", () => {
 
     expect(getByText(/5 workspaces/)).not.toBeNull();
     expect(getByText(/\(3 active, 2 archived\)/)).not.toBeNull();
-    expect(getByText(/chat transcripts and worktrees will be lost/)).not.toBeNull();
+    expect(getByText(/chat transcripts and managed checkouts will be lost/)).not.toBeNull();
   });
 
   it("shows data loss warning", () => {
     const { getByText } = renderModal({ activeCount: 0, archivedCount: 1 });
 
-    expect(getByText(/chat transcripts and worktrees will be lost/)).not.toBeNull();
+    expect(getByText(/chat transcripts and managed checkouts will be lost/)).not.toBeNull();
   });
 
   it("shows only total count when only active workspaces", () => {

@@ -148,13 +148,13 @@ describeIntegration("Docker runtime selection (UI)", () => {
     }
   }, 30_000);
 
-  test("Docker runtime is disabled for non-git projects", async () => {
+  test("Docker runtime is disabled for non-jj projects", async () => {
     const cleanupDom = installDom();
 
-    const projectPath = "/Users/dev/non-git-docker-project";
+    const projectPath = "/Users/dev/non-jj-docker-project";
     expandProjects([projectPath]);
 
-    // For non-git projects, the backend returns runtimeAvailability with git-based
+    // For non-jj projects, the backend returns runtimeAvailability with repository-backed
     // runtimes unavailable. The UI uses this to disable the buttons.
     const client = createMockORPCClient({
       projects: new Map([projectWithNoWorkspaces(projectPath)]),
@@ -162,10 +162,10 @@ describeIntegration("Docker runtime selection (UI)", () => {
       listBranches: async () => ({ branches: [], recommendedTrunk: null }),
       runtimeAvailability: {
         local: { available: true },
-        worktree: { available: false, reason: "Requires git repository" },
-        ssh: { available: false, reason: "Requires git repository" },
-        docker: { available: false, reason: "Requires git repository" },
-        devcontainer: { available: false, reason: "Requires git repository" },
+        worktree: { available: false, reason: "Requires jj repository" },
+        ssh: { available: false, reason: "Requires jj repository" },
+        docker: { available: false, reason: "Requires jj repository" },
+        devcontainer: { available: false, reason: "Requires jj repository" },
       },
     });
 
@@ -175,7 +175,7 @@ describeIntegration("Docker runtime selection (UI)", () => {
       await view.waitForReady();
       await openProjectCreationView(view, projectPath);
 
-      // Wait for the git init banner to confirm the project is treated as non-git
+      // Wait for the jj init banner to confirm the project is treated as non-jj
       await waitFor(
         () => {
           const banner = view.container.querySelector('[data-testid="git-init-banner"]');

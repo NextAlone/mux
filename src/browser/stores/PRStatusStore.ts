@@ -3,13 +3,13 @@
  *
  * Architecture:
  * - Lives outside React lifecycle (stable references)
- * - Detects workspace PR from current branch via `gh pr view`
+ * - Detects workspace PR from the current checkout via `gh pr view`
  * - Caches status with TTL
  * - Refreshes on focus (like GitStatusStore)
  * - Notifies subscribers when status changes
  *
  * PR detection:
- * - Branch-based: Runs `gh pr view` without URL to detect PR for current branch
+ * - Checkout-based: Runs `gh pr view` without URL to detect PR for the current checkout
  */
 
 import type { RouterClient } from "@orpc/server";
@@ -140,10 +140,10 @@ export function parseMergeQueueEntry(raw: unknown): MergeQueueEntry | null {
 }
 
 /**
- * Workspace PR detection result (from branch, not chat).
+ * Workspace PR detection result (from checkout, not chat).
  */
 interface WorkspacePRCacheEntry {
-  /** The detected PR link (null if no PR for this branch) */
+  /** The detected PR link (null if no PR for this checkout) */
   prLink: GitHubPRLink | null;
   /** PR status if available */
   status?: GitHubPRStatus;
@@ -244,7 +244,7 @@ export class PRStatusStore {
   // ─────────────────────────────────────────────────────────────────────────────
 
   /**
-   * Subscribe to workspace PR changes (branch-based detection).
+   * Subscribe to workspace PR changes (checkout-based detection).
    *
    * Like GitStatusStore: subscriptions drive refresh. Components should not need to
    * manually "monitor" workspaces.
@@ -310,7 +310,7 @@ export class PRStatusStore {
   }
 
   /**
-   * Detect PR for workspace's current branch via `gh pr view`.
+   * Detect PR for the workspace's current checkout via `gh pr view`.
    */
   private async detectWorkspacePR(workspaceId: string): Promise<void> {
     if (!this.client || !this.isActive) return;
@@ -326,7 +326,7 @@ export class PRStatusStore {
     this.workspacePRSubscriptions.bump(workspaceId);
 
     try {
-      // Run gh pr view without URL - detects PR for current branch
+      // Run gh pr view without URL - detects PR for the current checkout.
       const result = await this.client.workspace.executeBash({
         workspaceId,
         script: `gh pr view --json number,url,state,mergeable,mergeStateStatus,title,isDraft,headRefName,baseRefName,statusCheckRollup 2>/dev/null || echo '{"no_pr":true}'`,
@@ -355,7 +355,7 @@ export class PRStatusStore {
         const parsed = JSON.parse(output) as Record<string, unknown>;
 
         if ("no_pr" in parsed) {
-          // No PR for this branch
+          // No PR for this checkout.
           this.workspacePRCache.set(workspaceId, {
             prLink: null,
             loading: false,
@@ -679,8 +679,8 @@ export function getPRStatusStoreInstance(): PRStatusStore {
 const workspacePRHookCache = new Map<string, GitHubPRLinkWithStatus | null>();
 
 /**
- * Hook to get PR for a workspace (branch-based detection).
- * Returns the detected PR with status, or null if no PR for this branch.
+ * Hook to get PR for a workspace (checkout-based detection).
+ * Returns the detected PR with status, or null if no PR for this checkout.
  */
 export function useWorkspacePR(workspaceId: string): GitHubPRLinkWithStatus | null {
   const store = getPRStatusStoreInstance();
@@ -698,7 +698,7 @@ export function useWorkspacePR(workspaceId: string): GitHubPRLinkWithStatus | nu
         return null;
       }
 
-      // No PR for this branch
+      // No PR for this checkout.
       if (!cached.prLink) {
         if (existing === null) return existing;
         workspacePRHookCache.set(workspaceId, null);

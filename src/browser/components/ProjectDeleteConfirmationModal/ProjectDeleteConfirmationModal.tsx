@@ -90,7 +90,7 @@ export function ProjectDeleteConfirmationModal(
             {hasActive &&
               hasArchived &&
               ` (${activeCount} active, ${props.archivedCount} archived)`}
-            . All chat transcripts and worktrees will be lost.
+            . All chat transcripts and managed checkouts will be lost.
           </WarningText>
         </WarningBox>
 
