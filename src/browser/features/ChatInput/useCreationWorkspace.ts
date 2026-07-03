@@ -497,11 +497,15 @@ export function useCreationWorkspace({
           // Trust was confirmed and set, continue with creation
         }
 
+        // Local runtime reuses the current checkout; source bookmarks only apply to isolated
+        // runtime modes that create a separate jj workspace/checkout.
+        const usesCurrentCheckout = runtimeSelection.mode === RUNTIME_MODE.LOCAL;
+
         // Create the workspace with the generated name and title
         const createResult = await api.workspace.create({
           projectPath,
           branchName: identity.name,
-          trunkBranch: settings.trunkBranch,
+          ...(usesCurrentCheckout ? {} : { trunkBranch: settings.trunkBranch }),
           title: createTitle,
           runtimeConfig,
           subProjectPath: subProjectPath ?? undefined,

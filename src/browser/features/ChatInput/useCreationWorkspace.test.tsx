@@ -771,6 +771,63 @@ describe("useCreationWorkspace", () => {
     expect(updatePersistedStateCalls).toContainEqual([pendingImagesKey, undefined]);
   });
 
+  test("handleSend creates local workspace without source bookmark", async () => {
+    const createMock = mock(
+      (_args: WorkspaceCreateArgs): Promise<WorkspaceCreateResult> =>
+        Promise.resolve({
+          success: true,
+          metadata: TEST_METADATA,
+        } as WorkspaceCreateResult)
+    );
+    const nameGenerationMock = mock(
+      (_args: NameGenerationArgs): Promise<NameGenerationResult> =>
+        Promise.resolve({
+          success: true,
+          data: { name: "generated-name", modelUsed: "anthropic:claude-haiku-4-5" },
+        } as NameGenerationResult)
+    );
+    const sendMessageMock = mock(
+      (_args: WorkspaceSendMessageArgs): Promise<WorkspaceSendMessageResult> =>
+        Promise.resolve({ success: true as const, data: {} })
+    );
+    const { workspaceApi, nameGenerationApi } = setupWindow({
+      create: createMock,
+      nameGeneration: nameGenerationMock,
+      sendMessage: sendMessageMock,
+    });
+
+    draftSettingsState = createDraftSettingsHarness({
+      selectedRuntime: { mode: "local" },
+      runtimeString: "local",
+      trunkBranch: "dev",
+    });
+
+    const getHook = renderUseCreationWorkspace({
+      projectPath: TEST_PROJECT_PATH,
+      onWorkspaceCreated: mock((metadata: FrontendWorkspaceMetadata) => metadata),
+      message: "launch local workspace",
+    });
+
+    await waitFor(() => expect(getHook().branches).toEqual(["main"]));
+    await waitFor(() => expect(nameGenerationApi.generate.mock.calls.length).toBe(1));
+
+    let handleSendResult: CreationSendResult | undefined;
+    await act(async () => {
+      handleSendResult = await getHook().handleSend("launch local workspace");
+    });
+
+    expect(handleSendResult).toEqual({ success: true });
+    const createCall = workspaceApi.create.mock.calls[0];
+    if (!createCall) {
+      throw new Error("Expected workspace.create to be called");
+    }
+    const [createRequest] = createCall;
+    expect(createRequest?.projectPath).toBe(TEST_PROJECT_PATH);
+    expect(createRequest?.branchName).toBe("generated-name");
+    expect(createRequest?.runtimeConfig).toEqual({ type: "local" });
+    expect("trunkBranch" in createRequest).toBe(false);
+  });
+
   test("handleSend creates workspace and applies initial goal command without sending chat text", async () => {
     const setGoalMock = mock(
       (_args: WorkspaceSetGoalArgs): Promise<WorkspaceSetGoalResult> =>
