@@ -19,7 +19,7 @@ description: Agent instructions for AI assistants working on the Mux codebase
 
 - Core files: `src/main.ts`, `src/preload.ts`, `src/App.tsx`, `src/config.ts`.
 - Up-to-date model names: see `src/common/knownModels.ts` for current provider model IDs.
-- Persistent data: `~/.mux/config.json`, `~/.mux/src/<project>/<branch>` (worktrees), `~/.mux/sessions/<workspace>/chat.jsonl`.
+- Persistent data: `~/.mux/config.json`, `~/.mux/src/<project>/<workspace>` (JJ Workspace checkouts), `~/.mux/sessions/<workspace>/chat.jsonl`.
 
 ## Documentation Rules
 

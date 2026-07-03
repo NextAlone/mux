@@ -21,7 +21,7 @@ Optional environment overrides:
 | `MUX_MODEL`           | Preferred model (supports `provider/model` syntax)                            | `anthropic/claude-sonnet-4-5`          |
 | `MUX_THINKING_LEVEL`  | Reasoning level (`OFF`, `LOW`, `MED`, `HIGH`, `MAX`)                          | `HIGH`                                 |
 | `MUX_MODE`            | Starting mode (`plan` or `exec`)                                              | `exec`                                 |
-| `MUX_RUNTIME`         | Runtime type (`local`, `worktree`/JJ Workspace, or `ssh <host>`)              | `worktree`                             |
+| `MUX_RUNTIME`         | Runtime type (`local`, `worktree` for JJ Workspace, or `ssh <host>`)          | `worktree`                             |
 | `MUX_TIMEOUT_MS`      | Legacy timeout marker forwarded to runner logs; Harbor enforces task timeouts | unset                                  |
 | `MUX_PROVIDERS_FILE`  | Host path to `providers.jsonc` copied into each sandbox                       | unset (use env vars only)              |
 | `MUX_CONFIG_ROOT`     | Location for Mux session data inside the container                            | `/root/.mux`                           |

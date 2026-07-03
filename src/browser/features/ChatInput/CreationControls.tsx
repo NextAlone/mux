@@ -20,7 +20,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/browser/components/SelectPrimitive/SelectPrimitive";
-import { Blocks, Cog, GitBranch, Loader2, Wand2 } from "lucide-react";
+import { Blocks, Bookmark, Cog, Loader2, Wand2 } from "lucide-react";
 import { useProjectContext } from "@/browser/contexts/ProjectContext";
 import { formatProjectHierarchyLabel } from "@/common/utils/subProjects";
 import { useSettings } from "@/browser/contexts/SettingsContext";
@@ -558,12 +558,12 @@ export function CreationControls(props: CreationControlsProps) {
       availabilityMap.worktree.reason === "Requires jj repository") ||
     (props.branchesLoaded && props.branches.length === 0);
 
-  const branchOptions =
+  const bookmarkOptions =
     props.trunkBranch && !props.branches.includes(props.trunkBranch)
       ? [props.trunkBranch, ...props.branches]
       : props.branches;
-  const isBranchSelectorDisabled =
-    Boolean(props.disabled) || isNonGitRepo || branchOptions.length === 0;
+  const isBookmarkSelectorDisabled =
+    Boolean(props.disabled) || isNonGitRepo || bookmarkOptions.length === 0;
 
   // Keep selected runtime aligned with availability + Settings enablement constraints.
   // All constraint checks (non-repo, devcontainer missing, enablement, policy) are unified
@@ -960,18 +960,18 @@ export function CreationControls(props: CreationControlsProps) {
 
             <div
               className="flex min-w-0 flex-1 flex-col gap-1.5 md:flex-initial"
-              data-component="BranchSelector"
-              data-tutorial="trunk-branch"
+              data-component="BookmarkSelector"
+              data-tutorial="source-bookmark"
             >
               <label className="text-muted-foreground flex items-center gap-1 text-xs font-medium">
-                <GitBranch className="h-3.5 w-3.5" />
+                <Bookmark className="h-3.5 w-3.5" />
                 Source Bookmark
               </label>
               {props.branchesLoaded ? (
                 <RadixSelect
                   value={props.trunkBranch}
                   onValueChange={props.onTrunkBranchChange}
-                  disabled={isBranchSelectorDisabled}
+                  disabled={isBookmarkSelectorDisabled}
                 >
                   <SelectTrigger
                     className={cn(INLINE_CONTROL_CLASSES, "w-full md:w-[140px]")}
@@ -980,9 +980,9 @@ export function CreationControls(props: CreationControlsProps) {
                     <SelectValue placeholder="Select source bookmark" />
                   </SelectTrigger>
                   <SelectContent className="border-border-medium">
-                    {branchOptions.map((branch) => (
-                      <SelectItem key={branch} value={branch}>
-                        {branch}
+                    {bookmarkOptions.map((bookmark) => (
+                      <SelectItem key={bookmark} value={bookmark}>
+                        {bookmark}
                       </SelectItem>
                     ))}
                   </SelectContent>

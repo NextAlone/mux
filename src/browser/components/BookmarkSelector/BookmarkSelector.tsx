@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect, useRef } from "react";
-import { GitBranch, Loader2, Check, Copy, Globe, ChevronRight } from "lucide-react";
+import { Bookmark, Loader2, Check, Copy, Globe, ChevronRight } from "lucide-react";
 import { cn } from "@/common/lib/utils";
 import { useAPI } from "@/browser/contexts/API";
 import { Popover, PopoverContent, PopoverTrigger } from "../Popover/Popover";
@@ -7,18 +7,18 @@ import { Tooltip, TooltipTrigger, TooltipContent } from "../Tooltip/Tooltip";
 import { useCopyToClipboard } from "@/browser/hooks/useCopyToClipboard";
 import { clearGitStatus, invalidateGitStatus, useGitStatus } from "@/browser/stores/GitStatusStore";
 import { createLRUCache } from "@/browser/utils/lruCache";
-import { buildCheckoutCommand, buildRemoteBranchListCommand } from "./branchCommands";
+import { buildSwitchBookmarkCommand, buildRemoteBookmarkListCommand } from "./bookmarkCommands";
 import { repoRootBashOptions } from "@/browser/utils/executeBash";
 
 // LRU cache for persisting bookmark names across app restarts.
-const branchCache = createLRUCache<string>({
-  entryPrefix: "branch:",
-  indexKey: "branchIndex",
+const bookmarkCache = createLRUCache<string>({
+  entryPrefix: "bookmark:",
+  indexKey: "bookmarkIndex",
   maxEntries: 100,
   // No TTL - cached bookmark info seeds the selector until passive repository status refreshes.
 });
 
-interface BranchSelectorProps {
+interface BookmarkSelectorProps {
   workspaceId: string;
   /** Fallback name to display if not in a jj repo (workspace name). */
   workspaceName: string;
@@ -26,11 +26,11 @@ interface BranchSelectorProps {
 }
 
 // Max bookmarks to fetch.
-const MAX_LOCAL_BRANCHES = 100;
-const MAX_REMOTE_BRANCHES = 50;
+const MAX_LOCAL_BOOKMARKS = 100;
+const MAX_REMOTE_BOOKMARKS = 50;
 
 interface RemoteState {
-  branches: string[];
+  bookmarks: string[];
   isLoading: boolean;
   fetched: boolean;
   truncated: boolean;
@@ -41,16 +41,16 @@ interface RemoteState {
  * If not in a jj repo, shows the workspace name without interactive features.
  * Remotes appear as expandable groups that lazy-load their bookmarks.
  */
-export function BranchSelector({ workspaceId, workspaceName, className }: BranchSelectorProps) {
+export function BookmarkSelector({ workspaceId, workspaceName, className }: BookmarkSelectorProps) {
   const { api } = useAPI();
-  // null = branch is not known yet (for example a stopped runtime with no passive git data),
+  // null = bookmark is not known yet (for example a stopped runtime with no passive git data),
   // false = explicitly confirmed not a jj repo, string = current bookmark.
   // Initialize from localStorage cache for instant display on app restart.
-  const [currentBranch, setCurrentBranch] = useState<string | null | false>(() =>
-    branchCache.get(workspaceId)
+  const [currentBookmark, setCurrentBookmark] = useState<string | null | false>(() =>
+    bookmarkCache.get(workspaceId)
   );
-  const [localBranches, setLocalBranches] = useState<string[]>([]);
-  const [localBranchesTruncated, setLocalBranchesTruncated] = useState(false);
+  const [localBookmarks, setLocalBookmarks] = useState<string[]>([]);
+  const [localBookmarksTruncated, setLocalBookmarksTruncated] = useState(false);
   const [remotes, setRemotes] = useState<string[]>([]);
   const [remoteStates, setRemoteStates] = useState<Record<string, RemoteState>>({});
   const [expandedRemotes, setExpandedRemotes] = useState<Set<string>>(new Set());
@@ -65,21 +65,21 @@ export function BranchSelector({ workspaceId, workspaceName, className }: Branch
   // (e.g., focus events, file-modifying tools). This keeps the selector in sync
   // when the user or mux changes the bookmark outside of this UI.
   const gitStatus = useGitStatus(workspaceId);
-  const gitStatusBranch = gitStatus?.branch;
+  const gitStatusBookmark = gitStatus?.branch;
   useEffect(() => {
-    if (!gitStatusBranch) return;
-    setCurrentBranch((prev) => {
-      if (prev === gitStatusBranch) return prev;
-      branchCache.set(workspaceId, gitStatusBranch);
-      return gitStatusBranch;
+    if (!gitStatusBookmark) return;
+    setCurrentBookmark((prev) => {
+      if (prev === gitStatusBookmark) return prev;
+      bookmarkCache.set(workspaceId, gitStatusBookmark);
+      return gitStatusBookmark;
     });
-  }, [gitStatusBranch, workspaceId]);
+  }, [gitStatusBookmark, workspaceId]);
 
   // Track if we're refreshing with a cached value (for optimistic UI pulse effect)
-  const isRefreshing = currentBranch !== null && currentBranch !== false && isSwitching;
+  const isRefreshing = currentBookmark !== null && currentBookmark !== false && isSwitching;
 
-  const fetchLocalBranches = useCallback(async () => {
-    if (!api || currentBranch === false) return;
+  const fetchLocalBookmarks = useCallback(async () => {
+    if (!api || currentBookmark === false) return;
 
     setIsLoading(true);
 
@@ -110,11 +110,11 @@ export function BranchSelector({ workspaceId, workspaceName, className }: Branch
             ? "non-jj"
             : "unknown";
       if (repoState === "non-jj") {
-        branchCache.remove(workspaceId);
+        bookmarkCache.remove(workspaceId);
         clearGitStatus(workspaceId);
-        setCurrentBranch(false);
-        setLocalBranches([]);
-        setLocalBranchesTruncated(false);
+        setCurrentBookmark(false);
+        setLocalBookmarks([]);
+        setLocalBookmarksTruncated(false);
         setRemotes([]);
         return;
       }
@@ -124,7 +124,7 @@ export function BranchSelector({ workspaceId, workspaceName, className }: Branch
 
       // Once we know the repo exists, resolve the active bookmark with an untruncated
       // command and keep the bookmark list separately capped for the popover.
-      const [currentBranchResult, branchResult, remoteResult] = await Promise.all([
+      const [currentBookmarkResult, bookmarkResult, remoteResult] = await Promise.all([
         api.workspace.executeBash({
           workspaceId,
           script: `jj --no-pager --color never log --no-graph -r 'latest(::@ & bookmarks())' -T 'bookmarks.join("\\n") ++ "\\n"' -n 1 2>/dev/null | head -1`,
@@ -132,7 +132,7 @@ export function BranchSelector({ workspaceId, workspaceName, className }: Branch
         }),
         api.workspace.executeBash({
           workspaceId,
-          script: `jj --no-pager --color never bookmark list --sort committer-date- -T 'name ++ "\\n"' 2>/dev/null | head -${MAX_LOCAL_BRANCHES + 1}`,
+          script: `jj --no-pager --color never bookmark list --sort committer-date- -T 'name ++ "\\n"' 2>/dev/null | head -${MAX_LOCAL_BOOKMARKS + 1}`,
           options: repoRootBashOptions(5),
         }),
         api.workspace.executeBash({
@@ -142,37 +142,37 @@ export function BranchSelector({ workspaceId, workspaceName, className }: Branch
         }),
       ]);
 
-      const currentBranchCommandSucceeded =
-        currentBranchResult.success && currentBranchResult.data.success;
-      const branchCommandSucceeded = branchResult.success && branchResult.data.success;
+      const currentBookmarkCommandSucceeded =
+        currentBookmarkResult.success && currentBookmarkResult.data.success;
+      const bookmarkCommandSucceeded = bookmarkResult.success && bookmarkResult.data.success;
       const remoteCommandSucceeded = remoteResult.success && remoteResult.data.success;
-      const fetchedCurrentBranch =
-        currentBranchCommandSucceeded && currentBranchResult.data.output
-          ? currentBranchResult.data.output.trim() || null
+      const fetchedCurrentBookmark =
+        currentBookmarkCommandSucceeded && currentBookmarkResult.data.output
+          ? currentBookmarkResult.data.output.trim() || null
           : null;
-      const branchList =
-        branchCommandSucceeded && branchResult.data.output
-          ? branchResult.data.output
+      const bookmarkList =
+        bookmarkCommandSucceeded && bookmarkResult.data.output
+          ? bookmarkResult.data.output
               .split("\n")
-              .map((branchLine) => branchLine.trim())
-              .filter((branchLine) => branchLine.length > 0)
+              .map((bookmarkLine) => bookmarkLine.trim())
+              .filter((bookmarkLine) => bookmarkLine.length > 0)
           : [];
-      const displayBranchList =
-        fetchedCurrentBranch && !branchList.includes(fetchedCurrentBranch)
-          ? [fetchedCurrentBranch, ...branchList]
-          : branchList;
-      if (displayBranchList.length > 0) {
-        const truncated = displayBranchList.length > MAX_LOCAL_BRANCHES;
-        setLocalBranches(
-          truncated ? displayBranchList.slice(0, MAX_LOCAL_BRANCHES) : displayBranchList
+      const displayBookmarkList =
+        fetchedCurrentBookmark && !bookmarkList.includes(fetchedCurrentBookmark)
+          ? [fetchedCurrentBookmark, ...bookmarkList]
+          : bookmarkList;
+      if (displayBookmarkList.length > 0) {
+        const truncated = displayBookmarkList.length > MAX_LOCAL_BOOKMARKS;
+        setLocalBookmarks(
+          truncated ? displayBookmarkList.slice(0, MAX_LOCAL_BOOKMARKS) : displayBookmarkList
         );
-        setLocalBranchesTruncated(truncated);
+        setLocalBookmarksTruncated(truncated);
       }
-      if (fetchedCurrentBranch) {
-        setCurrentBranch((prev) => {
-          if (prev === fetchedCurrentBranch) return prev;
-          branchCache.set(workspaceId, fetchedCurrentBranch);
-          return fetchedCurrentBranch;
+      if (fetchedCurrentBookmark) {
+        setCurrentBookmark((prev) => {
+          if (prev === fetchedCurrentBookmark) return prev;
+          bookmarkCache.set(workspaceId, fetchedCurrentBookmark);
+          return fetchedCurrentBookmark;
         });
       }
 
@@ -186,34 +186,34 @@ export function BranchSelector({ workspaceId, workspaceName, className }: Branch
       setRemotes(remoteList);
 
       if (
-        currentBranchCommandSucceeded &&
-        branchCommandSucceeded &&
+        currentBookmarkCommandSucceeded &&
+        bookmarkCommandSucceeded &&
         remoteCommandSucceeded &&
-        !fetchedCurrentBranch &&
-        branchList.length === 0 &&
+        !fetchedCurrentBookmark &&
+        bookmarkList.length === 0 &&
         remoteList.length === 0
       ) {
-        setCurrentBranch(false);
+        setCurrentBookmark(false);
       }
     } catch {
       // Silently fail
     } finally {
       setIsLoading(false);
     }
-  }, [api, workspaceId, currentBranch]);
+  }, [api, workspaceId, currentBookmark]);
 
-  const fetchRemoteBranches = useCallback(
+  const fetchRemoteBookmarks = useCallback(
     async (remote: string) => {
       if (!api || remoteStates[remote]?.fetched) return;
 
       setRemoteStates((prev) => ({
         ...prev,
-        [remote]: { branches: [], isLoading: true, fetched: false, truncated: false },
+        [remote]: { bookmarks: [], isLoading: true, fetched: false, truncated: false },
       }));
 
       try {
         // Fetch one extra to detect truncation
-        const { command, args } = buildRemoteBranchListCommand(remote, MAX_REMOTE_BRANCHES);
+        const { command, args } = buildRemoteBookmarkListCommand(remote, MAX_REMOTE_BOOKMARKS);
         const result = await api.workspace.executeBash({
           workspaceId,
           script: "",
@@ -226,16 +226,16 @@ export function BranchSelector({ workspaceId, workspaceName, className }: Branch
           // jj prints remote bookmark names without the remote suffix. Keep the remote in the
           // revision we pass back to `jj new`, otherwise slash-containing bookmark names would be
           // truncated by the legacy bookmark stripping logic.
-          const branches = result.data.output
+          const bookmarks = result.data.output
             .split("\n")
             .map((b) => b.trim())
             .filter((b) => b.length > 0)
             .map((b) => `${b}@${remote}`);
-          const truncated = branches.length > MAX_REMOTE_BRANCHES;
+          const truncated = bookmarks.length > MAX_REMOTE_BOOKMARKS;
           setRemoteStates((prev) => ({
             ...prev,
             [remote]: {
-              branches: truncated ? branches.slice(0, MAX_REMOTE_BRANCHES) : branches,
+              bookmarks: truncated ? bookmarks.slice(0, MAX_REMOTE_BOOKMARKS) : bookmarks,
               isLoading: false,
               fetched: true,
               truncated,
@@ -244,27 +244,27 @@ export function BranchSelector({ workspaceId, workspaceName, className }: Branch
         } else {
           setRemoteStates((prev) => ({
             ...prev,
-            [remote]: { branches: [], isLoading: false, fetched: true, truncated: false },
+            [remote]: { bookmarks: [], isLoading: false, fetched: true, truncated: false },
           }));
         }
       } catch {
         setRemoteStates((prev) => ({
           ...prev,
-          [remote]: { branches: [], isLoading: false, fetched: true, truncated: false },
+          [remote]: { bookmarks: [], isLoading: false, fetched: true, truncated: false },
         }));
       }
     },
     [api, workspaceId, remoteStates]
   );
 
-  const switchBranch = useCallback(
-    async (targetBranch: string, isRemote = false) => {
+  const switchBookmark = useCallback(
+    async (targetBookmark: string, isRemote = false) => {
       if (!api) return;
 
-      const checkoutTarget = targetBranch;
-      const displayBranch = isRemote ? targetBranch.replace(/@[^@]+$/, "") : targetBranch;
+      const switchTarget = targetBookmark;
+      const displayBookmark = isRemote ? targetBookmark.replace(/@[^@]+$/, "") : targetBookmark;
 
-      if (displayBranch === currentBranch) {
+      if (displayBookmark === currentBookmark) {
         setIsOpen(false);
         return;
       }
@@ -276,7 +276,7 @@ export function BranchSelector({ workspaceId, workspaceName, className }: Branch
       invalidateGitStatus(workspaceId);
 
       try {
-        const { command, args } = buildCheckoutCommand(checkoutTarget);
+        const { command, args } = buildSwitchBookmarkCommand(switchTarget);
         const result = await api.workspace.executeBash({
           workspaceId,
           script: "",
@@ -286,29 +286,29 @@ export function BranchSelector({ workspaceId, workspaceName, className }: Branch
         });
 
         if (!result.success) {
-          setError(result.error ?? "Checkout failed");
-          // Re-fetch status since checkout failed (restore accurate state)
+          setError(result.error ?? "Switch failed");
+          // Re-fetch status since switching failed (restore accurate state)
           invalidateGitStatus(workspaceId);
         } else if (!result.data.success) {
-          const errorMsg = result.data.output?.trim() ?? result.data.error ?? "Checkout failed";
+          const errorMsg = result.data.output?.trim() ?? result.data.error ?? "Switch failed";
           setError(errorMsg);
-          // Re-fetch status since checkout failed
+          // Re-fetch status since switching failed.
           invalidateGitStatus(workspaceId);
         } else {
-          // Update current branch on successful checkout
-          setCurrentBranch(displayBranch);
+          // Update current bookmark after jj creates the new working-copy commit.
+          setCurrentBookmark(displayBookmark);
           // Persist to localStorage for instant display on app restart
-          branchCache.set(workspaceId, displayBranch);
+          bookmarkCache.set(workspaceId, displayBookmark);
           // Refresh repository status with the new bookmark state.
           invalidateGitStatus(workspaceId);
         }
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Checkout failed");
+        setError(err instanceof Error ? err.message : "Switch failed");
       } finally {
         setIsSwitching(false);
       }
     },
-    [api, workspaceId, currentBranch]
+    [api, workspaceId, currentBookmark]
   );
 
   useEffect(() => {
@@ -320,9 +320,9 @@ export function BranchSelector({ workspaceId, workspaceName, className }: Branch
 
   useEffect(() => {
     if (isOpen) {
-      void fetchLocalBranches();
+      void fetchLocalBookmarks();
     }
-  }, [isOpen, fetchLocalBranches]);
+  }, [isOpen, fetchLocalBookmarks]);
 
   useEffect(() => {
     if (!isOpen) {
@@ -345,13 +345,13 @@ export function BranchSelector({ workspaceId, workspaceName, className }: Branch
 
   const handleCopy = (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (typeof currentBranch === "string") {
-      void copyToClipboard(currentBranch);
+    if (typeof currentBookmark === "string") {
+      void copyToClipboard(currentBookmark);
     }
   };
 
   // Display name: active jj bookmark if available, otherwise workspace name.
-  const displayName = typeof currentBranch === "string" ? currentBranch : workspaceName;
+  const displayName = typeof currentBookmark === "string" ? currentBookmark : workspaceName;
 
   const toggleRemote = (remote: string) => {
     setExpandedRemotes((prev) => {
@@ -360,8 +360,8 @@ export function BranchSelector({ workspaceId, workspaceName, className }: Branch
         next.delete(remote);
       } else {
         next.add(remote);
-        // Fetch branches when expanding
-        void fetchRemoteBranches(remote);
+        // Fetch bookmarks when expanding.
+        void fetchRemoteBookmarks(remote);
       }
       return next;
     });
@@ -369,24 +369,26 @@ export function BranchSelector({ workspaceId, workspaceName, className }: Branch
 
   // Filter bookmarks by search.
   const searchLower = search.toLowerCase();
-  const filteredLocalBranches = localBranches.filter((b) => b.toLowerCase().includes(searchLower));
+  const filteredLocalBookmarks = localBookmarks.filter((b) =>
+    b.toLowerCase().includes(searchLower)
+  );
 
   // For remotes, filter bookmarks within each remote.
-  const getFilteredRemoteBranches = (remote: string) => {
+  const getFilteredRemoteBookmarks = (remote: string) => {
     const state = remoteStates[remote];
-    if (!state?.branches) return [];
-    return state.branches.filter((b) => b.toLowerCase().includes(searchLower));
+    if (!state?.bookmarks) return [];
+    return state.bookmarks.filter((b) => b.toLowerCase().includes(searchLower));
   };
 
   // Check if any remote has matching bookmarks (for showing remotes section).
-  const hasMatchingRemoteBranches = remotes.some((remote) => {
+  const hasMatchingRemoteBookmarks = remotes.some((remote) => {
     const state = remoteStates[remote];
     if (!state?.fetched) return true; // Show unfetched remotes
-    return getFilteredRemoteBranches(remote).length > 0;
+    return getFilteredRemoteBookmarks(remote).length > 0;
   });
 
   // Non-jj repo: just show workspace name, no interactive features.
-  if (currentBranch === false) {
+  if (currentBookmark === false) {
     return (
       <div className={cn("group flex items-center gap-0.5", className)}>
         <div className="text-muted-light flex max-w-[180px] min-w-0 items-center gap-1 px-1 py-0.5 font-mono text-[11px]">
@@ -407,7 +409,7 @@ export function BranchSelector({ workspaceId, workspaceName, className }: Branch
               isRefreshing && "animate-pulse" // Show pulse during switch instead of replacing content
             )}
           >
-            <GitBranch className="h-3 w-3 shrink-0 opacity-70" />
+            <Bookmark className="h-3 w-3 shrink-0 opacity-70" />
             <span className="truncate">{displayName}</span>
           </button>
         </PopoverTrigger>
@@ -426,16 +428,16 @@ export function BranchSelector({ workspaceId, workspaceName, className }: Branch
 
           <div className="max-h-[280px] overflow-y-auto p-1">
             {/* Remotes as expandable groups */}
-            {remotes.length > 0 && hasMatchingRemoteBranches && (
+            {remotes.length > 0 && hasMatchingRemoteBookmarks && (
               <>
                 {remotes.map((remote) => {
                   const state = remoteStates[remote];
                   const isExpanded = expandedRemotes.has(remote);
                   const isRemoteLoading = state?.isLoading ?? false;
-                  const remoteBranches = getFilteredRemoteBranches(remote);
+                  const remoteBookmarks = getFilteredRemoteBookmarks(remote);
 
-                  // Hide remote if fetched and no matching branches
-                  if (state?.fetched && remoteBranches.length === 0 && search) {
+                  // Hide remote if fetched and no matching bookmarks.
+                  if (state?.fetched && remoteBookmarks.length === 0 && search) {
                     return null;
                   }
 
@@ -461,22 +463,24 @@ export function BranchSelector({ workspaceId, workspaceName, className }: Branch
                             <div className="text-muted flex items-center justify-center py-2">
                               <Loader2 className="h-3 w-3 animate-spin" />
                             </div>
-                          ) : remoteBranches.length === 0 ? (
+                          ) : remoteBookmarks.length === 0 ? (
                             <div className="text-muted py-1.5 pl-2 text-[10px]">No bookmarks</div>
                           ) : (
                             <>
-                              {remoteBranches.map((branch) => {
-                                const displayName = branch.replace(/@[^@]+$/, "");
+                              {remoteBookmarks.map((bookmark) => {
+                                const displayName = bookmark.replace(/@[^@]+$/, "");
                                 return (
                                   <button
-                                    key={branch}
-                                    onClick={() => void switchBranch(branch, true)}
+                                    key={bookmark}
+                                    onClick={() => void switchBookmark(bookmark, true)}
                                     className="hover:bg-hover flex w-full items-center gap-1.5 rounded-sm px-2 py-1 font-mono text-[11px]"
                                   >
                                     <Check
                                       className={cn(
                                         "h-3 w-3 shrink-0",
-                                        displayName === currentBranch ? "opacity-100" : "opacity-0"
+                                        displayName === currentBookmark
+                                          ? "opacity-100"
+                                          : "opacity-0"
                                       )}
                                     />
                                     <span className="truncate">{displayName}</span>
@@ -496,35 +500,35 @@ export function BranchSelector({ workspaceId, workspaceName, className }: Branch
                   );
                 })}
 
-                {filteredLocalBranches.length > 0 && <div className="bg-border my-1 h-px" />}
+                {filteredLocalBookmarks.length > 0 && <div className="bg-border my-1 h-px" />}
               </>
             )}
 
             {/* Local bookmarks */}
-            {isLoading && localBranches.length <= 1 ? (
+            {isLoading && localBookmarks.length <= 1 ? (
               <div className="text-muted flex items-center justify-center py-2">
                 <Loader2 className="h-3 w-3 animate-spin" />
               </div>
-            ) : filteredLocalBranches.length === 0 ? (
+            ) : filteredLocalBookmarks.length === 0 ? (
               <div className="text-muted py-2 text-center text-[10px]">No matching bookmarks</div>
             ) : (
               <>
-                {filteredLocalBranches.map((branch) => (
+                {filteredLocalBookmarks.map((bookmark) => (
                   <button
-                    key={branch}
-                    onClick={() => void switchBranch(branch)}
+                    key={bookmark}
+                    onClick={() => void switchBookmark(bookmark)}
                     className="hover:bg-hover flex w-full items-center gap-1.5 rounded-sm px-2 py-1 font-mono text-[11px]"
                   >
                     <Check
                       className={cn(
                         "h-3 w-3 shrink-0",
-                        branch === currentBranch ? "opacity-100" : "opacity-0"
+                        bookmark === currentBookmark ? "opacity-100" : "opacity-0"
                       )}
                     />
-                    <span className="truncate">{branch}</span>
+                    <span className="truncate">{bookmark}</span>
                   </button>
                 ))}
-                {localBranchesTruncated && !search && (
+                {localBookmarksTruncated && !search && (
                   <div className="text-muted px-2 py-1 text-[10px] italic">
                     +more bookmarks (use search)
                   </div>
@@ -536,7 +540,7 @@ export function BranchSelector({ workspaceId, workspaceName, className }: Branch
       </Popover>
 
       {/* Copy button - only show on hover once the real bookmark name is known. */}
-      {typeof currentBranch === "string" && (
+      {typeof currentBookmark === "string" && (
         <Tooltip>
           <TooltipTrigger asChild>
             <button

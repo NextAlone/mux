@@ -16,7 +16,7 @@ import * as CopyToClipboardModule from "@/browser/hooks/useCopyToClipboard";
 import * as PopoverModule from "../Popover/Popover";
 import * as TooltipModule from "../Tooltip/Tooltip";
 
-import { BranchSelector } from "./BranchSelector";
+import { BookmarkSelector } from "./BookmarkSelector";
 
 interface ExecuteBashInput {
   workspaceId: string;
@@ -80,7 +80,7 @@ function trackSpy<T extends { mockRestore: () => void }>(spy: T): T {
   return spy;
 }
 
-describe("BranchSelector", () => {
+describe("BookmarkSelector", () => {
   let originalWindow: typeof globalThis.window;
   let originalDocument: typeof globalThis.document;
   let originalLocalStorage: typeof globalThis.localStorage;
@@ -198,7 +198,7 @@ describe("BranchSelector", () => {
       if (input.script.includes("bookmark list --sort")) {
         return Promise.resolve(
           bashSuccess(
-            Array.from({ length: 101 }, (_, index) => `recent-branch-${index + 1}`).join("\n")
+            Array.from({ length: 101 }, (_, index) => `recent-bookmark-${index + 1}`).join("\n")
           )
         );
       }
@@ -213,11 +213,11 @@ describe("BranchSelector", () => {
       },
     };
 
-    const view = render(<BranchSelector workspaceId="ws-1" workspaceName="scratch-workspace" />);
+    const view = render(<BookmarkSelector workspaceId="ws-1" workspaceName="scratch-workspace" />);
 
     expect(view.getByRole("button", { name: "scratch-workspace" })).toBeDefined();
     expect(view.queryByLabelText("Copy bookmark name")).toBeNull();
-    expect(view.container.querySelector(".lucide-git-branch")).toBeTruthy();
+    expect(view.container.querySelector(".lucide-bookmark")).toBeTruthy();
 
     fireEvent.click(view.getByRole("button", { name: "scratch-workspace" }));
 
@@ -238,7 +238,7 @@ describe("BranchSelector", () => {
     ).toBe(true);
   });
 
-  test("resets stale branch state when the component remounts for a different workspace", async () => {
+  test("resets stale bookmark state when the component remounts for a different workspace", async () => {
     mockGitStatus = {
       branch: "feature/lazy-start",
       ahead: 1,
@@ -251,7 +251,7 @@ describe("BranchSelector", () => {
     };
 
     const view = render(
-      <BranchSelector key="ws-1" workspaceId="ws-1" workspaceName="first-workspace" />
+      <BookmarkSelector key="ws-1" workspaceId="ws-1" workspaceName="first-workspace" />
     );
 
     await waitFor(() => {
@@ -260,7 +260,7 @@ describe("BranchSelector", () => {
 
     mockGitStatus = null;
     view.rerender(
-      <BranchSelector key="ws-2" workspaceId="ws-2" workspaceName="second-workspace" />
+      <BookmarkSelector key="ws-2" workspaceId="ws-2" workspaceName="second-workspace" />
     );
 
     expect(view.getByRole("button", { name: "second-workspace" })).toBeDefined();
@@ -289,7 +289,7 @@ describe("BranchSelector", () => {
       },
     };
     mockGitStatus = {
-      branch: "stale-branch",
+      branch: "stale-bookmark",
       ahead: 1,
       behind: 0,
       dirty: false,
@@ -299,16 +299,16 @@ describe("BranchSelector", () => {
       incomingDeletions: 0,
     };
     localStorage.setItem(
-      "branch:ws-2",
-      JSON.stringify({ data: "stale-branch", cachedAt: Date.now() })
+      "bookmark:ws-2",
+      JSON.stringify({ data: "stale-bookmark", cachedAt: Date.now() })
     );
-    localStorage.setItem("branchIndex", JSON.stringify(["branch:ws-2"]));
+    localStorage.setItem("bookmarkIndex", JSON.stringify(["bookmark:ws-2"]));
 
-    const view = render(<BranchSelector workspaceId="ws-2" workspaceName="plain-workspace" />);
+    const view = render(<BookmarkSelector workspaceId="ws-2" workspaceName="plain-workspace" />);
 
-    expect(view.getByRole("button", { name: "stale-branch" })).toBeDefined();
+    expect(view.getByRole("button", { name: "stale-bookmark" })).toBeDefined();
 
-    fireEvent.click(view.getByRole("button", { name: "stale-branch" }));
+    fireEvent.click(view.getByRole("button", { name: "stale-bookmark" }));
 
     await waitFor(() => {
       expect(executeBash.mock.calls).toHaveLength(1);
@@ -317,8 +317,8 @@ describe("BranchSelector", () => {
       expect(view.queryByRole("button", { name: "plain-workspace" })).toBeNull();
     });
     expect(view.getByText("plain-workspace")).toBeDefined();
-    expect(localStorage.getItem("branch:ws-2")).toBeNull();
-    expect(localStorage.getItem("branchIndex")).toBe(JSON.stringify([]));
+    expect(localStorage.getItem("bookmark:ws-2")).toBeNull();
+    expect(localStorage.getItem("bookmarkIndex")).toBe(JSON.stringify([]));
     expect(clearGitStatusMock).toHaveBeenCalledWith("ws-2");
     expect(executeBash.mock.calls[0]?.[0].script).toContain("jj --no-pager --color never root");
   });
@@ -339,7 +339,7 @@ describe("BranchSelector", () => {
       },
     };
     mockGitStatus = {
-      branch: "stale-branch",
+      branch: "stale-bookmark",
       ahead: 1,
       behind: 0,
       dirty: false,
@@ -349,20 +349,20 @@ describe("BranchSelector", () => {
       incomingDeletions: 0,
     };
     localStorage.setItem(
-      "branch:ws-3",
-      JSON.stringify({ data: "stale-branch", cachedAt: Date.now() })
+      "bookmark:ws-3",
+      JSON.stringify({ data: "stale-bookmark", cachedAt: Date.now() })
     );
-    localStorage.setItem("branchIndex", JSON.stringify(["branch:ws-3"]));
+    localStorage.setItem("bookmarkIndex", JSON.stringify(["bookmark:ws-3"]));
 
-    const view = render(<BranchSelector workspaceId="ws-3" workspaceName="plain-workspace" />);
+    const view = render(<BookmarkSelector workspaceId="ws-3" workspaceName="plain-workspace" />);
 
-    fireEvent.click(view.getByRole("button", { name: "stale-branch" }));
+    fireEvent.click(view.getByRole("button", { name: "stale-bookmark" }));
 
     await waitFor(() => {
       expect(executeBash.mock.calls).toHaveLength(1);
     });
-    expect(view.getByRole("button", { name: "stale-branch" })).toBeDefined();
-    expect(localStorage.getItem("branch:ws-3")).not.toBeNull();
+    expect(view.getByRole("button", { name: "stale-bookmark" })).toBeDefined();
+    expect(localStorage.getItem("bookmark:ws-3")).not.toBeNull();
     expect(clearGitStatusMock).not.toHaveBeenCalled();
   });
 });

@@ -21,7 +21,7 @@ import * as ChatCommandsModule from "@/browser/utils/chatCommands";
 import * as GitStatusIndicatorModule from "../GitStatusIndicator/GitStatusIndicator";
 import * as MultiProjectGitStatusIndicatorModule from "../GitStatusIndicator/MultiProjectGitStatusIndicator";
 import * as RuntimeBadgeModule from "../RuntimeBadge/RuntimeBadge";
-import * as BranchSelectorModule from "../BranchSelector/BranchSelector";
+import * as BookmarkSelectorModule from "../BookmarkSelector/BookmarkSelector";
 import type { WorkspaceMenuBar as WorkspaceMenuBarComponent } from "./WorkspaceMenuBar";
 import * as WorkspaceMCPModalModule from "../WorkspaceMCPModal/WorkspaceMCPModal";
 import * as TooltipModule from "../Tooltip/Tooltip";
@@ -187,8 +187,8 @@ function installWorkspaceMenuBarTestDoubles() {
   spyOn(RuntimeBadgeModule, "RuntimeBadge").mockImplementation(
     (() => null) as unknown as typeof RuntimeBadgeModule.RuntimeBadge
   );
-  spyOn(BranchSelectorModule, "BranchSelector").mockImplementation(
-    (() => null) as unknown as typeof BranchSelectorModule.BranchSelector
+  spyOn(BookmarkSelectorModule, "BookmarkSelector").mockImplementation(
+    (() => null) as unknown as typeof BookmarkSelectorModule.BookmarkSelector
   );
   spyOn(WorkspaceMCPModalModule, "WorkspaceMCPModal").mockImplementation(
     (() => null) as unknown as typeof WorkspaceMCPModalModule.WorkspaceMCPModal

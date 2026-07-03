@@ -13,7 +13,7 @@ import {
 import { GitStatusIndicator } from "../GitStatusIndicator/GitStatusIndicator";
 import { MultiProjectGitStatusIndicator } from "../GitStatusIndicator/MultiProjectGitStatusIndicator";
 import { RuntimeBadge } from "../RuntimeBadge/RuntimeBadge";
-import { BranchSelector } from "../BranchSelector/BranchSelector";
+import { BookmarkSelector } from "../BookmarkSelector/BookmarkSelector";
 import { WorkspaceHeartbeatModal } from "../WorkspaceHeartbeatModal";
 import { WorkspaceMCPModal } from "../WorkspaceMCPModal/WorkspaceMCPModal";
 import { Tooltip, TooltipTrigger, TooltipContent } from "../Tooltip/Tooltip";
@@ -523,11 +523,11 @@ export const WorkspaceMenuBar: React.FC<WorkspaceMenuBarProps> = ({
         />
         <span className="min-w-0 truncate font-mono text-xs">{projectLabel}</span>
         <div className="flex items-center gap-1">
-          {/* BranchSelector keeps workspace-scoped local UI state (current bookmark fallback,
+          {/* BookmarkSelector keeps workspace-scoped local UI state (current bookmark fallback,
               open popover contents, remote expansion). Key it by workspace identity so
               switching workspaces resets that state instead of leaking the previous
               workspace's bookmark presentation into the next one. */}
-          <BranchSelector
+          <BookmarkSelector
             key={workspaceId}
             workspaceId={workspaceId}
             workspaceName={workspaceName}

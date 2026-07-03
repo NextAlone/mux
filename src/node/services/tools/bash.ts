@@ -912,9 +912,8 @@ export const createBashTool: ToolFactory = (config: ToolConfiguration) => {
         config.trusted && config.runtime ? await getToolEnvPath(config.runtime, config.cwd) : null;
       const toolEnvPrelude = buildToolEnvPrelude(toolEnvPath);
 
-      // Neutralize git hooks for untrusted projects — prevent repository-controlled
-      // hooks from executing when the model runs git subcommands (for example,
-      // `git commit` or `git am`) through this bash tool.
+      // Neutralize repository hooks for untrusted projects — prevent repository-controlled
+      // hooks from executing when the model runs VCS subcommands through this bash tool.
       const hooksEnv = config.trusted !== true ? GIT_NO_HOOKS_ENV : {};
 
       // On Windows, models sometimes emit cmd.exe-style `>nul` / `2>nul` redirections.

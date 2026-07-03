@@ -58,7 +58,7 @@ mux run --json "List all TypeScript files" | jq '.type'
 | --------------------- | ----- | ----------------------------------------------------------------------------------------------------------------------------- | ----------------- |
 | `--dir <path>`        | `-d`  | Project directory                                                                                                             | Current directory |
 | `--model <model>`     | `-m`  | Model to use (e.g., `anthropic:claude-sonnet-4-5`)                                                                            | Default model     |
-| `--runtime <runtime>` | `-r`  | Runtime: `local`, `worktree` (JJ Workspace), `ssh <host>`, or `docker <image>`                                                | `local`           |
+| `--runtime <runtime>` | `-r`  | Runtime: `local`, `worktree` for JJ Workspace, `ssh <host>`, or `docker <image>`                                              | `local`           |
 | `--mode <mode>`       |       | Agent mode: `plan` or `exec`                                                                                                  | `exec`            |
 | `--thinking <level>`  | `-t`  | Thinking level: `OFF`, `LOW`, `MED`, `HIGH`, `MAX`, or `0`–`9` (model-relative, see [Models](/config/models#thinking-levels)) | `MED`             |
 | `--budget <usd>`      | `-b`  | Stop when session cost exceeds budget (USD)                                                                                   | No limit          |
@@ -101,7 +101,7 @@ Exit codes for CLI Goal Runs:
 ### Runtimes
 
 - **`local`** (default): Runs directly in the specified directory. Best for one-off tasks.
-- **`worktree`**: Creates an isolated JJ Workspace checkout under `~/.mux/src`. Useful for parallel work.
+- **`worktree`**: Runtime ID for an isolated JJ Workspace checkout under `~/.mux/src`. Useful for parallel work.
 - **`ssh <host>`**: Runs on a remote machine via SSH. Example: `--runtime "ssh user@myserver.com"`
 - **`docker <image>`**: Runs in a Docker container. Example: `--runtime "docker node:20"`
 
@@ -139,8 +139,8 @@ Run a durable workflow JavaScript file from the command line without opening the
 
 <Note>
   `mux workflow` is experimental. Invoking the command implicitly enables the `dynamic-workflows`
-  experiment for that invocation only. The initial CLI runner supports the `local` runtime only;
-  `worktree`, SSH, Docker, and devcontainer workflow execution are blocked until their workflow
+  experiment for that invocation only. The initial CLI runner supports the `local` runtime only; JJ
+  Workspace, SSH, Docker, and devcontainer workflow execution are blocked until their workflow
   isolation and cleanup semantics are implemented.
 </Note>
 
