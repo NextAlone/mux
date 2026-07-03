@@ -76,7 +76,7 @@ include fmt.mk
 .PHONY: storybook storybook-run storybook-build test-storybook chromatic
 .PHONY: benchmark-terminal
 .PHONY: ensure-deps rebuild-native mux
-.PHONY: check-eager-imports check-bundle-size check-startup
+.PHONY: check-eager-imports check-bundle-size check-startup check-node-dist-aliases
 
 # Build tools
 TSGO := bun run node_modules/@typescript/native-preview/bin/tsgo.js
@@ -214,6 +214,10 @@ start: node_modules/.installed build-main build-preload build-static ## Build an
 
 ## Build targets (can run in parallel)
 build: node_modules/.installed src/version.ts build-renderer build-main build-preload build-icons build-static ## Build all targets
+	@# build-* targets run in parallel; run alias rewriting once more after every
+	@# dist writer has finished so packaged CommonJS never keeps unresolved @/ paths.
+	@NODE_ENV=production bun x tsc-alias -p tsconfig.main.json
+	@$(MAKE) check-node-dist-aliases
 
 build-main: node_modules/.installed dist/cli/index.js dist/cli/api.mjs ## Build main process
 
@@ -311,6 +315,13 @@ dist/static/.copied: static/splash.html
 	@mkdir -p dist/static
 	@cp -r static/* dist/static/
 	@touch dist/static/.copied
+
+check-node-dist-aliases: ## Verify packaged Node output has no unresolved TS aliases
+	@echo "Checking packaged Node output for unresolved aliases..."
+	@if rg -n 'require\("@/' dist/cli dist/desktop dist/node dist/common --glob '*.js' --glob '!**/*.test.js' --glob '!**/*.map'; then \
+		echo "ERROR: unresolved @/ aliases remain in packaged Node output."; \
+		exit 1; \
+	fi
 
 # Always regenerate version file (marked as .PHONY above)
 version: ## Generate version file
