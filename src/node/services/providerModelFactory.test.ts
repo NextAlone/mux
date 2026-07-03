@@ -189,6 +189,7 @@ describe("normalizeCodexResponsesBody", () => {
           ],
           store: true,
           truncation: "server-default",
+          service_tier: "priority",
           temperature: 0.2,
           metadata: { ignored: true },
           text: { format: { type: "json_schema", name: "result" } },
@@ -198,6 +199,7 @@ describe("normalizeCodexResponsesBody", () => {
       instructions: string;
       input: Array<Record<string, unknown>>;
       metadata?: unknown;
+      service_tier?: unknown;
       store: boolean;
       temperature: number;
       text: unknown;
@@ -205,6 +207,7 @@ describe("normalizeCodexResponsesBody", () => {
     };
 
     expect(normalized.store).toBe(false);
+    expect(normalized.service_tier).toBe("priority");
     expect(normalized.truncation).toBeUndefined();
     expect(normalized.temperature).toBe(0.2);
     expect(normalized.text).toEqual({ format: { type: "json_schema", name: "result" } });
@@ -225,6 +228,21 @@ describe("normalizeCodexResponsesBody", () => {
     ) as { truncation?: unknown; store: boolean };
 
     expect(normalized.truncation).toBeUndefined();
+    expect(normalized.store).toBe(false);
+  });
+
+  it("injects Codex fast service tier after SDK provider option validation", () => {
+    const normalized = JSON.parse(
+      normalizeCodexResponsesBody(
+        JSON.stringify({
+          model: "gpt-5.5",
+          input: [{ role: "user", content: "Hello" }],
+        }),
+        { serviceTier: "fast" }
+      )
+    ) as { service_tier?: unknown; store: boolean };
+
+    expect(normalized.service_tier).toBe("fast");
     expect(normalized.store).toBe(false);
   });
 });
@@ -631,6 +649,7 @@ describe("ProviderModelFactory GitHub Copilot", () => {
       config.loadProvidersConfig = () => ({
         openai: {
           codexOauth: auth,
+          serviceTier: "fast",
           fetch: baseFetch,
         },
       });
@@ -688,12 +707,16 @@ describe("ProviderModelFactory GitHub Copilot", () => {
 
         expect(requests).toHaveLength(1);
         expect(requests[0]?.input).toBe(CODEX_ENDPOINT);
-        expect(requests[0]?.init?.body).toBe(normalizeCodexResponsesBody(originalBody));
+        expect(requests[0]?.init?.body).toBe(
+          normalizeCodexResponsesBody(originalBody, { serviceTier: "fast" })
+        );
         const normalizedBody = JSON.parse(
           (requests[0]?.init?.body as string | undefined) ?? "{}"
         ) as {
+          service_tier?: unknown;
           truncation?: unknown;
         };
+        expect(normalizedBody.service_tier).toBe("fast");
         expect(normalizedBody.truncation).toBeUndefined();
 
         const headers = new Headers(requests[0]?.init?.headers);

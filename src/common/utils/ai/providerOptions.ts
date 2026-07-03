@@ -361,6 +361,9 @@ export function buildProviderOptions(
     const promptCacheKey = cacheScope ? `mux-v1-${cacheScope}` : undefined;
 
     const serviceTier = muxProviderOptions?.openai?.serviceTier;
+    // "fast" is a Codex OAuth tier. The current public OpenAI SDK rejects it in
+    // providerOptions, so the Codex fetch wrapper injects it at the wire layer.
+    const sdkServiceTier = serviceTier === "fast" ? undefined : serviceTier;
     const wireFormat = muxProviderOptions?.openai?.wireFormat ?? "responses";
     const store = muxProviderOptions?.openai?.store;
     const isResponses = wireFormat === "responses";
@@ -380,7 +383,7 @@ export function buildProviderOptions(
     const options = {
       openai: {
         parallelToolCalls: true, // Always enable concurrent tool execution
-        ...(serviceTier != null && { serviceTier }),
+        ...(sdkServiceTier != null && { serviceTier: sdkServiceTier }),
         ...(store != null && { store }), // ZDR: pass store flag through to OpenAI SDK
         ...(isResponses && {
           // Default to disabled; allow auto truncation for compaction to avoid context errors

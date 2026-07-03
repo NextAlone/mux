@@ -145,8 +145,16 @@ describe("ProviderService.getConfig", () => {
       baseChecks: true,
     },
     {
-      name: "omits invalid OpenAI serviceTier",
+      name: "surfaces Codex OAuth fast serviceTier",
       openai: { serviceTier: "fast" },
+      property: "serviceTier",
+      expected: "fast",
+      ownsProperty: true,
+      baseChecks: true,
+    },
+    {
+      name: "omits invalid OpenAI serviceTier",
+      openai: { serviceTier: "express" },
       property: "serviceTier",
       expected: undefined,
       ownsProperty: false,

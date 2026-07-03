@@ -33,7 +33,7 @@ export const MuxProviderOptionsSchema = z.object({
     .object({
       serviceTier: ServiceTierSchema.optional().meta({
         description:
-          "OpenAI service tier: priority (low-latency), flex (50% cheaper, higher latency), auto/default (standard)",
+          "OpenAI service tier: fast (Codex OAuth), priority (low-latency), flex (50% cheaper, higher latency), auto/default (standard)",
       }),
       wireFormat: z.enum(["responses", "chatCompletions"]).optional().meta({
         description:

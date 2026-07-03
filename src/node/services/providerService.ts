@@ -367,7 +367,8 @@ export class ProviderService {
         (serviceTier === "auto" ||
           serviceTier === "default" ||
           serviceTier === "flex" ||
-          serviceTier === "priority")
+          serviceTier === "priority" ||
+          serviceTier === "fast")
       ) {
         providerInfo.serviceTier = serviceTier;
       }

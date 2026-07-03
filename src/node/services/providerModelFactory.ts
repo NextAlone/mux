@@ -696,6 +696,7 @@ const CODEX_ALLOWED_PARAMS = new Set([
   "stream",
   "store",
   "prompt_cache_key",
+  "service_tier",
   "reasoning",
   "temperature",
   "top_p",
@@ -756,7 +757,10 @@ function extractTextContent(content: unknown): string {
   return "";
 }
 
-export function normalizeCodexResponsesBody(body: string): string {
+export function normalizeCodexResponsesBody(
+  body: string,
+  options?: { serviceTier?: ServiceTier }
+): string {
   const json = JSON.parse(body) as Record<string, unknown>;
 
   // ChatGPT's Codex endpoint is stricter than the public OpenAI Responses API
@@ -765,6 +769,9 @@ export function normalizeCodexResponsesBody(body: string): string {
 
   // Codex-compatible Responses requests must disable storage and strip unsupported params.
   json.store = false;
+  if (options?.serviceTier != null) {
+    json.service_tier = options.serviceTier;
+  }
 
   for (const key of Object.keys(json)) {
     if (!CODEX_ALLOWED_PARAMS.has(key)) {
@@ -1364,7 +1371,9 @@ export class ProviderModelFactory {
                   nextInit = {
                     ...init,
                     headers,
-                    body: normalizeCodexResponsesBody(body),
+                    body: normalizeCodexResponsesBody(body, {
+                      serviceTier: muxProviderOptions?.openai?.serviceTier,
+                    }),
                   };
                 } catch {
                   // If body isn't JSON, fall through to normal fetch (but still allow Codex routing).

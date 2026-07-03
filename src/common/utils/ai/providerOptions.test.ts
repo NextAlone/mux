@@ -462,6 +462,16 @@ describe("buildProviderOptions - OpenAI", () => {
       expect("serviceTier" in openai!).toBe(true);
       expect(openai!.serviceTier).toBe("flex");
     });
+
+    test("should omit Codex fast serviceTier from SDK providerOptions", () => {
+      const result = buildProviderOptions("openai:gpt-5.5", "medium", undefined, undefined, {
+        openai: { serviceTier: "fast" },
+      });
+      const openai = getOpenAIOptions(result);
+
+      expect(openai).toBeDefined();
+      expect("serviceTier" in openai!).toBe(false);
+    });
   });
 
   describe("promptCacheKey derivation", () => {

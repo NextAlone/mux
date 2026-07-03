@@ -90,7 +90,13 @@ type OpenAIServiceTier = ServiceTier;
 type OpenAIServiceTierSelectValue = typeof OPENAI_SERVICE_TIER_UNSET | OpenAIServiceTier;
 
 function isOpenAIServiceTier(value: string): value is OpenAIServiceTier {
-  return value === "auto" || value === "default" || value === "flex" || value === "priority";
+  return (
+    value === "auto" ||
+    value === "default" ||
+    value === "flex" ||
+    value === "priority" ||
+    value === "fast"
+  );
 }
 
 interface CodexOauthDeviceFlow {
@@ -2453,6 +2459,10 @@ export function ProvidersSection() {
                                             latency, higher cost.
                                           </div>
                                           <div>
+                                            <span className="font-semibold">fast</span>: Codex OAuth
+                                            subscription fast lane.
+                                          </div>
+                                          <div>
                                             <span className="font-semibold">flex</span>: lower cost,
                                             higher latency.
                                           </div>
@@ -2507,6 +2517,7 @@ export function ProvidersSection() {
                                     <SelectItem value="default">default</SelectItem>
                                     <SelectItem value="flex">flex</SelectItem>
                                     <SelectItem value="priority">priority</SelectItem>
+                                    <SelectItem value="fast">fast</SelectItem>
                                   </SelectContent>
                                 </Select>
                               </div>
