@@ -7,7 +7,7 @@ description: Guidelines for creating and managing Pull Requests in this repo
 
 ## Attribution Footer
 
-Public work (issues/PRs/commits) must use 🤖 in the title and include this footer in the body:
+PRs and public issues created or updated by agents should include this footer in the body:
 
 ```md
 ---
@@ -17,7 +17,9 @@ _Generated with `mux` • Model: `<modelString>` • Thinking: `<thinkingLevel>`
 <!-- mux-attribution: model=<modelString> thinking=<thinkingLevel> costs=<costs> -->
 ```
 
-Always check `$MUX_MODEL_STRING`, `$MUX_THINKING_LEVEL`, and `$MUX_COSTS_USD` via bash before creating or updating PRs—include them in the footer if set.
+Always check `$MUX_MODEL_STRING`, `$MUX_THINKING_LEVEL`, and `$MUX_COSTS_USD` via bash before creating or updating PRs or public issues—include them in the footer if set.
+
+Do not add 🤖 or attribution footers to commit messages. Commits should use normal project-style subjects such as `fix: handle workspace rename edge cases`.
 
 ## Lifecycle Rules
 
@@ -99,7 +101,7 @@ Do not silently resolve `coder-agents-review` threads. The bot treats resolved-b
 ## PR Title Conventions
 
 - Title prefixes: `perf|refactor|fix|feat|ci|tests|bench`
-- Example: `🤖 fix: handle workspace rename edge cases`
+- Example: `fix: handle workspace rename edge cases`
 - Use `tests:` for test-only changes (test helpers, flaky test fixes, storybook)
 - Use `ci:` for CI config changes
 
