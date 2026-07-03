@@ -32,10 +32,12 @@ import { useAPI } from "@/browser/contexts/API";
 import { updatePersistedState } from "@/browser/hooks/usePersistedState";
 import { useProvidersConfig } from "@/browser/hooks/useProvidersConfig";
 import { useRouting } from "@/browser/hooks/useRouting";
+import { useWorkspaceCheckoutLocation } from "@/browser/hooks/useWorkspaceCheckoutLocation";
 import {
   formatMuxGatewayBalance,
   useMuxGatewayAccountStatus,
 } from "@/browser/hooks/useMuxGatewayAccountStatus";
+import { getWorktreeRuntimeDescription } from "@/browser/utils/runtimeUi";
 import { KEYBINDS, formatKeybind } from "@/browser/utils/ui/keybinds";
 import { getAgentsInitNudgeKey } from "@/common/constants/storage";
 import { PROVIDER_DEFINITIONS, type ProviderName } from "@/common/constants/providers";
@@ -207,6 +209,7 @@ export function OnboardingWizardSplash(props: { onDismiss: () => void }) {
     [effectivePolicy, providersConfig]
   );
   const { addProject, userProjects } = useProjectContext();
+  const workspaceCheckoutLocation = useWorkspaceCheckoutLocation();
 
   const projectAddFormRef = useRef<ProjectAddFormHandle | null>(null);
   const [isProjectCreating, setIsProjectCreating] = useState(false);
@@ -914,7 +917,7 @@ export function OnboardingWizardSplash(props: { onDismiss: () => void }) {
               Work directly in your project directory.
             </Card>
             <Card icon={<WorktreeIcon size={14} />} title="JJ Workspace">
-              Isolated jj workspace under <code className="text-accent">~/.mux/src</code>.
+              {getWorktreeRuntimeDescription(workspaceCheckoutLocation)}.
             </Card>
             <Card icon={<SSHIcon size={14} />} title="SSH">
               Remote clone and commands run on an SSH host.
@@ -1016,6 +1019,7 @@ export function OnboardingWizardSplash(props: { onDismiss: () => void }) {
     refreshMuxGatewayAccountStatus,
     startMuxGatewayLogin,
     onboardingProviders,
+    workspaceCheckoutLocation,
   ]);
 
   // Clamp stepIndex to valid range when the step list changes. Skip while still

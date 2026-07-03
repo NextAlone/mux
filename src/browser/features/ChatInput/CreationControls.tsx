@@ -34,9 +34,11 @@ import { DocsLink } from "@/browser/components/DocsLink/DocsLink";
 import {
   RUNTIME_CHOICE_UI,
   RUNTIME_OPTION_FIELDS,
+  getRuntimeChoiceDescription,
   type RuntimeChoice,
   type RuntimeIconProps,
 } from "@/browser/utils/runtimeUi";
+import { useWorkspaceCheckoutLocation } from "@/browser/hooks/useWorkspaceCheckoutLocation";
 
 import type { WorkspaceNameState, WorkspaceNameUIError } from "@/browser/hooks/useWorkspaceName";
 import type { CoderInfo } from "@/common/orpc/schemas/coder";
@@ -327,6 +329,7 @@ export function RuntimeButtonGroup(props: RuntimeButtonGroupProps) {
   const coderInfo = props.coderInfo ?? null;
   const coderAvailability = resolveCoderAvailability(coderInfo);
   const runtimeEnablement = props.runtimeEnablement;
+  const workspaceCheckoutLocation = useWorkspaceCheckoutLocation();
 
   const allowSshHost = props.allowSshHost ?? true;
   const allowSshCoder = props.allowSshCoder ?? true;
@@ -360,7 +363,10 @@ export function RuntimeButtonGroup(props: RuntimeButtonGroupProps) {
 
   // Policy filtering keeps forbidden runtimes out of the selector so users don't
   // get stuck with defaults that can never be created.
-  const runtimeOptions = RUNTIME_CHOICE_OPTIONS.filter((option) => {
+  const runtimeOptions = RUNTIME_CHOICE_OPTIONS.map((option) => ({
+    ...option,
+    description: getRuntimeChoiceDescription(option.value, workspaceCheckoutLocation),
+  })).filter((option) => {
     if (runtimeVisibilityOverrides[option.value] === false) {
       return false;
     }

@@ -2,6 +2,11 @@ import type { ComponentType } from "react";
 import type { RuntimeEnablementId, RuntimeMode } from "@/common/types/runtime";
 import type { RuntimeStatus } from "@/browser/stores/RuntimeStatusStore";
 import {
+  DEFAULT_WORKSPACE_CHECKOUT_LOCATION,
+  normalizeWorkspaceCheckoutLocationConfig,
+  type WorkspaceCheckoutLocationConfig,
+} from "@/common/config/workspaceCheckoutLocation";
+import {
   SSHIcon,
   WorktreeIcon,
   LocalIcon,
@@ -81,6 +86,25 @@ export interface RuntimeUiSpec {
 
 export type RuntimeChoice = RuntimeMode | "coder";
 
+export function getWorktreeRuntimeDescription(
+  workspaceCheckoutLocation: WorkspaceCheckoutLocationConfig = DEFAULT_WORKSPACE_CHECKOUT_LOCATION
+): string {
+  const normalized = normalizeWorkspaceCheckoutLocationConfig(workspaceCheckoutLocation);
+  switch (normalized.mode) {
+    case "projectWorktrees":
+      return "Isolated jj workspace in project .worktrees";
+    case "projectWorkspaces":
+      return "Isolated jj workspace in project .workspaces";
+    case "customPublic":
+      return normalized.customPath
+        ? `Isolated jj workspace in ${normalized.customPath}`
+        : "Custom jj workspace directory not configured";
+    case "muxPublic":
+    default:
+      return "Isolated jj workspace in ~/.mux/src";
+  }
+}
+
 export const RUNTIME_UI = {
   local: {
     label: "Local",
@@ -107,7 +131,7 @@ export const RUNTIME_UI = {
   },
   worktree: {
     label: "JJ Workspace",
-    description: "Isolated jj workspace in ~/.mux/src",
+    description: getWorktreeRuntimeDescription(),
     docsPath: "/runtime/worktree",
     Icon: WorktreeIcon,
     button: {
@@ -215,6 +239,16 @@ export const RUNTIME_CHOICE_UI = {
   ...RUNTIME_UI,
   coder: CODER_RUNTIME_UI,
 } satisfies Record<RuntimeChoice, RuntimeUiSpec>;
+
+export function getRuntimeChoiceDescription(
+  runtimeChoice: RuntimeChoice,
+  workspaceCheckoutLocation: WorkspaceCheckoutLocationConfig = DEFAULT_WORKSPACE_CHECKOUT_LOCATION
+): string {
+  if (runtimeChoice === "worktree") {
+    return getWorktreeRuntimeDescription(workspaceCheckoutLocation);
+  }
+  return RUNTIME_CHOICE_UI[runtimeChoice].description;
+}
 
 export const RUNTIME_BADGE_UI = {
   ssh: {

@@ -21,6 +21,7 @@ import { useSettings } from "@/browser/contexts/SettingsContext";
 import { useCoderWorkspace } from "@/browser/hooks/useCoderWorkspace";
 import { usePersistedState } from "@/browser/hooks/usePersistedState";
 import { useRuntimeEnablement } from "@/browser/hooks/useRuntimeEnablement";
+import { useWorkspaceCheckoutLocation } from "@/browser/hooks/useWorkspaceCheckoutLocation";
 import {
   readSshOptionDefaults,
   type RuntimeOptionDefaults,
@@ -28,6 +29,7 @@ import {
 } from "@/browser/utils/runtimeOptionDefaults";
 import {
   RUNTIME_CHOICE_UI,
+  getRuntimeChoiceDescription,
   getRuntimeOptionField,
   type RuntimeUiSpec,
 } from "@/browser/utils/runtimeUi";
@@ -140,6 +142,7 @@ export function RuntimesSection() {
   const { enablement, setRuntimeEnabled, defaultRuntime, setDefaultRuntime } =
     useRuntimeEnablement();
   const { runtimesProjectPath, setRuntimesProjectPath } = useSettings();
+  const workspaceCheckoutLocation = useWorkspaceCheckoutLocation();
 
   const projectList = Array.from(userProjects.keys());
 
@@ -333,8 +336,12 @@ export function RuntimesSection() {
   const coderAvailability = resolveCoderAvailability(coderWorkspace.coderInfo);
   const availabilityMap =
     runtimeAvailabilityState.status === "loaded" ? runtimeAvailabilityState.data : null;
+  const runtimeRows = RUNTIME_ROWS.map((runtime) => ({
+    ...runtime,
+    description: getRuntimeChoiceDescription(runtime.id, workspaceCheckoutLocation),
+  }));
 
-  const enabledRuntimeOptions = RUNTIME_ROWS.filter((runtime) => effectiveEnablement[runtime.id]);
+  const enabledRuntimeOptions = runtimeRows.filter((runtime) => effectiveEnablement[runtime.id]);
   const enabledRuntimeCount = enabledRuntimeOptions.length;
 
   const defaultRuntimeValue =
@@ -554,7 +561,7 @@ export function RuntimesSection() {
         </div>
 
         <div className="divide-border-light divide-y">
-          {RUNTIME_ROWS.map((runtime) => {
+          {runtimeRows.map((runtime) => {
             const Icon = runtime.Icon;
             const isCoder = runtime.id === "coder";
             const availability = isCoder
