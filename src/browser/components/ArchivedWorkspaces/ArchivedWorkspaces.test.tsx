@@ -213,7 +213,7 @@ describe("ArchivedWorkspaces", () => {
     expect(onWorkspacesChangedMock).not.toHaveBeenCalled();
 
     const alert = await waitFor(() => view.getByRole("alert"));
-    expect(alert.textContent).toContain("Failed to delete managed worktree");
+    expect(alert.textContent).toContain("Failed to delete managed checkout");
     expect(alert.textContent).toContain("Permission denied");
   });
 

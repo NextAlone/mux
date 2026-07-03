@@ -55,7 +55,7 @@ export const PLACEHOLDER_TIPS: readonly string[] = [
   "Try /fork <start> to branch this chat into a new workspace",
   "Try /plan to view or edit the current plan inline",
   "Try /clear --soft to reset context while keeping the chat visible",
-  "Try /new <start> to start a fresh workspace from the trunk branch",
+  "Try /new <start> to start a fresh workspace from the trunk bookmark",
   "Try /vim to toggle vim keybindings in the chat input",
   "Try \\alpha or \\sum to insert LaTeX-style symbols like α and ∑ as you type",
   // Keybind tip (kept last so it never displaces the Storybook-pinned lead tip).

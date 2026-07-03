@@ -10,22 +10,22 @@ import { createLRUCache } from "@/browser/utils/lruCache";
 import { buildCheckoutCommand, buildRemoteBranchListCommand } from "./branchCommands";
 import { repoRootBashOptions } from "@/browser/utils/executeBash";
 
-// LRU cache for persisting branch names across app restarts
+// LRU cache for persisting bookmark names across app restarts.
 const branchCache = createLRUCache<string>({
   entryPrefix: "branch:",
   indexKey: "branchIndex",
   maxEntries: 100,
-  // No TTL - cached branch info seeds the selector until passive git status refreshes arrive.
+  // No TTL - cached bookmark info seeds the selector until passive repository status refreshes.
 });
 
 interface BranchSelectorProps {
   workspaceId: string;
-  /** Fallback name to display if not in a git repo (workspace name) */
+  /** Fallback name to display if not in a jj repo (workspace name). */
   workspaceName: string;
   className?: string;
 }
 
-// Max branches to fetch
+// Max bookmarks to fetch.
 const MAX_LOCAL_BRANCHES = 100;
 const MAX_REMOTE_BRANCHES = 50;
 
@@ -37,14 +37,14 @@ interface RemoteState {
 }
 
 /**
- * Displays the current git branch with a searchable popover for switching.
- * If not in a git repo, shows the workspace name without interactive features.
- * Remotes appear as expandable groups that lazy-load their branches.
+ * Displays the current jj bookmark with a searchable popover for switching.
+ * If not in a jj repo, shows the workspace name without interactive features.
+ * Remotes appear as expandable groups that lazy-load their bookmarks.
  */
 export function BranchSelector({ workspaceId, workspaceName, className }: BranchSelectorProps) {
   const { api } = useAPI();
   // null = branch is not known yet (for example a stopped runtime with no passive git data),
-  // false = explicitly confirmed not a git repo, string = current branch.
+  // false = explicitly confirmed not a jj repo, string = current bookmark.
   // Initialize from localStorage cache for instant display on app restart.
   const [currentBranch, setCurrentBranch] = useState<string | null | false>(() =>
     branchCache.get(workspaceId)
@@ -61,9 +61,9 @@ export function BranchSelector({ workspaceId, workspaceName, className }: Branch
   const [error, setError] = useState<string | null>(null);
   const { copied, copyToClipboard } = useCopyToClipboard();
 
-  // Subscribe to GitStatusStore for branch changes detected during periodic refresh
-  // (e.g., focus events, file-modifying tools). This keeps the branch selector in sync
-  // when the user or mux changes the branch outside of the branch selector UI.
+  // Subscribe to GitStatusStore for bookmark changes detected during periodic refresh
+  // (e.g., focus events, file-modifying tools). This keeps the selector in sync
+  // when the user or mux changes the bookmark outside of this UI.
   const gitStatus = useGitStatus(workspaceId);
   const gitStatusBranch = gitStatus?.branch;
   useEffect(() => {
@@ -272,7 +272,7 @@ export function BranchSelector({ workspaceId, workspaceName, className }: Branch
       setIsSwitching(true);
       setError(null);
       setIsOpen(false);
-      // Invalidate git status immediately to prevent stale data flash
+      // Invalidate repository status immediately to prevent stale data flash.
       invalidateGitStatus(workspaceId);
 
       try {
@@ -299,7 +299,7 @@ export function BranchSelector({ workspaceId, workspaceName, className }: Branch
           setCurrentBranch(displayBranch);
           // Persist to localStorage for instant display on app restart
           branchCache.set(workspaceId, displayBranch);
-          // Refresh git status with new branch state
+          // Refresh repository status with the new bookmark state.
           invalidateGitStatus(workspaceId);
         }
       } catch (err) {
@@ -367,25 +367,25 @@ export function BranchSelector({ workspaceId, workspaceName, className }: Branch
     });
   };
 
-  // Filter branches by search
+  // Filter bookmarks by search.
   const searchLower = search.toLowerCase();
   const filteredLocalBranches = localBranches.filter((b) => b.toLowerCase().includes(searchLower));
 
-  // For remotes, filter branches within each remote
+  // For remotes, filter bookmarks within each remote.
   const getFilteredRemoteBranches = (remote: string) => {
     const state = remoteStates[remote];
     if (!state?.branches) return [];
     return state.branches.filter((b) => b.toLowerCase().includes(searchLower));
   };
 
-  // Check if any remote has matching branches (for showing remotes section)
+  // Check if any remote has matching bookmarks (for showing remotes section).
   const hasMatchingRemoteBranches = remotes.some((remote) => {
     const state = remoteStates[remote];
     if (!state?.fetched) return true; // Show unfetched remotes
     return getFilteredRemoteBranches(remote).length > 0;
   });
 
-  // Non-git repo: just show workspace name, no interactive features
+  // Non-jj repo: just show workspace name, no interactive features.
   if (currentBranch === false) {
     return (
       <div className={cn("group flex items-center gap-0.5", className)}>

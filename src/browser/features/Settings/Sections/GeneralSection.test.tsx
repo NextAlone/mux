@@ -353,35 +353,35 @@ describe("GeneralSection", () => {
     });
   });
 
-  test("renders the worktree archive behavior copy and loads the saved value", async () => {
+  test("renders the checkout archive behavior copy and loads the saved value", async () => {
     const { view } = renderGeneralSection({
       coderWorkspaceArchiveBehavior: "delete",
       worktreeArchiveBehavior: "delete",
     });
 
-    expect(view.getByText("Worktree archive behavior")).toBeTruthy();
+    expect(view.getByText("Checkout archive behavior")).toBeTruthy();
     expect(view.getByText(/snapshotted so they can be restored on unarchive/i)).toBeTruthy();
 
     await waitFor(() => {
-      expect(getSelectTrigger(view, "Worktree archive behavior").textContent).toContain(
+      expect(getSelectTrigger(view, "Checkout archive behavior").textContent).toContain(
         "Delete checkout"
       );
     });
   });
 
-  test("persists the selected worktree archive behavior with the current coder behavior", async () => {
+  test("persists the selected checkout archive behavior with the current coder behavior", async () => {
     const { updateCoderPrefsMock, view } = renderGeneralSection({
       coderWorkspaceArchiveBehavior: "delete",
       worktreeArchiveBehavior: DEFAULT_WORKTREE_ARCHIVE_BEHAVIOR,
     });
 
     await waitFor(() => {
-      expect(getSelectTrigger(view, "Worktree archive behavior").textContent).toContain(
+      expect(getSelectTrigger(view, "Checkout archive behavior").textContent).toContain(
         "Keep checkout"
       );
     });
 
-    await chooseSelectOption(view, "Worktree archive behavior", "Snapshot and delete");
+    await chooseSelectOption(view, "Checkout archive behavior", "Snapshot and delete");
 
     await waitFor(() => {
       expect(updateCoderPrefsMock).toHaveBeenCalledWith({
@@ -391,7 +391,7 @@ describe("GeneralSection", () => {
     });
   });
 
-  test("serializes rapid worktree archive behavior writes so only the latest value is persisted", async () => {
+  test("serializes rapid checkout archive behavior writes so only the latest value is persisted", async () => {
     const { api, updateCoderPrefsMock } = createMockAPI();
     let resolveFirstUpdate: (() => void) | undefined;
     let resolveSecondUpdate: (() => void) | undefined;
@@ -422,12 +422,12 @@ describe("GeneralSection", () => {
     );
 
     await waitFor(() => {
-      expect(getSelectTrigger(view, "Worktree archive behavior").textContent).toContain(
+      expect(getSelectTrigger(view, "Checkout archive behavior").textContent).toContain(
         "Keep checkout"
       );
     });
 
-    await chooseSelectOption(view, "Worktree archive behavior", "Delete checkout");
+    await chooseSelectOption(view, "Checkout archive behavior", "Delete checkout");
 
     await waitFor(() => {
       expect(updateCoderPrefsMock).toHaveBeenCalledTimes(1);
@@ -437,7 +437,7 @@ describe("GeneralSection", () => {
       });
     });
 
-    await chooseSelectOption(view, "Worktree archive behavior", "Snapshot and delete");
+    await chooseSelectOption(view, "Checkout archive behavior", "Snapshot and delete");
     expect(updateCoderPrefsMock).toHaveBeenCalledTimes(1);
 
     resolveFirstUpdate?.();
@@ -476,7 +476,7 @@ describe("GeneralSection", () => {
       expect(rejectGetConfig).toBeDefined();
     });
 
-    const trigger = getSelectTrigger(view, "Worktree archive behavior");
+    const trigger = getSelectTrigger(view, "Checkout archive behavior");
     expect(trigger.hasAttribute("disabled")).toBe(true);
 
     rejectGetConfig?.(new Error("config read failed"));
@@ -485,7 +485,7 @@ describe("GeneralSection", () => {
       expect(trigger.hasAttribute("disabled")).toBe(false);
     });
 
-    await chooseSelectOption(view, "Worktree archive behavior", "Delete checkout");
+    await chooseSelectOption(view, "Checkout archive behavior", "Delete checkout");
 
     await waitFor(() => {
       expect(updateCoderPrefsMock).toHaveBeenCalledWith({
@@ -519,7 +519,7 @@ describe("GeneralSection", () => {
       expect(resolveGetConfig).toBeDefined();
     });
 
-    const trigger = getSelectTrigger(view, "Worktree archive behavior");
+    const trigger = getSelectTrigger(view, "Checkout archive behavior");
     expect(trigger.hasAttribute("disabled")).toBe(true);
 
     fireEvent.mouseDown(trigger);

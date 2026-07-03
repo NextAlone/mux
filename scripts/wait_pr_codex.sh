@@ -88,16 +88,7 @@ CODEX_APPROVAL_REGEX="Didn't find any major issues"
 CODEX_RATE_LIMIT_REGEX="usage limits have been reached"
 
 if [ "$SKIP_FETCH_SYNC" = "0" ]; then
-  # Check for dirty working tree
-  if ! git diff-index --quiet HEAD --; then
-    echo "❌ Error: You have uncommitted changes in your working directory." >&2
-    echo "" >&2
-    git status --short >&2
-    echo "" >&2
-    echo "Please commit or stash your changes before checking PR status." >&2
-    exit 1
-  fi
-
+  assert_jj_clean_working_copy || exit 1
   assert_branch_synced || exit 1
 fi
 

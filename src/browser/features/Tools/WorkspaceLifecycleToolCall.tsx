@@ -100,9 +100,9 @@ interface StatusMeta {
 const STATUS_META: Record<TaskWorkspaceLifecycleStatus, StatusMeta> = {
   archived: { label: "Archived", tone: "warn", group: "settled", Icon: Archive },
   already_archived: { label: "Already archived", tone: "muted", group: "settled", Icon: Archive },
-  deleted_worktree: { label: "Worktree deleted", tone: "warn", group: "settled", Icon: FolderX },
+  deleted_worktree: { label: "Checkout deleted", tone: "warn", group: "settled", Icon: FolderX },
   already_transcript_only: {
-    label: "Worktree already gone",
+    label: "Checkout already gone",
     tone: "muted",
     group: "settled",
     Icon: FolderX,
@@ -145,7 +145,7 @@ interface ActionMeta {
   gerund: string;
   /** Header verb once resolved (imperative, matching the house style of other tool cards). */
   label: string;
-  /** Count unit; delete_worktree acts on the worktree, archive/remove on the workspace. */
+  /** Count unit; delete_worktree acts on the checkout, archive/remove on the workspace. */
   unit: string;
   /** Expanded footer explaining what the action does. */
   note: string;
@@ -159,10 +159,10 @@ const ACTION_META: Record<TaskWorkspaceLifecycleToolArgs["action"], ActionMeta> 
     note: "Archived workspaces are hidden from the active list and can be restored later.",
   },
   delete_worktree: {
-    gerund: "Deleting worktrees",
-    label: "Delete worktrees",
-    unit: "worktree",
-    note: "Deletes the on-disk worktree to reclaim space; the transcript is kept and the workspace stays archived.",
+    gerund: "Deleting checkouts",
+    label: "Delete checkouts",
+    unit: "checkout",
+    note: "Deletes the on-disk checkout to reclaim space; the transcript is kept and the workspace stays archived.",
   },
   remove: {
     gerund: "Removing workspaces",
@@ -277,7 +277,7 @@ function blockedHint(
 ): string | null {
   switch (status) {
     case "requires_archive":
-      return `Archive this workspace before ${action === "remove" ? "removing it" : "deleting its worktree"}.`;
+      return `Archive this workspace before ${action === "remove" ? "removing it" : "deleting its checkout"}.`;
     case "requires_confirmation":
       return "Re-run with these paths listed in acknowledged_untracked_paths to confirm.";
     case "active":

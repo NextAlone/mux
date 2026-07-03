@@ -17,8 +17,8 @@ import type { RuntimeConfig } from "@/common/types/runtime";
  *
  * Currently supported types:
  * - "local" without srcBaseDir: Project-dir runtime (uses project path directly)
- * - "local" with srcBaseDir: Legacy worktree config (for backward compat)
- * - "worktree": Explicit worktree runtime
+ * - "local" with srcBaseDir: Legacy JJ workspace config (for backward compat)
+ * - "worktree": Explicit JJ workspace runtime
  * - "ssh": Remote SSH runtime
  * - "docker": Docker container runtime
  */

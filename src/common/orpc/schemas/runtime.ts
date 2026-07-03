@@ -9,9 +9,9 @@ export { RuntimeEnablementIdSchema } from "@/common/schemas/ids";
  * Runtime configuration union type.
  *
  * COMPATIBILITY NOTE:
- * - `type: "local"` with `srcBaseDir` = legacy worktree config (for backward compat)
+ * - `type: "local"` with `srcBaseDir` = legacy JJ workspace config (for backward compat)
  * - `type: "local"` without `srcBaseDir` = new project-dir runtime
- * - `type: "worktree"` = explicit worktree runtime (new workspaces)
+ * - `type: "worktree"` = explicit JJ workspace runtime (new workspaces)
  *
  * This allows two-way compatibility: users can upgrade/downgrade without breaking workspaces.
  */
@@ -56,11 +56,11 @@ export const RuntimeAvailabilitySchema = z.object({
   devcontainer: RuntimeAvailabilityStatusSchema,
 });
 export const RuntimeConfigSchema = z.union([
-  // Legacy local with srcBaseDir (treated as worktree)
+  // Legacy local with srcBaseDir (treated as JJ Workspace).
   z.object({
     type: z.literal("local"),
     srcBaseDir: z.string().meta({
-      description: "Base directory where all workspaces are stored (legacy worktree config)",
+      description: "Base directory where all workspaces are stored (legacy JJ workspace config)",
     }),
     bgOutputDir: bgOutputDirField,
   }),
@@ -69,7 +69,7 @@ export const RuntimeConfigSchema = z.union([
     type: z.literal("local"),
     bgOutputDir: bgOutputDirField,
   }),
-  // Explicit worktree runtime
+  // Explicit JJ Workspace runtime.
   z.object({
     type: z.literal("worktree"),
     srcBaseDir: z

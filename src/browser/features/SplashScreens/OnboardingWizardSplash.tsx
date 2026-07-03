@@ -146,7 +146,7 @@ function CommandPalettePreview(props: { shortcut: string }) {
             Create New Workspace…
             <br />
             <span className="text-xs text-[var(--color-command-subdued)]">
-              Start a new workspace (Local / Worktree / SSH / Docker)
+              Start a new workspace (Local / JJ Workspace / SSH / Docker)
             </span>
           </div>
           <span className="font-monospace text-[11px] text-[var(--color-command-subdued)]">
@@ -913,7 +913,7 @@ export function OnboardingWizardSplash(props: { onDismiss: () => void }) {
             <Card icon={<LocalIcon size={14} />} title="Local">
               Work directly in your project directory.
             </Card>
-            <Card icon={<WorktreeIcon size={14} />} title="Worktree">
+            <Card icon={<WorktreeIcon size={14} />} title="JJ Workspace">
               Isolated jj workspace under <code className="text-accent">~/.mux/src</code>.
             </Card>
             <Card icon={<SSHIcon size={14} />} title="SSH">

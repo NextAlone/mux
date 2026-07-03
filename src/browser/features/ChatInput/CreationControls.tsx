@@ -573,7 +573,7 @@ export function CreationControls(props: CreationControlsProps) {
 
     // Determine if the current selection needs correction.
     const isCurrentDisabledBySettings = runtimeEnablement?.[runtimeChoice] === false;
-    // In non-jj repos all modes except Local are unavailable (not just Worktree).
+    // In non-jj repos all modes except Local are unavailable (not just JJ Workspace).
     const isCurrentUnavailable =
       (isNonGitRepo && selectedRuntime.mode !== RUNTIME_MODE.LOCAL) ||
       (isDevcontainerMissing && selectedRuntime.mode === RUNTIME_MODE.DEVCONTAINER);

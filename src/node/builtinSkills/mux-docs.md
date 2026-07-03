@@ -66,7 +66,7 @@ Use this index to find a page's:
     - **Runtimes**
       - Runtimes (`/runtime`) → `references/docs/runtime/index.mdx` — Configure where and how Mux executes agent workspaces
       - Local Runtime (`/runtime/local`) → `references/docs/runtime/local.mdx` — Run agents directly in your project directory
-      - Worktree Runtime (`/runtime/worktree`) → `references/docs/runtime/worktree.mdx` — Isolated jj workspace environments for parallel agent work
+      - JJ Workspace Runtime (`/runtime/worktree`) → `references/docs/runtime/worktree.mdx` — Isolated jj workspace environments for parallel agent work
       - SSH Runtime (`/runtime/ssh`) → `references/docs/runtime/ssh.mdx` — Run agents on remote hosts over SSH for security and performance
       - Coder Runtime (`/runtime/coder`) → `references/docs/runtime/coder.mdx` — Run agents on Coder workspaces
       - Docker Runtime (`/runtime/docker`) → `references/docs/runtime/docker.mdx` — Run agents in isolated Docker containers

@@ -215,15 +215,13 @@ log_info "✅ Root endpoint is accessible"
 # Uses Node.js with @orpc/client since oRPC uses its own RPC protocol (not simple REST)
 log_info "Testing oRPC endpoints via HTTP and WebSocket..."
 
-# Create a temporary git repo for the test project
+# Create a temporary colocated jj repo for the test project.
 PROJECT_DIR=$(mktemp -d)
-git init -b main "$PROJECT_DIR" >/dev/null 2>&1
-git -C "$PROJECT_DIR" config user.email "test@example.com"
-git -C "$PROJECT_DIR" config commit.gpgSign false
-git -C "$PROJECT_DIR" config user.name "Test User"
+JJ_TEST_CONFIG=$'ui.paginate="never"\nui.color="never"\nuser.email="test@example.com"\nuser.name="Test User"'
+JJ_CONFIG_TOML="$JJ_TEST_CONFIG" jj git init --colocate "$PROJECT_DIR" >/dev/null 2>&1
 touch "$PROJECT_DIR/README.md"
-git -C "$PROJECT_DIR" add .
-git -C "$PROJECT_DIR" commit -m "Initial commit" >/dev/null 2>&1
+JJ_CONFIG_TOML="$JJ_TEST_CONFIG" jj -R "$PROJECT_DIR" commit -m "Initial commit" >/dev/null 2>&1
+JJ_CONFIG_TOML="$JJ_TEST_CONFIG" jj -R "$PROJECT_DIR" bookmark create main -r @- >/dev/null 2>&1
 
 # Run oRPC tests via Node.js using the installed mux package's dependencies
 # The mux package includes @orpc/client which we can use

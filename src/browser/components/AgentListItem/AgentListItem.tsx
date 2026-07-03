@@ -83,7 +83,7 @@ import { RuntimeBadge } from "../RuntimeBadge/RuntimeBadge";
 export interface WorkspaceSelection {
   projectPath: string;
   projectName: string;
-  namedWorkspacePath: string; // Worktree path (directory uses workspace name)
+  namedWorkspacePath: string; // Managed checkout path (directory uses workspace name)
   workspaceId: string;
 }
 

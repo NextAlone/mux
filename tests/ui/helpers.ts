@@ -1,5 +1,5 @@
 /**
- * Shared UI test helpers for integration coverage (review panel, project creation, git status, etc.).
+ * Shared UI test helpers for integration coverage (review panel, project creation, repository status, etc.).
  */
 
 import { cleanup, fireEvent, waitFor, within } from "@testing-library/react";
@@ -347,11 +347,11 @@ export function setupTestDom(options?: { enableTutorial?: boolean }): () => void
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// GIT STATUS HELPERS
+// REPOSITORY STATUS HELPERS
 // ═══════════════════════════════════════════════════════════════════════════════
 
 /**
- * Get the current git status for a workspace row.
+ * Get the current repository status for a workspace row.
  * Falls back to the shared GitStatusStore when inline data attributes are absent.
  */
 export function getGitStatusFromElement(element: HTMLElement): Partial<GitStatus> | null {
@@ -374,7 +374,7 @@ export function getGitStatusFromElement(element: HTMLElement): Partial<GitStatus
 }
 
 /**
- * Wait for a workspace row to render and for git status to be available in the store.
+ * Wait for a workspace row to render and for repository status to be available in the store.
  */
 export async function waitForGitStatusElement(
   container: HTMLElement,
@@ -386,9 +386,9 @@ export async function waitForGitStatusElement(
   return waitFor(
     () => {
       const el = container.querySelector(`[data-workspace-id="${workspaceId}"]`);
-      if (!el) throw new Error("Git status element not found");
+      if (!el) throw new Error("Repository status element not found");
       const status = store.getStatus(workspaceId);
-      if (!status) throw new Error("Git status not yet available");
+      if (!status) throw new Error("Repository status not yet available");
       return el as HTMLElement;
     },
     { timeout: timeoutMs }
@@ -396,7 +396,7 @@ export async function waitForGitStatusElement(
 }
 
 /**
- * Wait for git status to match a condition.
+ * Wait for repository status to match a condition.
  */
 async function waitForGitStatus(
   _container: HTMLElement,
@@ -411,7 +411,7 @@ async function waitForGitStatus(
   await waitFor(
     () => {
       lastStatus = store.getStatus(workspaceId);
-      if (!lastStatus) throw new Error("Git status not yet available");
+      if (!lastStatus) throw new Error("Repository status not yet available");
       if (!predicate(lastStatus)) {
         throw new Error(`Expected ${description}, got: ${JSON.stringify(lastStatus)}`);
       }
@@ -423,7 +423,7 @@ async function waitForGitStatus(
 }
 
 /**
- * Wait for git status to indicate dirty (uncommitted changes).
+ * Wait for repository status to indicate dirty (working-copy changes).
  */
 export function waitForDirtyStatus(
   container: HTMLElement,
@@ -434,7 +434,7 @@ export function waitForDirtyStatus(
 }
 
 /**
- * Wait for git status to indicate clean (no uncommitted changes).
+ * Wait for repository status to indicate clean (no working-copy changes).
  */
 export function waitForCleanStatus(
   container: HTMLElement,
@@ -445,7 +445,7 @@ export function waitForCleanStatus(
 }
 
 /**
- * Wait for git status to show at least N commits ahead of remote.
+ * Wait for repository status to show at least N commits ahead of remote.
  */
 export function waitForAheadStatus(
   container: HTMLElement,
@@ -463,7 +463,7 @@ export function waitForAheadStatus(
 }
 
 /**
- * Wait for git status to report a specific branch name.
+ * Wait for repository status to report a specific bookmark name.
  */
 export function waitForBranchStatus(
   container: HTMLElement,
@@ -481,7 +481,7 @@ export function waitForBranchStatus(
 }
 
 /**
- * Wait for git status to be idle (no fetch in-flight) AND match a predicate.
+ * Wait for repository status to be idle (no fetch in-flight) AND match a predicate.
  * Use this to ensure no background fetch can race with subsequent operations.
  */
 export function waitForIdleGitStatus(
@@ -496,10 +496,10 @@ export function waitForIdleGitStatus(
     () => {
       // Check global in-flight state, not per-workspace (initial fetch doesn't set per-workspace flag)
       if (store.isAnyRefreshInFlight()) {
-        throw new Error("Git status fetch in-flight");
+        throw new Error("Repository status fetch in-flight");
       }
       const status = store.getStatus(workspaceId);
-      if (!status) throw new Error("Git status not yet available");
+      if (!status) throw new Error("Repository status not yet available");
       if (!predicate(status)) {
         throw new Error(`Expected ${description}, got: ${JSON.stringify(status)}`);
       }

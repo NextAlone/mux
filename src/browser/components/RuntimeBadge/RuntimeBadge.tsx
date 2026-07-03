@@ -34,7 +34,7 @@ interface RuntimeBadgeProps {
  * Badge to display runtime type information.
  * Shows icon-only badge with tooltip describing the runtime type.
  * - SSH: server icon with hostname (blue theme)
- * - Worktree: git branch icon (purple theme)
+ * - JJ Workspace: branching checkout icon (purple theme)
  * - Local: folder icon (gray theme)
  *
  * When isWorking=true, badges brighten and pulse within their color scheme.
@@ -91,7 +91,7 @@ function getRuntimeInfo(
     return { type: "ssh", label: `SSH: ${hostname ?? runtimeConfig.host}`, shortLabel: "SSH" };
   }
   if (isWorktreeRuntime(runtimeConfig)) {
-    return { type: "worktree", label: "Worktree: isolated jj workspace", shortLabel: "JJ" };
+    return { type: "worktree", label: "JJ Workspace: isolated checkout", shortLabel: "JJ" };
   }
   if (isLocalProjectRuntime(runtimeConfig)) {
     return { type: "local", label: "Local: project directory", shortLabel: "Local" };

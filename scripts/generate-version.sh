@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Generate version.ts with git information
+# Generate version.ts with repository information
 #
 # In CI release builds (RELEASE_TAG set), use the tag directly to avoid false
 # "-dirty" stamps from CI artifacts (node_modules, build outputs, etc.).
-# Local builds continue using git describe --dirty for accurate dev info.
+# Local builds use jj commit metadata with dirty detection for accurate dev info.
 
 set -euo pipefail
 
@@ -11,7 +11,9 @@ VERSION_FILE="src/version.ts"
 TMP_FILE=$(mktemp)
 trap 'rm -f "$TMP_FILE"' EXIT
 
-GIT_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+export JJ_CONFIG_TOML=${JJ_CONFIG_TOML:-$'ui.paginate="never"\nui.color="never"'}
+
+GIT_COMMIT=$(jj log -r @- --no-graph -T 'commit_id.short()' 2>/dev/null || jj log -r @ --no-graph -T 'commit_id.short()' 2>/dev/null || echo "unknown")
 TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
 if [ -n "${RELEASE_TAG:-}" ]; then
@@ -19,19 +21,21 @@ if [ -n "${RELEASE_TAG:-}" ]; then
   GIT_DESCRIBE="$RELEASE_TAG"
   echo "Release build: using RELEASE_TAG=${RELEASE_TAG}"
 else
-  # Local/dev build: use git describe with dirty detection
-  GIT_DESCRIBE=$(git describe --tags --always --dirty 2>/dev/null || echo "unknown")
+  # Local/dev build: use jj commit metadata with dirty detection.
+  GIT_DESCRIBE="$GIT_COMMIT"
 
-  # Debug output for dirty builds
-  if git rev-parse --is-inside-work-tree >/dev/null 2>&1 && git rev-parse --verify HEAD >/dev/null 2>&1; then
-    if ! git diff-index --quiet HEAD -- 2>/dev/null; then
-      echo "⚠️  Git checkout is dirty; version will be stamped with '-dirty'."
+  # Debug output for dirty builds.
+  if jj root >/dev/null 2>&1; then
+    DIRTY_FILES=$(jj diff --name-only 2>/dev/null || true)
+    if [ -n "$DIRTY_FILES" ]; then
+      GIT_DESCRIBE="${GIT_DESCRIBE}-dirty"
+      echo "⚠️  Jj working copy has changes; version will be stamped with '-dirty'."
       echo "Tracked dirty files:"
-      git diff-index --name-only HEAD -- | sed 's/^/  - /'
+      echo "$DIRTY_FILES" | sed 's/^/  - /'
     fi
   fi
 
-  # Keep dev builds stable when git metadata is unchanged so `make start` can
+  # Keep dev builds stable when VCS metadata is unchanged so `make start` can
   # attach to an already-running Vite server without triggering avoidable HMR.
   if [ -f "$VERSION_FILE" ]; then
     EXISTING_GIT_COMMIT=$(sed -n 's/^  git_commit: "\(.*\)",$/\1/p' "$VERSION_FILE")

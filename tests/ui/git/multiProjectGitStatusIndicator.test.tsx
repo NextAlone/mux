@@ -100,7 +100,9 @@ describe("MultiProjectGitStatusIndicator", () => {
       <MultiProjectGitStatusIndicator workspaceId="workspace-1" tooltipPosition="bottom" />
     );
 
-    const button = view.getByRole("button", { name: "Open multi-project git status details" });
+    const button = view.getByRole("button", {
+      name: "Open multi-project repository status details",
+    });
     expect(button.textContent).toContain("3 repos");
     expect(button.textContent).not.toContain("diverged");
     expect(button.textContent).not.toContain("dirty");
@@ -112,7 +114,7 @@ describe("MultiProjectGitStatusIndicator", () => {
         projectPath: "/tmp/repo-a",
         projectName: "repo-a",
         gitStatus: null,
-        error: "Git status unavailable",
+        error: "Repository status unavailable",
       }),
       createProjectStatusResult({
         projectPath: "/tmp/repo-b",
@@ -127,7 +129,9 @@ describe("MultiProjectGitStatusIndicator", () => {
     ]);
 
     const view = renderWithTooltipProvider(<MultiProjectGitStatusIndicator workspaceId="workspace-1" />);
-    const button = view.getByRole("button", { name: "Open multi-project git status details" });
+    const button = view.getByRole("button", {
+      name: "Open multi-project repository status details",
+    });
 
     expect(button.textContent).toContain("1 unknown");
     expect(button.textContent).toContain("2 diverged");
@@ -153,13 +157,15 @@ describe("MultiProjectGitStatusIndicator", () => {
     ]);
 
     const view = renderWithTooltipProvider(<MultiProjectGitStatusIndicator workspaceId="workspace-1" />);
-    const button = view.getByRole("button", { name: "Open multi-project git status details" });
+    const button = view.getByRole("button", {
+      name: "Open multi-project repository status details",
+    });
     const body = within(view.container.ownerDocument.body);
 
     fireEvent.click(button);
 
     const dialog = await body.findByRole("dialog", {}, { timeout: 10_000 });
-    expect(dialog.textContent).toContain("Multi-project git status");
+    expect(dialog.textContent).toContain("Multi-project repository status");
     expect(dialog.textContent).toContain("repo-a");
     expect(dialog.textContent).toContain("feature/a");
     expect(dialog.textContent).toContain("+5");
@@ -177,14 +183,16 @@ describe("MultiProjectGitStatusIndicator", () => {
     currentSummary = null;
 
     const view = renderWithTooltipProvider(<MultiProjectGitStatusIndicator workspaceId="workspace-1" />);
-    const button = view.getByRole("button", { name: "Open multi-project git status details" });
+    const button = view.getByRole("button", {
+      name: "Open multi-project repository status details",
+    });
     expect(button.textContent).toContain("repos…");
 
     fireEvent.click(button);
 
     const body = within(view.container.ownerDocument.body);
     const dialog = await body.findByRole("dialog", {}, { timeout: 10_000 });
-    expect(dialog.textContent).toContain("Loading git status for workspace repos…");
+    expect(dialog.textContent).toContain("Loading repository status for workspace repos…");
   });
 });
 
@@ -201,14 +209,14 @@ describe("MultiProjectDivergenceDialog", () => {
     cleanupDom = null;
   });
 
-  test("renders inline unknown row content when a project git status is unavailable", async () => {
+  test("renders inline unknown row content when a project repository status is unavailable", async () => {
     const summary = createSummary([
       createProjectStatusResult({ projectPath: "/tmp/repo-a", projectName: "repo-a" }),
       createProjectStatusResult({
         projectPath: "/tmp/repo-b",
         projectName: "repo-b",
         gitStatus: null,
-        error: "Permission denied while reading git status",
+        error: "Permission denied while reading repository status",
       }),
     ]);
 
@@ -224,7 +232,7 @@ describe("MultiProjectDivergenceDialog", () => {
     const dialog = await body.findByRole("dialog", {}, { timeout: 10_000 });
 
     expect(dialog.textContent).toContain("repo-b");
-    expect(dialog.textContent).toContain("Permission denied while reading git status");
+    expect(dialog.textContent).toContain("Permission denied while reading repository status");
     expect(dialog.textContent).toContain("repo-a");
   });
 });

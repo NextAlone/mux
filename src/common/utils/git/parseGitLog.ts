@@ -1,18 +1,18 @@
 /**
- * Represents a branch header from git show-branch
+ * Represents a bookmark header from repository divergence output.
  */
 export interface GitBranchHeader {
-  /** Branch name (e.g., "HEAD", "origin/main") */
+  /** Bookmark name (e.g., "HEAD", "main@origin") */
   branch: string;
   /** Column index (0-based) */
   columnIndex: number;
 }
 
 /**
- * Represents a single commit in the git log
+ * Represents a single commit in the repository log.
  */
 export interface GitCommit {
-  /** Branch indicators from git show-branch (e.g., "+ +", "+++", "- -") */
+  /** Divergence indicators from the log output (e.g., "+ +", "+++", "- -") */
   indicators: string;
   /** Short commit hash */
   hash: string;
@@ -23,7 +23,7 @@ export interface GitCommit {
 }
 
 /**
- * Result of parsing git show-branch output
+ * Result of parsing repository divergence output.
  */
 export interface GitShowBranchResult {
   headers: GitBranchHeader[];
@@ -31,7 +31,7 @@ export interface GitShowBranchResult {
 }
 
 /**
- * Parses git show-branch output.
+ * Parses repository divergence output.
  * Expected format:
  *   Header section:
  *     [!*] [branch-name] commit-subject
@@ -43,7 +43,7 @@ export interface GitShowBranchResult {
  *
  * Example:
  *   ! [HEAD] Latest commit on HEAD
- *    ! [origin/main] Latest commit on origin/main
+ *    ! [main@origin] Latest commit on main@origin
  *   ---
  *   + + [042118f] Clear providerMetadata from tool messages too
  *

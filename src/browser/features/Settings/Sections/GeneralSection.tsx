@@ -726,9 +726,9 @@ export function GeneralSection() {
 
       <div className="flex items-center justify-between gap-4">
         <div className="flex-1">
-          <div className="text-foreground text-sm">Worktree archive behavior</div>
+          <div className="text-foreground text-sm">Checkout archive behavior</div>
           <div className="text-muted text-xs">
-            Control whether archived mux-managed worktrees stay on disk, are deleted, or are
+            Control whether archived mux-managed checkouts stay on disk, are deleted, or are
             snapshotted so they can be restored on unarchive.
           </div>
         </div>

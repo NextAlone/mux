@@ -96,15 +96,15 @@ const STORIES: StoryDef[] = [
       // Git indicators render outside the workspace row, so target the accessible
       // summary button instead of scoping to the row text.
       const gitButton = page
-        .getByRole("button", { name: "View git divergence details" })
+        .getByRole("button", { name: "View repository divergence details" })
         .filter({ hasText: "+12.3k" });
       await gitButton.waitFor({ timeout: 30_000 });
 
-      // Git divergence opens in a dialog via click.
+      // Repository divergence opens in a dialog via click.
       await gitButton.click();
 
       // Wait for the dialog (portaled to body) and switch to commit mode.
-      const dialog = page.getByRole("dialog", { name: "Git divergence details" });
+      const dialog = page.getByRole("dialog", { name: "Repository divergence details" });
       await dialog.waitFor({ timeout: 10_000 });
       await dialog.getByRole("radio", { name: "Show commit divergence" }).click();
 
@@ -245,7 +245,7 @@ async function main() {
             timeout: 30_000,
           });
 
-          // Stabilization delay for async renders (git status polling, mermaid,
+          // Stabilization delay for async renders (repository status polling, mermaid,
           // Radix portals). 3s handles slower static servers in batch mode.
           await page.waitForTimeout(3_000);
 

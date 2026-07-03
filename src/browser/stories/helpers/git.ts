@@ -15,8 +15,8 @@ export interface GitDiffFixture {
 }
 
 /**
- * Creates an executeBash function that returns git status and diff output for workspaces.
- * Handles: git status, git diff, git diff --numstat, git show (for read-more),
+ * Creates an executeBash function that returns repository status and diff output for workspaces.
+ * Handles: legacy git status, git diff, git diff --numstat, git show (for read-more),
  * git ls-files --others (for untracked files)
  */
 export function createGitStatusExecutor(
@@ -26,7 +26,7 @@ export function createGitStatusExecutor(
   return (workspaceId: string, script: string) => {
     if (script.includes("git status")) {
       const status = gitStatus?.get(workspaceId) ?? {};
-      // For git status --ignored --porcelain, add !! node_modules to mark it as ignored
+      // For legacy git status --ignored --porcelain, add !! node_modules to mark it as ignored.
       let output = createGitStatusOutput(status);
       if (script.includes("--ignored")) {
         output = output ? `${output}\n!! node_modules/` : "!! node_modules/";

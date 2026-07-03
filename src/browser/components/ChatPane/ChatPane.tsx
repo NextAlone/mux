@@ -116,7 +116,7 @@ import { recordSyntheticReactRenderSample } from "@/browser/utils/perf/reactProf
 // fire. This marker records synthetic commit timings for selected subtrees so automated perf
 // runs still capture render-path metrics for workspace-open regressions.
 const TRANSCRIPT_ONLY_NOTICE =
-  "This workspace's worktree is no longer available. This is a read-only chat transcript kept for historical and usage-tracking reasons.";
+  "This workspace's checkout is no longer available. This is a read-only chat transcript kept for historical and usage-tracking reasons.";
 
 function findTailProposePlanToolId(messages: readonly DisplayedMessage[]): string | null {
   for (let index = messages.length - 1; index >= 0; index -= 1) {

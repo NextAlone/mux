@@ -461,12 +461,12 @@ export function ProjectProvider(props: { children: ReactNode }) {
           isLoading: false,
         }));
       } catch (error) {
-        console.error("Failed to load branches for project:", error);
+        console.error("Failed to load bookmarks for project:", error);
         if (workspaceModalProjectRef.current !== projectPath) {
           return;
         }
         const errorMessage =
-          error instanceof Error ? error.message : "Failed to load branches for project";
+          error instanceof Error ? error.message : "Failed to load bookmarks for project";
         setWorkspaceModalState((prev) => ({
           ...prev,
           branches: [],

@@ -20,7 +20,7 @@ interface GitStatusIndicatorProps {
 }
 
 /**
- * Container component for git status indicator.
+ * Container component for repository status indicator.
  * Manages dialog visibility and data fetching.
  * Delegates rendering to GitStatusIndicatorView.
  */

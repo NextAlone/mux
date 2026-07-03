@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Bump version in package.json, commit, and create a git tag.
+# Bump version in package.json, commit, and create a jj tag.
 # Usage: ./scripts/bump_tag.sh [--minor]
 #   --minor  Bump minor version (0.8.x -> 0.9.0), otherwise bumps patch (0.8.3 -> 0.8.4)
 
@@ -34,7 +34,6 @@ rollback() {
   echo "Error: Rolling back changes..." >&2
   jq --arg v "$CURRENT_VERSION" '.version = $v' package.json >package.json.tmp
   mv package.json.tmp package.json
-  git reset HEAD -- package.json 2>/dev/null || true
   exit 1
 }
 
@@ -43,9 +42,9 @@ jq --arg v "$NEW_VERSION" '.version = $v' package.json >package.json.tmp
 mv package.json.tmp package.json
 
 # Commit and tag (rollback on failure)
-git add package.json || rollback
-git commit -m "release: v${NEW_VERSION}" || rollback
-git tag "v${NEW_VERSION}" || rollback
+export JJ_CONFIG_TOML=${JJ_CONFIG_TOML:-$'ui.paginate="never"\nui.color="never"'}
+jj commit -m "release: v${NEW_VERSION}" || rollback
+jj tag set -r @- "v${NEW_VERSION}" || rollback
 
 echo "Created tag v${NEW_VERSION}"
-echo "Run 'git push && git push --tags' to publish"
+echo "Run 'jj tug && jj git push && jj git push -b v${NEW_VERSION}' to publish"

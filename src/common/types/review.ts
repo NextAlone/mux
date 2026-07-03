@@ -97,7 +97,7 @@ export interface ReviewFilters {
   filePathFilter?: string;
   /** Base revision to diff against (e.g., "@-", "main", "main@origin") */
   diffBase: string;
-  /** Whether to include uncommitted changes (staged + unstaged) in the diff */
+  /** Whether to include working-copy changes in the diff */
   includeUncommitted: boolean;
   /** Sort order for hunks */
   sortOrder: ReviewSortOrder;

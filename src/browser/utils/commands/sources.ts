@@ -399,13 +399,13 @@ export function buildCoreSources(p: BuildSourcesParams): Array<() => CommandActi
         subtitle: workspaceDisplayName,
         section: section.workspaces,
         run: async () => {
-          const branchName =
+          const checkoutName =
             selectedMeta?.name ??
             selected.namedWorkspacePath.split("/").pop() ??
             selected.namedWorkspacePath;
           const ok = await p.confirmDialog({
             title: "Remove current workspace?",
-            description: `This will delete the worktree and local branch "${branchName}".`,
+            description: `This will delete the managed checkout and local bookmark "${checkoutName}".`,
             warning: "This cannot be undone.",
             confirmLabel: "Remove",
             confirmVariant: "destructive",
@@ -581,10 +581,10 @@ export function buildCoreSources(p: BuildSourcesParams): Array<() => CommandActi
               (m) => m.id === vals.workspaceId
             );
             const workspaceName = meta ? `${meta.projectName}/${meta.name}` : vals.workspaceId;
-            const branchName = meta?.name ?? workspaceName.split("/").pop() ?? workspaceName;
+            const checkoutName = meta?.name ?? workspaceName.split("/").pop() ?? workspaceName;
             const ok = await p.confirmDialog({
               title: `Remove workspace ${workspaceName}?`,
-              description: `This will delete the worktree and local branch "${branchName}".`,
+              description: `This will delete the managed checkout and local bookmark "${checkoutName}".`,
               warning: "This cannot be undone.",
               confirmLabel: "Remove",
               confirmVariant: "destructive",

@@ -250,7 +250,7 @@ describeIntegration("Workspace deletion integration tests", () => {
             }
             expect(deleteResult.success).toBe(true);
 
-            // Local worktree runtime should also delete the local branch.
+            // Local runtime should also delete the local bookmark.
             if (type === "local") {
               using branchProc = execAsync(`git -C "${tempGitRepo}" branch --list "${branchName}"`);
               const { stdout } = await branchProc.result;
@@ -340,7 +340,7 @@ describeIntegration("Workspace deletion integration tests", () => {
                 expect(stillInConfig).toBe(false);
               }
 
-              // Local worktree runtime should also delete the local branch.
+              // Local runtime should also delete the local bookmark.
               if (type === "local") {
                 using branchProc = execAsync(
                   `git -C "${tempGitRepo}" branch --list "${branchName}"`

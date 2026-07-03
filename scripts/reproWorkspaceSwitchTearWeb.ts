@@ -95,16 +95,51 @@ async function waitForHttpReady(url: string, timeoutMs = 60_000): Promise<void> 
   throw new Error(`Timed out waiting for ${url}`);
 }
 
-function readTrunkBranch(projectPath: string): string {
-  const result = Bun.spawnSync(["git", "rev-parse", "--abbrev-ref", "HEAD"], {
+function readTrunkBookmark(projectPath: string): string {
+  const rootResult = Bun.spawnSync(["jj", "root"], {
     cwd: projectPath,
     stdout: "pipe",
     stderr: "pipe",
   });
-  if (result.exitCode !== 0) {
-    throw new Error(`Failed to detect trunk branch: ${result.stderr.toString()}`);
+  if (rootResult.exitCode !== 0) {
+    const initResult = Bun.spawnSync(["jj", "git", "init", "--colocate", "."], {
+      cwd: projectPath,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    if (initResult.exitCode !== 0) {
+      throw new Error(`Failed to initialize jj workspace: ${initResult.stderr.toString()}`);
+    }
   }
-  return result.stdout.toString().trim();
+
+  const result = Bun.spawnSync(
+    [
+      "jj",
+      "--config",
+      "ui.paginate=never",
+      "--config",
+      "ui.color=never",
+      "log",
+      "-r",
+      "trunk()",
+      "--no-graph",
+      "-T",
+      'bookmarks.map(|b| b.name() ++ if(b.remote(), "@" ++ b.remote(), "")).join(" ")',
+    ],
+    {
+    cwd: projectPath,
+    stdout: "pipe",
+    stderr: "pipe",
+    }
+  );
+  if (result.exitCode !== 0) {
+    throw new Error(`Failed to detect trunk bookmark: ${result.stderr.toString()}`);
+  }
+  const [trunkBookmark] = result.stdout.toString().trim().split(/\s+/).filter(Boolean);
+  if (!trunkBookmark) {
+    throw new Error("Failed to detect trunk bookmark: trunk() had no bookmark");
+  }
+  return trunkBookmark;
 }
 
 async function createWorkspaceViaOrpc(args: {
@@ -445,7 +480,7 @@ async function main() {
       await page.reload({ waitUntil: "domcontentloaded" });
 
       await waitForProjectPage(page);
-      const trunkBranch = readTrunkBranch(demoProject.projectPath);
+      const trunkBranch = readTrunkBookmark(demoProject.projectPath);
       const workspaceA = await createWorkspaceViaOrpc({
         page,
         projectPath: demoProject.projectPath,

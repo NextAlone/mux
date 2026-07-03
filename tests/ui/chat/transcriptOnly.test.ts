@@ -15,7 +15,7 @@ import { createMockORPCClient } from "@/browser/stories/mocks/orpc";
 import { createWorkspace, groupWorkspacesByProject } from "@/browser/stories/mocks/workspaces";
 
 const TRANSCRIPT_ONLY_NOTICE =
-  "This workspace's worktree is no longer available. This is a read-only chat transcript kept for historical and usage-tracking reasons.";
+  "This workspace's checkout is no longer available. This is a read-only chat transcript kept for historical and usage-tracking reasons.";
 
 describe("Transcript-only workspace UI", () => {
   test("shows one notice instead of chat controls and keeps transcript messages visible", async () => {

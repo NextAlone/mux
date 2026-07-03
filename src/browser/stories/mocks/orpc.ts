@@ -121,7 +121,7 @@ export interface MockORPCClientOptions {
   layoutPresets?: LayoutPresetsConfig;
   projects?: Map<string, ProjectConfig>;
   workspaces?: FrontendWorkspaceMetadata[];
-  /** Pre-seeded multi-project git status rows keyed by workspace ID. */
+  /** Pre-seeded multi-project repository status rows keyed by workspace ID. */
   projectGitStatusesByWorkspace?: Map<string, ApiProjectGitStatusResult[]>;
   /** Pre-seeded workspace activity snapshots for sidebar status/streaming stories. */
   workspaceActivitySnapshots?: Record<string, WorkspaceActivitySnapshot>;
@@ -137,7 +137,7 @@ export interface MockORPCClientOptions {
   subagentAiDefaults?: SubagentAiDefaults;
   /** Coder lifecycle preferences for config.getConfig (e.g., Settings → Coder section) */
   coderWorkspaceArchiveBehavior?: CoderWorkspaceArchiveBehavior;
-  /** What to do with mux-managed worktrees when archiving a chat. */
+  /** What to do with mux-managed checkouts when archiving a chat. */
   worktreeArchiveBehavior?: WorktreeArchiveBehavior;
   /** Initial full-width transcript toggle for config.getConfig */
   chatTranscriptFullWidth?: boolean;

@@ -235,7 +235,7 @@ describeIntegration("Origin fetch ordering during workspace creation", () => {
           await execAsync(`git checkout -b ${branchName}`, { cwd: repoPath });
           await execAsync(`git checkout ${trunkBranch}`, { cwd: repoPath });
 
-          // The local branch exists but doesn't have the origin commit
+          // The local bookmark exists but doesn't have the origin commit.
 
           // Create workspace with the existing branch
           await trustProject(env, repoPath);

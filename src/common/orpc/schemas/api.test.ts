@@ -216,7 +216,7 @@ describe("workspace.getProjectGitStatuses schema", () => {
     ).toBe(true);
   });
 
-  it("preserves per-project git status entries", () => {
+  it("preserves per-project repository status entries", () => {
     const full = [
       {
         projectPath: "/tmp/project-a",
@@ -237,7 +237,7 @@ describe("workspace.getProjectGitStatuses schema", () => {
         projectPath: "/tmp/project-b",
         projectName: "project-b",
         gitStatus: null,
-        error: "git status failed",
+        error: "repository status failed",
       },
     ];
 
