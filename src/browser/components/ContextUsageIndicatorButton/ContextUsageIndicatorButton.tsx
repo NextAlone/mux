@@ -12,9 +12,9 @@ import { cn } from "@/common/lib/utils";
 import { Toggle1MContext } from "../Toggle1MContext/Toggle1MContext";
 import { Tooltip, TooltipContent, TooltipTrigger } from "../Tooltip/Tooltip";
 
-const CONTEXT_RING_SIZE = 20;
-const CONTEXT_RING_RADIUS = 8;
-const CONTEXT_RING_STROKE = 2.5;
+const CONTEXT_RING_SIZE = 16;
+const CONTEXT_RING_RADIUS = 6.25;
+const CONTEXT_RING_STROKE = 2;
 const CONTEXT_RING_CIRCUMFERENCE = 2 * Math.PI * CONTEXT_RING_RADIUS;
 
 const clampPercent = (value: number) => Math.max(0, Math.min(100, value));
@@ -39,7 +39,7 @@ const ContextUsageRing: React.FC<{
   return (
     <svg
       data-context-usage-meter
-      className="h-5 w-5 overflow-visible"
+      className="h-4 w-4 overflow-visible"
       width={CONTEXT_RING_SIZE}
       height={CONTEXT_RING_SIZE}
       viewBox={`0 0 ${CONTEXT_RING_SIZE} ${CONTEXT_RING_SIZE}`}
@@ -78,11 +78,11 @@ const ContextUsageRing: React.FC<{
         {autoCompactionThreshold != null && autoCompactionThreshold < 100 && (
           <line
             x1={CONTEXT_RING_SIZE / 2}
-            y1={1}
+            y1={1.25}
             x2={CONTEXT_RING_SIZE / 2}
-            y2={4}
+            y2={3.25}
             stroke="var(--color-plan-mode)"
-            strokeWidth={1.5}
+            strokeWidth={1.25}
             strokeLinecap="round"
             transform={`rotate(${clampPercent(autoCompactionThreshold) * 3.6} ${CONTEXT_RING_SIZE / 2} ${CONTEXT_RING_SIZE / 2})`}
           />
