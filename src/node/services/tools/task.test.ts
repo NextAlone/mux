@@ -52,7 +52,7 @@ describe("task tool", () => {
     });
 
     expect(tool.description).toContain("share the same working directory as the parent");
-    expect(tool.description).toContain("can see uncommitted changes");
+    expect(tool.description).toContain("can see working-copy changes");
   });
 
   it("uses runtime-aware description for worktree runtimes", () => {
@@ -63,7 +63,7 @@ describe("task tool", () => {
     });
 
     expect(tool.description).toContain("forked workspace based on committed state");
-    expect(tool.description).toContain("Uncommitted changes from the parent are not available");
+    expect(tool.description).toContain("Working-copy changes from the parent are not available");
   });
 
   // The advertised inputSchema is the raw (strict) Zod schema. A `.strict()` schema that omits

@@ -281,7 +281,7 @@ printf '__MUX_BRANCH_DATA__BEGIN_DIRTY_FILES__\\n%s\\n__MUX_BRANCH_DATA__END_DIR
       return;
     }
 
-    // Set loading state immediately so tooltip shows "Loading..." instead of "No commits to display"
+    // Set loading state immediately so tooltip shows "Loading..." instead of "No changes to display"
     setIsLoading(true);
 
     // Debounce the fetch by 200ms to avoid rapid re-fetches

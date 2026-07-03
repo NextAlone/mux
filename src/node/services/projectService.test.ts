@@ -1541,7 +1541,7 @@ exit 1
   });
 
   describe("gitInit", () => {
-    it("initializes git repo in non-git directory with initial commit", async () => {
+    it("initializes jj repo in non-jj directory with initial commit", async () => {
       const testDir = path.join(tempDir, "new-project");
       await fs.mkdir(testDir);
 
@@ -1549,12 +1549,12 @@ exit 1
 
       expect(result.success).toBe(true);
 
-      // Verify .git directory was created
+      // Verify the colocated repository metadata was created
       const gitDir = path.join(testDir, ".git");
       const stat = await fs.stat(gitDir);
       expect(stat.isDirectory()).toBe(true);
 
-      // Verify a branch exists (main) after the initial commit
+      // Verify a bookmark exists (main) after the initial change
       const branchResult = await service.listBranches(testDir);
       expect(branchResult.branches).toContain("main");
       expect(branchResult.recommendedTrunk).toBe("main");
@@ -1576,22 +1576,18 @@ exit 1
       expect(branchResult.branches).toContain("main");
     });
 
-    it("returns error for git repo with existing commits", async () => {
-      const testDir = path.join(tempDir, "existing-git");
+    it("returns error for jj repo with existing bookmarks", async () => {
+      const testDir = path.join(tempDir, "existing-jj");
       await fs.mkdir(testDir);
 
-      // Create a repo with a commit
-      execSync("git init -b main", { cwd: testDir, stdio: "ignore" });
-      execSync('git -c user.name="test" -c user.email="test@test" commit --allow-empty -m "test"', {
-        cwd: testDir,
-        stdio: "ignore",
-      });
+      const initialResult = await service.gitInit(testDir);
+      expect(initialResult.success).toBe(true);
 
       const result = await service.gitInit(testDir);
 
       expect(result.success).toBe(false);
       if (result.success) throw new Error("Expected failure");
-      expect(result.error).toContain("already a git repository");
+      expect(result.error).toContain("already a jj repository with bookmarks");
     });
 
     it("returns error for empty project path", async () => {

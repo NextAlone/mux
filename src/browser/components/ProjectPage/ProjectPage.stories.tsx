@@ -441,7 +441,7 @@ export const DockerUnavailable: AppStory = {
         return createMockORPCClient({
           projects: new Map([projectWithNoWorkspaces("/Users/dev/new-project")]),
           workspaces: [],
-          // Docker unavailable, but git repo exists
+          // Docker unavailable, but jj repo exists
           // Dev container hidden (no config found) rather than disabled
           runtimeAvailability: {
             local: { available: true },

@@ -54,7 +54,7 @@ function getHeaderSummary(summary: MultiProjectGitSummary | null): React.ReactNo
   if (summary.dirtyProjectCount > 0) {
     fragments.push({
       key: "dirty",
-      text: `${summary.dirtyProjectCount} dirty`,
+      text: `${summary.dirtyProjectCount} changed`,
       className: "text-git-dirty",
     });
   }
@@ -90,7 +90,7 @@ function renderDirtyCell(status: GitStatus): React.ReactNode {
   return (
     <span className="text-git-dirty inline-flex items-center gap-1">
       <CircleDot aria-hidden="true" className="h-3 w-3" />
-      <span>Dirty</span>
+      <span>Working copy</span>
     </span>
   );
 }
@@ -152,7 +152,7 @@ export const MultiProjectDivergenceDialog: React.FC<MultiProjectDivergenceDialog
                     Behind
                   </th>
                   <th scope="col" className="px-2 py-1 font-medium">
-                    Dirty
+                    Working copy
                   </th>
                   <th scope="col" className="px-2 py-1 font-medium">
                     Outgoing

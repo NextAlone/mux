@@ -89,7 +89,7 @@ export const PRStatusBadges: Story = {
         }),
       },
       {
-        label: "Behind base branch",
+        label: "Behind base",
         prLink: makePRLink(1625, {
           mergeStateStatus: "BEHIND",
           title: "docs: update README",

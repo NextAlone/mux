@@ -65,7 +65,7 @@ Note: `plan` is intentionally not runnable as a sub-agent. Use top-level plan mo
   - If unmet: stop and report back; do not expand scope to create prerequisites.
 - Acceptance: <bullets / checks>
 - Deliverables:
-  - Commits: <what to commit>
+  - Changes: <what to land>
   - Verification: <commands to run>
 - Constraints:
   - Do not expand scope.

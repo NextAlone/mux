@@ -69,7 +69,7 @@ function createRichWorkspaces(): FrontendWorkspaceMetadata[] {
       id: "ws-backend-main",
       name: "main",
       projectName: "backend-api",
-      // no title — trunk bookmark
+      // no title - source bookmark
       createdAt: new Date(NOW - 5 * DAY).toISOString(),
     }),
     createWorkspace({

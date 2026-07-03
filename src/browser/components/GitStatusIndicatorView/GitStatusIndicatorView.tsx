@@ -196,7 +196,7 @@ export const GitStatusIndicatorView: React.FC<GitStatusIndicatorViewProps> = ({
     }
 
     if (!commits || commits.length === 0) {
-      return "No commits to display";
+      return "No changes to display";
     }
 
     return (
@@ -220,7 +220,7 @@ export const GitStatusIndicatorView: React.FC<GitStatusIndicatorViewProps> = ({
   };
 
   const outgoingHasDelta = gitStatus.outgoingAdditions > 0 || gitStatus.outgoingDeletions > 0;
-  const hasCommitDivergence = gitStatus.ahead > 0 || gitStatus.behind > 0;
+  const hasChangeDivergence = gitStatus.ahead > 0 || gitStatus.behind > 0;
 
   // Dynamic color based on working state
   // Idle: muted/grayscale, Working: original accent colors
@@ -248,8 +248,8 @@ export const GitStatusIndicatorView: React.FC<GitStatusIndicatorViewProps> = ({
             <ToggleGroupItem value="line-delta" aria-label="Show line delta" size="sm">
               Lines
             </ToggleGroupItem>
-            <ToggleGroupItem value="divergence" aria-label="Show commit divergence" size="sm">
-              Commits
+            <ToggleGroupItem value="divergence" aria-label="Show change divergence" size="sm">
+              Changes
             </ToggleGroupItem>
           </ToggleGroup>
         </div>
@@ -277,13 +277,13 @@ export const GitStatusIndicatorView: React.FC<GitStatusIndicatorViewProps> = ({
           ) : (
             <span className="text-muted">Lines: 0</span>
           )}
-          {hasCommitDivergence ? (
+          {hasChangeDivergence ? (
             <span className="text-muted">
-              Commits: {formatCountAbbrev(gitStatus.ahead)} ahead ·{" "}
+              Changes: {formatCountAbbrev(gitStatus.ahead)} ahead ·{" "}
               {formatCountAbbrev(gitStatus.behind)} behind
             </span>
           ) : (
-            <span className="text-muted">Commits: 0</span>
+            <span className="text-muted">Changes: 0</span>
           )}
         </div>
       </div>
@@ -324,7 +324,7 @@ export const GitStatusIndicatorView: React.FC<GitStatusIndicatorViewProps> = ({
             </span>
           ) : (
             // No outgoing lines but behind remote - show muted behind indicator
-            // so users know they can open the divergence dialog for commit details
+            // so users know they can open the divergence dialog for change details
             gitStatus.behind > 0 && (
               <span className="text-muted flex items-center font-normal">
                 ↓{formatCountAbbrev(gitStatus.behind)}
