@@ -30,7 +30,7 @@ const TUTORIAL_SEQUENCES: Record<TutorialSequence, TutorialStep[]> = {
       position: "top",
     },
     {
-      target: "trunk-branch",
+      target: "source-bookmark",
       title: "Bookmark From",
       content: "Choose which bookmark to create your workspace from.",
       position: "top",

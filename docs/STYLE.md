@@ -15,7 +15,7 @@
 Users are familiar with:
 
 - Other coding agents (Cursor, Windsurf, Aider, etc.)
-- Git worktrees and workspace concepts
+- jj workspaces, bookmarks, and workspace concepts
 - Instruction files (AGENTS.md, .cursorrules, etc.)
 - Basic prompt engineering
 

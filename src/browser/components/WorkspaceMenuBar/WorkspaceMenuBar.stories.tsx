@@ -27,11 +27,11 @@ const DEVCONTAINER_RUNTIME = {
 };
 
 /**
- * Build a mock executor that handles BranchSelector's jj bookmark probes plus
+ * Build a mock executor that handles BookmarkSelector's jj bookmark probes plus
  * GitStatusStore's consolidated status script, using a per-workspace bookmark map.
  */
-function createBranchAwareExecutor(
-  branches: Map<string, string>,
+function createBookmarkAwareExecutor(
+  bookmarks: Map<string, string>,
   gitStatus?: Map<string, { ahead?: number; behind?: number; dirty?: number }>
 ) {
   const baseExecutor = createGitStatusExecutor(gitStatus);
@@ -46,10 +46,10 @@ function createBranchAwareExecutor(
     }
 
     if (script.includes("latest(::@ & bookmarks())")) {
-      const branch = branches.get(workspaceId) ?? "main";
+      const bookmark = bookmarks.get(workspaceId) ?? "main";
       return Promise.resolve({
         success: true as const,
-        output: branch,
+        output: bookmark,
         exitCode: 0,
         wall_duration_ms: 10,
       });
@@ -58,7 +58,7 @@ function createBranchAwareExecutor(
     if (script.includes("jj --no-pager --color never bookmark list")) {
       return Promise.resolve({
         success: true as const,
-        output: Array.from(branches.values()).join("\n"),
+        output: Array.from(bookmarks.values()).join("\n"),
         exitCode: 0,
         wall_duration_ms: 10,
       });
@@ -102,9 +102,9 @@ function createDevcontainerClient(runtimeStatus: "running" | "stopped" | "unknow
   collapseRightSidebar();
   collapseLeftSidebar();
 
-  const branches = new Map([
+  const bookmarks = new Map([
     // dc-1 bookmark is only available when the runtime is running;
-    // otherwise BranchSelector falls back to branchCache / workspaceName.
+    // otherwise BookmarkSelector falls back to bookmarkCache / workspaceName.
     ...(runtimeStatus === "running" ? [["dc-1", "feature/lazy-start"] as const] : []),
     ["dc-2", "fix/sidebar-overflow"],
   ]);
@@ -118,7 +118,7 @@ function createDevcontainerClient(runtimeStatus: "running" | "stopped" | "unknow
   return createMockORPCClient({
     projects,
     workspaces,
-    executeBash: createBranchAwareExecutor(branches, gitStatus),
+    executeBash: createBookmarkAwareExecutor(bookmarks, gitStatus),
     runtimeStatuses: new Map([
       ["dc-1", runtimeStatus],
       ["dc-2", "unsupported"],

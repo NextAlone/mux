@@ -8,8 +8,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../Dialog/Dial
 import { BaseSelectorPopover } from "@/browser/features/RightSidebar/CodeReview/BaseSelectorPopover";
 
 // Helper for indicator colors
-const getIndicatorColor = (branch: number): string => {
-  switch (branch) {
+const getIndicatorColor = (columnIndex: number): string => {
+  switch (columnIndex) {
     case 0:
       return "#6bcc6b"; // Green for HEAD
     case 1:

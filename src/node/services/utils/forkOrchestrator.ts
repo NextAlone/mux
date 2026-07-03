@@ -56,7 +56,7 @@ interface OrchestrateForkParams {
   env?: Record<string, string>;
   /** Resolve per-project env for multi-project fork fallbacks and checkout materialization */
   projectEnvResolver?: (projectPath: string) => Promise<Record<string, string>>;
-  /** Whether the project is trusted — when false, git hooks are disabled */
+  /** Whether the project is trusted — when false, repository hooks are disabled */
   trusted?: boolean;
   /**
    * Callers must resolve the experiment gate before we enter any multi-project-only fork logic.
