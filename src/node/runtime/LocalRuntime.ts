@@ -16,13 +16,13 @@ import { LocalBaseRuntime } from "./LocalBaseRuntime";
  * Local runtime implementation that uses the project directory directly.
  *
  * Unlike WorktreeRuntime, this runtime:
- * - Does NOT create git worktrees or isolate workspaces
+ * - Does NOT create jj workspace checkouts or isolate workspaces
  * - Uses the project directory as the workspace path
  * - Cannot delete the project directory (deleteWorkspace is a no-op)
  * - Supports forking (creates new workspace entries pointing to same project directory)
  *
  * This is useful for users who want to work directly in their project
- * without the overhead of worktree management.
+ * without the overhead of JJ Workspace management.
  */
 export class LocalRuntime extends LocalBaseRuntime {
   private readonly projectPath: string;
@@ -62,7 +62,7 @@ export class LocalRuntime extends LocalBaseRuntime {
     const { initLogger } = params;
 
     try {
-      initLogger.logStep("Using project directory directly (no worktree isolation)");
+      initLogger.logStep("Using project directory directly (no JJ Workspace isolation)");
 
       // Verify the project directory exists
       try {
@@ -136,12 +136,12 @@ export class LocalRuntime extends LocalBaseRuntime {
    * 2. Copied chat history (handled by workspaceService)
    * 3. Same project directory as source
    *
-   * This enables conversation branching without git worktree overhead.
+   * This enables conversation forks without JJ Workspace overhead.
    */
   async forkWorkspace(params: WorkspaceForkParams): Promise<WorkspaceForkResult> {
     const { initLogger } = params;
 
-    initLogger.logStep("Creating conversation fork (no worktree isolation)");
+    initLogger.logStep("Creating conversation fork (no JJ Workspace isolation)");
 
     // Verify the project directory exists (same check as createWorkspace)
     try {

@@ -251,7 +251,7 @@ export interface WorkspaceForkParams {
   newWorkspaceName: string;
   /** Logger for streaming initialization events */
   initLogger: InitLogger;
-  /** Signal to abort long-running operations (e.g. cp -R -P or git worktree add) */
+  /** Signal to abort long-running operations (e.g. cp -R -P or remote checkout creation) */
   abortSignal?: AbortSignal;
   /** Optional environment variables for checkout-time auth or transport settings */
   env?: Record<string, string>;
@@ -267,7 +267,7 @@ export interface WorkspaceForkResult {
   success: boolean;
   /** Path to the new workspace (if successful) */
   workspacePath?: string;
-  /** Branch that was forked from */
+  /** Source bookmark or revision that was forked from */
   sourceBranch?: string;
   /** Error message (if failed) */
   error?: string;
@@ -452,14 +452,14 @@ export interface Runtime {
    * to ensure consistent path computation.
    *
    * @param projectPath Project root path (local path, used to extract project name)
-   * @param workspaceName Workspace name (typically branch name)
+   * @param workspaceName Workspace name
    * @returns Absolute path to workspace directory
    */
   getWorkspacePath(projectPath: string, workspaceName: string): string;
 
   /**
    * Create a workspace for this runtime (fast, returns immediately)
-   * - LocalRuntime: Creates git worktree
+   * - WorktreeRuntime: Creates a jj workspace checkout
    * - SSHRuntime: Creates remote directory only
    * Does NOT run init hook or sync files.
    * @param params Workspace creation parameters
@@ -469,12 +469,12 @@ export interface Runtime {
 
   /**
    * Finalize runtime config after collision handling.
-   * Called with final branch name (may have collision suffix).
+   * Called with final workspace/bookmark name (may have collision suffix).
    *
    * Use cases:
-   * - Coder: derive workspace name from branch, compute SSH host
+   * - Coder: derive workspace name from bookmark/workspace identity, compute SSH host
    *
-   * @param finalBranchName Branch name after collision handling
+   * @param finalBranchName Workspace/bookmark name after collision handling
    * @param config Current runtime config
    * @returns Updated runtime config, or error
    */
@@ -499,7 +499,7 @@ export interface Runtime {
    * and validation failure would leave orphaned resources, consider whether those
    * checks belong in createWorkspace() itself instead.
    *
-   * @param finalBranchName Branch name after collision handling
+   * @param finalBranchName Workspace/bookmark name after collision handling
    * @param config Finalized runtime config
    * @returns Success, or error message
    */
@@ -526,7 +526,7 @@ export interface Runtime {
   /**
    * Initialize workspace asynchronously (may be slow, streams progress)
    * - LocalRuntime: Runs init hook if present
-   * - SSHRuntime: Syncs files, checks out branch, runs init hook
+   * - SSHRuntime: Syncs files, creates checkout, runs init hook
    * Streams progress via initLogger.
    * @param params Workspace initialization parameters
    * @returns Result indicating success or error
@@ -535,10 +535,10 @@ export interface Runtime {
 
   /**
    * Rename workspace directory
-   * - LocalRuntime: Uses git worktree move (worktrees managed by git)
-   * - SSHRuntime: Uses mv (plain directories on remote, not worktrees)
+   * - WorktreeRuntime: Renames a jj workspace checkout
+   * - SSHRuntime: Uses mv (plain directories on remote)
    * Runtime computes workspace paths internally from workdir + projectPath + workspace names.
-   * @param projectPath Project root path (local path, used for git commands in LocalRuntime and to extract project name)
+   * @param projectPath Project root path (local path, used to extract project name)
    * @param oldName Current workspace name
    * @param newName New workspace name
    * @param abortSignal Optional abort signal for cancellation
@@ -556,7 +556,7 @@ export interface Runtime {
 
   /**
    * Delete workspace directory
-   * - LocalRuntime: Uses git worktree remove (with --force only if force param is true)
+   * - WorktreeRuntime: Forgets/removes a jj workspace checkout
    * - SSHRuntime: Checks for uncommitted changes unless force is true, then uses rm -rf
    * Runtime computes workspace path internally from workdir + projectPath + workspaceName.
    *
@@ -564,7 +564,7 @@ export interface Runtime {
    * If workspace has uncommitted changes and force=false, implementations MUST return error.
    * The force flag is the user's explicit intent - implementations must not override it.
    *
-   * @param projectPath Project root path (local path, used for git commands in LocalRuntime and to extract project name)
+   * @param projectPath Project root path (local path, used to extract project name)
    * @param workspaceName Workspace name to delete
    * @param force If true, force deletion even with uncommitted changes or special conditions (submodules, etc.)
    * @param abortSignal Optional abort signal for cancellation

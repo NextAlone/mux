@@ -58,7 +58,7 @@ mux run --json "List all TypeScript files" | jq '.type'
 | --------------------- | ----- | ----------------------------------------------------------------------------------------------------------------------------- | ----------------- |
 | `--dir <path>`        | `-d`  | Project directory                                                                                                             | Current directory |
 | `--model <model>`     | `-m`  | Model to use (e.g., `anthropic:claude-sonnet-4-5`)                                                                            | Default model     |
-| `--runtime <runtime>` | `-r`  | Runtime: `local`, `worktree`, `ssh <host>`, or `docker <image>`                                                               | `local`           |
+| `--runtime <runtime>` | `-r`  | Runtime: `local`, `worktree` (JJ Workspace), `ssh <host>`, or `docker <image>`                                                | `local`           |
 | `--mode <mode>`       |       | Agent mode: `plan` or `exec`                                                                                                  | `exec`            |
 | `--thinking <level>`  | `-t`  | Thinking level: `OFF`, `LOW`, `MED`, `HIGH`, `MAX`, or `0`–`9` (model-relative, see [Models](/config/models#thinking-levels)) | `MED`             |
 | `--budget <usd>`      | `-b`  | Stop when session cost exceeds budget (USD)                                                                                   | No limit          |
@@ -101,7 +101,7 @@ Exit codes for CLI Goal Runs:
 ### Runtimes
 
 - **`local`** (default): Runs directly in the specified directory. Best for one-off tasks.
-- **`worktree`**: Creates an isolated jj workspace under `~/.mux/src`. Useful for parallel work.
+- **`worktree`**: Creates an isolated JJ Workspace checkout under `~/.mux/src`. Useful for parallel work.
 - **`ssh <host>`**: Runs on a remote machine via SSH. Example: `--runtime "ssh user@myserver.com"`
 - **`docker <image>`**: Runs in a Docker container. Example: `--runtime "docker node:20"`
 
@@ -195,7 +195,7 @@ Workspace-file workflow scripts are executable only after the project is trusted
 Trust gates all repo-controlled automation: project workflows, hooks, and `.mux` configuration. The desktop app records trust via Settings → Security; `mux trust` writes the same entry in `~/.mux/config.json` headlessly — no desktop app or server required, registering the project if it was never added to mux. A running desktop instance picks the change up automatically.
 
 ```bash
-# Trust the project containing the current directory (git toplevel)
+# Trust the project containing the current directory (repository root)
 mux trust
 
 # Trust an explicit directory
@@ -269,7 +269,7 @@ Note: Requires Electron. When running `mux` with no arguments under Electron, th
 
 ## `mux --version`
 
-Print the version and git commit:
+Print the version and commit id:
 
 ```bash
 mux --version

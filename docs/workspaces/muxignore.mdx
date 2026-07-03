@@ -1,26 +1,26 @@
 ---
 title: .muxignore
-description: Sync gitignored files to worktree workspaces
+description: Sync ignored files to JJ Workspace checkouts
 ---
 
-Git worktrees share the `.git` directory but **not** untracked or gitignored files. This means files like `.env` that are in your `.gitignore` won't be available in worktree-based workspaces.
+JJ workspaces share repository history but **not** untracked or ignored files. This means files like `.env` that are in your `.gitignore` won't be available in isolated workspace checkouts.
 
-A `.muxignore` file lets you declare which gitignored files should be copied into new worktree workspaces.
+A `.muxignore` file lets you declare which ignored files should be copied into new JJ Workspace checkouts.
 
 ## Setup
 
 Create a `.muxignore` file in your project root (alongside `.gitignore`):
 
 ```gitignore
-# Sync these gitignored files to worktree workspaces
+# Sync these ignored files to JJ Workspace checkouts
 !.env
 !.env.local
 !config/secrets.json
 ```
 
-Only lines prefixed with `!` (negation) are actionable — they identify gitignored files to copy. Comments (`#`) and blank lines are ignored.
+Only lines prefixed with `!` (negation) are actionable — they identify ignored files to copy. Comments (`#`) and blank lines are ignored.
 
-> Mux only copies files that are already gitignored in your project and currently exist on disk.
+> Mux only copies files that are already ignored in your project and currently exist on disk.
 
 ## Behavior
 

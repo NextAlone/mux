@@ -121,7 +121,7 @@ export async function isGitRepository(projectPath: string): Promise<boolean> {
  * lives in an ancestor directory. This matters for sub-projects: the
  * sub-project directory itself has no `.jj`, but it still belongs to the
  * parent project's jj checkout, so we should treat it as a repo for
- * UX (e.g. branch listing, suppressing the "git init" banner).
+ * UX (e.g. bookmark listing, suppressing the "jj init" banner).
  *
  * @param projectPath - Path to check (should be already validated/normalized)
  */

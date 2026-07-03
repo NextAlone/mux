@@ -335,8 +335,22 @@ const WorkspaceTaskTargetSchema = z
   .object({
     mode: WorkspaceTaskModeSchema.nullish(),
     workspaceId: z.string().trim().min(1).nullish(),
-    branchName: z.string().trim().min(1).nullish(),
-    trunkBranch: z.string().trim().min(1).nullish(),
+    branchName: z
+      .string()
+      .trim()
+      .min(1)
+      .nullish()
+      .describe(
+        "Workspace/bookmark name to create or target. The field name is kept for API compatibility."
+      ),
+    trunkBranch: z
+      .string()
+      .trim()
+      .min(1)
+      .nullish()
+      .describe(
+        "Source bookmark or revision to fork from. The field name is kept for API compatibility."
+      ),
     queueDispatchMode: z
       .enum(["tool-end", "turn-end"])
       .nullish()

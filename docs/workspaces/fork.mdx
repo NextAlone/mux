@@ -3,7 +3,7 @@ title: Forking Workspaces
 description: Clone workspaces with conversation history to explore alternatives
 ---
 
-Use `/fork` to clone a workspace with its full conversation history and UI state. The forked workspace gets a new workspace on a new branch (using the same backend as the current workspace).
+Use `/fork` to clone a workspace with its full conversation history and UI state. The forked workspace gets a new checkout from the current workspace revision.
 
 Usage:
 
@@ -25,8 +25,8 @@ The new workspace:
 
 - Appears at the top of the workspace list (most recent)
 - Uses the provided workspace name (you can rename later)
-- Branches from the current workspace's HEAD commit
+- Starts from the current workspace revision
 
 **What's copied**: Conversation history, model selection, thinking level, auto-retry setting, UI mode (plan/exec), chat input text
 
-**What's not copied**: Uncommitted file changes (new branch starts from HEAD)
+**What's not copied**: Working-copy file changes (the new workspace starts from the source revision)

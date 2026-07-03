@@ -57,7 +57,7 @@ Use this index to find a page's:
   - **Workspaces**
     - Workspaces (`/workspaces`) → `references/docs/workspaces/index.mdx` — Isolated development environments for parallel agent work
     - Forking Workspaces (`/workspaces/fork`) → `references/docs/workspaces/fork.mdx` — Clone workspaces with conversation history to explore alternatives
-    - .muxignore (`/workspaces/muxignore`) → `references/docs/workspaces/muxignore.mdx` — Sync gitignored files to worktree workspaces
+    - .muxignore (`/workspaces/muxignore`) → `references/docs/workspaces/muxignore.mdx` — Sync ignored files to JJ Workspace checkouts
     - **Compaction**
       - Compaction (`/workspaces/compaction`) → `references/docs/workspaces/compaction/index.mdx` — Managing conversation context size with compaction
       - Manual Compaction (`/workspaces/compaction/manual`) → `references/docs/workspaces/compaction/manual.mdx` — Commands for manually managing conversation context

@@ -8,7 +8,7 @@ Runtimes determine where and how Mux executes agent workspaces.
 | Runtime                                    | Isolation                                  | Best For                                    |
 | ------------------------------------------ | ------------------------------------------ | ------------------------------------------- |
 | **[Local](/runtime/local)**                | All workspaces share the project directory | Quick edits to your working copy            |
-| **[Worktree](/runtime/worktree)**          | Each workspace gets its own directory      | Running multiple agents in parallel         |
+| **[JJ Workspace](/runtime/worktree)**      | Each workspace gets its own directory      | Running multiple agents in parallel         |
 | **[SSH](/runtime/ssh)**                    | Remote execution over SSH                  | Security, performance, heavy parallelism    |
 | **[Docker](/runtime/docker)**              | Isolated container per workspace           | Full isolation, reproducible environments   |
 | **[Dev Container](/runtime/devcontainer)** | Container from devcontainer.json           | Projects with existing devcontainer configs |
@@ -22,9 +22,9 @@ Choose a runtime when creating a workspace.
 [Init hooks](/hooks/init) and agent bash tool executions can detect the runtime type via the `MUX_RUNTIME` environment variable:
 
 - `local` — Local runtime
-- `worktree` — Worktree runtime
+- `worktree` — JJ Workspace runtime
 - `ssh` — SSH runtime
 - `docker` — Docker runtime
 - `devcontainer` — Dev Container runtime
 
-This lets your init hook adapt behavior, e.g., skip worktree-specific setup when running in local mode.
+This lets your init hook adapt behavior, e.g., skip JJ Workspace-specific setup when running in local mode.

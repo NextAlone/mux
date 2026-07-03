@@ -130,7 +130,7 @@ export const ProjectPage: React.FC<ProjectPageProps> = ({
 
   const isNonGitRepo = branchesLoaded && !hasBranches;
 
-  // Trigger branch refetch after git init to verify it worked
+  // Trigger bookmark refetch after jj git init to verify it worked
   const handleGitInitSuccess = useCallback(() => {
     setBranchRefreshKey((k) => k + 1);
   }, []);

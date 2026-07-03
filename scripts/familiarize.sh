@@ -1,2 +1,3 @@
 #!/usr/bin/env bash
-git log -n 5 --pretty=full
+JJ_CONFIG_TOML='ui.paginate="never"
+ui.color="never"' jj log -n 5
