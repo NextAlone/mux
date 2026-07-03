@@ -41,6 +41,8 @@ export interface ChatInputWorkspaceVariant {
   isTranscriptCaughtUp?: boolean;
   isCompacting?: boolean;
   isStreamStarting?: boolean;
+  /** Editable user-message history from the visible transcript, oldest to newest. */
+  messageHistory?: readonly string[];
   editingMessage?: EditingMessageState;
   onCancelEdit?: () => void;
   onEditLastUserMessage?: () => void;

@@ -51,7 +51,7 @@ export async function createAppHarness(options?: {
    * Optional hook to set up DOM-dependent globals (e.g. localStorage) before
    * the App is rendered.
    */
-  beforeRender?: () => void;
+  beforeRender?: (env: TestEnvironment) => void;
 }): Promise<AppHarness> {
   const repoPath = await createTempGitRepo();
   await initJjGitRepository(repoPath);
@@ -88,7 +88,7 @@ export async function createAppHarness(options?: {
     metadata = createResult.metadata;
 
     cleanupDom = installDom();
-    options?.beforeRender?.();
+    options?.beforeRender?.(env);
     view = renderApp({ apiClient: env.orpc, metadata });
 
     await setupWorkspaceView(view, metadata, workspaceId);

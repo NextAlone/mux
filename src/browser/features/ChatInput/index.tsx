@@ -383,6 +383,12 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
   // on same-length edits (e.g. selection-replace) to know the previous value.
   const latestInputValueRef = useRef(input);
   latestInputValueRef.current = input;
+  const messageHistoryRef = useRef<readonly string[]>([]);
+  messageHistoryRef.current = variant === "workspace" ? (props.messageHistory ?? []) : [];
+  const messageHistoryNavigationRef = useRef<{ index: number | null; draft: string }>({
+    index: null,
+    draft: "",
+  });
   // Track concurrent sends with a counter (not boolean) to handle queued follow-ups correctly.
   // When a follow-up is queued during stream-start, it resolves immediately but shouldn't
   // clear the "in flight" state until all sends complete.
@@ -559,6 +565,9 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
   const powerMode = usePowerMode();
   const [atMentionCursorNonce, setAtMentionCursorNonce] = useState(0);
   const lastAtMentionCursorRef = useRef<number | null>(null);
+  const resetMessageHistoryNavigation = useCallback(() => {
+    messageHistoryNavigationRef.current = { index: null, draft: "" };
+  }, []);
   const handleAtMentionCursorActivity = useCallback(() => {
     const el = inputRef.current;
     if (!el) {
@@ -576,6 +585,10 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
 
   const handleInputChange = useCallback(
     (next: string, caretFromEvent?: number) => {
+      if (next !== latestInputValueRef.current) {
+        resetMessageHistoryNavigation();
+      }
+
       if (powerMode.enabled) {
         const prev = latestInputValueRef.current;
         const delta = next.length - prev.length;
@@ -634,7 +647,7 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
 
       setInput(next);
     },
-    [powerMode, setInput]
+    [powerMode, resetMessageHistoryNavigation, setInput]
   );
 
   // Draft state combines text input and attachments.
@@ -1207,6 +1220,63 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
     });
   }, []);
 
+  const placeCursorAtInputEnd = () => {
+    requestAnimationFrame(() => {
+      const element = inputRef.current;
+      if (!element || element.disabled) {
+        return;
+      }
+
+      element.focus();
+      const cursor = element.value.length;
+      element.selectionStart = cursor;
+      element.selectionEnd = cursor;
+    });
+  };
+
+  const setInputFromMessageHistory = (text: string) => {
+    setInput(text);
+    placeCursorAtInputEnd();
+  };
+
+  const navigateMessageHistory = (direction: "previous" | "next"): boolean => {
+    const history = messageHistoryRef.current;
+    if (history.length === 0) {
+      return false;
+    }
+
+    const navigation = messageHistoryNavigationRef.current;
+    if (direction === "previous") {
+      if (navigation.index == null) {
+        if (latestInputValueRef.current.trim() !== "") {
+          return false;
+        }
+        navigation.draft = latestInputValueRef.current;
+        navigation.index = history.length - 1;
+      } else {
+        navigation.index = Math.max(0, navigation.index - 1);
+      }
+
+      setInputFromMessageHistory(history[navigation.index] ?? "");
+      return true;
+    }
+
+    if (navigation.index == null) {
+      return false;
+    }
+
+    if (navigation.index >= history.length - 1) {
+      const draft = navigation.draft;
+      resetMessageHistoryNavigation();
+      setInputFromMessageHistory(draft);
+      return true;
+    }
+
+    navigation.index += 1;
+    setInputFromMessageHistory(history[navigation.index] ?? "");
+    return true;
+  };
+
   const applyDraftFromPending = useCallback(
     (pending: PendingUserMessage, attachmentKeyPrefix: string) => {
       const providerAttachments = filePartsToChatAttachments(
@@ -1228,11 +1298,12 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
   // Restore a full pending draft (text + attachments + reviews), e.g. queued message edits.
   const restoreDraft = useCallback(
     (pending: PendingUserMessage) => {
+      resetMessageHistoryNavigation();
       applyDraftFromPending(pending, `restored-${Date.now()}`);
       setDraftReviews(pending.reviews);
       focusMessageInput();
     },
-    [applyDraftFromPending, focusMessageInput, setDraftReviews]
+    [applyDraftFromPending, focusMessageInput, resetMessageHistoryNavigation, setDraftReviews]
   );
 
   const restorePreEditDraft = useCallback(() => {
@@ -1243,15 +1314,17 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
   // Method to restore text to input (used by compaction cancel)
   const restoreText = useCallback(
     (text: string) => {
+      resetMessageHistoryNavigation();
       setInput(() => text);
       focusMessageInput();
     },
-    [focusMessageInput, setInput]
+    [focusMessageInput, resetMessageHistoryNavigation, setInput]
   );
 
   // Method to append text to input (used by Code Review notes)
   const appendText = useCallback(
     (text: string) => {
+      resetMessageHistoryNavigation();
       setInput((prev) => {
         // Add blank line before if there's existing content
         const separator = prev.trim() ? "\n\n" : "";
@@ -1259,16 +1332,17 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
       });
       // Don't focus - user wants to keep reviewing
     },
-    [setInput]
+    [resetMessageHistoryNavigation, setInput]
   );
 
   // Method to prepend text to input (used by manual compact trigger)
   const prependText = useCallback(
     (text: string) => {
+      resetMessageHistoryNavigation();
       setInput((prev) => text + prev);
       focusMessageInput();
     },
-    [focusMessageInput, setInput]
+    [focusMessageInput, resetMessageHistoryNavigation, setInput]
   );
 
   const handleSendRef = useRef<() => Promise<void>>(() => Promise.resolve());
@@ -1326,6 +1400,7 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
   // When entering editing mode, save current draft and populate with message content
   useEffect(() => {
     if (editingMessage) {
+      resetMessageHistoryNavigation();
       preEditDraftRef.current = getDraft();
       preEditReviewsRef.current = draftReviews;
       applyDraftFromPending(editingMessage.pending, `edit-${editingMessage.id}`);
@@ -1795,6 +1870,7 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
         return;
       }
 
+      resetMessageHistoryNavigation();
       setInput("");
       setAttachments([]);
       setDraftReviews(null);
@@ -1807,7 +1883,13 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
     window.addEventListener(CUSTOM_EVENTS.CLEAR_CHAT_COMPOSER, handler as EventListener);
     return () =>
       window.removeEventListener(CUSTOM_EVENTS.CLEAR_CHAT_COMPOSER, handler as EventListener);
-  }, [onDetachAllReviewsForComposerClear, setAttachments, setInput, workspaceIdForComposerClear]);
+  }, [
+    onDetachAllReviewsForComposerClear,
+    resetMessageHistoryNavigation,
+    setAttachments,
+    setInput,
+    workspaceIdForComposerClear,
+  ]);
 
   // Allow external components to open the Model Selector
   useEffect(() => {
@@ -2626,6 +2708,11 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
       const preSendDraft = getDraft();
       const preSendReviews = draftReviews;
       const editMessageForSend = editingMessageForUi;
+      const preSendWorkspaceState = store.getWorkspaceState(props.workspaceId);
+      const preSendUserMessageCount = preSendWorkspaceState.messages.filter(
+        (message) => message.type === "user"
+      ).length;
+      const preSendQueuedMessageId = preSendWorkspaceState.queuedMessage?.id ?? null;
 
       try {
         // Prepare file parts if any
@@ -2735,6 +2822,7 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
         // Clear input, images, and hide reviews immediately for responsive UI
         // Text/images are restored if send fails; reviews remain "attached" in state
         // so they'll reappear naturally on failure (we only call onCheckReviews on success)
+        resetMessageHistoryNavigation();
         setInput("");
         setDraftReviews(null);
         setAttachments([]);
@@ -2797,6 +2885,22 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
           setDraft(preSendDraft);
           setDraftReviews(preSendReviews);
         } else {
+          const postSendWorkspaceState = store.getWorkspaceState(props.workspaceId);
+          const postSendUserMessageCount = postSendWorkspaceState.messages.filter(
+            (message) => message.type === "user"
+          ).length;
+          const hasNewTranscriptMessage = postSendUserMessageCount > preSendUserMessageCount;
+          const postSendQueuedMessageId = postSendWorkspaceState.queuedMessage?.id ?? null;
+          const hasNewQueuedMessage =
+            postSendQueuedMessageId != null && postSendQueuedMessageId !== preSendQueuedMessageId;
+
+          if (!editMessageForSend && !hasNewTranscriptMessage && !hasNewQueuedMessage) {
+            // If the backend accepted the send but no transcript/queue state appeared, put the
+            // user's exact draft back so the message is not lost behind a no-op send path.
+            setDraft(preSendDraft);
+            setDraftReviews(preSendReviews);
+          }
+
           // Track telemetry for successful message send
           telemetry.messageSent(
             props.workspaceId,
@@ -2940,21 +3044,6 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
       }
     }
 
-    // Handle up arrow on empty input - edit last user message (workspace only)
-    if (
-      variant === "workspace" &&
-      e.key === "ArrowUp" &&
-      !editingMessageForUi &&
-      input.trim() === "" &&
-      props.onEditLastUserMessage
-    ) {
-      e.preventDefault();
-      props.onEditLastUserMessage();
-      return;
-    }
-
-    // Note: ESC handled by VimTextArea (for mode transitions) and CommandSuggestions (for dismissal)
-
     const hasCommandSuggestionMenu = showCommandSuggestions && commandSuggestions.length > 0;
     const hasAtMentionSuggestionMenu = showAtMentionSuggestions && atMentionSuggestions.length > 0;
     const hasSkillSuggestionMenu = showSkillSuggestions && skillSuggestions.length > 0;
@@ -2970,6 +3059,37 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
     ) {
       return; // Let CommandSuggestions handle it
     }
+
+    if (
+      variant === "workspace" &&
+      !editingMessageForUi &&
+      (e.key === "ArrowUp" || e.key === "ArrowDown") &&
+      !e.altKey &&
+      !e.ctrlKey &&
+      !e.metaKey &&
+      !e.shiftKey
+    ) {
+      const navigated = navigateMessageHistory(e.key === "ArrowUp" ? "previous" : "next");
+      if (navigated) {
+        e.preventDefault();
+        return;
+      }
+    }
+
+    // Handle up arrow on empty input - edit last user message (workspace only)
+    if (
+      variant === "workspace" &&
+      e.key === "ArrowUp" &&
+      !editingMessageForUi &&
+      input.trim() === "" &&
+      props.onEditLastUserMessage
+    ) {
+      e.preventDefault();
+      props.onEditLastUserMessage();
+      return;
+    }
+
+    // Note: ESC handled by VimTextArea (for mode transitions) and CommandSuggestions (for dismissal)
 
     // Handle send message (Shift+Enter for newline is default behavior)
     if (matchesKeybind(e, KEYBINDS.SEND_MESSAGE_AFTER_TURN)) {

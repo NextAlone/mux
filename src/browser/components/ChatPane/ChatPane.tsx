@@ -40,6 +40,7 @@ import {
   mergeConsecutiveStreamErrors,
   computeBashOutputGroupInfos,
   shouldBypassDeferredMessages,
+  getEditableUserMessageText,
 } from "@/browser/utils/messages/messageUtils";
 import { computeTaskReportLinking } from "@/browser/utils/messages/taskReportLinking";
 import { BashCollapsedSummaryModeProvider } from "@/browser/features/Tools/BashCollapsedSummaryModeContext";
@@ -756,6 +757,16 @@ const ChatPaneContent: React.FC<ChatPaneContentProps> = (props) => {
 
     return navigationByHistoryId;
   }, [deferredMessages, handleNavigateToMessage]);
+
+  const messageHistory = useMemo(() => {
+    return deferredMessages
+      .filter(
+        (message): message is Extract<DisplayedMessage, { type: "user" }> =>
+          message.type === "user" && canEditDisplayedUserMessage(message)
+      )
+      .map(getEditableUserMessageText)
+      .filter((text) => text.trim().length > 0);
+  }, [deferredMessages]);
 
   // ChatInput API for focus management
   const chatInputAPI = useRef<ChatInputAPI | null>(null);
@@ -1614,6 +1625,7 @@ const ChatPaneContent: React.FC<ChatPaneContentProps> = (props) => {
                     revealDecorations={revealDecorations}
                     isStreamStarting={isStreamStarting}
                     isTranscriptCaughtUp={isTranscriptCaughtUp}
+                    messageHistory={messageHistory}
                     runtimeConfig={runtimeConfig}
                     isPreStreamAgentTask={isPreStreamAgentTask}
                     preStreamAgentTaskStatus={
@@ -1685,6 +1697,7 @@ interface ChatInputPaneProps {
   isCompacting: boolean;
   isStreamStarting: boolean;
   isTranscriptCaughtUp: boolean;
+  messageHistory: readonly string[];
   shouldShowPinnedTodoList: boolean;
   shouldShowReviewsBanner: boolean;
   concurrentLocalStreamingWorkspaceName: string | null;
@@ -1839,6 +1852,7 @@ const ChatInputPane: React.FC<ChatInputPaneProps> = (props) => {
         isTranscriptCaughtUp={props.isTranscriptCaughtUp}
         isStreamStarting={props.isStreamStarting}
         isCompacting={props.isCompacting}
+        messageHistory={props.messageHistory}
         editingMessage={props.editingMessage}
         onCancelEdit={props.onCancelEdit}
         onEditLastUserMessage={props.onEditLastUserMessage}
