@@ -12,15 +12,83 @@ import { cn } from "@/common/lib/utils";
 import { Toggle1MContext } from "../Toggle1MContext/Toggle1MContext";
 import { Tooltip, TooltipContent, TooltipTrigger } from "../Tooltip/Tooltip";
 
-/** Compact threshold tick mark for the button view */
-const CompactThresholdIndicator: React.FC<{ threshold: number }> = ({ threshold }) => {
-  if (threshold >= 100) return null;
+const CONTEXT_RING_SIZE = 20;
+const CONTEXT_RING_RADIUS = 8;
+const CONTEXT_RING_STROKE = 2.5;
+const CONTEXT_RING_CIRCUMFERENCE = 2 * Math.PI * CONTEXT_RING_RADIUS;
+
+const clampPercent = (value: number) => Math.max(0, Math.min(100, value));
+
+const ContextUsageRing: React.FC<{
+  data: TokenMeterData;
+  autoCompactionThreshold?: number;
+}> = ({ data, autoCompactionThreshold }) => {
+  let consumedPercent = 0;
+  const ringSegments = data.segments
+    .map((segment) => {
+      const percentage = Math.max(
+        0,
+        Math.min(clampPercent(segment.percentage), 100 - consumedPercent)
+      );
+      const start = consumedPercent;
+      consumedPercent += percentage;
+      return { ...segment, percentage, start };
+    })
+    .filter((segment) => segment.percentage > 0);
 
   return (
-    <div
-      className="bg-plan-mode pointer-events-none absolute top-0 z-50 h-full w-px"
-      style={{ left: `${threshold}%` }}
-    />
+    <svg
+      data-context-usage-meter
+      className="h-5 w-5 overflow-visible"
+      width={CONTEXT_RING_SIZE}
+      height={CONTEXT_RING_SIZE}
+      viewBox={`0 0 ${CONTEXT_RING_SIZE} ${CONTEXT_RING_SIZE}`}
+      aria-hidden="true"
+    >
+      <circle
+        cx={CONTEXT_RING_SIZE / 2}
+        cy={CONTEXT_RING_SIZE / 2}
+        r={CONTEXT_RING_RADIUS}
+        fill="none"
+        stroke="var(--color-border-medium)"
+        strokeWidth={CONTEXT_RING_STROKE}
+        opacity={0.55}
+      />
+      <g transform={`rotate(-90 ${CONTEXT_RING_SIZE / 2} ${CONTEXT_RING_SIZE / 2})`}>
+        {ringSegments.map((segment) => {
+          const dash = (segment.percentage / 100) * CONTEXT_RING_CIRCUMFERENCE;
+          const gap = CONTEXT_RING_CIRCUMFERENCE - dash;
+          const offset = -(segment.start / 100) * CONTEXT_RING_CIRCUMFERENCE;
+
+          return (
+            <circle
+              key={`${segment.type}-${segment.start}`}
+              cx={CONTEXT_RING_SIZE / 2}
+              cy={CONTEXT_RING_SIZE / 2}
+              r={CONTEXT_RING_RADIUS}
+              fill="none"
+              stroke={segment.color}
+              strokeWidth={CONTEXT_RING_STROKE}
+              strokeLinecap="round"
+              strokeDasharray={`${dash} ${gap}`}
+              strokeDashoffset={offset}
+            />
+          );
+        })}
+        {autoCompactionThreshold != null && autoCompactionThreshold < 100 && (
+          <line
+            x1={CONTEXT_RING_SIZE / 2}
+            y1={1}
+            x2={CONTEXT_RING_SIZE / 2}
+            y2={4}
+            stroke="var(--color-plan-mode)"
+            strokeWidth={1.5}
+            strokeLinecap="round"
+            transform={`rotate(${clampPercent(autoCompactionThreshold) * 3.6} ${CONTEXT_RING_SIZE / 2} ${CONTEXT_RING_SIZE / 2})`}
+          />
+        )}
+      </g>
+    </svg>
   );
 };
 
@@ -235,47 +303,22 @@ export const ContextUsageIndicatorButton: React.FC<ContextUsageIndicatorButtonPr
             <button
               aria-label={ariaLabel}
               aria-haspopup="dialog"
-              className="hover:bg-sidebar-hover flex cursor-pointer items-center rounded py-0.5"
+              className="text-muted hover:bg-hover hover:text-foreground hover:border-border-light relative flex h-7 w-7 cursor-pointer items-center justify-center rounded-sm border border-transparent transition-colors duration-150"
               type="button"
             >
-              {/* Idle compaction indicator */}
+              {/* The chat footer uses a low-chrome toolbar; a ring keeps context state visible without adding another wide pill. */}
+              <ContextUsageRing
+                data={data}
+                autoCompactionThreshold={
+                  isAutoCompactionEnabled ? autoCompaction.threshold : undefined
+                }
+              />
               {isIdleCompactionEnabled && (
-                <span
-                  title={`Auto-compact after ${idleHours}h idle`}
-                  className="mr-1.5 [@container(max-width:420px)]:hidden"
-                >
-                  <Hourglass className="text-muted h-3 w-3" />
+                <span className="bg-background border-border-light absolute -right-0.5 -bottom-0.5 flex h-3 w-3 items-center justify-center rounded-full border">
+                  <Hourglass className="text-muted h-2 w-2" />
                 </span>
               )}
-
-              {/* Full meter when there's room; fall back to a compact percentage label on narrow layouts. */}
-              {data.totalTokens > 0 ? (
-                <div
-                  data-context-usage-meter
-                  className="relative h-3 w-14 [@container(max-width:420px)]:hidden"
-                >
-                  <TokenMeter
-                    segments={data.segments}
-                    orientation="horizontal"
-                    className="border-border-medium h-3 border"
-                    trackClassName="bg-dark"
-                  />
-                  {isAutoCompactionEnabled && (
-                    <CompactThresholdIndicator threshold={autoCompaction.threshold} />
-                  )}
-                </div>
-              ) : (
-                /* Empty meter placeholder - allows access to settings with no usage */
-                <div
-                  data-context-usage-meter
-                  className="border-border-medium bg-dark relative h-3 w-14 rounded-full border [@container(max-width:420px)]:hidden"
-                />
-              )}
-
-              <span
-                data-context-usage-percent
-                className="text-muted hidden text-[10px] font-medium tabular-nums [@container(max-width:420px)]:block"
-              >
+              <span data-context-usage-percent className="sr-only">
                 {compactLabel}
               </span>
             </button>

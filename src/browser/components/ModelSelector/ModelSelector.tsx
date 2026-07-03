@@ -46,7 +46,7 @@ interface ModelSelectorProps {
   onHideModel?: (model: string) => void;
   onUnhideModel?: (model: string) => void;
   onOpenSettings?: () => void;
-  variant?: "default" | "box";
+  variant?: "default" | "box" | "toolbar";
   className?: string;
   tooltipExtraContent?: React.ReactNode;
 }
@@ -268,10 +268,16 @@ export const ModelSelector = forwardRef<ModelSelectorRef, ModelSelectorProps>(
     }, [highlightedIndex]);
 
     const isBoxVariant = variant === "box";
+    const isToolbarVariant = variant === "toolbar";
     const containerClassName = cn("relative flex items-center gap-1", isBoxVariant && "w-full");
     const triggerClassName = isBoxVariant
       ? cn("border-border-medium h-9 flex-1 min-w-0 rounded border", className)
-      : cn("bg-background rounded-sm text-[11px]", className ?? "w-32");
+      : isToolbarVariant
+        ? cn(
+            "h-7 rounded-sm border border-transparent bg-transparent px-1.5 py-0 text-[11px] font-medium text-foreground hover:border-border-light hover:bg-hover",
+            className ?? "w-32"
+          )
+        : cn("bg-background rounded-sm text-[11px]", className ?? "w-32");
 
     const hasValue = value.trim().length > 0;
     const explicitGateway = hasValue ? getExplicitGatewayPrefix(value) : undefined;
@@ -300,7 +306,7 @@ export const ModelSelector = forwardRef<ModelSelectorRef, ModelSelectorProps>(
               type="button"
               className={cn(
                 triggerClassName,
-                "text-foreground hover:bg-hover flex cursor-pointer items-center justify-between gap-1 px-1.5 py-0.5 transition-colors duration-300"
+                "flex cursor-pointer items-center justify-between gap-1 transition-colors duration-150"
               )}
               role="combobox"
               aria-expanded={isOpen}

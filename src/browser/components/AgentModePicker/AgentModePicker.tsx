@@ -21,6 +21,7 @@ import { stopKeyboardPropagation } from "@/browser/utils/events";
 
 interface AgentModePickerProps {
   className?: string;
+  variant?: "default" | "toolbar";
 
   /** Called when the picker closes (best-effort). Useful for restoring focus. */
   onComplete?: () => void;
@@ -297,8 +298,16 @@ export const AgentModePicker: React.FC<AgentModePickerProps> = (props) => {
   const activeStyle: React.CSSProperties | undefined = activeOption?.uiColor
     ? { borderColor: activeOption.uiColor }
     : undefined;
-  const activeClassName = activeOption?.uiColor ? "" : "border-exec-mode";
+  const activeClassName = activeOption?.uiColor
+    ? ""
+    : props.variant === "toolbar"
+      ? "border-exec-mode hover:border-exec-mode"
+      : "border-exec-mode";
   const TriggerIcon = getAgentIcon(normalizedAgentId);
+  const triggerClassName =
+    props.variant === "toolbar"
+      ? "text-foreground hover:bg-hover flex h-7 items-center gap-1.5 rounded-sm border-[0.5px] bg-transparent px-1.5 py-0 text-[11px] font-medium transition-colors duration-150"
+      : "text-foreground hover:bg-hover flex items-center gap-1.5 rounded-sm border-[0.5px] px-1.5 py-0.5 text-[11px] font-medium transition-[background-color] duration-150";
 
   return (
     <div ref={containerRef} className={cn("relative flex items-center gap-1.5", props.className)}>
@@ -320,10 +329,7 @@ export const AgentModePicker: React.FC<AgentModePickerProps> = (props) => {
               }
             }}
             style={activeStyle}
-            className={cn(
-              "text-foreground hover:bg-hover flex items-center gap-1.5 rounded-sm border-[0.5px] px-1.5 py-0.5 text-[11px] font-medium transition-[background-color] duration-150",
-              activeClassName
-            )}
+            className={cn(triggerClassName, activeClassName)}
           >
             <TriggerIcon
               className="h-3 w-3 shrink-0"

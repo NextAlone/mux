@@ -278,8 +278,8 @@ const OpenAIFastModeToggle: React.FC<OpenAIFastModeToggleProps> = (props) => {
   const checked = isOpenAIFastServiceTier(props.serviceTier);
 
   return (
-    <div className="border-border-light bg-background-secondary/50 flex h-6 shrink-0 items-center gap-1 rounded-sm border px-1.5">
-      <span className="text-muted text-[11px] leading-none font-medium">Fast</span>
+    <div className="text-muted hover:bg-hover hover:text-foreground hover:border-border-light flex h-7 shrink-0 items-center gap-1 rounded-sm border border-transparent bg-transparent px-1.5 transition-colors duration-150">
+      <span className="text-[11px] leading-none font-medium">Fast</span>
       <Switch
         checked={checked}
         onCheckedChange={props.onCheckedChange}
@@ -3456,7 +3456,7 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
               </div>
             )}
 
-            <div className="@container flex min-w-[340px] flex-nowrap items-center gap-1.5">
+            <div className="@container flex min-w-0 flex-nowrap items-center gap-1.5 sm:min-w-[340px]">
               <div className="flex min-w-0 flex-1 items-center gap-1.5">
                 <div
                   className="flex min-w-0 items-center gap-1.5"
@@ -3473,6 +3473,7 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
                     onSetDefaultModel={setDefaultModel}
                     hiddenModels={hiddenModelsForSelector}
                     onOpenSettings={() => open("models")}
+                    variant="toolbar"
                     className="w-[clamp(5.5rem,28vw,8rem)] min-w-0"
                     tooltipExtraContent={
                       <>
@@ -3530,6 +3531,7 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
 
                 <div className="min-w-0 [@container(max-width:340px)]:hidden">
                   <AgentModePicker
+                    variant="toolbar"
                     className="min-w-0"
                     onComplete={() => inputRef.current?.focus()}
                   />
@@ -3541,7 +3543,10 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
                   inside the row's gap-1.5 cadence. They live below the textarea (not as an
                   absolute overlay) so they can never visually intersect typed/wrapped text.
                 */}
-                <div className="flex shrink-0 items-center gap-0" data-component="InputMethodGroup">
+                <div
+                  className="flex shrink-0 items-center gap-0.5"
+                  data-component="InputMethodGroup"
+                >
                   <AttachFileButton
                     onFiles={handleAttachFiles}
                     disabled={disabled || sendInFlightBlocksInput || !!editingMessageForUi}
@@ -3557,12 +3562,7 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
                   />
                 </div>
 
-                {/*
-                  Pull the Send button flush against the input-method icons (override the
-                  parent's gap-1.5 with a negative margin) so they form a single trailing
-                  cluster.
-                */}
-                <div ref={sendModeMenuContainerRef} className="relative -ml-1.5">
+                <div ref={sendModeMenuContainerRef} className="relative">
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <Button
@@ -3586,7 +3586,7 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
                         size="xs"
                         variant="ghost"
                         className={cn(
-                          "text-muted hover:text-foreground hover:bg-hover inline-flex items-center justify-center rounded-sm px-1.5 py-0.5 font-medium transition-colors duration-200 disabled:opacity-50",
+                          "text-muted hover:text-foreground hover:bg-hover inline-flex h-7 w-7 items-center justify-center rounded-sm border border-transparent px-0 py-0 font-medium transition-colors duration-150 hover:border-border-light disabled:opacity-50",
                           // Touch: wider tap target, keep icon centered.
                           "[@media(hover:none)_and_(pointer:coarse)]:h-9 [@media(hover:none)_and_(pointer:coarse)]:w-11 [@media(hover:none)_and_(pointer:coarse)]:px-0 [@media(hover:none)_and_(pointer:coarse)]:py-0 [@media(hover:none)_and_(pointer:coarse)]:text-sm"
                         )}

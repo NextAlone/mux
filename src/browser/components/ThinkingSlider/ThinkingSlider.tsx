@@ -88,7 +88,7 @@ export const ThinkingSliderComponent: React.FC<ThinkingControlProps> = ({ modelS
     return (
       <Tooltip>
         <TooltipTrigger asChild>
-          <div className="flex items-center">
+          <div className="flex h-7 items-center rounded-sm border border-transparent px-1">
             <span
               className="w-[5ch] text-center text-[11px] select-none"
               style={getTextStyle(value)}
@@ -106,14 +106,14 @@ export const ThinkingSliderComponent: React.FC<ThinkingControlProps> = ({ modelS
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <div className="flex items-center">
+        <div className="hover:bg-hover hover:border-border-light flex h-7 items-center rounded-sm border border-transparent px-0.5 transition-colors duration-150">
           <button
             type="button"
             onClick={goLeft}
             disabled={!canGoLeft}
             data-thinking-paddle="left"
             className={cn(
-              "flex h-4 w-4 items-center justify-center rounded-sm transition-colors",
+              "flex h-5 w-5 items-center justify-center rounded-sm transition-colors",
               canGoLeft
                 ? "text-muted hover:bg-hover hover:text-foreground cursor-pointer"
                 : "text-muted/30 cursor-default"
@@ -143,7 +143,7 @@ export const ThinkingSliderComponent: React.FC<ThinkingControlProps> = ({ modelS
             disabled={!canGoRight}
             data-thinking-paddle="right"
             className={cn(
-              "flex h-4 w-4 items-center justify-center rounded-sm transition-colors",
+              "flex h-5 w-5 items-center justify-center rounded-sm transition-colors",
               canGoRight
                 ? "text-muted hover:bg-hover hover:text-foreground cursor-pointer"
                 : "text-muted/30 cursor-default"

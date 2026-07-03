@@ -44,7 +44,7 @@ export const AttachFileButton: React.FC<AttachFileButtonProps> = (props) => {
             disabled={props.disabled ?? false}
             aria-label="Attach file"
             className={cn(
-              "inline-flex items-center justify-center rounded p-0.5 transition-colors duration-150",
+              "inline-flex h-7 w-7 items-center justify-center rounded-sm border border-transparent p-0 transition-colors duration-150 hover:border-border-light hover:bg-hover",
               "disabled:cursor-not-allowed disabled:opacity-40",
               "text-muted/50 hover:text-muted"
             )}
