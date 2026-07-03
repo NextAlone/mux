@@ -535,6 +535,19 @@ If a value is too large for the environment, it may be omitted (not set). Mux al
 </details>
 
 <details>
+<summary>image_generate (5)</summary>
+
+| Env var                               | JSON path              | Type   | Description                                                                |
+| ------------------------------------- | ---------------------- | ------ | -------------------------------------------------------------------------- |
+| `MUX_TOOL_INPUT_BACKGROUND`           | `background`           | enum   | Optional background mode. gpt-image-2 does not support transparent output. |
+| `MUX_TOOL_INPUT_PROMPT`               | `prompt`               | string | The image generation or editing prompt.                                    |
+| `MUX_TOOL_INPUT_QUALITY`              | `quality`              | enum   | Optional rendering quality. Use high for final assets and low for drafts.  |
+| `MUX_TOOL_INPUT_REFERENCE_IMAGE_PATH` | `reference_image_path` | string | Optional local image path to use as editing/reference input.               |
+| `MUX_TOOL_INPUT_SIZE`                 | `size`                 | enum   | Optional output size. Use auto unless the user asks for an orientation.    |
+
+</details>
+
+<details>
 <summary>memory (11)</summary>
 
 | Env var                      | JSON path     | Type   | Description                                                                                     |

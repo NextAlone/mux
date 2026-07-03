@@ -626,6 +626,12 @@ describe("TOOL_DEFINITIONS", () => {
     expect(tools).toContain("heartbeat");
   });
 
+  it("includes the image generation tool", () => {
+    const tools = getAvailableTools("openai:gpt-4o");
+
+    expect(tools).toContain("image_generate");
+  });
+
   it("only includes Review pane tools when enableReviewPane is not disabled", () => {
     const defaultTools = getAvailableTools("openai:gpt-4o");
     expect(defaultTools).toContain("review_pane_update");

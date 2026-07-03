@@ -4,6 +4,7 @@ import type { BackgroundWorkAttentionPolicy } from "@/common/types/backgroundWor
 import { cloneToolPreservingDescriptors } from "@/common/utils/tools/cloneToolPreservingDescriptors";
 import { createFileReadTool } from "@/node/services/tools/file_read";
 import { createAttachFileTool } from "@/node/services/tools/attach_file";
+import { createImageGenerateTool } from "@/node/services/tools/image_generate";
 import { createBashTool } from "@/node/services/tools/bash";
 import { createBashOutputTool } from "@/node/services/tools/bash_output";
 import { createBashBackgroundListTool } from "@/node/services/tools/bash_background_list";
@@ -66,6 +67,7 @@ import type { BackgroundProcessManager } from "@/node/services/backgroundProcess
 import type { DesktopSessionManager } from "@/node/services/desktop/DesktopSessionManager";
 import type { TaskService } from "@/node/services/taskService";
 import type { MemoryIndexEntry, MemoryService } from "@/node/services/memoryService";
+import type { CodexImageGenerator } from "@/node/services/codexImageGenerationService";
 import type { MemoryScopeAccess } from "@/common/constants/memory";
 import { createMemoryTool } from "@/node/services/tools/memory";
 import type { WorkspaceGoalService } from "@/node/services/workspaceGoalService";
@@ -175,6 +177,8 @@ export interface ToolConfiguration {
   agentSkillsRoots?: ToolAgentSkillsRoots;
   /** Memory service for the memory tool (present only when the memory experiment is enabled). */
   memoryService?: MemoryService;
+  /** Codex OAuth-backed image generation service. */
+  codexImageGenerationService?: CodexImageGenerator;
   /** Per-scope memory write policy for the current agent (defaults to read-only). */
   memoryAccess?: MemoryScopeAccess;
   /** Callback to record file state for external edit detection (plan files) */
@@ -533,6 +537,7 @@ export async function getToolsForModel(
   const runtimeTools: Record<string, Tool> = {
     file_read: wrap(createFileReadTool(config)),
     attach_file: wrap(createAttachFileTool(config)),
+    image_generate: wrap(createImageGenerateTool(config)),
     agent_skill_read: wrap(createAgentSkillReadTool(config)),
     agent_skill_read_file: wrap(createAgentSkillReadFileTool(config)),
     file_edit_replace_string: wrap(createFileEditReplaceStringTool(config)),

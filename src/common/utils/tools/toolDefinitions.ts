@@ -1648,6 +1648,33 @@ export const TOOL_DEFINITIONS = {
         .strict()
     ),
   },
+  image_generate: {
+    description:
+      "Generate or edit an image through Codex OAuth image generation. " +
+      "Use for user requests to create, draw, render, or edit bitmap images. " +
+      "Returns the generated image as a visible chat media result and saves a copy under Mux generated images.",
+    schema: z
+      .object({
+        prompt: z.string().min(1).describe("The image generation or editing prompt."),
+        size: z
+          .enum(["auto", "1024x1024", "1536x1024", "1024x1536"])
+          .nullish()
+          .describe("Optional output size. Use auto unless the user asks for an orientation."),
+        quality: z
+          .enum(["auto", "low", "medium", "high"])
+          .nullish()
+          .describe("Optional rendering quality. Use high for final assets and low for drafts."),
+        background: z
+          .enum(["auto", "opaque"])
+          .nullish()
+          .describe("Optional background mode. gpt-image-2 does not support transparent output."),
+        reference_image_path: z
+          .string()
+          .nullish()
+          .describe("Optional local image path to use as editing/reference input."),
+      })
+      .strict(),
+  },
   desktop_screenshot: {
     description:
       "Capture a screenshot of the desktop. " +
@@ -3020,6 +3047,7 @@ export function getAvailableTools(
     "file_edit_replace_string",
     // "file_edit_replace_lines", // DISABLED: causes models to break repo state
     "file_edit_insert",
+    "image_generate",
     ...(enableMemory ? ["memory"] : []),
     ...(enableAdvisor ? ["advisor"] : []),
     "ask_user_question",

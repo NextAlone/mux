@@ -90,6 +90,24 @@ describe("supportsAnthropicNativeWebFetch", () => {
 });
 
 describe("getToolsForModel", () => {
+  test("includes the image generation tool in the executable toolset", async () => {
+    const runtime = new LocalRuntime(process.cwd());
+    const initStateManager = createInitStateManager();
+
+    const tools = await getToolsForModel(
+      "openai:gpt-5.5",
+      {
+        cwd: process.cwd(),
+        runtime,
+        runtimeTempDir: "/tmp",
+      },
+      "ws-1",
+      initStateManager
+    );
+
+    expect(tools.image_generate).toBeDefined();
+  });
+
   test("only includes agent_report when enableAgentReport=true", async () => {
     const runtime = new LocalRuntime(process.cwd());
     const initStateManager = createInitStateManager();
