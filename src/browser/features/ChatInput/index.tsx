@@ -250,6 +250,12 @@ interface InternalSendOverrides extends SendOverrides {
   skipBoundaryEditConfirmation?: boolean;
 }
 
+function isInputMethodCompositionEvent(event: React.KeyboardEvent): boolean {
+  const nativeEvent = event.nativeEvent;
+  // IME candidate confirmation can surface as Enter; let the input method own it.
+  return nativeEvent.isComposing || nativeEvent.keyCode === 229 || nativeEvent.which === 229;
+}
+
 const ChatInputInner: React.FC<ChatInputProps> = (props) => {
   const { api } = useAPI();
   const policyState = usePolicy();
@@ -2878,6 +2884,10 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (isInputMethodCompositionEvent(e)) {
+      return;
+    }
+
     // Handle voice input toggle (Ctrl+D / Cmd+D)
     if (matchesKeybind(e, KEYBINDS.TOGGLE_VOICE_INPUT) && voiceInput.shouldShowUI) {
       e.preventDefault();

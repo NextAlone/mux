@@ -12,6 +12,7 @@ import {
   trustProject,
 } from "../../ipc/helpers";
 import { detectDefaultTrunkBranch } from "@/node/git";
+import { initJjGitRepository } from "@/node/vcs/jj";
 import type { RuntimeConfig } from "@/common/types/runtime";
 import type { FrontendWorkspaceMetadata } from "@/common/types/workspace";
 
@@ -53,6 +54,7 @@ export async function createAppHarness(options?: {
   beforeRender?: () => void;
 }): Promise<AppHarness> {
   const repoPath = await createTempGitRepo();
+  await initJjGitRepository(repoPath);
   const env = await createTestEnvironment();
 
   if (options?.aiMode !== "none") {
