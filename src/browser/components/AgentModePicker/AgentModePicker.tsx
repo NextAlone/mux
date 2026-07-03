@@ -295,19 +295,31 @@ export const AgentModePicker: React.FC<AgentModePickerProps> = (props) => {
 
   // Resolve display properties for the trigger pill
   const activeDisplayName = activeOption?.name ?? formatAgentIdLabel(normalizedAgentId);
+  const isToolbarVariant = props.variant === "toolbar";
   const activeStyle: React.CSSProperties | undefined = activeOption?.uiColor
-    ? { borderColor: activeOption.uiColor }
+    ? isToolbarVariant
+      ? { color: activeOption.uiColor }
+      : { borderColor: activeOption.uiColor }
     : undefined;
   const activeClassName = activeOption?.uiColor
-    ? ""
-    : props.variant === "toolbar"
-      ? "border-exec-mode hover:border-exec-mode"
+    ? isToolbarVariant
+      ? "border-transparent hover:border-border-light"
+      : ""
+    : isToolbarVariant
+      ? "border-transparent hover:border-border-light"
       : "border-exec-mode";
+  const toolbarToneClass =
+    isToolbarVariant && !activeOption?.uiColor
+      ? normalizedAgentId === "plan"
+        ? "text-plan-mode"
+        : normalizedAgentId === "exec"
+          ? "text-exec-mode"
+          : ""
+      : "";
   const TriggerIcon = getAgentIcon(normalizedAgentId);
-  const triggerClassName =
-    props.variant === "toolbar"
-      ? "text-foreground hover:bg-hover flex h-7 items-center gap-1.5 rounded-sm border-[0.5px] bg-transparent px-1.5 py-0 text-[11px] font-medium transition-colors duration-150"
-      : "text-foreground hover:bg-hover flex items-center gap-1.5 rounded-sm border-[0.5px] px-1.5 py-0.5 text-[11px] font-medium transition-[background-color] duration-150";
+  const triggerClassName = isToolbarVariant
+    ? "text-foreground hover:bg-hover flex h-7 items-center gap-1.5 rounded-sm border-[0.5px] bg-transparent px-1.5 py-0 text-[11px] font-medium transition-colors duration-150"
+    : "text-foreground hover:bg-hover flex items-center gap-1.5 rounded-sm border-[0.5px] px-1.5 py-0.5 text-[11px] font-medium transition-[background-color] duration-150";
 
   return (
     <div ref={containerRef} className={cn("relative flex items-center gap-1.5", props.className)}>
@@ -332,10 +344,12 @@ export const AgentModePicker: React.FC<AgentModePickerProps> = (props) => {
             className={cn(triggerClassName, activeClassName)}
           >
             <TriggerIcon
-              className="h-3 w-3 shrink-0"
+              className={cn("h-3 w-3 shrink-0", toolbarToneClass)}
               style={activeOption?.uiColor ? { color: activeOption.uiColor } : undefined}
             />
-            <span className="max-w-[clamp(4.5rem,30vw,130px)] truncate">{activeDisplayName}</span>
+            <span className={cn("max-w-[clamp(4.5rem,30vw,130px)] truncate", toolbarToneClass)}>
+              {activeDisplayName}
+            </span>
             {!isAgentLocked && (
               <ChevronDown
                 className={cn(
