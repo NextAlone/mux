@@ -564,6 +564,7 @@ export function CreationControls(props: CreationControlsProps) {
       : props.branches;
   const isBookmarkSelectorDisabled =
     Boolean(props.disabled) || isNonGitRepo || bookmarkOptions.length === 0;
+  const usesCurrentCheckout = selectedRuntime.mode === RUNTIME_MODE.LOCAL;
 
   // Keep selected runtime aligned with availability + Settings enablement constraints.
   // All constraint checks (non-repo, devcontainer missing, enablement, policy) are unified
@@ -958,39 +959,41 @@ export function CreationControls(props: CreationControlsProps) {
               />
             </div>
 
-            <div
-              className="flex min-w-0 flex-1 flex-col gap-1.5 md:flex-initial"
-              data-component="BookmarkSelector"
-              data-tutorial="source-bookmark"
-            >
-              <label className="text-muted-foreground flex items-center gap-1 text-xs font-medium">
-                <Bookmark className="h-3.5 w-3.5" />
-                Source Bookmark
-              </label>
-              {props.branchesLoaded ? (
-                <RadixSelect
-                  value={props.trunkBranch}
-                  onValueChange={props.onTrunkBranchChange}
-                  disabled={isBookmarkSelectorDisabled}
-                >
-                  <SelectTrigger
-                    className={cn(INLINE_CONTROL_CLASSES, "w-full md:w-[140px]")}
-                    aria-label="Select source bookmark"
+            {!usesCurrentCheckout && (
+              <div
+                className="flex min-w-0 flex-1 flex-col gap-1.5 md:flex-initial"
+                data-component="BookmarkSelector"
+                data-tutorial="source-bookmark"
+              >
+                <label className="text-muted-foreground flex items-center gap-1 text-xs font-medium">
+                  <Bookmark className="h-3.5 w-3.5" />
+                  Source Bookmark
+                </label>
+                {props.branchesLoaded ? (
+                  <RadixSelect
+                    value={props.trunkBranch}
+                    onValueChange={props.onTrunkBranchChange}
+                    disabled={isBookmarkSelectorDisabled}
                   >
-                    <SelectValue placeholder="Select source bookmark" />
-                  </SelectTrigger>
-                  <SelectContent className="border-border-medium">
-                    {bookmarkOptions.map((bookmark) => (
-                      <SelectItem key={bookmark} value={bookmark}>
-                        {bookmark}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </RadixSelect>
-              ) : (
-                <Skeleton className="h-7 w-full rounded md:w-[140px]" />
-              )}
-            </div>
+                    <SelectTrigger
+                      className={cn(INLINE_CONTROL_CLASSES, "w-full md:w-[140px]")}
+                      aria-label="Select source bookmark"
+                    >
+                      <SelectValue placeholder="Select source bookmark" />
+                    </SelectTrigger>
+                    <SelectContent className="border-border-medium">
+                      {bookmarkOptions.map((bookmark) => (
+                        <SelectItem key={bookmark} value={bookmark}>
+                          {bookmark}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </RadixSelect>
+                ) : (
+                  <Skeleton className="h-7 w-full rounded md:w-[140px]" />
+                )}
+              </div>
+            )}
           </div>
           {/* end mobile row wrapper */}
 
