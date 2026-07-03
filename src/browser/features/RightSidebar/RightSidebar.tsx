@@ -1415,7 +1415,7 @@ const RightSidebarComponent: React.FC<RightSidebarProps> = ({
   // This ensures the tabType (and React key) never changes, preventing remounts.
   //
   // The promise is given a `.catch` so backend rejections (e.g., transcript-only workspaces
-  // with no projectPath, archived worktrees, or disconnected SSH/Devcontainer runtimes)
+  // with no projectPath, archived checkouts, or disconnected SSH/Devcontainer runtimes)
   // surface to the user via PopoverError instead of becoming an unhandled promise rejection
   // that leaves the sidebar half-expanded and looks like an app crash. The wrapper stays
   // non-async (`() => void`) so the existing `addTerminalRef` / `onAddTerminal` callsites

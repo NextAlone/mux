@@ -319,9 +319,9 @@ export class MuxAgent implements Agent {
       );
       const workspaceScope = await this.ensureAcpProjectTrusted(requestedProjectPath);
 
-      // When the ACP client doesn't supply a trunk branch (typical — editors only
-      // send `cwd`, not mux-specific `_meta`), derive it from the project's git
-      // repo.  Worktree/SSH runtimes require a trunk branch for workspace creation.
+      // When the ACP client doesn't supply a source bookmark (typical — editors only
+      // send `cwd`, not mux-specific `_meta`), derive it from the project's repository.
+      // JJ Workspace/SSH runtimes require a source bookmark for workspace creation.
       let trunkBranch = meta.trunkBranch;
       if (trunkBranch == null || trunkBranch.trim().length === 0) {
         const branchInfo = await this.server.client.projects.listBranches({

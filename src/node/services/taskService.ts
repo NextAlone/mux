@@ -2421,10 +2421,10 @@ export class TaskService {
         attentionPolicy: args.attentionPolicy,
         status,
         ...(sharedWorkspacePath != null ? { sharedWorkspacePath } : {}),
-        // Real branch checked out in the parent's checkout: persisted as taskTrunkBranch and used
-        // by orchestrateFork's create-fallback when the fork cannot detect a source branch
-        // (a shared parent's synthetic name never names a real branch). Gated to shared parents
-        // to keep the existing branch-discovery fallback otherwise.
+        // Real bookmark checked out in the parent's checkout: persisted as taskTrunkBranch and used
+        // by orchestrateFork's create-fallback when the fork cannot detect a source bookmark
+        // (a shared parent's synthetic name never names a real bookmark). Gated to shared parents
+        // to keep the existing bookmark-discovery fallback otherwise.
         ...(parentIsSharedTask && parentBranchName != null
           ? { preferredTrunkBranch: parentBranchName }
           : {}),
@@ -3563,9 +3563,9 @@ export class TaskService {
         sourceRuntimeConfig: parentRuntimeConfig,
         parentMetadata: parentMeta,
         allowCreateFallback: true,
-        // Create-fallback base when the fork cannot detect a source branch — a shared parent's
-        // synthetic name never names a real branch, so supply the actual checked-out branch.
-        // Gated to shared parents to keep the existing branch-discovery fallback otherwise.
+        // Create-fallback base when the fork cannot detect a source bookmark — a shared parent's
+        // synthetic name never names a real bookmark, so supply the actual checked-out bookmark.
+        // Gated to shared parents to keep the existing bookmark-discovery fallback otherwise.
         ...(parentIsSharedTask && parentBranchName != null
           ? { preferredTrunkBranch: parentBranchName }
           : {}),

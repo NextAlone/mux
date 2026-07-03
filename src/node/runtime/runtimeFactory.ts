@@ -118,7 +118,7 @@ export interface CreateRuntimeOptions {
  * Handles runtime types:
  * - "local" without srcBaseDir: Project-dir runtime (no isolation) - requires projectPath in options
  * - "local" with srcBaseDir: Legacy worktree config (backward compat)
- * - "worktree": Explicit worktree runtime
+ * - "worktree": Explicit JJ Workspace runtime
  * - "ssh": Remote SSH runtime
  * - "docker": Docker container runtime
  */

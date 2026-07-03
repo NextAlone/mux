@@ -88,7 +88,7 @@ export interface GitBundleSyncParams {
 
   /** Step label for cloning (runtime-specific: remote vs container) */
   cloneStep: string;
-  /** Whether the project is trusted — when false, git hooks are disabled */
+  /** Whether the project is trusted — when false, repository hooks are disabled */
   trusted?: boolean;
 }
 

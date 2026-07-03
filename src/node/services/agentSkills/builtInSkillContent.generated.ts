@@ -1205,7 +1205,7 @@ export const BUILTIN_SKILL_FILES: Record<string, Record<string, string>> = {
       "",
       "1. IPC methods return backend types (`WorkspaceMetadata`, etc.), not ad-hoc objects.",
       "2. Frontend may extend backend types with UI context (projectPath, branch, etc.).",
-      "3. Frontend constructs UI shapes from backend responses plus existing context (e.g., recommended trunk branch).",
+      "3. Frontend constructs UI shapes from backend responses plus existing context (e.g., recommended source bookmark).",
       "4. Never duplicate type definitions around the boundary—import shared types instead.",
       "",
       "**Why:** single source of truth, clean separation, automatic propagation of backend changes, and no duplicate schemas.",

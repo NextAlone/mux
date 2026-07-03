@@ -158,7 +158,7 @@ export function getTooltipContent(prLink: GitHubPRLinkWithStatus): string {
     if (mergeable === "CONFLICTING" || mergeStateStatus === "DIRTY") {
       lines.push("Has merge conflicts");
     } else if (mergeStateStatus === "BEHIND") {
-      lines.push("Behind base branch");
+      lines.push("Behind base");
     } else if (mergeStateStatus === "CLEAN") {
       lines.push("Ready to merge");
     } else if (hasFailedChecks) {

@@ -37,7 +37,7 @@ const SERVER_COMMAND_DEFINITIONS: readonly ServerCommandDefinition[] = [
   {
     name: NEW_COMMAND_NAME,
     description:
-      "Create a new workspace in the current project from its trunk branch. Optionally include a start message.",
+      "Create a new workspace in the current project from its source bookmark. Optionally include a start message.",
     inputHint: SLASH_COMMAND_HINTS.new,
   },
 ] as const;

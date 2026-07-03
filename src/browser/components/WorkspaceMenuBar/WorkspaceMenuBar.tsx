@@ -100,7 +100,7 @@ export const WorkspaceMenuBar: React.FC<WorkspaceMenuBarProps> = ({
   const runtimeStatus = useRuntimeStatus(workspaceId);
   const workspaceEntry = workspaceMetadata.get(workspaceId);
   const showMultiProjectStatus = workspaceEntry != null && isMultiProject(workspaceEntry);
-  // The workspace's metadata.projectName is the parent project (since worktrees
+  // The workspace's metadata.projectName is the parent project (since managed checkouts
   // are owned by the top-most parent). When the workspace is scoped to a
   // sub-project we surface the hierarchy as "parent / child" so the menu bar
   // alone reveals the sub-project context.
