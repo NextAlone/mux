@@ -169,7 +169,7 @@ export interface WorkspaceCreationParams {
   projectPath: string;
   /** Branch name to checkout in workspace */
   branchName: string;
-  /** Trunk branch to base new branches on */
+  /** Source bookmark to base new work on */
   trunkBranch: string;
   /** Directory name to use for workspace (typically branch name) */
   directoryName: string;
@@ -188,7 +188,7 @@ export interface WorkspaceCreationParams {
   abortSignal?: AbortSignal;
   /** Optional environment variables for checkout-time auth or transport settings */
   env?: Record<string, string>;
-  /** Whether the project is trusted — when false, git hooks are disabled */
+  /** Whether the project is trusted — when false, repository hooks are disabled */
   trusted?: boolean;
 }
 
@@ -210,7 +210,7 @@ export interface WorkspaceInitParams {
   projectPath: string;
   /** Branch name to checkout in workspace */
   branchName: string;
-  /** Trunk branch to base new branches on */
+  /** Source bookmark to base new work on */
   trunkBranch: string;
   /** Absolute path to workspace (from createWorkspace result) */
   workspacePath: string;
@@ -227,7 +227,7 @@ export interface WorkspaceInitParams {
    * NOTE: This skips only hook execution, not runtime provisioning.
    */
   skipInitHook?: boolean;
-  /** Whether the project is trusted — when false, git hooks are disabled */
+  /** Whether the project is trusted — when false, repository hooks are disabled */
   trusted?: boolean;
 }
 
@@ -255,7 +255,7 @@ export interface WorkspaceForkParams {
   abortSignal?: AbortSignal;
   /** Optional environment variables for checkout-time auth or transport settings */
   env?: Record<string, string>;
-  /** Whether the project is trusted — when false, git hooks are disabled */
+  /** Whether the project is trusted — when false, repository hooks are disabled */
   trusted?: boolean;
 }
 
@@ -594,12 +594,12 @@ export interface Runtime {
 
   /**
    * Fork an existing workspace to create a new one.
-   * Creates a new workspace branching from the source workspace's current branch.
+   * Creates a new workspace from the source workspace's current bookmark.
    * Capability and error behavior are runtime-defined; shared orchestration
    * (see forkOrchestrator.ts) handles policy differences between user and task forks.
    *
    * @param params Fork parameters (source workspace name, new workspace name, etc.)
-   * @returns Result with new workspace path and source branch, or error
+   * @returns Result with new workspace path and source bookmark, or error
    */
   forkWorkspace(params: WorkspaceForkParams): Promise<WorkspaceForkResult>;
 

@@ -3084,7 +3084,7 @@ export class WorkspaceService extends EventEmitter {
     // Auto-generate a branch name when the caller omits one (used by /new to
     // mirror /fork's seamless creation flow). Mirrors fork's auto-naming: scan
     // existing workspace names AND local git branches so numbering is stable.
-    // Branches/worktrees are owned by the parent project, so always read from
+    // Bookmarks/managed checkouts are owned by the parent project, so always read from
     // owningProjectPath even when a sub-project initiated creation.
     let resolvedBranchName: string;
     if (branchName == null) {
@@ -3121,7 +3121,7 @@ export class WorkspaceService extends EventEmitter {
     const workspaceId = this.config.generateStableId();
 
     // Create runtime for workspace creation
-    // Default to worktree runtime for backward compatibility
+    // Default to JJ Workspace runtime for backward compatibility.
     let finalRuntimeConfig: RuntimeConfig = runtimeConfig ?? {
       type: "worktree",
       srcBaseDir: this.config.srcDir,
@@ -3133,11 +3133,11 @@ export class WorkspaceService extends EventEmitter {
       }
     }
 
-    // Local runtime doesn't need a trunk branch; worktree/SSH runtimes require it
+    // Local runtime doesn't need a source bookmark; JJ Workspace/SSH runtimes require it.
     const isLocalRuntime = finalRuntimeConfig.type === "local";
     const normalizedTrunkBranch = trunkBranch?.trim() ?? "";
     if (!isLocalRuntime && normalizedTrunkBranch.length === 0) {
-      return Err("Trunk branch is required for worktree and SSH runtimes");
+      return Err("Source bookmark is required for JJ Workspace and SSH runtimes");
     }
 
     let runtime;
@@ -3417,13 +3417,13 @@ export class WorkspaceService extends EventEmitter {
       const runtimeType = finalRuntimeConfig.type;
       assert(
         runtimeType === "local" || runtimeType === "worktree",
-        `Multi-project workspaces currently require local or worktree runtime, got: ${runtimeType}`
+        `Multi-project workspaces currently require local or JJ Workspace runtime, got: ${runtimeType}`
       );
 
       const isLocalRuntime = finalRuntimeConfig.type === "local";
       const normalizedPreferredTrunkBranch = trunkBranch?.trim();
       if (!isLocalRuntime && normalizedPreferredTrunkBranch === "") {
-        return Err("Trunk branch is required for worktree runtime");
+        return Err("Source bookmark is required for JJ Workspace runtime");
       }
 
       let containerSrcBaseDir = getSrcBaseDir(finalRuntimeConfig) ?? this.config.srcDir;
@@ -3468,7 +3468,7 @@ export class WorkspaceService extends EventEmitter {
           }
 
           const detectedTrunkBranch = await detectDefaultTrunkBranch(projectPath, localBranches);
-          log.debug("Requested multi-project trunk branch missing; using detected branch", {
+          log.debug("Requested multi-project source bookmark missing; using detected bookmark", {
             projectPath,
             requestedTrunkBranch: normalizedPreferredTrunkBranch,
             detectedTrunkBranch,
@@ -3477,7 +3477,7 @@ export class WorkspaceService extends EventEmitter {
         } catch (error: unknown) {
           // When branch discovery is unavailable, preserve the caller-provided branch.
           // This mirrors single-project create() behavior for non-local runtimes.
-          log.debug("Failed to detect per-project trunk branch; using requested branch", {
+          log.debug("Failed to detect per-project source bookmark; using requested bookmark", {
             projectPath,
             requestedTrunkBranch: normalizedPreferredTrunkBranch,
             error: getErrorMessage(error),
@@ -3507,7 +3507,7 @@ export class WorkspaceService extends EventEmitter {
               ?.trusted ?? false;
           try {
             // Rollback only removes the just-created workspace path; forcing deletion could
-            // also drop an older same-named branch in worktree runtimes.
+            // also drop an older same-named bookmark in JJ Workspace runtimes.
             await createdWorkspace.runtime.deleteWorkspace(
               createdWorkspace.project.projectPath,
               branchName,
@@ -3539,13 +3539,13 @@ export class WorkspaceService extends EventEmitter {
           await rollbackCreatedWorkspaces();
           initLogger.logComplete(-1);
           return Err(
-            `Failed to resolve trunk branch for project ${projectRuntimeEntry.project.projectName}: ${getErrorMessage(error)}`
+            `Failed to resolve source bookmark for project ${projectRuntimeEntry.project.projectName}: ${getErrorMessage(error)}`
           );
         }
 
         assert(
           isLocalRuntime || projectTrunkBranch.length > 0,
-          `Expected non-empty trunk branch for project ${projectRuntimeEntry.project.projectPath}`
+          `Expected non-empty source bookmark for project ${projectRuntimeEntry.project.projectPath}`
         );
 
         const createEnv = await secretsToRecord(
@@ -5597,7 +5597,7 @@ export class WorkspaceService extends EventEmitter {
       // Lifecycle hooks run after we persist archivedAt.
       //
       // Why best-effort: Archive should stay successful once the archived state is durable, even if
-      // follow-up cleanup like managed worktree deletion fails.
+      // follow-up cleanup like managed checkout deletion fails.
       if (this.workspaceLifecycleHooks) {
         let hookMetadata: WorkspaceMetadata | undefined = updatedMetadata;
         if (!hookMetadata) {
@@ -5775,11 +5775,11 @@ export class WorkspaceService extends EventEmitter {
       }
 
       if (!isWorkspaceArchived(workspaceMetadata.archivedAt, workspaceMetadata.unarchivedAt)) {
-        return Err("Only archived workspaces can delete their managed worktree");
+        return Err("Only archived workspaces can delete their managed checkout");
       }
 
       if (!isWorktreeRuntime(workspaceMetadata.runtimeConfig)) {
-        return Err("Deleting a managed worktree is only supported for worktree runtimes");
+        return Err("Deleting a managed checkout is only supported for JJ Workspace runtimes");
       }
 
       const managedPath = workspaceMetadata.namedWorkspacePath;
@@ -5788,7 +5788,7 @@ export class WorkspaceService extends EventEmitter {
       return Ok(undefined);
     } catch (error) {
       const message = getErrorMessage(error);
-      return Err(`Failed to delete managed worktree: ${message}`);
+      return Err(`Failed to delete managed checkout: ${message}`);
     }
   }
 

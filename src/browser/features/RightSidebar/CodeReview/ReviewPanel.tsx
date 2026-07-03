@@ -920,11 +920,11 @@ export const ReviewPanel: React.FC<ReviewPanelProps> = ({
     "last-edit"
   );
 
-  // Auto-detect trunk for new review base keys so repos using master/develop
+  // Auto-detect the source bookmark for new review base keys so repos using master/develop
   // don't start on the hard-coded fallback. Existing jj selections are preserved.
   //
-  // IMPORTANT: workspace task trunk metadata may represent a fork source branch, not
-  // the repository's canonical trunk. So we only apply metadata trunk to the workspace-
+  // IMPORTANT: workspace task source metadata may represent a fork source bookmark, not
+  // the repository's canonical trunk. So we only apply metadata source to the workspace-
   // scoped diff base, while the project default comes from listBranches().recommendedTrunk.
   useEffect(() => {
     const persistedProjectBase = readPersistedString(projectDefaultBaseKey);

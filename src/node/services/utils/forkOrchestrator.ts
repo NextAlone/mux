@@ -72,7 +72,7 @@ interface OrchestrateForkSuccess {
    * operations and artifact collection always resolve a real repository.
    */
   workspacePath: string;
-  /** Trunk branch for init */
+  /** Source bookmark for init */
   trunkBranch: string;
   /** Resolved runtime config for the forked workspace */
   forkedRuntimeConfig: RuntimeConfig;
@@ -115,7 +115,7 @@ async function resolveTrunkBranch(
   }
 
   if (preferredTrunkBranch?.trim()) {
-    // Caller-supplied fallback (e.g., queued task's persisted trunk branch).
+    // Caller-supplied fallback (e.g., queued task's persisted source bookmark).
     // Preferred over local git discovery, which may be unavailable in SSH/Docker.
     return preferredTrunkBranch.trim();
   }
@@ -171,7 +171,7 @@ async function rollbackCreatedProjectWorkspaces(
     const projectTrusted = getProjectTrusted(projectRuntime.projectPath);
     try {
       // Rollback should only clean up the new workspace path; forcing deletion could
-      // remove a pre-existing same-named branch in worktree runtimes.
+      // remove a pre-existing same-named bookmark in JJ Workspace runtimes.
       const deleteResult = await projectRuntime.runtime.deleteWorkspace(
         projectRuntime.projectPath,
         workspaceName,
@@ -237,7 +237,7 @@ export async function orchestrateFork(
     const runtimeType = sourceRuntimeConfig.type;
     assert(
       runtimeType === "local" || runtimeType === "worktree",
-      `Multi-project workspaces currently require local or worktree runtime, got: ${runtimeType}`
+      `Multi-project workspaces currently require local or JJ Workspace runtime, got: ${runtimeType}`
     );
 
     const containerSrcBaseDir = getSrcBaseDir(sourceRuntimeConfig) ?? config.srcDir;
@@ -386,11 +386,11 @@ export async function orchestrateFork(
       );
       assert(
         projectTrunkBranch.length > 0,
-        `Expected non-empty fallback trunk branch for project ${projectRuntime.projectPath}`
+        `Expected non-empty fallback source bookmark for project ${projectRuntime.projectPath}`
       );
 
       if (runtimeIndex === 0) {
-        // Keep the returned trunk branch aligned with the branch used for primary fallback create.
+        // Keep the returned source bookmark aligned with the bookmark used for primary fallback create.
         trunkBranch = projectTrunkBranch;
       }
 

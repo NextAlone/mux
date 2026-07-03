@@ -43,7 +43,7 @@ export function createWorktreeArchiveHook(options: {
 
     if (!hasNamedWorkspacePath(workspaceMetadata)) {
       log.debug(
-        "Skipping managed worktree cleanup during archive because persisted path is missing",
+        "Skipping managed checkout cleanup during archive because persisted path is missing",
         {
           workspaceId: workspaceMetadata.id,
         }
@@ -55,10 +55,10 @@ export function createWorktreeArchiveHook(options: {
 
     try {
       // Use the persisted workspace path so archive cleanup also works for layouts like _workspaces.
-      // Archive should stay non-blocking even if managed worktree cleanup fails.
+      // Archive should stay non-blocking even if managed checkout cleanup fails.
       await removeManagedGitWorktree(workspaceMetadata.projectPath, managedPath);
     } catch (error) {
-      log.debug("Failed to delete managed worktree during archive", {
+      log.debug("Failed to delete managed checkout during archive", {
         managedPath,
         error,
       });

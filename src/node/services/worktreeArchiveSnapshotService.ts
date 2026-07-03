@@ -29,7 +29,7 @@ const SNAPSHOT_DIR_NAME = "archive-state";
 const SNAPSHOT_METADATA_FILE_NAME = "metadata.json";
 const ENABLE_LEGACY_GIT_ARCHIVE_SNAPSHOT: boolean = false;
 const JJ_ARCHIVE_SNAPSHOT_UNSUPPORTED =
-  "Archive snapshots are not yet supported for jj-native worktree runtimes.";
+  "Archive snapshots are not yet supported for jj-native JJ Workspace runtimes.";
 const NOOP_INIT_LOGGER: InitLogger = {
   logStep: () => undefined,
   logStdout: () => undefined,
@@ -98,7 +98,7 @@ export class WorktreeArchiveSnapshotService {
     );
 
     if (!isWorktreeRuntime(args.workspaceMetadata.runtimeConfig)) {
-      return Err("Archive snapshots are only supported for worktree runtimes");
+      return Err("Archive snapshots are only supported for JJ Workspace runtimes");
     }
     if (!ENABLE_LEGACY_GIT_ARCHIVE_SNAPSHOT) {
       return Err(JJ_ARCHIVE_SNAPSHOT_UNSUPPORTED);
@@ -161,7 +161,7 @@ export class WorktreeArchiveSnapshotService {
     );
 
     if (!isWorktreeRuntime(args.workspaceMetadata.runtimeConfig)) {
-      return Err("Archive snapshots are only supported for worktree runtimes");
+      return Err("Archive snapshots are only supported for JJ Workspace runtimes");
     }
     if (!ENABLE_LEGACY_GIT_ARCHIVE_SNAPSHOT) {
       return Err(JJ_ARCHIVE_SNAPSHOT_UNSUPPORTED);
@@ -238,7 +238,7 @@ export class WorktreeArchiveSnapshotService {
     );
 
     if (!isWorktreeRuntime(args.workspaceMetadata.runtimeConfig)) {
-      return Err("Archive snapshots are only supported for worktree runtimes");
+      return Err("Archive snapshots are only supported for JJ Workspace runtimes");
     }
     if (!ENABLE_LEGACY_GIT_ARCHIVE_SNAPSHOT) {
       return Err(JJ_ARCHIVE_SNAPSHOT_UNSUPPORTED);
@@ -445,7 +445,7 @@ export class WorktreeArchiveSnapshotService {
     }
 
     if (!isWorktreeRuntime(args.workspaceMetadata.runtimeConfig)) {
-      return Err("Archive snapshot restore is only supported for worktree runtimes");
+      return Err("Archive snapshot restore is only supported for JJ Workspace runtimes");
     }
     if (!ENABLE_LEGACY_GIT_ARCHIVE_SNAPSHOT) {
       return Err(JJ_ARCHIVE_SNAPSHOT_UNSUPPORTED);

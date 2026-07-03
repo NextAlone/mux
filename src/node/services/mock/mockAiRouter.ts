@@ -327,7 +327,7 @@ function buildReasoningQuicksortReply(): MockAiRouterReply {
 function buildReviewBranchesReply(): MockAiRouterReply {
   return {
     assistantText: [
-      "Here’s the current branch roster:",
+      "Here’s the current bookmark roster:",
       "• `main` – release baseline",
       "• `feature/login` – authentication refresh",
       "• `demo-review` – sandbox you just created",
@@ -484,7 +484,7 @@ const defaultHandlers: MockAiRouterHandler[] = [
   {
     match: (request) =>
       hasMockMarker(request.latestUserText, "review:branches") ||
-      normalizeText(request.latestUserText) === "let's summarize the current branches.",
+      normalizeText(request.latestUserText) === "let's summarize the current bookmarks.",
     respond: () => buildReviewBranchesReply(),
   },
   {

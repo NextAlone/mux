@@ -1,7 +1,7 @@
 /**
- * Environment variables that disable git hooks by pointing core.hooksPath
+ * Environment variables that disable repository hooks by pointing core.hooksPath
  * to /dev/null. Used for untrusted projects to prevent repo-controlled
- * hooks from executing during git operations.
+ * hooks from executing during VCS operations.
  */
 export const GIT_NO_HOOKS_ENV = {
   GIT_CONFIG_COUNT: "1",
@@ -13,7 +13,7 @@ export const GIT_NO_HOOKS_ENV = {
 } as const;
 
 /**
- * Build a shell command prefix that disables git hooks for untrusted projects.
+ * Build a shell command prefix that disables repository hooks for untrusted projects.
  * Returns empty string when trusted, or "GIT_CONFIG_COUNT=1 ... " when untrusted.
  */
 export function gitNoHooksPrefix(trusted?: boolean): string {

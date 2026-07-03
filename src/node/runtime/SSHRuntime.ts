@@ -1513,7 +1513,7 @@ export class SSHRuntime extends RemoteRuntime {
   }
 
   /**
-   * Resolve the bundle staging ref for the trunk branch.
+   * Resolve the bundle staging ref for the source bookmark.
    * Returns refs/mux-bundle/<trunkBranch> if it exists, otherwise falls back
    * to the first available ref under refs/mux-bundle/ (handles main vs master
    * mismatches). Returns null if no bundle refs exist.
@@ -1523,7 +1523,7 @@ export class SSHRuntime extends RemoteRuntime {
     trunkBranch: string,
     abortSignal?: AbortSignal
   ): Promise<string | null> {
-    // Preferred: exact match for the expected trunk branch.
+    // Preferred: exact match for the expected source bookmark.
     const preferredRef = `${BUNDLE_REF_PREFIX}${trunkBranch}`;
     const check = await execBuffered(
       this,
@@ -1542,7 +1542,7 @@ export class SSHRuntime extends RemoteRuntime {
     );
     const fallbackRef = listResult.stdout.trim();
     if (listResult.exitCode === 0 && fallbackRef.length > 0) {
-      log.info(`Bundle trunk ref mismatch: expected ${preferredRef}, using ${fallbackRef}`);
+      log.info(`Bundle source ref mismatch: expected ${preferredRef}, using ${fallbackRef}`);
       return fallbackRef;
     }
 
@@ -2608,8 +2608,8 @@ export class SSHRuntime extends RemoteRuntime {
     // single-SSH-RTT envelope on the *client* side).
     const { originUrl } = await this.getOriginUrlForSync(projectPath, initLogger);
 
-    // The remote bundle ref to base the worktree on. Prefer an exact match for
-    // the requested branch (most projects use `main` or the trunk branch name
+    // The remote bundle ref to base the managed checkout on. Prefer an exact match for
+    // the requested source (most projects use `main` or the source bookmark name
     // as the bundle ref), and we can let the remote script pick the first
     // available bundle ref as a fallback.
     const bundleRefArg = shescape.quote(`${BUNDLE_REF_PREFIX}${trunkBranch}`);
@@ -2628,7 +2628,7 @@ export class SSHRuntime extends RemoteRuntime {
     //      the rare case where the user changed origin between syncs. Both
     //      `remote set-url` and the fallback `remote add` are idempotent and
     //      cost no network I/O.
-    //   2. Best-effort `git fetch origin +refs/heads/<trunk>:refs/remotes/origin/<trunk>`.
+    //   2. Best-effort `git fetch origin +refs/heads/<source>:refs/remotes/origin/<source>`.
     //      This mirrors `fetchOriginTrunk()` in the slow path: failure is
     //      tolerated (logged via `fo=0`) and the worktree falls back to the
     //      bundle ref, exactly like `resolveFreshWorkspaceSourceBase()` does
@@ -2673,7 +2673,7 @@ export class SSHRuntime extends RemoteRuntime {
       // Optional origin fetch (preserves slow-path origin-freshness).
       ...originPreamble,
       // Choose the worktree base ref. Prefer freshly-fetched
-      // `refs/remotes/origin/<trunk>` whenever the fetch succeeded; otherwise
+      // `refs/remotes/origin/<source>` whenever the fetch succeeded; otherwise
       // fall back to the local-snapshot bundle ref, matching
       // resolveFreshWorkspaceSourceBase()'s fallback semantics.
       `if [ "$fo" = "1" ] && git -C ${baseRepoPathArg} rev-parse --verify ${trunkTrackingRefArg} >/dev/null 2>&1; then`,
@@ -2914,8 +2914,8 @@ export class SSHRuntime extends RemoteRuntime {
   }
 
   /**
-   * Fetch trunk branch from origin into its remote-tracking ref before checkout.
-   * Returns true if fetch succeeded (origin is available for branching).
+   * Fetch source bookmark from origin into its remote-tracking ref before checkout.
+   * Returns true if fetch succeeded (origin is available as a source).
    */
   protected async fetchOriginTrunk(
     workspacePath: string,
