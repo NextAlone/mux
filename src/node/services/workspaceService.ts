@@ -3184,15 +3184,25 @@ export class WorkspaceService extends EventEmitter {
       return Err("Source bookmark is required for JJ Workspace and SSH runtimes");
     }
 
-    const startPointResult = await this.resolveWorkspaceCreateStartPoint(
-      startPoint,
-      startPointWorkspaceId,
-      owningProjectPath
-    );
-    if (!startPointResult.success) {
-      return Err(startPointResult.error);
+    let resolvedStartPoint: string | undefined;
+    if (isLocalRuntime) {
+      const trimmedStartPoint = startPoint?.trim();
+      if (trimmedStartPoint && trimmedStartPoint !== "@") {
+        return Err(
+          "Local runtime always uses the current checkout. Choose JJ Workspace to create from a different revision."
+        );
+      }
+    } else {
+      const startPointResult = await this.resolveWorkspaceCreateStartPoint(
+        startPoint,
+        startPointWorkspaceId,
+        owningProjectPath
+      );
+      if (!startPointResult.success) {
+        return Err(startPointResult.error);
+      }
+      resolvedStartPoint = startPointResult.data;
     }
-    const resolvedStartPoint = startPointResult.data;
 
     let runtime;
     try {
