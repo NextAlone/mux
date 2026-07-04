@@ -89,6 +89,7 @@ describe("StreamingBarrierView", () => {
     const stats = view.getByTestId("streaming-barrier-stats");
     expect(stats.className).not.toContain("invisible");
     expect(stats.getAttribute("aria-hidden")).toBe("false");
+    expect(stats.textContent).toContain("Live");
     expect(stats.textContent).toContain("1,234");
     expect(stats.textContent).toContain("45");
   });

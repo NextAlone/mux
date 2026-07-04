@@ -58,6 +58,13 @@ function computeAverageTtft(totalTtftMs: number, ttftCount: number): number | nu
   return totalTtftMs / ttftCount;
 }
 
+function getRateLabel(viewMode: ViewMode, hasLiveRequest: boolean): string {
+  if (viewMode === "session") {
+    return "Session response rate";
+  }
+  return hasLiveRequest ? "Live rate" : "Response rate";
+}
+
 /**
  * Shared hook for stats data computation used by StatsTab, TimingPanel, and ModelBreakdownPanel.
  */
@@ -241,6 +248,7 @@ export function StatsTab(props: StatsTabProps) {
     totalTokensForView,
     viewMode === "last-request" ? (active?.liveTPS ?? null) : null
   );
+  const rateLabel = getRateLabel(viewMode, viewMode === "last-request" && active != null);
 
   const components = [
     {
@@ -382,7 +390,7 @@ export function StatsTab(props: StatsTabProps) {
 
           {avgTPS !== null && avgTPS > 0 && (
             <div className="text-muted-light text-xs tabular-nums">
-              Avg. TPS: {avgTPS.toFixed(0)} tok/s
+              {rateLabel}: {avgTPS.toFixed(0)} tok/s
             </div>
           )}
 
@@ -630,6 +638,7 @@ export function TimingPanel(props: TimingPanelProps) {
     totalTokensForView,
     viewMode === "last-request" ? (active?.liveTPS ?? null) : null
   );
+  const rateLabel = getRateLabel(viewMode, viewMode === "last-request" && active != null);
 
   const components = [
     {
@@ -722,7 +731,9 @@ export function TimingPanel(props: TimingPanelProps) {
           )}
 
           {avgTPS !== null && avgTPS > 0 && (
-            <div className="text-muted-light text-xs">Avg. TPS: {avgTPS.toFixed(0)} tok/s</div>
+            <div className="text-muted-light text-xs">
+              {rateLabel}: {avgTPS.toFixed(0)} tok/s
+            </div>
           )}
 
           {/* Progress bar */}

@@ -61,7 +61,7 @@ describe("LastResponseStatsBarrier", () => {
 
     const view = render(<LastResponseStatsBarrier workspaceId="ws-1" />);
 
-    expect(view.getByText("Last response")).toBeTruthy();
+    expect(view.getByText("Response rate")).toBeTruthy();
     expect(view.getByTestId("last-response-stats").textContent).toContain("~100 tokens");
     expect(view.getByTestId("last-response-stats").textContent).toContain("25");
     expect(view.getByTestId("last-response-stats").textContent).toContain("t/s");

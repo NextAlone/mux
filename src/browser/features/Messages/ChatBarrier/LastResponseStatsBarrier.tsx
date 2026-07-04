@@ -3,6 +3,7 @@ import { ChevronDown, Gauge } from "lucide-react";
 
 import { useCodexUsageSnapshot } from "@/browser/stores/CodexUsageStore";
 import { useWorkspaceStatsSnapshot } from "@/browser/stores/WorkspaceStore";
+import { TooltipIfPresent } from "@/browser/components/Tooltip/Tooltip";
 import { calculateAverageTPS } from "@/browser/utils/messages/StreamingTPSCalculator";
 import { cn } from "@/common/lib/utils";
 import type { CodexUsageSnapshot, CodexUsageWindow } from "@/common/orpc/types";
@@ -13,6 +14,8 @@ interface LastResponseStatsBarrierProps {
 }
 
 const STALE_USAGE_MS = 10 * 60 * 1000;
+const RESPONSE_RATE_TOOLTIP =
+  "Average completed-response rate. Excludes time to first token and tool execution; includes output and thinking tokens.";
 
 function formatPercent(value: number): string {
   return `${Math.round(value)}%`;
@@ -181,18 +184,20 @@ export const LastResponseStatsBarrier: React.FC<LastResponseStatsBarrierProps> =
     <div className="flex items-center justify-between gap-3">
       {showLastResponseStats && avgTPS && (
         <div className="flex min-w-0 flex-1 items-center gap-2">
-          <BaseBarrier text="Last response" color="var(--color-assistant-border)" />
-          <span
-            data-testid="last-response-stats"
-            className="text-assistant-border counter-nums-mono inline-flex min-w-[14ch] items-baseline justify-end text-[11px] whitespace-nowrap select-none"
-          >
-            <span>~{totalTokens.toLocaleString()} tokens</span>
-            <span className="text-dim ml-1 inline-flex min-w-[7ch] items-baseline justify-end gap-1">
-              <span>@</span>
-              <span>{Math.round(avgTPS)}</span>
-              <span>t/s</span>
+          <BaseBarrier text="Response rate" color="var(--color-assistant-border)" />
+          <TooltipIfPresent tooltip={RESPONSE_RATE_TOOLTIP}>
+            <span
+              data-testid="last-response-stats"
+              className="text-assistant-border counter-nums-mono inline-flex min-w-[14ch] items-baseline justify-end text-[11px] whitespace-nowrap select-none"
+            >
+              <span>~{totalTokens.toLocaleString()} tokens</span>
+              <span className="text-dim ml-1 inline-flex min-w-[7ch] items-baseline justify-end gap-1">
+                <span>@</span>
+                <span>{Math.round(avgTPS)}</span>
+                <span>t/s</span>
+              </span>
             </span>
-          </span>
+          </TooltipIfPresent>
         </div>
       )}
       {codexUsageSnapshot && <CodexUsageRemaining snapshot={codexUsageSnapshot} />}

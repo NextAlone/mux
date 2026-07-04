@@ -30,9 +30,9 @@ const METRIC_LABELS = {
     description: "End-to-end response duration",
   },
   tps: {
-    label: "Output TPS",
+    label: "E2E Output TPS",
     unitSuffix: " tok/s",
-    description: "Tokens streamed per second",
+    description: "Output tokens divided by end-to-end response duration",
   },
 } as const;
 

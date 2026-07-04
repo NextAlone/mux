@@ -3626,7 +3626,7 @@ export class StreamingMessageAggregator {
   }
 
   /**
-   * Get tokens-per-second rate (10-second trailing window)
+   * Get tokens-per-second rate (60-second trailing window)
    */
   getStreamingTPS(messageId: string): number {
     const storage = this.deltaHistory.get(messageId);

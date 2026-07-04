@@ -19,6 +19,9 @@ export interface StreamingBarrierViewProps {
   hintElement?: React.ReactNode;
 }
 
+const LIVE_RATE_TOOLTIP =
+  "Live rate over the trailing 60s window. Includes output, thinking, and tool-argument deltas; stream stalls lower this value.";
+
 /**
  * Presentation-only StreamingBarrier.
  *
@@ -35,21 +38,24 @@ export const StreamingBarrierView: React.FC<StreamingBarrierViewProps> = (props)
             starting -> streaming transition; only its visibility toggles. Previously
             this slot mounted exactly when streaming began, reflowing the row (layout
             flash). Reserving it (with placeholder values) keeps the layout stable. */}
-        <span
-          data-testid="streaming-barrier-stats"
-          aria-hidden={props.tokenCount === undefined}
-          className={cn(
-            "text-assistant-border counter-nums-mono inline-flex min-w-[14ch] items-baseline justify-end text-[11px] whitespace-nowrap select-none",
-            props.tokenCount === undefined && "invisible"
-          )}
-        >
-          <span>~{(props.tokenCount ?? 0).toLocaleString()} tokens</span>
-          <span className="text-dim ml-1 inline-flex min-w-[7ch] items-baseline justify-end gap-1">
-            <span>@</span>
-            <span>{props.tps !== undefined && props.tps > 0 ? props.tps : "--"}</span>
-            <span>t/s</span>
+        <TooltipIfPresent tooltip={props.tokenCount === undefined ? undefined : LIVE_RATE_TOOLTIP}>
+          <span
+            data-testid="streaming-barrier-stats"
+            aria-hidden={props.tokenCount === undefined}
+            className={cn(
+              "text-assistant-border counter-nums-mono inline-flex min-w-[18ch] items-baseline justify-end text-[11px] whitespace-nowrap select-none",
+              props.tokenCount === undefined && "invisible"
+            )}
+          >
+            <span className="font-primary text-dim mr-1">Live</span>
+            <span>~{(props.tokenCount ?? 0).toLocaleString()} tokens</span>
+            <span className="text-dim ml-1 inline-flex min-w-[7ch] items-baseline justify-end gap-1">
+              <span>@</span>
+              <span>{props.tps !== undefined && props.tps > 0 ? props.tps : "--"}</span>
+              <span>t/s</span>
+            </span>
           </span>
-        </span>
+        </TooltipIfPresent>
       </div>
       <div className="ml-auto">
         {props.onCancel && props.cancelText.length > 0 ? (
