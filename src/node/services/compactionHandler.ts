@@ -21,7 +21,10 @@ import {
   type CompactionSummaryMetadata,
   type MuxMessage,
 } from "@/common/types/message";
-import { createCompactionSummaryMessageId } from "@/node/services/utils/messageIds";
+import {
+  createCompactionRetainedContextMessageId,
+  createCompactionSummaryMessageId,
+} from "@/node/services/utils/messageIds";
 import type { TelemetryService } from "@/node/services/telemetryService";
 import {
   MAX_EDITED_FILES,
@@ -47,6 +50,12 @@ import {
   type PersistedLoadedSkillSnapshotInput,
   extractLoadedSkillSnapshotsFromMessages,
 } from "@/node/services/agentSkills/loadedSkillSnapshots";
+import {
+  buildLocalCompactionPlan,
+  createRetainedRecentContextMessages,
+  estimateMuxMessageTokensByChars,
+} from "@/common/utils/compaction/piLocal";
+import { normalizeCompactionSettings } from "@/common/utils/compaction/strategyConfig";
 
 /**
  * Check if a string is just a raw JSON object, which suggests the model
@@ -324,6 +333,16 @@ function getNextCompactionEpoch(messages: MuxMessage[]): number {
   return nextEpoch;
 }
 
+function findLatestCompactionRequestIndex(messages: readonly MuxMessage[]): number {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message?.role === "user" && message.metadata?.muxMetadata?.type === "compaction-request") {
+      return index;
+    }
+  }
+  return -1;
+}
+
 interface CompactionHandlerOptions {
   workspaceId: string;
   historyService: HistoryService;
@@ -339,6 +358,10 @@ interface CompactionHandlerOptions {
    * workspace whose compaction keeps failing even though the provider stream ended cleanly.
    */
   onIdleCompactionOutcome?: (success: boolean) => void;
+  /** Reads current compaction strategy config. Omitted/default keeps mux-current behavior. */
+  getCompactionSettings?: () => unknown;
+  /** Test hook for deterministic keep-recent planning. Production uses a cheap local estimate. */
+  estimateCompactionMessageTokens?: (message: MuxMessage) => number;
 }
 
 /**
@@ -361,6 +384,8 @@ export class CompactionHandler {
 
   private readonly onCompactionComplete?: (metadata: CompactionCompletionMetadata) => void;
   private readonly onIdleCompactionOutcome?: (success: boolean) => void;
+  private readonly getCompactionSettings?: () => unknown;
+  private readonly estimateCompactionMessageTokens: (message: MuxMessage) => number;
 
   /** Flag indicating post-compaction attachments should be generated on next turn */
   private postCompactionAttachmentsPending = false;
@@ -385,6 +410,9 @@ export class CompactionHandler {
     this.emitter = options.emitter;
     this.onCompactionComplete = options.onCompactionComplete;
     this.onIdleCompactionOutcome = options.onIdleCompactionOutcome;
+    this.getCompactionSettings = options.getCompactionSettings;
+    this.estimateCompactionMessageTokens =
+      options.estimateCompactionMessageTokens ?? estimateMuxMessageTokensByChars;
   }
 
   private async loadPersistedPendingStateIfNeeded(): Promise<void> {
@@ -601,6 +629,52 @@ export class CompactionHandler {
 
       return Math.max(maxSeq, sequence);
     }, -1);
+  }
+
+  private createRetainedRecentContextMessages(messages: MuxMessage[]): MuxMessage[] {
+    const settings = normalizeCompactionSettings(this.getCompactionSettings?.());
+    if (settings.localStrategy === "mux-current") {
+      return [];
+    }
+
+    const compactionRequestIndex = findLatestCompactionRequestIndex(messages);
+    if (compactionRequestIndex < 0) {
+      return [];
+    }
+
+    const localParameters =
+      settings.localStrategy === "hybrid-local" ? settings.hybridLocal : settings.piLocal;
+    const plan = buildLocalCompactionPlan({
+      messages: messages.slice(0, compactionRequestIndex),
+      keepRecentTokens: localParameters.keepRecentTokens,
+      toolResultMaxChars: localParameters.toolResultMaxChars,
+      estimateTokens: this.estimateCompactionMessageTokens,
+    });
+
+    if (plan.recentMessages.length === 0) {
+      return [];
+    }
+
+    return createRetainedRecentContextMessages({
+      messages: plan.recentMessages,
+      createId: () => createCompactionRetainedContextMessageId(),
+    });
+  }
+
+  private async appendRetainedRecentContextMessages(
+    retainedMessages: MuxMessage[]
+  ): Promise<Result<void, string>> {
+    for (const retainedMessage of retainedMessages) {
+      const appendResult = await this.historyService.appendToHistory(
+        this.workspaceId,
+        retainedMessage
+      );
+      if (!appendResult.success) {
+        return Err(`Failed to append retained recent context: ${appendResult.error}`);
+      }
+    }
+
+    return Ok(undefined);
   }
 
   async appendHeartbeatContextResetBoundary(params: {
@@ -1053,6 +1127,7 @@ export class CompactionHandler {
 
     const previousBoundaryHistorySequence = getLatestBoundaryHistorySequence(messages);
     const maxExistingHistorySequence = this.getMaxExistingHistorySequence(messages);
+    const retainedRecentContextMessages = this.createRetainedRecentContextMessages(messages);
 
     // For idle compaction, preserve the original recency timestamp so the workspace
     // doesn't appear "recently used" in the sidebar. Use the shared recency utility
@@ -1169,6 +1244,13 @@ export class CompactionHandler {
         persistedSequence > maxExistingHistorySequence,
         "Compaction summary historySequence must remain monotonic"
       );
+    }
+
+    const retainedAppendResult = await this.appendRetainedRecentContextMessages(
+      retainedRecentContextMessages
+    );
+    if (!retainedAppendResult.success) {
+      return Err(retainedAppendResult.error);
     }
 
     // Set flag to trigger post-compaction attachment injection on next turn

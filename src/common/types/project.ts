@@ -8,6 +8,7 @@ import type { WorktreeArchiveBehavior } from "@/common/config/worktreeArchiveBeh
 import type { WorkspaceCheckoutLocationConfig } from "@/common/config/workspaceCheckoutLocation";
 import type {
   AppConfigMigrations,
+  CompactionSettings,
   ModelFallbacks,
   UpdateChannel,
 } from "@/common/config/schemas/appConfigOnDisk";
@@ -134,6 +135,8 @@ export interface ProjectsConfig {
    * Mirrors the browser localStorage cache (HIDDEN_MODELS_KEY).
    */
   hiddenModels?: string[];
+  /** Optional compaction strategy configuration. Missing means mux-current behavior. */
+  compaction?: CompactionSettings;
   /** Default model + thinking overrides per agentId (applies to UI agents and subagents). */
   agentAiDefaults?: AgentAiDefaults;
   /**

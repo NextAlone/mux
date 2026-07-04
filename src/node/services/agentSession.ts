@@ -551,6 +551,7 @@ export class AgentSession {
       emitter: this.emitter,
       onCompactionComplete,
       onIdleCompactionOutcome,
+      getCompactionSettings: () => config.loadConfigOrDefault().compaction,
     });
 
     this.compactionMonitor = new CompactionMonitor(

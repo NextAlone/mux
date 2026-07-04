@@ -236,6 +236,55 @@ describe("CompactionHandler", () => {
       expect(metadata?.previousBoundaryHistorySequence).toBe(1);
     });
 
+    it("retains recent context after the summary boundary for pi-local compaction", async () => {
+      handler = new CompactionHandler({
+        workspaceId,
+        historyService,
+        sessionDir,
+        telemetryService,
+        emitter: mockEmitter,
+        getCompactionSettings: () => ({
+          localStrategy: "pi-local",
+          fallbackLocalStrategies: ["mux-current"],
+          remotePolicy: "off",
+          piLocal: {
+            keepRecentTokens: 3,
+            toolResultMaxChars: 1_000,
+          },
+          hybridLocal: {
+            keepRecentTokens: 3,
+            toolResultMaxChars: 1_000,
+          },
+        }),
+        estimateCompactionMessageTokens: (message) => (message.id === "recent-user" ? 3 : 4),
+      });
+      await seedHistory(
+        createMuxMessage("old-user", "user", "old context"),
+        createMuxMessage("recent-user", "user", "recent context", { timestamp: 123 }),
+        createCompactionRequest("compact-request")
+      );
+
+      const handled = await handler.handleCompletion(createStreamEndEvent("Summary"));
+
+      expect(handled).toBe(true);
+      const historyResult = await historyService.getHistoryFromLatestBoundary(workspaceId);
+      expect(historyResult.success).toBe(true);
+      if (!historyResult.success) {
+        throw new Error(historyResult.error);
+      }
+      expect(historyResult.data.map((message) => message.parts[0]?.type)).toEqual(["text", "text"]);
+
+      const retained = historyResult.data.find(
+        (message) => message.parts[0]?.type === "text" && message.parts[0].text === "recent context"
+      );
+      expect(retained?.id).not.toBe("recent-user");
+      expect(retained?.metadata?.synthetic).toBe(true);
+      expect(retained?.metadata?.uiVisible).toBe(false);
+      expect(retained?.metadata?.historySequence).toBeGreaterThan(
+        historyResult.data[0]?.metadata?.historySequence ?? -1
+      );
+    });
+
     describe("onIdleCompactionOutcome", () => {
       const createIdleCompactionRequest = (id = "idle-req"): MuxMessage =>
         createMuxMessage(id, "user", "Please summarize the conversation", {

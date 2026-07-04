@@ -25,6 +25,7 @@ import type {
   ModelFallbacks,
   ProvidersConfig as CanonicalProvidersConfig,
 } from "@/common/config/schemas";
+import { CompactionSettingsSchema } from "@/common/config/schemas";
 import { DEFAULT_MODEL_FALLBACKS, sanitizeModelFallbacks } from "@/common/utils/ai/modelFallbacks";
 import {
   DEFAULT_TASK_SETTINGS,
@@ -162,6 +163,11 @@ function parseOptionalEnvBoolean(value: unknown): boolean | undefined {
 }
 function parseOptionalBoolean(value: unknown): boolean | undefined {
   return typeof value === "boolean" ? value : undefined;
+}
+
+function normalizeCompactionSettingsConfig(value: unknown): ProjectsConfig["compaction"] {
+  const result = CompactionSettingsSchema.safeParse(value);
+  return result.success ? result.data : undefined;
 }
 
 function parseUpdateChannel(value: unknown): UpdateChannel | undefined {
@@ -959,6 +965,7 @@ export class Config {
             ? null
             : parseOptionalPositiveInteger(parsed.advisorMaxOutputTokens);
         const hiddenModels = normalizeOptionalModelStringArray(parsed.hiddenModels);
+        const compaction = normalizeCompactionSettingsConfig(parsed.compaction);
         let legacySubagentAiDefaults = normalizeSubagentAiDefaults(parsed.subagentAiDefaults);
         const agentAiDefaults =
           parsed.agentAiDefaults !== undefined
@@ -1094,6 +1101,7 @@ export class Config {
           advisorMaxUsesPerTurn,
           advisorMaxOutputTokens,
           hiddenModels,
+          compaction,
           agentAiDefaults,
           // Subagent defaults: exec is canonical active storage, non-exec entries
           // support legacy mirror compatibility.
@@ -1224,6 +1232,11 @@ export class Config {
       const hiddenModels = normalizeOptionalModelStringArray(config.hiddenModels);
       if (hiddenModels !== undefined) {
         data.hiddenModels = hiddenModels;
+      }
+
+      const compaction = normalizeCompactionSettingsConfig(config.compaction);
+      if (compaction !== undefined) {
+        data.compaction = compaction;
       }
 
       const routePriority = parseOptionalStringArray(config.routePriority);

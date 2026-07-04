@@ -11,6 +11,12 @@ import { UserPreferencesSchema } from "./userPreferences";
 import { TaskSettingsSchema } from "./taskSettings";
 import { HEARTBEAT_MAX_INTERVAL_MS, HEARTBEAT_MIN_INTERVAL_MS } from "@/constants/heartbeat";
 import { DEFAULT_GOAL_DEFAULTS } from "@/constants/goals";
+import {
+  DEFAULT_LOCAL_COMPACTION_KEEP_RECENT_TOKENS,
+  DEFAULT_LOCAL_COMPACTION_TOOL_RESULT_MAX_CHARS,
+  LOCAL_COMPACTION_STRATEGIES,
+  REMOTE_COMPACTION_POLICIES,
+} from "@/common/utils/compaction/strategyConfig";
 
 export { RuntimeEnablementOverridesSchema } from "../../schemas/runtimeEnablement";
 export type { RuntimeEnablementOverrides } from "../../schemas/runtimeEnablement";
@@ -70,6 +76,29 @@ export const ModelFallbackEntrySchema = z.object({
 
 /** Per-model fallback chains, keyed by canonical source model. */
 export const ModelFallbacksSchema = z.record(z.string(), ModelFallbackEntrySchema);
+
+export const LocalCompactionStrategyParametersSchema = z.object({
+  keepRecentTokens: z
+    .number()
+    .int()
+    .positive()
+    .max(DEFAULT_LOCAL_COMPACTION_KEEP_RECENT_TOKENS * 16)
+    .optional(),
+  toolResultMaxChars: z
+    .number()
+    .int()
+    .positive()
+    .max(DEFAULT_LOCAL_COMPACTION_TOOL_RESULT_MAX_CHARS * 16)
+    .optional(),
+});
+
+export const CompactionSettingsSchema = z.object({
+  localStrategy: z.enum(LOCAL_COMPACTION_STRATEGIES).optional(),
+  fallbackLocalStrategies: z.array(z.enum(LOCAL_COMPACTION_STRATEGIES)).optional(),
+  remotePolicy: z.enum(REMOTE_COMPACTION_POLICIES).optional(),
+  piLocal: LocalCompactionStrategyParametersSchema.optional(),
+  hybridLocal: LocalCompactionStrategyParametersSchema.optional(),
+});
 
 export const AppConfigMigrationsSchema = z
   .object({
@@ -141,6 +170,7 @@ export const AppConfigOnDiskSchema = z
     advisorMaxOutputTokens: z.number().int().positive().nullable().optional(),
     hiddenModels: z.array(z.string()).optional(),
     preferredCompactionModel: z.string().optional(),
+    compaction: CompactionSettingsSchema.optional(),
     agentAiDefaults: AgentAiDefaultsSchema.optional(),
     /**
      * Sparse per-agent override that wins over agentAiDefaults when an agent runs as a
@@ -174,6 +204,7 @@ export type GoalDefaultsConfig = z.infer<typeof GoalDefaultsSchema>;
 export type ModelFallbackTrigger = z.infer<typeof ModelFallbackTriggerSchema>;
 export type ModelFallbackEntry = z.infer<typeof ModelFallbackEntrySchema>;
 export type ModelFallbacks = z.infer<typeof ModelFallbacksSchema>;
+export type CompactionSettings = z.infer<typeof CompactionSettingsSchema>;
 export type UpdateChannel = z.infer<typeof UpdateChannelSchema>;
 export type WorkspaceCheckoutLocationConfig = z.infer<typeof WorkspaceCheckoutLocationConfigSchema>;
 

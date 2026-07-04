@@ -69,6 +69,44 @@ describe("AppConfigOnDiskSchema", () => {
     );
   });
 
+  it("validates compaction strategy settings", () => {
+    expect(
+      AppConfigOnDiskSchema.safeParse({
+        compaction: {
+          localStrategy: "hybrid-local",
+          fallbackLocalStrategies: ["pi-local", "mux-current"],
+          remotePolicy: "openai-responses-compact",
+          piLocal: {
+            keepRecentTokens: 8_000,
+            toolResultMaxChars: 2_000,
+          },
+        },
+      }).success
+    ).toBe(true);
+
+    expect(
+      AppConfigOnDiskSchema.safeParse({
+        compaction: {
+          localStrategy: "codex-openai-remote",
+        },
+      }).success
+    ).toBe(false);
+    expect(
+      AppConfigOnDiskSchema.safeParse({
+        compaction: {
+          remotePolicy: "anthropic-compact",
+        },
+      }).success
+    ).toBe(false);
+    expect(
+      AppConfigOnDiskSchema.safeParse({
+        compaction: {
+          piLocal: { keepRecentTokens: 0 },
+        },
+      }).success
+    ).toBe(false);
+  });
+
   it("rejects runtimeEnablement values other than false", () => {
     expect(AppConfigOnDiskSchema.safeParse({ runtimeEnablement: { ssh: true } }).success).toBe(
       false

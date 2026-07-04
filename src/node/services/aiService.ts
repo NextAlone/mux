@@ -20,7 +20,7 @@ import { EXPERIMENT_IDS } from "@/common/constants/experiments";
 
 import type { GoalRecordV1 } from "@/common/types/goal";
 import type { ModelMessage, MuxMessage, MuxMessageMetadata } from "@/common/types/message";
-import { createMuxMessage } from "@/common/types/message";
+import { createMuxMessage, getCompactionFollowUpContent } from "@/common/types/message";
 import type { Config } from "@/node/config";
 import { StreamManager, type ModelFallbackOptions, type StreamTextOnChunk } from "./streamManager";
 import { runLanguageModelCleanup } from "./languageModelCleanup";
@@ -103,6 +103,16 @@ import {
 import { resolveModelParameterOverrides } from "@/common/utils/ai/modelParameterOverrides";
 import { isPlainObject } from "@/common/utils/isPlainObject";
 import { sliceMessagesForProviderFromLatestContextBoundary } from "@/common/utils/messages/compactionBoundary";
+import {
+  buildLocalCompactionPlan,
+  estimateMuxMessageTokensByChars,
+  type BuildLocalCompactionPlanOptions,
+} from "@/common/utils/compaction/piLocal";
+import {
+  normalizeCompactionSettings,
+  type LocalCompactionStrategy,
+} from "@/common/utils/compaction/strategyConfig";
+import { buildLocalStrategyCompactionMessageText } from "@/common/utils/compaction/compactionPrompt";
 import { getProjects, isMultiProject } from "@/common/utils/multiProject";
 import { uniqueSuffix } from "@/common/utils/hasher";
 import { isWorkspaceTrustedForSharedExecution } from "@/node/services/utils/workspaceTrust";
@@ -159,15 +169,138 @@ import { isProjectTrusted } from "@/node/utils/projectTrust";
 
 const STREAM_STARTUP_DIAGNOSTIC_THRESHOLD_MS = 1_000;
 
+interface ProviderRequestLocalCompactionOptions {
+  strategy: LocalCompactionStrategy;
+  keepRecentTokens: number;
+  toolResultMaxChars: number;
+  estimateTokens: BuildLocalCompactionPlanOptions["estimateTokens"];
+}
+
+interface PrepareProviderRequestMessagesOptions {
+  localCompaction?: ProviderRequestLocalCompactionOptions;
+}
+
+interface ProviderRequestLocalCompactionPlan {
+  strategy: LocalCompactionStrategy;
+  retainedRecentMessageIds: string[];
+}
+
+function findLatestCompactionRequestIndex(messages: readonly MuxMessage[]): number {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message?.role === "user" && message.metadata?.muxMetadata?.type === "compaction-request") {
+      return index;
+    }
+  }
+  return -1;
+}
+
+function rewriteCompactionRequestForLocalStrategy(
+  message: MuxMessage,
+  strategy: LocalCompactionStrategy
+): MuxMessage {
+  const muxMetadata = message.metadata?.muxMetadata;
+  if (muxMetadata?.type !== "compaction-request") {
+    return message;
+  }
+
+  const messageText = buildLocalStrategyCompactionMessageText({
+    localStrategy: strategy,
+    maxOutputTokens: muxMetadata.parsed.maxOutputTokens,
+    followUpContent: getCompactionFollowUpContent(muxMetadata),
+  });
+
+  let replacedTextPart = false;
+  const parts = message.parts.map((part) => {
+    if (part.type !== "text" || replacedTextPart) {
+      return part;
+    }
+
+    replacedTextPart = true;
+    return {
+      ...part,
+      text: messageText,
+    };
+  });
+
+  return {
+    ...message,
+    parts: replacedTextPart ? parts : [{ type: "text", text: messageText }, ...parts],
+  };
+}
+
+function applyLocalCompactionRequestPlan(
+  activeContextMessages: MuxMessage[],
+  options: ProviderRequestLocalCompactionOptions | undefined
+): {
+  activeContextMessages: MuxMessage[];
+  localCompactionPlan?: ProviderRequestLocalCompactionPlan;
+} {
+  if (!options || options.strategy === "mux-current") {
+    return { activeContextMessages };
+  }
+
+  const compactionRequestIndex = findLatestCompactionRequestIndex(activeContextMessages);
+  if (compactionRequestIndex < 0) {
+    return { activeContextMessages };
+  }
+
+  const messagesBeforeRequest = activeContextMessages.slice(0, compactionRequestIndex);
+  const compactionRequestAndTail = activeContextMessages
+    .slice(compactionRequestIndex)
+    .map((message, index) =>
+      index === 0 ? rewriteCompactionRequestForLocalStrategy(message, options.strategy) : message
+    );
+  const plan = buildLocalCompactionPlan({
+    messages: messagesBeforeRequest,
+    keepRecentTokens: options.keepRecentTokens,
+    toolResultMaxChars: options.toolResultMaxChars,
+    estimateTokens: options.estimateTokens,
+  });
+
+  return {
+    activeContextMessages: [...plan.summarizeMessages, ...compactionRequestAndTail],
+    localCompactionPlan: {
+      strategy: options.strategy,
+      retainedRecentMessageIds: plan.recentMessages.map((message) => message.id),
+    },
+  };
+}
+
+function resolveProviderRequestLocalCompactionOptions(
+  rawSettings: unknown,
+  muxMetadata: MuxMessageMetadata | undefined
+): ProviderRequestLocalCompactionOptions | undefined {
+  if (muxMetadata?.type !== "compaction-request") {
+    return undefined;
+  }
+
+  const settings = normalizeCompactionSettings(rawSettings);
+  if (settings.localStrategy === "mux-current") {
+    return undefined;
+  }
+
+  const parameters =
+    settings.localStrategy === "hybrid-local" ? settings.hybridLocal : settings.piLocal;
+  return {
+    strategy: settings.localStrategy,
+    keepRecentTokens: parameters.keepRecentTokens,
+    toolResultMaxChars: parameters.toolResultMaxChars,
+    estimateTokens: estimateMuxMessageTokensByChars,
+  };
+}
+
 export function prepareProviderRequestMessages(
   messages: MuxMessage[],
   canonicalProviderName: string,
-  effectiveThinkingLevel: ThinkingLevel
+  effectiveThinkingLevel: ThinkingLevel,
+  options: PrepareProviderRequestMessagesOptions = {}
 ): {
   activeContextMessages: MuxMessage[];
   providerRequestMessages: MuxMessage[];
   sideQuestionFilteredCount: number;
   contextBoundarySlicedCount: number;
+  localCompactionPlan?: ProviderRequestLocalCompactionPlan;
 } {
   // /btw side questions and workflow display rows are durable UI history, not main-agent context.
   // Filter them before boundary slicing so future normal turns don't see UI-only artifacts.
@@ -176,11 +309,15 @@ export function prepareProviderRequestMessages(
     messagesWithoutSideQuestions
   );
   const sideQuestionFilteredCount = messages.length - messagesWithoutSideQuestions.length;
-  const activeContextMessages = sliceMessagesForProviderFromLatestContextBoundary(
-    messagesWithoutWorkflowDisplay
+  const activeContextMessagesBeforeLocalCompaction =
+    sliceMessagesForProviderFromLatestContextBoundary(messagesWithoutWorkflowDisplay);
+  const localCompactionResult = applyLocalCompactionRequestPlan(
+    activeContextMessagesBeforeLocalCompaction,
+    options.localCompaction
   );
+  const activeContextMessages = localCompactionResult.activeContextMessages;
   const contextBoundarySlicedCount =
-    messagesWithoutWorkflowDisplay.length - activeContextMessages.length;
+    messagesWithoutWorkflowDisplay.length - activeContextMessagesBeforeLocalCompaction.length;
   const preserveReasoningOnly =
     canonicalProviderName === "anthropic" && effectiveThinkingLevel !== "off";
   return {
@@ -191,6 +328,9 @@ export function prepareProviderRequestMessages(
     ),
     sideQuestionFilteredCount,
     contextBoundarySlicedCount,
+    ...(localCompactionResult.localCompactionPlan
+      ? { localCompactionPlan: localCompactionResult.localCompactionPlan }
+      : {}),
   };
 }
 
@@ -1096,6 +1236,10 @@ export class AIService extends EventEmitter {
         routedThroughGateway,
         routeProvider,
       } = modelResult.data;
+      const localCompactionRequestOptions = resolveProviderRequestLocalCompactionOptions(
+        this.config.loadConfigOrDefault().compaction,
+        muxMetadata
+      );
 
       // Dump original messages for debugging
       log.debug_obj(`${workspaceId}/1_original_messages.json`, messages);
@@ -1107,7 +1251,9 @@ export class AIService extends EventEmitter {
         providerRequestMessages,
         sideQuestionFilteredCount,
         contextBoundarySlicedCount,
-      } = prepareProviderRequestMessages(messages, canonicalProviderName, effectiveThinkingLevel);
+      } = prepareProviderRequestMessages(messages, canonicalProviderName, effectiveThinkingLevel, {
+        localCompaction: localCompactionRequestOptions,
+      });
       if (sideQuestionFilteredCount > 0 || contextBoundarySlicedCount > 0) {
         log.debug("Prepared provider history window", {
           workspaceId,
@@ -2580,7 +2726,10 @@ export class AIService extends EventEmitter {
                     prepareProviderRequestMessages(
                       fallbackSourceMessages,
                       next.canonicalProviderName,
-                      nextThinkingLevel
+                      nextThinkingLevel,
+                      {
+                        localCompaction: localCompactionRequestOptions,
+                      }
                     );
                   const nextFinalMessages = await prepareMessagesForProvider({
                     messagesWithSentinel: addInterruptedSentinel(nextProviderRequestMessages),

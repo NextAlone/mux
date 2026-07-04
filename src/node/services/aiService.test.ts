@@ -514,6 +514,52 @@ describe("prepareProviderRequestMessages", () => {
       "next-user",
     ]);
   });
+
+  it("plans pi-local compaction over old context while retaining recent messages", () => {
+    const oldMessage = createMuxMessage("old-user", "user", "old context", {
+      historySequence: 1,
+    });
+    const recentMessage = createMuxMessage("recent-user", "user", "recent context", {
+      historySequence: 2,
+    });
+    const compactRequest = createMuxMessage("compact-request", "user", "/compact", {
+      historySequence: 3,
+      muxMetadata: {
+        type: "compaction-request",
+        rawCommand: "/compact",
+        parsed: {},
+      },
+    });
+
+    const prepared = prepareProviderRequestMessages(
+      [oldMessage, recentMessage, compactRequest],
+      "openai",
+      "off",
+      {
+        localCompaction: {
+          strategy: "pi-local",
+          keepRecentTokens: 3,
+          toolResultMaxChars: 1_000,
+          estimateTokens: (message) => (message.id === "recent-user" ? 3 : 4),
+        },
+      }
+    );
+
+    expect(prepared.providerRequestMessages.map((message) => message.id)).toEqual([
+      "old-user",
+      "compact-request",
+    ]);
+    expect(prepared.localCompactionPlan?.retainedRecentMessageIds).toEqual(["recent-user"]);
+    const compactRequestForProvider = prepared.providerRequestMessages.find(
+      (message) => message.id === "compact-request"
+    );
+    expect(
+      compactRequestForProvider?.parts.some(
+        (part) =>
+          part.type === "text" && part.text.includes("Recent messages are preserved verbatim")
+      )
+    ).toBe(true);
+  });
 });
 
 describe("AIService", () => {
