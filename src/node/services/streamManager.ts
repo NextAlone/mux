@@ -26,7 +26,12 @@ import type {
 } from "@/common/types/stream";
 
 import type { SendMessageError, StreamErrorType } from "@/common/types/errors";
-import type { MuxMetadata, MuxMessage, PersistedToolModelUsage } from "@/common/types/message";
+import type {
+  MuxMetadata,
+  MuxMessage,
+  MuxReasoningPart,
+  PersistedToolModelUsage,
+} from "@/common/types/message";
 import type { ThinkingLevel } from "@/common/types/thinking";
 import type { NestedToolCall } from "@/common/orpc/schemas/message";
 import type { ProvidersConfigMap } from "@/common/orpc/types";
@@ -118,6 +123,7 @@ class StreamTruncatedError extends Error {
 // Type definitions for stream parts with extended properties
 interface ReasoningDeltaPart {
   type: "reasoning-delta";
+  id?: string;
   text?: string;
   delta?: string;
   providerMetadata?: {
@@ -125,7 +131,76 @@ interface ReasoningDeltaPart {
       signature?: string;
       redactedData?: string;
     };
+    openai?: {
+      itemId?: string;
+      reasoningEncryptedContent?: string | null;
+    };
   };
+}
+
+interface ReasoningStartPart {
+  type: "reasoning-start";
+  id?: string;
+  providerMetadata?: {
+    openai?: {
+      itemId?: string;
+      reasoningEncryptedContent?: string | null;
+    };
+  };
+}
+
+type ReasoningProviderOptions = NonNullable<MuxReasoningPart["providerOptions"]>;
+
+function extractOpenAIReasoningProviderOptions(
+  providerMetadata: ReasoningDeltaPart["providerMetadata"] | ReasoningStartPart["providerMetadata"]
+): ReasoningProviderOptions | undefined {
+  const openai = providerMetadata?.openai;
+  if (!openai) {
+    return undefined;
+  }
+
+  const itemId =
+    typeof openai.itemId === "string" && openai.itemId.length > 0 ? openai.itemId : undefined;
+  const encryptedContent =
+    typeof openai.reasoningEncryptedContent === "string" &&
+    openai.reasoningEncryptedContent.length > 0
+      ? openai.reasoningEncryptedContent
+      : undefined;
+
+  if (!itemId && !encryptedContent) {
+    return undefined;
+  }
+
+  return {
+    openai: {
+      ...(itemId ? { itemId } : {}),
+      ...(encryptedContent ? { reasoningEncryptedContent: encryptedContent } : {}),
+    },
+  };
+}
+
+function mergeReasoningProviderOptions(
+  ...options: Array<ReasoningProviderOptions | undefined>
+): ReasoningProviderOptions | undefined {
+  let merged: ReasoningProviderOptions | undefined;
+
+  for (const option of options) {
+    if (!option) {
+      continue;
+    }
+    merged = {
+      ...(merged ?? {}),
+      ...option,
+      ...(merged?.anthropic || option.anthropic
+        ? { anthropic: { ...merged?.anthropic, ...option.anthropic } }
+        : {}),
+      ...(merged?.openai || option.openai
+        ? { openai: { ...merged?.openai, ...option.openai } }
+        : {}),
+    };
+  }
+
+  return merged;
 }
 
 // Tool-call tracking + branded types
@@ -535,6 +610,10 @@ interface WorkspaceStreamInfo {
   historySequence: number;
   // Track accumulated parts for partial message (includes reasoning, text, and tools)
   parts: CompletedMessagePart[];
+  // OpenAI sends replay metadata on reasoning-start, while text arrives later on reasoning-delta.
+  // Keep it per active reasoning id so persisted history can round-trip Responses reasoning.
+  activeReasoningProviderOptions: Map<string, ReasoningProviderOptions>;
+  latestReasoningProviderOptions?: ReasoningProviderOptions;
   // Reasoning parts before this index belong to refused fallback attempts whose
   // usage was already attributed separately; stream-end backfill must not bill
   // them again under the answering model.
@@ -1648,6 +1727,8 @@ export class StreamManager extends EventEmitter {
       request,
       historySequence,
       parts: [], // Initialize empty parts array
+      activeReasoningProviderOptions: new Map(),
+      latestReasoningProviderOptions: undefined,
       lastPartialWriteTime: 0, // Initialize to 0 to allow immediate first write
       partialWritePromise: undefined, // No write in flight initially
       processingPromise: Promise.resolve(), // Placeholder, overwritten in startStream
@@ -2494,11 +2575,34 @@ export class StreamManager extends EventEmitter {
                 break;
               }
 
+              case "reasoning-start": {
+                const reasoningStartPart = part as ReasoningStartPart;
+                const providerOptions = extractOpenAIReasoningProviderOptions(
+                  reasoningStartPart.providerMetadata
+                );
+                if (providerOptions) {
+                  streamInfo.latestReasoningProviderOptions = providerOptions;
+                  if (typeof reasoningStartPart.id === "string") {
+                    streamInfo.activeReasoningProviderOptions.set(
+                      reasoningStartPart.id,
+                      providerOptions
+                    );
+                  }
+                }
+                break;
+              }
+
               case "reasoning-delta": {
                 // Both Anthropic and OpenAI use reasoning-delta for streaming reasoning content
                 const reasoningPart = part as ReasoningDeltaPart;
                 const delta = reasoningPart.text ?? reasoningPart.delta ?? "";
                 const signature = reasoningPart.providerMetadata?.anthropic?.signature;
+                const openaiProviderOptions =
+                  extractOpenAIReasoningProviderOptions(reasoningPart.providerMetadata) ??
+                  (typeof reasoningPart.id === "string"
+                    ? streamInfo.activeReasoningProviderOptions.get(reasoningPart.id)
+                    : undefined) ??
+                  streamInfo.latestReasoningProviderOptions;
 
                 // Signature deltas come separately with empty text - attach to last reasoning part
                 if (signature && !delta) {
@@ -2506,7 +2610,10 @@ export class StreamManager extends EventEmitter {
                   if (lastPart?.type === "reasoning") {
                     lastPart.signature = signature;
                     // Also set providerOptions for SDK compatibility when converting to ModelMessages
-                    lastPart.providerOptions = { anthropic: { signature } };
+                    lastPart.providerOptions = mergeReasoningProviderOptions(
+                      lastPart.providerOptions,
+                      { anthropic: { signature } }
+                    );
                     // Emit signature update event
                     this.emit("reasoning-delta", {
                       type: "reasoning-delta",
@@ -2529,13 +2636,23 @@ export class StreamManager extends EventEmitter {
                   text: delta,
                   timestamp: nextPartTimestamp(streamInfo),
                   signature, // May be undefined, will be filled by subsequent signature delta
-                  providerOptions: signature ? { anthropic: { signature } } : undefined,
+                  providerOptions: mergeReasoningProviderOptions(
+                    openaiProviderOptions,
+                    signature ? { anthropic: { signature } } : undefined
+                  ),
                 };
                 await this.appendPartAndEmit(workspaceId, streamInfo, newPart, true);
                 break;
               }
 
               case "reasoning-end": {
+                const reasoningEndPart = part as { id?: unknown };
+                if (typeof reasoningEndPart.id === "string") {
+                  streamInfo.activeReasoningProviderOptions.delete(reasoningEndPart.id);
+                }
+                if (streamInfo.activeReasoningProviderOptions.size === 0) {
+                  streamInfo.latestReasoningProviderOptions = undefined;
+                }
                 // Reasoning-end is just a signal - no state to update
                 this.emit("reasoning-end", {
                   type: "reasoning-end",
@@ -3294,6 +3411,9 @@ export class StreamManager extends EventEmitter {
 
     await this.awaitPendingPartialWrite(streamInfo);
     streamInfo.partialWritePromise = undefined;
+
+    streamInfo.activeReasoningProviderOptions.clear();
+    streamInfo.latestReasoningProviderOptions = undefined;
 
     if (!preserveParts) {
       streamInfo.parts = [];

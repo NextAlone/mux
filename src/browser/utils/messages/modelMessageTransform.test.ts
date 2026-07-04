@@ -158,6 +158,66 @@ describe("modelMessageTransform", () => {
       expect(getAnthropicThinkingDisableReason(result)).toBeUndefined();
     });
 
+    it("strips non-replayable OpenAI reasoning before tool-call messages", () => {
+      const assistantMsg: AssistantModelMessage = {
+        role: "assistant",
+        content: [
+          { type: "reasoning", text: "legacy reasoning without OpenAI metadata" },
+          { type: "tool-call", toolCallId: "call1", toolName: "bash", input: { script: "pwd" } },
+        ],
+      };
+      const toolMsg: ToolModelMessage = {
+        role: "tool",
+        content: [
+          {
+            type: "tool-result",
+            toolCallId: "call1",
+            toolName: "bash",
+            output: { type: "json", value: { stdout: "/home/user" } },
+          },
+        ],
+      };
+
+      const result = transformModelMessages([assistantMsg, toolMsg], "openai");
+
+      expect(result).toHaveLength(2);
+      expect((result[0] as AssistantModelMessage).content).toEqual([
+        { type: "tool-call", toolCallId: "call1", toolName: "bash", input: { script: "pwd" } },
+      ]);
+      expect((result[1] as ToolModelMessage).content[0]).toMatchObject({
+        toolCallId: "call1",
+      });
+    });
+
+    it("preserves replayable OpenAI reasoning and removes legacy reasoning before coalescing", () => {
+      const replayableReasoning = {
+        type: "reasoning" as const,
+        text: "replayable reasoning",
+        providerOptions: {
+          openai: {
+            itemId: "rs_test",
+            reasoningEncryptedContent: "encrypted-test",
+          },
+        },
+      };
+      const assistantMsg: AssistantModelMessage = {
+        role: "assistant",
+        content: [
+          { type: "reasoning", text: "legacy reasoning without OpenAI metadata" },
+          replayableReasoning,
+          { type: "text", text: "Final answer" },
+        ],
+      };
+
+      const result = transformModelMessages([assistantMsg], "openai");
+
+      expect(result).toHaveLength(1);
+      expect((result[0] as AssistantModelMessage).content).toEqual([
+        replayableReasoning,
+        { type: "text", text: "Final answer" },
+      ]);
+    });
+
     it("should insert empty reasoning for final assistant message when Anthropic thinking is enabled", () => {
       const messages: ModelMessage[] = [
         { role: "user", content: [{ type: "text", text: "Hello" }] },
@@ -786,7 +846,7 @@ describe("modelMessageTransform", () => {
   });
 
   describe("reasoning part handling for OpenAI", () => {
-    it("should preserve reasoning parts for OpenAI provider (managed via explicit history)", () => {
+    it("strips non-replayable reasoning parts for OpenAI provider", () => {
       const messages: ModelMessage[] = [
         {
           role: "user",
@@ -803,11 +863,9 @@ describe("modelMessageTransform", () => {
 
       const result = transformModelMessages(messages, "openai");
 
-      // Should have 2 messages, assistant message should keep reasoning + text
       expect(result).toHaveLength(2);
       expect(result[1].role).toBe("assistant");
       expect((result[1] as AssistantModelMessage).content).toEqual([
-        { type: "reasoning", text: "Let me think about this..." },
         { type: "text", text: "Here's the solution" },
       ]);
     });
@@ -860,7 +918,7 @@ describe("modelMessageTransform", () => {
       expect(result[0].role).toBe("user");
     });
 
-    it("should preserve tool calls when stripping reasoning for OpenAI", () => {
+    it("preserves tool calls when stripping non-replayable reasoning for OpenAI", () => {
       const messages: ModelMessage[] = [
         {
           role: "user",
@@ -892,7 +950,7 @@ describe("modelMessageTransform", () => {
       // Should still contain user, assistant, and tool messages after filtering
       expect(result.length).toBeGreaterThan(2);
 
-      // Find the assistant message with text (reasoning should remain alongside text)
+      // Find the assistant message with text (legacy reasoning should be removed)
       const textMessage = result.find((msg) => {
         if (msg.role !== "assistant") return false;
         const content = msg.content;
@@ -902,7 +960,7 @@ describe("modelMessageTransform", () => {
       if (textMessage) {
         const content = (textMessage as AssistantModelMessage).content;
         if (Array.isArray(content)) {
-          expect(content.some((c) => c.type === "reasoning")).toBe(true);
+          expect(content.some((c) => c.type === "reasoning")).toBe(false);
           expect(content.some((c) => c.type === "text")).toBe(true);
         }
       }
@@ -916,7 +974,13 @@ describe("modelMessageTransform", () => {
       expect(toolCallMessage).toBeDefined();
     });
 
-    it("should handle multiple reasoning parts for OpenAI", () => {
+    it("coalesces multiple replayable reasoning parts for OpenAI", () => {
+      const providerOptions = {
+        openai: {
+          itemId: "rs_multi",
+          reasoningEncryptedContent: "encrypted-multi",
+        },
+      };
       const messages: ModelMessage[] = [
         {
           role: "user",
@@ -925,8 +989,8 @@ describe("modelMessageTransform", () => {
         {
           role: "assistant",
           content: [
-            { type: "reasoning", text: "First, I'll consider..." },
-            { type: "reasoning", text: "Then, I'll analyze..." },
+            { type: "reasoning", text: "First, I'll consider...", providerOptions },
+            { type: "reasoning", text: "Then, I'll analyze...", providerOptions },
             { type: "text", text: "Final answer" },
           ],
         },
@@ -934,11 +998,14 @@ describe("modelMessageTransform", () => {
 
       const result = transformModelMessages(messages, "openai");
 
-      // Should have 2 messages, assistant should keep all reasoning + text (coalesced)
       expect(result).toHaveLength(2);
       expect(result[1].role).toBe("assistant");
       expect((result[1] as AssistantModelMessage).content).toEqual([
-        { type: "reasoning", text: "First, I'll consider...Then, I'll analyze..." },
+        {
+          type: "reasoning",
+          text: "First, I'll consider...Then, I'll analyze...",
+          providerOptions,
+        },
         { type: "text", text: "Final answer" },
       ]);
     });

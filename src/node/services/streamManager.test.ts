@@ -221,6 +221,8 @@ function createStreamInfoForTests(
     receivedTerminalEvent: false,
     currentStepStartIndex: 0,
     stepTracker: {},
+    activeReasoningProviderOptions: new Map(),
+    latestReasoningProviderOptions: undefined,
     ...overrides,
   };
 }
@@ -3599,6 +3601,79 @@ describe("StreamManager - TTFT metadata persistence", () => {
   });
 
   describe("StreamManager - reasoning token backfill", () => {
+    test("persists OpenAI reasoning metadata from reasoning-start onto streamed reasoning parts", async () => {
+      const streamManager = new StreamManager(historyService);
+      streamManager.on("error", () => undefined);
+      const workspaceId = "openai-reasoning-metadata-workspace";
+      const messageId = "openai-reasoning-metadata-message";
+      const historySequence = 1;
+      const startTime = Date.now() - 1000;
+
+      const replaceTokenTrackerResult = Reflect.set(streamManager, "tokenTracker", {
+        setModel: () => Promise.resolve(undefined),
+        countTokens: () => Promise.resolve(0),
+      });
+      if (!replaceTokenTrackerResult) {
+        throw new Error("Failed to mock StreamManager.tokenTracker");
+      }
+
+      await appendPartialAssistantForTests(workspaceId, messageId, historySequence);
+
+      const streamInfo = createStreamInfoForTests({
+        streamResult: createStreamResultForTests(
+          (async function* () {
+            await Promise.resolve();
+            yield {
+              type: "reasoning-start",
+              id: "rs_test:0",
+              providerMetadata: {
+                openai: {
+                  itemId: "rs_test",
+                  reasoningEncryptedContent: "encrypted-test",
+                },
+              },
+            };
+            yield { type: "reasoning-delta", id: "rs_test:0", delta: "thinking" };
+            yield { type: "finish", finishReason: "stop" };
+          })(),
+          { inputTokens: 1, outputTokens: 2, totalTokens: 3 }
+        ),
+        messageId,
+        startTime,
+        lastPartTimestamp: startTime,
+        model: "openai:gpt-5.5",
+        metadataModel: "openai:gpt-5.5",
+        historySequence,
+        runtime,
+      });
+      getWorkspaceStreamsForTests(streamManager).set(workspaceId, streamInfo);
+
+      await getProcessStreamWithCleanupForTests(streamManager).call(
+        streamManager,
+        workspaceId,
+        streamInfo,
+        historySequence
+      );
+
+      const historyResult = await historyService.getHistoryFromLatestBoundary(workspaceId);
+      expect(historyResult.success).toBe(true);
+      if (!historyResult.success) {
+        throw new Error(historyResult.error);
+      }
+      const updatedMessage = historyResult.data.find((message) => message.id === messageId);
+      const reasoningPart = updatedMessage?.parts.find((part) => part.type === "reasoning");
+      expect(reasoningPart).toMatchObject({
+        type: "reasoning",
+        text: "thinking",
+        providerOptions: {
+          openai: {
+            itemId: "rs_test",
+            reasoningEncryptedContent: "encrypted-test",
+          },
+        },
+      });
+    });
+
     test("backfills reasoningTokens from concatenated reasoning text when provider reports undefined", async () => {
       const startTime = Date.now() - 1000;
       const reasoningSegments = ["Thinking through ", "tradeoffs"];

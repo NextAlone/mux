@@ -26,8 +26,8 @@ import { renderAttachmentsToContentWithBudget } from "./attachmentRenderer";
  * even if they were interrupted before producing text content.
  *
  * Note: This function filters out reasoning-only messages but does NOT strip reasoning
- * parts from messages that have other content. Reasoning parts are handled differently
- * per provider (see stripReasoningForOpenAI).
+ * parts from messages that have other content. Provider-specific replay safety is
+ * handled separately before this pass.
  *
  * @param messages - The messages to filter
  * @param preserveReasoningOnly - If true, keep reasoning-only messages (for Extended Thinking)
@@ -530,6 +530,63 @@ function filterReasoningOnlyMessages(messages: ModelMessage[]): ModelMessage[] {
     const hasNonReasoningContent = msg.content.some((part) => part.type !== "reasoning");
 
     return hasNonReasoningContent;
+  });
+}
+
+function hasReplayableOpenAIReasoning(part: { providerOptions?: unknown }): boolean {
+  const providerOptions = part.providerOptions;
+  if (!providerOptions || typeof providerOptions !== "object") {
+    return false;
+  }
+
+  const openai = (providerOptions as { openai?: unknown }).openai;
+  if (!openai || typeof openai !== "object") {
+    return false;
+  }
+
+  const itemId = (openai as { itemId?: unknown }).itemId;
+  const reasoningEncryptedContent = (openai as { reasoningEncryptedContent?: unknown })
+    .reasoningEncryptedContent;
+
+  return (
+    (typeof itemId === "string" && itemId.length > 0) ||
+    (typeof reasoningEncryptedContent === "string" && reasoningEncryptedContent.length > 0)
+  );
+}
+
+/**
+ * OpenAI Responses accepts replayed reasoning only when it has the provider metadata
+ * needed to reference or decrypt the original reasoning item. Older histories stored
+ * plain text reasoning summaries; sending those back can create orphaned reasoning
+ * items around tool calls, so strip them at request time while preserving UI history.
+ */
+function stripNonReplayableOpenAIReasoning(messages: ModelMessage[]): ModelMessage[] {
+  return messages.flatMap<ModelMessage>((msg) => {
+    if (msg.role !== "assistant") {
+      return [msg];
+    }
+
+    const assistantMsg = msg;
+    if (typeof assistantMsg.content === "string") {
+      return [msg];
+    }
+
+    const filteredContent = assistantMsg.content.filter((part) => {
+      if (part.type !== "reasoning") {
+        return true;
+      }
+      return hasReplayableOpenAIReasoning(part);
+    });
+
+    if (filteredContent.length === assistantMsg.content.length) {
+      return [msg];
+    }
+
+    if (filteredContent.length === 0) {
+      return [];
+    }
+
+    return [{ ...assistantMsg, content: filteredContent }];
   });
 }
 
@@ -1149,7 +1206,7 @@ function ensureAnthropicThinkingBeforeToolCalls(messages: ModelMessage[]): Model
  * 2. Drop orphaned tool calls/results (self-healing)
  * 3. Coalesce consecutive no-progress `task_await` polls - all providers
  * 4. Filter reasoning-only messages:
- *    - OpenAI: Keep reasoning parts in explicit history, filter reasoning-only messages
+ *    - OpenAI: Keep only replayable reasoning parts, filter reasoning-only messages
  *    - Anthropic: Filter out reasoning-only messages (API rejects them)
  * 5. Merge consecutive user messages - all providers
  *
@@ -1166,8 +1223,11 @@ export function transformModelMessages(
     anthropicThinkingEnabled?: boolean;
   }
 ): ModelMessage[] {
+  const providerSafeMessages =
+    provider === "openai" ? stripNonReplayableOpenAIReasoning(messages) : messages;
+
   // Pass 0: Coalesce consecutive parts to reduce JSON overhead from streaming (applies to all providers)
-  const coalesced = coalesceConsecutiveParts(messages);
+  const coalesced = coalesceConsecutiveParts(providerSafeMessages);
 
   // Pass 1: Split mixed content messages (applies to all providers)
   const split = splitMixedContentMessages(coalesced);
@@ -1181,9 +1241,8 @@ export function transformModelMessages(
   // Pass 4: Provider-specific reasoning handling
   let reasoningHandled: ModelMessage[];
   if (provider === "openai") {
-    // OpenAI: Keep reasoning parts in explicit history so later turns can
-    // preserve reasoning context without chaining previous_response_id.
-    // Only filter out reasoning-only messages (messages with no text/tool-call content)
+    // OpenAI: Keep only reasoning parts with replay metadata. Plain-text legacy
+    // reasoning is useful in the UI but invalid as Responses API history.
     reasoningHandled = filterReasoningOnlyMessages(taskAwaitCoalesced);
   } else if (provider === "anthropic") {
     // Anthropic: When extended thinking is enabled, preserve reasoning-only messages and ensure

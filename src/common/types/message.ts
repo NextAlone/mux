@@ -658,6 +658,10 @@ export interface MuxReasoningPart {
     anthropic?: {
       signature?: string;
     };
+    openai?: {
+      itemId?: string;
+      reasoningEncryptedContent?: string | null;
+    };
   };
 }
 
