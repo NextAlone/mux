@@ -106,7 +106,6 @@ import { sliceMessagesForProviderFromLatestContextBoundary } from "@/common/util
 import {
   buildLocalCompactionPlan,
   estimateMuxMessageTokensByChars,
-  type BuildLocalCompactionPlanOptions,
 } from "@/common/utils/compaction/piLocal";
 import {
   normalizeCompactionSettings,
@@ -171,9 +170,10 @@ const STREAM_STARTUP_DIAGNOSTIC_THRESHOLD_MS = 1_000;
 
 interface ProviderRequestLocalCompactionOptions {
   strategy: LocalCompactionStrategy;
+  fallbackStrategies?: LocalCompactionStrategy[];
   keepRecentTokens: number;
   toolResultMaxChars: number;
-  estimateTokens: BuildLocalCompactionPlanOptions["estimateTokens"];
+  estimateTokens: (message: MuxMessage, strategy: LocalCompactionStrategy) => number;
 }
 
 interface PrepareProviderRequestMessagesOptions {
@@ -182,6 +182,7 @@ interface PrepareProviderRequestMessagesOptions {
 
 interface ProviderRequestLocalCompactionPlan {
   strategy: LocalCompactionStrategy;
+  attemptedStrategies: LocalCompactionStrategy[];
   retainedRecentMessageIds: string[];
 }
 
@@ -245,26 +246,61 @@ function applyLocalCompactionRequestPlan(
     return { activeContextMessages };
   }
 
-  const messagesBeforeRequest = activeContextMessages.slice(0, compactionRequestIndex);
-  const compactionRequestAndTail = activeContextMessages
-    .slice(compactionRequestIndex)
-    .map((message, index) =>
-      index === 0 ? rewriteCompactionRequestForLocalStrategy(message, options.strategy) : message
-    );
-  const plan = buildLocalCompactionPlan({
-    messages: messagesBeforeRequest,
-    keepRecentTokens: options.keepRecentTokens,
-    toolResultMaxChars: options.toolResultMaxChars,
-    estimateTokens: options.estimateTokens,
-  });
+  const strategyChain = buildLocalCompactionStrategyChain(
+    options.strategy,
+    options.fallbackStrategies
+  );
+  const attemptedStrategies: LocalCompactionStrategy[] = [];
+  for (const strategy of strategyChain) {
+    attemptedStrategies.push(strategy);
+    if (strategy === "mux-current") {
+      return { activeContextMessages };
+    }
 
-  return {
-    activeContextMessages: [...plan.summarizeMessages, ...compactionRequestAndTail],
-    localCompactionPlan: {
-      strategy: options.strategy,
-      retainedRecentMessageIds: plan.recentMessages.map((message) => message.id),
-    },
-  };
+    try {
+      const messagesBeforeRequest = activeContextMessages.slice(0, compactionRequestIndex);
+      const compactionRequestAndTail = activeContextMessages
+        .slice(compactionRequestIndex)
+        .map((message, index) =>
+          index === 0 ? rewriteCompactionRequestForLocalStrategy(message, strategy) : message
+        );
+      const plan = buildLocalCompactionPlan({
+        messages: messagesBeforeRequest,
+        keepRecentTokens: options.keepRecentTokens,
+        toolResultMaxChars: options.toolResultMaxChars,
+        estimateTokens: (message) => options.estimateTokens(message, strategy),
+      });
+
+      return {
+        activeContextMessages: [...plan.summarizeMessages, ...compactionRequestAndTail],
+        localCompactionPlan: {
+          strategy,
+          attemptedStrategies,
+          retainedRecentMessageIds: plan.recentMessages.map((message) => message.id),
+        },
+      };
+    } catch {
+      // Planning has not installed a compaction boundary, so the next local strategy can try.
+    }
+  }
+
+  return { activeContextMessages };
+}
+
+function buildLocalCompactionStrategyChain(
+  strategy: LocalCompactionStrategy,
+  fallbackStrategies: readonly LocalCompactionStrategy[] | undefined
+): LocalCompactionStrategy[] {
+  const chain: LocalCompactionStrategy[] = [];
+  const seen = new Set<LocalCompactionStrategy>();
+  for (const candidate of [strategy, ...(fallbackStrategies ?? []), "mux-current" as const]) {
+    if (seen.has(candidate)) {
+      continue;
+    }
+    seen.add(candidate);
+    chain.push(candidate);
+  }
+  return chain;
 }
 
 function resolveProviderRequestLocalCompactionOptions(
@@ -284,9 +320,10 @@ function resolveProviderRequestLocalCompactionOptions(
     settings.localStrategy === "hybrid-local" ? settings.hybridLocal : settings.piLocal;
   return {
     strategy: settings.localStrategy,
+    fallbackStrategies: settings.fallbackLocalStrategies,
     keepRecentTokens: parameters.keepRecentTokens,
     toolResultMaxChars: parameters.toolResultMaxChars,
-    estimateTokens: estimateMuxMessageTokensByChars,
+    estimateTokens: (message) => estimateMuxMessageTokensByChars(message),
   };
 }
 

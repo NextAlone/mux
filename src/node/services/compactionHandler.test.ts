@@ -252,7 +252,7 @@ describe("CompactionHandler", () => {
             toolResultMaxChars: 1_000,
           },
           hybridLocal: {
-            keepRecentTokens: 3,
+            keepRecentTokens: 1,
             toolResultMaxChars: 1_000,
           },
         }),
@@ -283,6 +283,53 @@ describe("CompactionHandler", () => {
       expect(retained?.metadata?.historySequence).toBeGreaterThan(
         historyResult.data[0]?.metadata?.historySequence ?? -1
       );
+    });
+
+    it("falls back when retained recent planning fails before a boundary is installed", async () => {
+      handler = new CompactionHandler({
+        workspaceId,
+        historyService,
+        sessionDir,
+        telemetryService,
+        emitter: mockEmitter,
+        getCompactionSettings: () => ({
+          localStrategy: "hybrid-local",
+          fallbackLocalStrategies: ["pi-local", "mux-current"],
+          remotePolicy: "off",
+          piLocal: {
+            keepRecentTokens: 3,
+            toolResultMaxChars: 1_000,
+          },
+          hybridLocal: {
+            keepRecentTokens: 1,
+            toolResultMaxChars: 1_000,
+          },
+        }),
+        estimateCompactionMessageTokens: (message, strategy) => {
+          if (strategy === "hybrid-local") {
+            throw new Error("hybrid planning failed");
+          }
+          return message.id === "recent-user" ? 3 : 4;
+        },
+      });
+      await seedHistory(
+        createMuxMessage("old-user", "user", "old context"),
+        createMuxMessage("recent-user", "user", "recent context", { timestamp: 123 }),
+        createCompactionRequest("compact-request")
+      );
+
+      const handled = await handler.handleCompletion(createStreamEndEvent("Summary"));
+
+      expect(handled).toBe(true);
+      const historyResult = await historyService.getHistoryFromLatestBoundary(workspaceId);
+      expect(historyResult.success).toBe(true);
+      if (!historyResult.success) {
+        throw new Error(historyResult.error);
+      }
+      const retained = historyResult.data.find(
+        (message) => message.parts[0]?.type === "text" && message.parts[0].text === "recent context"
+      );
+      expect(retained?.metadata?.synthetic).toBe(true);
     });
 
     describe("onIdleCompactionOutcome", () => {

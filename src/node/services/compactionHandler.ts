@@ -55,7 +55,11 @@ import {
   createRetainedRecentContextMessages,
   estimateMuxMessageTokensByChars,
 } from "@/common/utils/compaction/piLocal";
-import { normalizeCompactionSettings } from "@/common/utils/compaction/strategyConfig";
+import {
+  normalizeCompactionSettings,
+  resolveLocalCompactionStrategyChain,
+  type LocalCompactionStrategy,
+} from "@/common/utils/compaction/strategyConfig";
 
 /**
  * Check if a string is just a raw JSON object, which suggests the model
@@ -361,7 +365,10 @@ interface CompactionHandlerOptions {
   /** Reads current compaction strategy config. Omitted/default keeps mux-current behavior. */
   getCompactionSettings?: () => unknown;
   /** Test hook for deterministic keep-recent planning. Production uses a cheap local estimate. */
-  estimateCompactionMessageTokens?: (message: MuxMessage) => number;
+  estimateCompactionMessageTokens?: (
+    message: MuxMessage,
+    strategy: LocalCompactionStrategy
+  ) => number;
 }
 
 /**
@@ -385,7 +392,10 @@ export class CompactionHandler {
   private readonly onCompactionComplete?: (metadata: CompactionCompletionMetadata) => void;
   private readonly onIdleCompactionOutcome?: (success: boolean) => void;
   private readonly getCompactionSettings?: () => unknown;
-  private readonly estimateCompactionMessageTokens: (message: MuxMessage) => number;
+  private readonly estimateCompactionMessageTokens: (
+    message: MuxMessage,
+    strategy: LocalCompactionStrategy
+  ) => number;
 
   /** Flag indicating post-compaction attachments should be generated on next turn */
   private postCompactionAttachmentsPending = false;
@@ -412,7 +422,8 @@ export class CompactionHandler {
     this.onIdleCompactionOutcome = options.onIdleCompactionOutcome;
     this.getCompactionSettings = options.getCompactionSettings;
     this.estimateCompactionMessageTokens =
-      options.estimateCompactionMessageTokens ?? estimateMuxMessageTokensByChars;
+      options.estimateCompactionMessageTokens ??
+      ((message) => estimateMuxMessageTokensByChars(message));
   }
 
   private async loadPersistedPendingStateIfNeeded(): Promise<void> {
@@ -633,32 +644,40 @@ export class CompactionHandler {
 
   private createRetainedRecentContextMessages(messages: MuxMessage[]): MuxMessage[] {
     const settings = normalizeCompactionSettings(this.getCompactionSettings?.());
-    if (settings.localStrategy === "mux-current") {
-      return [];
-    }
-
     const compactionRequestIndex = findLatestCompactionRequestIndex(messages);
     if (compactionRequestIndex < 0) {
       return [];
     }
 
-    const localParameters =
-      settings.localStrategy === "hybrid-local" ? settings.hybridLocal : settings.piLocal;
-    const plan = buildLocalCompactionPlan({
-      messages: messages.slice(0, compactionRequestIndex),
-      keepRecentTokens: localParameters.keepRecentTokens,
-      toolResultMaxChars: localParameters.toolResultMaxChars,
-      estimateTokens: this.estimateCompactionMessageTokens,
-    });
+    for (const strategy of resolveLocalCompactionStrategyChain(settings)) {
+      if (strategy === "mux-current") {
+        return [];
+      }
 
-    if (plan.recentMessages.length === 0) {
-      return [];
+      try {
+        const localParameters =
+          strategy === "hybrid-local" ? settings.hybridLocal : settings.piLocal;
+        const plan = buildLocalCompactionPlan({
+          messages: messages.slice(0, compactionRequestIndex),
+          keepRecentTokens: localParameters.keepRecentTokens,
+          toolResultMaxChars: localParameters.toolResultMaxChars,
+          estimateTokens: (message) => this.estimateCompactionMessageTokens(message, strategy),
+        });
+
+        if (plan.recentMessages.length === 0) {
+          return [];
+        }
+
+        return createRetainedRecentContextMessages({
+          messages: plan.recentMessages,
+          createId: () => createCompactionRetainedContextMessageId(),
+        });
+      } catch {
+        // No boundary has been persisted yet, so fallback local strategies may still try.
+      }
     }
 
-    return createRetainedRecentContextMessages({
-      messages: plan.recentMessages,
-      createId: () => createCompactionRetainedContextMessageId(),
-    });
+    return [];
   }
 
   private async appendRetainedRecentContextMessages(

@@ -549,7 +549,11 @@ describe("prepareProviderRequestMessages", () => {
       "old-user",
       "compact-request",
     ]);
-    expect(prepared.localCompactionPlan?.retainedRecentMessageIds).toEqual(["recent-user"]);
+    expect(prepared.localCompactionPlan).toMatchObject({
+      strategy: "pi-local",
+      attemptedStrategies: ["pi-local"],
+      retainedRecentMessageIds: ["recent-user"],
+    });
     const compactRequestForProvider = prepared.providerRequestMessages.find(
       (message) => message.id === "compact-request"
     );
@@ -557,6 +561,57 @@ describe("prepareProviderRequestMessages", () => {
       compactRequestForProvider?.parts.some(
         (part) =>
           part.type === "text" && part.text.includes("Recent messages are preserved verbatim")
+      )
+    ).toBe(true);
+  });
+
+  it("falls back to the next local strategy when compaction request planning fails", () => {
+    const oldMessage = createMuxMessage("old-user", "user", "old context", {
+      historySequence: 1,
+    });
+    const recentMessage = createMuxMessage("recent-user", "user", "recent context", {
+      historySequence: 2,
+    });
+    const compactRequest = createMuxMessage("compact-request", "user", "/compact", {
+      historySequence: 3,
+      muxMetadata: {
+        type: "compaction-request",
+        rawCommand: "/compact",
+        parsed: {},
+      },
+    });
+
+    const prepared = prepareProviderRequestMessages(
+      [oldMessage, recentMessage, compactRequest],
+      "openai",
+      "off",
+      {
+        localCompaction: {
+          strategy: "hybrid-local",
+          fallbackStrategies: ["pi-local", "mux-current"],
+          keepRecentTokens: 3,
+          toolResultMaxChars: 1_000,
+          estimateTokens: (message, strategy) => {
+            if (strategy === "hybrid-local") {
+              throw new Error("hybrid planning failed");
+            }
+            return message.id === "recent-user" ? 3 : 4;
+          },
+        },
+      }
+    );
+
+    expect(prepared.localCompactionPlan).toEqual({
+      strategy: "pi-local",
+      attemptedStrategies: ["hybrid-local", "pi-local"],
+      retainedRecentMessageIds: ["recent-user"],
+    });
+    const compactRequestForProvider = prepared.providerRequestMessages.find(
+      (message) => message.id === "compact-request"
+    );
+    expect(
+      compactRequestForProvider?.parts.some(
+        (part) => part.type === "text" && part.text.includes("dense handoff summary")
       )
     ).toBe(true);
   });
