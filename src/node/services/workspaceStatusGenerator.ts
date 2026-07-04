@@ -14,7 +14,7 @@ import {
 /**
  * AI-generated sidebar status: emoji + short verb-led phrase, matching
  * WorkspaceAgentStatus so the frontend renders it through the same
- * WorkspaceStatusIndicator path as displayStatus / todoStatus.
+ * WorkspaceStatusIndicator path as displayStatus / summaryStatus.
  */
 export interface WorkspaceAgentStatusPayload {
   emoji: string;

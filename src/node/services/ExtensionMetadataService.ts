@@ -26,7 +26,8 @@ import { log } from "@/node/services/log";
  * - lastModel: Last model used in this workspace
  * - lastThinkingLevel: Last thinking/reasoning level used in this workspace
  * - displayStatus: Current non-todo status payload for transient system-driven progress
- * - todoStatus: Status derived from the current todo list (preferred sidebar progress surface)
+ * - summaryStatus: AI-generated work summary for the sidebar
+ * - todoStatus: Status derived from the current todo list
  * - hasTodos: Whether the workspace still had todos when streaming last stopped
  *
  * File location: ~/.mux/extensionMetadata.json
@@ -247,9 +248,8 @@ export class ExtensionMetadataService {
   }
 
   /**
-   * AgentStatusService writes its AI-generated payload into the same
-   * `todoStatus` field used by the todo-derived path. Passing `null` clears
-   * the slot.
+   * AgentStatusService writes its AI-generated work summary here. Passing
+   * `null` clears the generated summary without touching the todo-derived slot.
    *
    * Unlike `setTodoStatus`, this writer:
    * - Never advances `recency`. Background regeneration must not promote
@@ -285,10 +285,13 @@ export class ExtensionMetadataService {
         return null;
       }
       if (status) {
-        workspace.todoStatus = status;
+        workspace.summaryStatus = status;
       } else {
-        delete workspace.todoStatus;
+        delete workspace.summaryStatus;
       }
+      // Prevent upgraded metadata from falling back to the legacy field after
+      // an explicit summary clear or rewrite.
+      workspace.agentStatus = null;
       data.workspaces[workspaceId] = workspace;
       await this.save(data);
       return toWorkspaceActivitySnapshot(workspace);

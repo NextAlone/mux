@@ -272,9 +272,11 @@ export const WorkspaceActivitySnapshotSchema = z.object({
     description:
       "Transient non-todo status for system-driven background progress (for example executor routing).",
   }),
+  summaryStatus: WorkspaceAgentStatusSchema.nullable().optional().meta({
+    description: "Persistent AI-generated sidebar work summary for the latest activity.",
+  }),
   todoStatus: WorkspaceAgentStatusSchema.nullable().optional().meta({
-    description:
-      "Persistent sidebar status. Set by the small-model AgentStatusService when available, with a todo-derived fallback.",
+    description: "Persistent status derived from the current todo list.",
   }),
   hasTodos: z.boolean().optional().meta({
     description: "Whether the workspace still had todos when streaming last stopped",

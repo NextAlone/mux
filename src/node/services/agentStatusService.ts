@@ -296,7 +296,7 @@ export class AgentStatusService {
       state.lastSeenInputHash = transcriptHash;
 
       // Empty workspace: nothing to summarize. Don't blank an existing
-      // todoStatus — that would clobber a status produced before compaction.
+      // summaryStatus — that would clobber a status produced before compaction.
       // Still consume non-racy recency so an empty workspace doesn't sort as
       // "recency advanced" forever and starve other workspaces under the
       // single-concurrency scheduler.

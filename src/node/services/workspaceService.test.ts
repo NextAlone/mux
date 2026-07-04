@@ -4403,21 +4403,18 @@ describe("WorkspaceService idle compaction dispatch", () => {
     await internals.updateStreamingStatus(workspaceId, false);
 
     expect(internals.idleCompactingWorkspaces.has(workspaceId)).toBe(false);
-    // todoStatus is intentionally NOT passed when there are no todos —
-    // passing null would delete an AgentStatusService-written AI summary
-    // from the same slot. Explicit clears happen via setTodoStatus.
+    // todoStatus is intentionally NOT passed when there are no todos. Explicit
+    // clears happen via setTodoStatus when the agent writes an empty todo list.
     expect(setStreaming).toHaveBeenCalledWith(workspaceId, false, {
       hasTodos: false,
     });
   });
 
-  test("stream-stop with no todos does NOT clear todoStatus (preserves AI summary)", async () => {
-    // Codex: AgentStatusService writes its AI-generated summary into the
-    // same `todoStatus` slot that `setTodoStatus` uses. The stream-stop
-    // path used to read an empty todo list and pass `todoStatus: null`,
-    // which deleted the slot — wiping a summary that was just generated
-    // during the stream. Free-form chats (no todos) hit this every turn.
-    const workspaceId = "stream-stop-preserves-ai-status";
+  test("stream-stop with no todos omits todoStatus instead of clearing it", async () => {
+    // The stream-stop path reads the todo file as a fallback for background
+    // workspaces. With no todos, it must omit todoStatus; explicit clears are
+    // reserved for todo_write([]), which already routes through setTodoStatus.
+    const workspaceId = "stream-stop-omits-empty-todo-status";
     const snapshot = {
       recency: Date.now(),
       streaming: false,

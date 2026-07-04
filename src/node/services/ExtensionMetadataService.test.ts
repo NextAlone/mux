@@ -173,7 +173,7 @@ describe("ExtensionMetadataService", () => {
     expect(snapshots.get("ws-8")?.lastThinkingLevel).toBe("high");
   });
 
-  test("legacy agentStatus is projected into todoStatus when todoStatus is absent", async () => {
+  test("legacy agentStatus is projected into summaryStatus when summaryStatus is absent", async () => {
     await writeFile(
       filePath,
       JSON.stringify({
@@ -192,13 +192,14 @@ describe("ExtensionMetadataService", () => {
     );
 
     const snapshots = await service.getAllSnapshots();
-    expect(snapshots.get("workspace-legacy-status")?.todoStatus).toEqual({
+    expect(snapshots.get("workspace-legacy-status")?.summaryStatus).toEqual({
       emoji: "🔧",
       message: "Legacy background status",
     });
+    expect(snapshots.get("workspace-legacy-status")?.todoStatus).toBeUndefined();
   });
 
-  test("malformed todoStatus falls back to legacy agentStatus when todos were never explicitly cleared", async () => {
+  test("malformed summaryStatus falls back to legacy agentStatus", async () => {
     await writeFile(
       filePath,
       JSON.stringify({
@@ -209,7 +210,7 @@ describe("ExtensionMetadataService", () => {
             streaming: false,
             lastModel: null,
             lastThinkingLevel: null,
-            todoStatus: { nope: true },
+            summaryStatus: { nope: true },
             agentStatus: { emoji: "🔧", message: "Legacy background status" },
           },
         },
@@ -218,10 +219,11 @@ describe("ExtensionMetadataService", () => {
     );
 
     const snapshots = await service.getAllSnapshots();
-    expect(snapshots.get("workspace-malformed-todo-status")?.todoStatus).toEqual({
+    expect(snapshots.get("workspace-malformed-todo-status")?.summaryStatus).toEqual({
       emoji: "🔧",
       message: "Legacy background status",
     });
+    expect(snapshots.get("workspace-malformed-todo-status")?.todoStatus).toBeUndefined();
   });
 
   test("legacy agentStatus does not repopulate todoStatus after an explicit empty todo snapshot", async () => {

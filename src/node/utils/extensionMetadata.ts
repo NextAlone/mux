@@ -25,6 +25,7 @@ export interface ExtensionMetadata {
   lastThinkingLevel: ThinkingLevel | null;
   agentStatus: ExtensionAgentStatus | null;
   displayStatus?: ExtensionAgentStatus | null;
+  summaryStatus?: ExtensionAgentStatus | null;
   todoStatus?: ExtensionAgentStatus | null;
   hasTodos?: boolean;
   // Persists the latest display-status URL so later updates without a URL
@@ -94,6 +95,12 @@ export function coerceExtensionMetadata(value: unknown): ExtensionMetadata | nul
         ? null
         : (coerceAgentStatus(record.displayStatus) ?? undefined)
       : undefined;
+  const summaryStatus =
+    "summaryStatus" in record
+      ? record.summaryStatus === null
+        ? null
+        : (coerceAgentStatus(record.summaryStatus) ?? undefined)
+      : undefined;
   const todoStatus =
     "todoStatus" in record
       ? record.todoStatus === null
@@ -118,6 +125,7 @@ export function coerceExtensionMetadata(value: unknown): ExtensionMetadata | nul
     lastThinkingLevel: isThinkingLevel(record.lastThinkingLevel) ? record.lastThinkingLevel : null,
     agentStatus: coerceAgentStatus(record.agentStatus),
     ...(displayStatus !== undefined ? { displayStatus } : {}),
+    ...(summaryStatus !== undefined ? { summaryStatus } : {}),
     ...(todoStatus !== undefined ? { todoStatus } : {}),
     ...(typeof record.hasTodos === "boolean" ? { hasTodos: record.hasTodos } : {}),
     lastStatusUrl: coerceStatusUrl(record.lastStatusUrl),
@@ -129,15 +137,14 @@ export function toWorkspaceActivitySnapshot(
   metadata: ExtensionMetadata
 ): WorkspaceActivitySnapshot {
   const displayStatus = metadata.displayStatus !== undefined ? metadata.displayStatus : null;
-  const todoStatus =
-    metadata.todoStatus !== undefined
-      ? metadata.todoStatus
-      : metadata.hasTodos === false
-        ? null
-        : // Upgrade bridge: existing extensionMetadata.json entries may only have the old
-          // agentStatus field. Project that forward into todoStatus until a fresh todo_write
-          // or stream-stop snapshot rewrites the workspace metadata.
-          coerceAgentStatus(metadata.agentStatus);
+  const summaryStatus =
+    metadata.summaryStatus !== undefined
+      ? metadata.summaryStatus
+      : // Upgrade bridge: existing extensionMetadata.json entries may only have the old
+        // agentStatus field. Project that forward into the generated-summary slot so
+        // todoStatus remains reserved for todo-derived progress.
+        coerceAgentStatus(metadata.agentStatus);
+  const todoStatus = metadata.todoStatus !== undefined ? metadata.todoStatus : null;
   return {
     recency: metadata.recency,
     streaming: metadata.streaming,
@@ -147,6 +154,7 @@ export function toWorkspaceActivitySnapshot(
     lastModel: metadata.lastModel ?? null,
     lastThinkingLevel: metadata.lastThinkingLevel ?? null,
     ...(displayStatus ? { displayStatus } : {}),
+    ...(summaryStatus ? { summaryStatus } : {}),
     ...(todoStatus ? { todoStatus } : {}),
     ...(typeof metadata.hasTodos === "boolean" ? { hasTodos: metadata.hasTodos } : {}),
     ...(metadata.goal !== undefined ? { goal: metadata.goal } : {}),

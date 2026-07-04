@@ -908,6 +908,8 @@ describe("AgentStatusService", () => {
       await svc.setSidebarStatus("ws", { emoji: "🛠️", message: "Doing work" });
       const after = await svc.getSnapshot("ws");
       expect(after?.recency).toBe(100);
+      expect(after?.summaryStatus).toEqual({ emoji: "🛠️", message: "Doing work" });
+      expect(after?.todoStatus).toBeUndefined();
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -926,6 +928,7 @@ describe("AgentStatusService", () => {
       const after = await svc.getSnapshot("ws");
 
       expect(skipped).toBeNull();
+      expect(after?.summaryStatus).toBeUndefined();
       expect(after?.todoStatus).toBeUndefined();
       expect(after?.recency).toBe(200);
     } finally {
