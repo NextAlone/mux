@@ -76,27 +76,91 @@ function getResponseText(value: unknown): string {
   return "";
 }
 
-function findImageGenerationCall(value: unknown): ImageGenerationCall | null {
-  if (!isRecord(value) || !Array.isArray(value.output)) {
+function toImageGenerationCall(value: unknown): ImageGenerationCall | null {
+  if (!isRecord(value)) {
     return null;
   }
 
-  for (const item of value.output) {
-    if (!isRecord(item)) continue;
-    if (item.type !== "image_generation_call") continue;
-    if (typeof item.result !== "string" || item.result.length === 0) continue;
-
-    return {
-      type: "image_generation_call",
-      result: item.result,
-      ...(typeof item.id === "string" && item.id.length > 0 ? { id: item.id } : {}),
-      ...(typeof item.revised_prompt === "string" && item.revised_prompt.length > 0
-        ? { revised_prompt: item.revised_prompt }
-        : {}),
-    };
+  if (value.type !== "image_generation_call") {
+    return null;
+  }
+  if (typeof value.result !== "string" || value.result.length === 0) {
+    return null;
   }
 
-  return null;
+  return {
+    type: "image_generation_call",
+    result: value.result,
+    ...(typeof value.id === "string" && value.id.length > 0 ? { id: value.id } : {}),
+    ...(typeof value.revised_prompt === "string" && value.revised_prompt.length > 0
+      ? { revised_prompt: value.revised_prompt }
+      : {}),
+  };
+}
+
+function findImageGenerationCall(value: unknown): ImageGenerationCall | null {
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const match = findImageGenerationCall(item);
+      if (match) return match;
+    }
+    return null;
+  }
+
+  const direct = toImageGenerationCall(value);
+  if (direct) return direct;
+
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  return (
+    findImageGenerationCall(value.output) ??
+    findImageGenerationCall(value.response) ??
+    findImageGenerationCall(value.item)
+  );
+}
+
+function parseJson(value: string): unknown {
+  try {
+    return JSON.parse(value) as unknown;
+  } catch {
+    return null;
+  }
+}
+
+function parseSsePayloads(responseText: string): unknown[] {
+  const payloads: unknown[] = [];
+
+  for (const block of responseText.split(/\r?\n\r?\n/)) {
+    const data = block
+      .split(/\r?\n/)
+      .filter((line) => line.startsWith("data:"))
+      .map((line) => line.slice("data:".length).trimStart())
+      .join("\n")
+      .trim();
+
+    if (data.length === 0 || data === "[DONE]") {
+      continue;
+    }
+
+    const parsed = parseJson(data);
+    if (parsed != null) {
+      payloads.push(parsed);
+    }
+  }
+
+  return payloads;
+}
+
+function parseResponsePayload(responseText: string): unknown {
+  const parsed = parseJson(responseText);
+  if (parsed != null) {
+    return parsed;
+  }
+
+  const payloads = parseSsePayloads(responseText);
+  return payloads.length > 0 ? payloads : null;
 }
 
 function sanitizeFilenamePart(value: string): string {
@@ -137,7 +201,8 @@ function buildRequestBody(input: CodexImageGenerationInput): Record<string, unkn
     ],
     tools: [imageTool],
     tool_choice: { type: "image_generation" },
-    stream: false,
+    // Codex image generation rejects non-streaming Responses requests.
+    stream: true,
     store: false,
   };
 }
@@ -174,12 +239,7 @@ export class CodexImageGenerationService {
     this.oauth.recordUsageHeaders(response.headers);
 
     const responseText = await response.text();
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(responseText) as unknown;
-    } catch {
-      parsed = null;
-    }
+    const parsed = parseResponsePayload(responseText);
 
     if (!response.ok) {
       const message = getResponseText(parsed) || responseText.trim() || response.statusText;
