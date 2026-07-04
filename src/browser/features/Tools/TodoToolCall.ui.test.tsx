@@ -53,4 +53,18 @@ describe("TodoToolCall", () => {
 
     expect(iconClass).not.toContain("animate-spin");
   });
+
+  test("does not spin the completed preview check while the todo_write call is still executing", () => {
+    const view = renderTodoToolCall({
+      args: {
+        todos: [{ content: "Submit fix revision", status: "completed" }],
+      },
+      status: "executing",
+    });
+
+    const preview = view.getByText("Submit fix revision").parentElement;
+    const iconClass = preview?.querySelector("svg")?.getAttribute("class") ?? "";
+
+    expect(iconClass).not.toContain("animate-spin");
+  });
 });
