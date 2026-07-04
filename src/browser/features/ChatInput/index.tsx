@@ -194,6 +194,10 @@ import {
 import { RecordingOverlay } from "./RecordingOverlay";
 import { AttachedReviewsPanel } from "./AttachedReviewsPanel";
 import {
+  isEnterImmediatelyAfterCompositionEnd,
+  isInputMethodCompositionKeyEvent,
+} from "./imeComposition";
+import {
   buildSkillInvocationMetadata,
   hasProjectScopedSkillRef,
   parseCommandWithSkillInvocation,
@@ -254,12 +258,6 @@ interface SendOverrides {
 
 interface InternalSendOverrides extends SendOverrides {
   skipBoundaryEditConfirmation?: boolean;
-}
-
-function isInputMethodCompositionEvent(event: React.KeyboardEvent): boolean {
-  const nativeEvent = event.nativeEvent;
-  // IME candidate confirmation can surface as Enter; let the input method own it.
-  return nativeEvent.isComposing || nativeEvent.keyCode === 229 || nativeEvent.which === 229;
 }
 
 interface OpenAIFastModeToggleProps {
@@ -458,6 +456,8 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
   const lastSkillInputRef = useRef<string | null>(null);
   const lastSkillQueryRef = useRef<string | null>(null);
   const lastSkillDescriptorsRef = useRef<AgentSkillDescriptor[] | null>(null);
+  const isComposingInputMethodRef = useRef(false);
+  const lastCompositionEndTimeStampRef = useRef<number | null>(null);
   const [showCommandSuggestions, setShowCommandSuggestions] = useState(false);
 
   const [commandSuggestions, setCommandSuggestions] = useState<SlashSuggestion[]>([]);
@@ -3060,7 +3060,14 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (isInputMethodCompositionEvent(e)) {
+    const nativeEvent = e.nativeEvent;
+    if (
+      isComposingInputMethodRef.current ||
+      isInputMethodCompositionKeyEvent(nativeEvent) ||
+      isEnterImmediatelyAfterCompositionEnd(nativeEvent, lastCompositionEndTimeStampRef.current)
+    ) {
+      lastCompositionEndTimeStampRef.current = null;
+      stopKeyboardPropagation(e);
       return;
     }
 
@@ -3246,6 +3253,16 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
 
   const activeToast = toast ?? (variant === "creation" ? creationState.toast : null);
 
+  const handleCompositionStart = () => {
+    isComposingInputMethodRef.current = true;
+    lastCompositionEndTimeStampRef.current = null;
+  };
+
+  const handleCompositionEnd = (event: React.CompositionEvent<HTMLTextAreaElement>) => {
+    isComposingInputMethodRef.current = false;
+    lastCompositionEndTimeStampRef.current = event.nativeEvent.timeStamp;
+  };
+
   // No wrapper needed - parent controls layout for both variants
   const Wrapper = React.Fragment;
   const wrapperProps = {};
@@ -3390,6 +3407,8 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
                   focusBorderColor={focusBorderColor}
                   onChange={handleInputChange}
                   onKeyDown={handleKeyDown}
+                  onCompositionStart={handleCompositionStart}
+                  onCompositionEnd={handleCompositionEnd}
                   onPaste={handlePaste}
                   onKeyUp={handleAtMentionCursorActivity}
                   onMouseUp={handleAtMentionCursorActivity}

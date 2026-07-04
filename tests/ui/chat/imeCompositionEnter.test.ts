@@ -28,7 +28,7 @@ async function getActiveTextarea(container: HTMLElement): Promise<HTMLTextAreaEl
 
 function dispatchEnter(
   textarea: HTMLTextAreaElement,
-  props: { isComposing?: boolean; keyCode?: number; which?: number } = {}
+  props: { isComposing?: boolean; keyCode?: number; which?: number; timeStamp?: number } = {}
 ): boolean {
   const event = new window.KeyboardEvent("keydown", {
     key: "Enter",
@@ -46,8 +46,16 @@ function dispatchEnter(
   if (props.which != null) {
     Object.defineProperty(event, "which", { value: props.which });
   }
+  if (props.timeStamp != null) {
+    Object.defineProperty(event, "timeStamp", { value: props.timeStamp });
+  }
 
   return fireEvent(textarea, event);
+}
+
+function dispatchCompositionEnd(textarea: HTMLTextAreaElement, timeStamp?: number): boolean {
+  const init = timeStamp != null ? { timeStamp } : undefined;
+  return fireEvent.compositionEnd(textarea, init);
 }
 
 describe("chat input IME composition", () => {
@@ -69,8 +77,9 @@ describe("chat input IME composition", () => {
       expect(dispatchEnter(textarea, { keyCode: 229, which: 229 })).toBe(true);
       expect(textarea.value).toBe(draftText);
 
-      expect(dispatchEnter(textarea)).toBe(false);
-      await app.chat.expectTranscriptContains(`Mock response: ${draftText}`);
+      expect(dispatchCompositionEnd(textarea, 1_000)).toBe(true);
+      expect(dispatchEnter(textarea, { timeStamp: 1_010 })).toBe(true);
+      expect(textarea.value).toBe(draftText);
     } finally {
       await app.dispose();
     }

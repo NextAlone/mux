@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { cn } from "@/common/lib/utils";
 import type { SlashSuggestion } from "@/browser/utils/slashCommands/types";
 import { FileIcon } from "@/browser/components/FileIcon/FileIcon";
+import { isInputMethodCompositionKeyEvent } from "./imeComposition";
 
 // Keys for navigating slash command suggestions.
 // Enter or Tab accepts the highlighted suggestion; Shift+Enter inserts a newline.
@@ -179,6 +180,10 @@ export const CommandSuggestions: React.FC<CommandSuggestionsProps> = ({
     if (!isVisible || suggestions.length === 0) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.defaultPrevented || isInputMethodCompositionKeyEvent(e)) {
+        return;
+      }
+
       switch (e.key) {
         case "ArrowDown":
           e.preventDefault();
