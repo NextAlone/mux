@@ -3,6 +3,8 @@ import { canUseRemoteCompactionPolicy, type CompactionStrategySettings } from ".
 export interface OpenAIResponsesCompactionItem {
   type: "compaction";
   encrypted_content: string;
+  id?: string | null;
+  created_by?: string;
 }
 
 export type ResolvedRemoteCompactionPolicy =
