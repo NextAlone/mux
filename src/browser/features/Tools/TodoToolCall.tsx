@@ -43,9 +43,9 @@ export const TodoToolCall: React.FC<TodoToolCallProps> = ({
               <EmojiIcon
                 emoji={todoStatusPreview.emoji}
                 className="h-3 w-3 shrink-0"
-                // Historical completed todo_write rows can still preview an in-progress
-                // todo. Animate only live in-progress previews, not completed checks.
-                spin={status === "executing" && todoStatusPreview.emoji === "🔄"}
+                // The preview icon reflects todo status, not the tool-call lifecycle:
+                // active todos spin, completed checks stay still.
+                spin={todoStatusPreview.emoji === "🔄"}
               />
               <span className="truncate">{todoStatusPreview.message}</span>
             </>

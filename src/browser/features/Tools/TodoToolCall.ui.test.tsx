@@ -37,7 +37,7 @@ describe("TodoToolCall", () => {
     globalThis.document = undefined as unknown as Document;
   });
 
-  test("does not spin the collapsed preview after the todo_write call completes", () => {
+  test("spins the in-progress preview even after the todo_write call completes", () => {
     const view = renderTodoToolCall({
       args: {
         todos: [
@@ -51,7 +51,7 @@ describe("TodoToolCall", () => {
     const preview = view.getByText("Confirm current revision and default location").parentElement;
     const iconClass = preview?.querySelector("svg")?.getAttribute("class") ?? "";
 
-    expect(iconClass).not.toContain("animate-spin");
+    expect(iconClass).toContain("animate-spin");
   });
 
   test("does not spin the completed preview check while the todo_write call is still executing", () => {
