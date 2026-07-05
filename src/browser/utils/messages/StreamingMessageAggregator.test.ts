@@ -2072,6 +2072,48 @@ describe("StreamingMessageAggregator", () => {
 
       expect(aggregator.isCompacting()).toBe(true);
     });
+
+    test("clears compacting state when a live compaction summary replaces the stream row", () => {
+      const aggregator = new StreamingMessageAggregator(TEST_CREATED_AT);
+
+      aggregator.handleMessage({
+        ...createMuxMessage("compact-request", "user", "/compact", {
+          historySequence: 1,
+          timestamp: Date.now(),
+          muxMetadata: {
+            type: "compaction-request",
+            rawCommand: "/compact",
+            parsed: { model: "anthropic:claude-3-5-haiku-20241022" },
+          },
+        }),
+        type: "message",
+      });
+
+      aggregator.handleStreamStart({
+        type: "stream-start",
+        workspaceId: "test-workspace",
+        messageId: "compact-stream",
+        historySequence: 2,
+        model: "anthropic:claude-3-5-haiku-20241022",
+        startTime: Date.now(),
+        mode: "compact",
+      });
+
+      expect(aggregator.isCompacting()).toBe(true);
+
+      aggregator.handleMessage({
+        ...createMuxMessage("compact-summary", "assistant", "Compacted summary", {
+          historySequence: 2,
+          timestamp: Date.now(),
+          compactionBoundary: true,
+          muxMetadata: { type: "compaction-summary" },
+        }),
+        type: "message",
+      });
+
+      expect(aggregator.isCompacting()).toBe(false);
+    });
+
     test("does not treat non-compact agent streams as compacting even when the latest user message is /compact", () => {
       const aggregator = new StreamingMessageAggregator(TEST_CREATED_AT);
 

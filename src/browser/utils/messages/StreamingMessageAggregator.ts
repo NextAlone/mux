@@ -782,6 +782,13 @@ export class StreamingMessageAggregator {
     if (didDelete) {
       this.displayedMessageCache.delete(messageId);
       this.messageVersions.delete(messageId);
+      // Live compaction can replace the temporary streaming assistant row with the
+      // durable summary before a terminal event reaches the renderer. Clear the
+      // matching stream context so composer state does not stay on "Compacting...".
+      this.activeStreams.delete(messageId);
+      if (this.interruptingMessageId === messageId) {
+        this.interruptingMessageId = null;
+      }
       // Clean up token tracking state to prevent memory leaks
       this.deltaHistory.delete(messageId);
       this.activeStreamUsage.delete(messageId);
