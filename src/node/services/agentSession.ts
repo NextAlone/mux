@@ -3610,6 +3610,7 @@ export class AgentSession {
       normalizeDelegatedToolNames(options?.delegatedToolNames) ??
       extractAcpDelegatedTools(optionsMuxMetadata);
 
+    let remoteCompactionCompletion: CompactionCompletionMetadata | undefined;
     const streamResult = await this.aiService.streamMessage({
       messages: historyResult.data,
       workspaceId: this.workspaceId,
@@ -3642,7 +3643,30 @@ export class AgentSession {
       disableWorkspaceAgents: options?.disableWorkspaceAgents,
       hasQueuedMessages: this.hasQueuedMessages.bind(this),
       openaiTruncationModeOverride,
+      installOpenAIResponsesRemoteCompaction: async (params) => {
+        const result = await this.compactionHandler.installOpenAIResponsesRemoteCompaction(params);
+        if (result.success) {
+          remoteCompactionCompletion = result.data;
+        }
+        return result;
+      },
     });
+
+    if (streamResult.success && remoteCompactionCompletion) {
+      const completedCompactionRequest = this.activeCompactionRequest;
+      this.activeCompactionRequest = undefined;
+      this.resetActiveStreamState();
+      this.lastUsageState = undefined;
+
+      if (completedCompactionRequest?.source === "auto-compaction") {
+        this.emitChatEvent({
+          type: "auto-compaction-completed",
+          newUsagePercent: 0,
+        });
+      }
+
+      await this.dispatchPendingFollowUp(remoteCompactionCompletion.summaryMessageId);
+    }
 
     if (!streamResult.success) {
       // Deduplicate failures when AIService already emitted an `error` event for

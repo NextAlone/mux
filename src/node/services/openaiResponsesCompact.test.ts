@@ -16,8 +16,8 @@ const usage: CompactedResponse["usage"] = {
 
 describe("executeOpenAIResponsesCompact", () => {
   test("calls OpenAI Responses compact and returns the opaque compaction item", async () => {
-    const compact = mock(async (_params: ResponseCompactParams): Promise<CompactedResponse> => {
-      return {
+    const compact = mock((_params: ResponseCompactParams): Promise<CompactedResponse> => {
+      return Promise.resolve({
         id: "resp_compact_1",
         created_at: 123,
         object: "response.compaction",
@@ -26,11 +26,10 @@ describe("executeOpenAIResponsesCompact", () => {
             id: "ci_1",
             type: "compaction",
             encrypted_content: "opaque-ciphertext",
-            created_by: "system",
           },
         ],
         usage,
-      };
+      });
     });
 
     const result = await executeOpenAIResponsesCompact({
@@ -54,19 +53,26 @@ describe("executeOpenAIResponsesCompact", () => {
       type: "compaction",
       encrypted_content: "opaque-ciphertext",
     });
+    expect(result.data.output).toEqual([
+      {
+        id: "ci_1",
+        type: "compaction",
+        encrypted_content: "opaque-ciphertext",
+      },
+    ]);
     expect(result.data.responseId).toBe("resp_compact_1");
     expect(result.data.usage).toBe(usage);
   });
 
   test("rejects non-direct OpenAI models and responses without compaction items", async () => {
-    const compact = mock(async (_params: ResponseCompactParams): Promise<CompactedResponse> => {
-      return {
+    const compact = mock((_params: ResponseCompactParams): Promise<CompactedResponse> => {
+      return Promise.resolve({
         id: "resp_compact_2",
         created_at: 123,
         object: "response.compaction",
         output: [],
         usage,
-      };
+      });
     });
 
     const wrongProvider = await executeOpenAIResponsesCompact({

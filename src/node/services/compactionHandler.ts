@@ -60,6 +60,13 @@ import {
   resolveLocalCompactionStrategyChain,
   type LocalCompactionStrategy,
 } from "@/common/utils/compaction/strategyConfig";
+import {
+  isOpenAIResponsesRemoteCompactionState,
+  type OpenAIResponsesCompactionOutput,
+} from "@/common/utils/compaction/remotePolicy";
+
+const OPENAI_RESPONSES_REMOTE_COMPACTION_SUMMARY_TEXT =
+  "OpenAI Responses compacted context installed.";
 
 /**
  * Check if a string is just a raw JSON object, which suggests the model
@@ -817,6 +824,147 @@ export class CompactionHandler {
     }
 
     return Ok(undefined);
+  }
+
+  async installOpenAIResponsesRemoteCompaction(params: {
+    model: string;
+    responseId: string;
+    output: OpenAIResponsesCompactionOutput;
+    usage?: LanguageModelV2Usage;
+    duration?: number;
+    systemMessageTokens?: number;
+  }): Promise<Result<CompactionCompletionMetadata, string>> {
+    assert(params.model.trim().length > 0, "remote compaction requires a model");
+
+    const remoteCompaction = {
+      type: "openai-responses-compact" as const,
+      responseId: params.responseId,
+      output: params.output,
+    };
+    if (!isOpenAIResponsesRemoteCompactionState(remoteCompaction)) {
+      return Err("OpenAI Responses compact returned invalid opaque output");
+    }
+
+    const deletePartialResult = await this.historyService.deletePartial(this.workspaceId);
+    if (!deletePartialResult.success) {
+      log.warn(`Failed to delete partial before remote compaction: ${deletePartialResult.error}`);
+    }
+
+    const historyResult = await this.historyService.getHistoryFromLatestBoundary(this.workspaceId);
+    if (!historyResult.success) {
+      return Err(`Failed to read history for remote compaction: ${historyResult.error}`);
+    }
+
+    const messages = historyResult.data;
+    const compactionRequestIndex = findLatestCompactionRequestIndex(messages);
+    if (compactionRequestIndex < 0) {
+      return Err("Cannot install remote compaction without a compaction request");
+    }
+
+    const compactionRequest = messages[compactionRequestIndex];
+    const muxMeta = compactionRequest?.metadata?.muxMetadata;
+    if (compactionRequest?.role !== "user" || muxMeta?.type !== "compaction-request") {
+      return Err("Cannot install remote compaction without a valid compaction request");
+    }
+
+    if (this.processedCompactionRequestIds.has(compactionRequest.id)) {
+      return Err("Compaction request has already been processed");
+    }
+
+    this.processedCompactionRequestIds.add(compactionRequest.id);
+
+    await this.preparePendingStateFromMessages(messages);
+
+    const nextCompactionEpoch = getNextCompactionEpoch(messages);
+    assert(Number.isInteger(nextCompactionEpoch), "next compaction epoch must be an integer");
+
+    const previousBoundaryHistorySequence = getLatestBoundaryHistorySequence(messages);
+    const maxExistingHistorySequence = this.getMaxExistingHistorySequence(messages);
+    const isIdleCompaction = muxMeta.source === "idle-compaction";
+    const pendingFollowUp = getCompactionFollowUpContent(muxMeta);
+
+    let timestamp = Date.now();
+    if (isIdleCompaction) {
+      const recency = computeRecencyFromMessages(messages);
+      if (recency !== null) {
+        timestamp = recency;
+      }
+    }
+
+    const summaryMuxMetadata: CompactionSummaryMetadata = {
+      type: "compaction-summary",
+      pendingFollowUp,
+      remoteCompaction,
+    };
+
+    const summaryMessage = createMuxMessage(
+      createCompactionSummaryMessageId(),
+      "assistant",
+      OPENAI_RESPONSES_REMOTE_COMPACTION_SUMMARY_TEXT,
+      {
+        timestamp,
+        compacted: isIdleCompaction ? "idle" : "user",
+        compactionEpoch: nextCompactionEpoch,
+        compactionBoundary: true,
+        model: params.model,
+        usage: params.usage,
+        duration: params.duration,
+        systemMessageTokens: params.systemMessageTokens,
+        muxMetadata: summaryMuxMetadata,
+      }
+    );
+
+    assert(
+      summaryMessage.metadata?.compactionBoundary === true,
+      "Remote compaction summary must be marked as a compaction boundary"
+    );
+    assert(
+      summaryMessage.metadata?.compactionEpoch === nextCompactionEpoch,
+      "Remote compaction summary must persist the computed compaction epoch"
+    );
+
+    const persistenceResult = await this.historyService.appendToHistory(
+      this.workspaceId,
+      summaryMessage
+    );
+    if (!persistenceResult.success) {
+      this.cachedFileDiffs = [];
+      this.cachedLoadedSkills = [];
+      await this.deletePersistedPendingStateBestEffort();
+      this.processedCompactionRequestIds.delete(compactionRequest.id);
+      return Err(`Failed to append remote compaction summary: ${persistenceResult.error}`);
+    }
+
+    const persistedSequence = summaryMessage.metadata?.historySequence;
+    assert(
+      isNonNegativeInteger(persistedSequence),
+      "Remote compaction summary persistence must produce a non-negative historySequence"
+    );
+    if (maxExistingHistorySequence >= 0) {
+      assert(
+        persistedSequence > maxExistingHistorySequence,
+        "Remote compaction summary historySequence must remain monotonic"
+      );
+    }
+
+    this.postCompactionAttachmentsPending = true;
+    this.emitChatEvent({ ...summaryMessage, type: "message" });
+
+    const completionMetadata: CompactionCompletionMetadata = {
+      workspaceId: this.workspaceId,
+      summaryMessageId: summaryMessage.id,
+      summaryHistorySequence: persistedSequence,
+      compactionEpoch: nextCompactionEpoch,
+      previousBoundaryHistorySequence,
+      compactionRequestMessageId: compactionRequest.id,
+    };
+
+    this.onCompactionComplete?.(completionMetadata);
+    if (isIdleCompaction) {
+      this.onIdleCompactionOutcome?.(true);
+    }
+
+    return Ok(completionMetadata);
   }
 
   /**

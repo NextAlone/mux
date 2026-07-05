@@ -2,12 +2,15 @@ import * as fs from "fs/promises";
 import { EventEmitter } from "events";
 
 import assert from "@/common/utils/assert";
-import { type LanguageModel, type Tool } from "ai";
+import { generateText, type LanguageModel, type Tool } from "ai";
+import type { CompactedResponse } from "openai/resources/responses/responses";
+import type { LanguageModelV2Usage } from "@ai-sdk/provider";
 
 import { linkAbortSignal } from "@/node/utils/abort";
 import { ensurePrivateDir } from "@/node/utils/fs";
 import type { Result } from "@/common/types/result";
 import { Ok, Err } from "@/common/types/result";
+import type { CompactionCompletionMetadata } from "@/common/types/compaction";
 import type { WorkspaceMetadata } from "@/common/types/workspace";
 import type { SendMessageOptions, ProvidersConfigMap } from "@/common/orpc/types";
 
@@ -111,6 +114,11 @@ import {
   normalizeCompactionSettings,
   type LocalCompactionStrategy,
 } from "@/common/utils/compaction/strategyConfig";
+import {
+  isOpenAIResponsesCompactionOutput,
+  resolveRemoteCompactionPolicy,
+  type OpenAIResponsesCompactionOutput,
+} from "@/common/utils/compaction/remotePolicy";
 import { buildLocalStrategyCompactionMessageText } from "@/common/utils/compaction/compactionPrompt";
 import { getProjects, isMultiProject } from "@/common/utils/multiProject";
 import { uniqueSuffix } from "@/common/utils/hasher";
@@ -134,6 +142,10 @@ import { MockAiStreamPlayer } from "./mock/mockAiStreamPlayer";
 import { DEVTOOLS_RUN_METADATA_ID_HEADER } from "./devToolsHeaderCapture";
 import { ProviderModelFactory, modelCostsIncluded } from "./providerModelFactory";
 import { prepareMessagesForProvider } from "./messagePipeline";
+import {
+  collectOpenAIResponsesCompactionReplays,
+  getLatestOpenAIResponsesRemoteCompaction,
+} from "./openaiResponsesCompactionReplay";
 import { getLegacyModeForAgentMetadata, resolveAgentForStream } from "./agentResolution";
 import { buildPlanInstructions, buildStreamSystemContext } from "./streamContextBuilder";
 import { getTokenizerForModel } from "@/node/utils/main/tokenizer";
@@ -430,6 +442,36 @@ export interface StreamMessageOptions {
   hasQueuedMessages?: (dispatchMode?: "tool-end" | "turn-end") => boolean;
   muxMetadata?: MuxMessageMetadata;
   openaiTruncationModeOverride?: "auto" | "disabled";
+  installOpenAIResponsesRemoteCompaction?: (params: {
+    model: string;
+    responseId: string;
+    output: OpenAIResponsesCompactionOutput;
+    usage?: LanguageModelV2Usage;
+    duration?: number;
+    systemMessageTokens?: number;
+  }) => Promise<Result<CompactionCompletionMetadata, string>>;
+}
+
+function convertOpenAICompactUsage(
+  usage: CompactedResponse["usage"] | undefined
+): LanguageModelV2Usage | undefined {
+  if (!usage) {
+    return undefined;
+  }
+
+  const inputTokens = usage.input_tokens;
+  const outputTokens = usage.output_tokens;
+  const totalTokens = usage.total_tokens;
+  const reasoningTokens = usage.output_tokens_details?.reasoning_tokens;
+  const cachedInputTokens = usage.input_tokens_details?.cached_tokens;
+
+  return {
+    inputTokens: typeof inputTokens === "number" ? inputTokens : undefined,
+    outputTokens: typeof outputTokens === "number" ? outputTokens : undefined,
+    totalTokens: typeof totalTokens === "number" ? totalTokens : undefined,
+    ...(typeof reasoningTokens === "number" ? { reasoningTokens } : {}),
+    ...(typeof cachedInputTokens === "number" ? { cachedInputTokens } : {}),
+  };
 }
 
 /**
@@ -1187,6 +1229,7 @@ export class AIService extends EventEmitter {
       disableWorkspaceAgents,
       hasQueuedMessages,
       openaiTruncationModeOverride,
+      installOpenAIResponsesRemoteCompaction,
       muxMetadata,
     } = opts;
     // Support interrupts during startup (before StreamManager emits stream-start).
@@ -1253,6 +1296,14 @@ export class AIService extends EventEmitter {
       // Mode (plan|exec|compact) is derived from the selected agent definition.
       const effectiveMuxProviderOptions: MuxProviderOptions = muxProviderOptions ?? {};
       const effectiveThinkingLevel: ThinkingLevel = thinkingLevel ?? THINKING_LEVEL_OFF;
+      const activeContextMessagesBeforeModelResolution =
+        sliceMessagesForProviderFromLatestContextBoundary(messages);
+      const openAIResponsesCompactionReplays = collectOpenAIResponsesCompactionReplays(
+        activeContextMessagesBeforeModelResolution
+      );
+      const latestOpenAIResponsesRemoteCompaction = getLatestOpenAIResponsesRemoteCompaction(
+        activeContextMessagesBeforeModelResolution
+      );
 
       // Resolve model string (xAI variant mapping + gateway routing) and create the model.
       const resolveAndCreateModelStartedAt = Date.now();
@@ -1260,7 +1311,11 @@ export class AIService extends EventEmitter {
         modelString,
         effectiveThinkingLevel,
         effectiveMuxProviderOptions,
-        { agentInitiated, workspaceId }
+        {
+          agentInitiated,
+          workspaceId,
+          openAIResponsesCompactionReplays,
+        }
       );
       recordStartupPhaseTiming("resolveAndCreateModelMs", resolveAndCreateModelStartedAt);
       if (!modelResult.success) {
@@ -1273,6 +1328,21 @@ export class AIService extends EventEmitter {
         routedThroughGateway,
         routeProvider,
       } = modelResult.data;
+      if (latestOpenAIResponsesRemoteCompaction && canonicalProviderName !== "openai") {
+        return Err({
+          type: "unknown",
+          raw: "This workspace context was compacted with OpenAI Responses. Switch to a direct OpenAI Responses model or reset context before using another provider.",
+        });
+      }
+      if (
+        latestOpenAIResponsesRemoteCompaction &&
+        effectiveMuxProviderOptions.openai?.wireFormat === "chatCompletions"
+      ) {
+        return Err({
+          type: "unknown",
+          raw: "This workspace context was compacted with OpenAI Responses. Use the OpenAI Responses wire format or reset context before continuing.",
+        });
+      }
       const localCompactionRequestOptions = resolveProviderRequestLocalCompactionOptions(
         this.config.loadConfigOrDefault().compaction,
         muxMetadata
@@ -2600,6 +2670,99 @@ export class AIService extends EventEmitter {
         }
       }
 
+      const latestUserForRemoteCompaction = [...messages]
+        .reverse()
+        .find((message) => message.role === "user");
+      const latestMuxMetadata = latestUserForRemoteCompaction?.metadata?.muxMetadata;
+      const remoteCompactionPolicy = resolveRemoteCompactionPolicy({
+        settings: normalizeCompactionSettings(this.config.loadConfigOrDefault().compaction),
+        model: canonicalModelString,
+      });
+      if (
+        installOpenAIResponsesRemoteCompaction &&
+        latestMuxMetadata?.type === "compaction-request" &&
+        remoteCompactionPolicy.type === "openai-responses-compact" &&
+        effectiveMuxProviderOptions.openai?.wireFormat !== "chatCompletions"
+      ) {
+        let compactedResponse: CompactedResponse | undefined;
+        const remoteCompactionStartedAt = Date.now();
+        const compactModelResult = await this.providerModelFactory.resolveAndCreateModel(
+          modelString,
+          effectiveThinkingLevel,
+          effectiveMuxProviderOptions,
+          {
+            agentInitiated,
+            workspaceId,
+            openAIResponsesCompactionReplays,
+            openAIResponsesCompactCapture: (response) => {
+              compactedResponse = response;
+            },
+          }
+        );
+
+        if (!compactModelResult.success) {
+          workspaceLog.warn("OpenAI Responses remote compaction unavailable; falling back local", {
+            error: formatSendMessageError(compactModelResult.error).message,
+          });
+        } else {
+          try {
+            const { maxOutputTokens: _compactMaxOutputTokens, ...compactCallSettings } =
+              resolvedOverrides.standard;
+            await generateText({
+              model: compactModelResult.data.model,
+              messages: finalMessages,
+              system: systemMessage,
+              tools,
+              providerOptions: mergedProviderOptions as Parameters<
+                typeof generateText
+              >[0]["providerOptions"],
+              headers: requestHeaders,
+              abortSignal: combinedAbortSignal,
+              maxRetries: 0,
+              maxOutputTokens: 1,
+              ...compactCallSettings,
+            });
+          } catch (error) {
+            workspaceLog.warn("OpenAI Responses remote compaction failed; falling back local", {
+              error: getErrorMessage(error),
+            });
+          } finally {
+            runLanguageModelCleanup(compactModelResult.data.model);
+          }
+
+          if (compactedResponse) {
+            if (!isOpenAIResponsesCompactionOutput(compactedResponse.output)) {
+              return Err({
+                type: "unknown",
+                raw: "OpenAI Responses compact returned invalid opaque output.",
+              });
+            }
+
+            const deletePlaceholderResult = await this.historyService.deleteMessage(
+              workspaceId,
+              assistantMessageId
+            );
+            if (!deletePlaceholderResult.success) {
+              return Err({ type: "unknown", raw: deletePlaceholderResult.error });
+            }
+
+            const installResult = await installOpenAIResponsesRemoteCompaction({
+              model: canonicalModelString,
+              responseId: compactedResponse.id,
+              output: compactedResponse.output,
+              usage: convertOpenAICompactUsage(compactedResponse.usage),
+              duration: Date.now() - remoteCompactionStartedAt,
+              systemMessageTokens,
+            });
+            if (!installResult.success) {
+              return Err({ type: "unknown", raw: installResult.error });
+            }
+
+            return Ok(undefined);
+          }
+        }
+      }
+
       if (combinedAbortSignal.aborted) {
         await deleteAbortedPlaceholder(assistantMessageId);
         return Ok(undefined);
@@ -2696,12 +2859,32 @@ export class AIService extends EventEmitter {
                   nextModelString,
                   nextThinkingLevel,
                   effectiveMuxProviderOptions,
-                  { agentInitiated, workspaceId }
+                  {
+                    agentInitiated,
+                    workspaceId,
+                    openAIResponsesCompactionReplays,
+                  }
                 );
                 if (!nextModelResult.success) {
                   return Err(formatSendMessageError(nextModelResult.error).message);
                 }
                 const next = nextModelResult.data;
+                if (
+                  latestOpenAIResponsesRemoteCompaction &&
+                  next.canonicalProviderName !== "openai"
+                ) {
+                  return Err(
+                    "This workspace context was compacted with OpenAI Responses. Model fallback cannot switch providers until the context is reset."
+                  );
+                }
+                if (
+                  latestOpenAIResponsesRemoteCompaction &&
+                  effectiveMuxProviderOptions.openai?.wireFormat === "chatCompletions"
+                ) {
+                  return Err(
+                    "This workspace context was compacted with OpenAI Responses. Model fallback must use the OpenAI Responses wire format."
+                  );
+                }
 
                 try {
                   // Rebuild the toolset for the fallback model: provider-native

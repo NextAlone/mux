@@ -13,6 +13,7 @@ import type { z } from "zod";
 import type { AgentMode } from "./mode";
 import type { AgentSkillScope } from "./agentSkill";
 import type { ThinkingLevel } from "./thinking";
+import type { OpenAIResponsesRemoteCompactionState } from "@/common/utils/compaction/remotePolicy";
 import { type ReviewNoteData, formatReviewForModel } from "./review";
 
 export type { ModelMessage };
@@ -347,6 +348,11 @@ export type MuxMessageMetadata = MuxMessageMetadataBase &
          * persisted by dispatch serves as proof of completion.
          */
         pendingFollowUp?: CompactionFollowUpRequest;
+        /**
+         * Opaque OpenAI Responses compacted context. Only direct OpenAI
+         * Responses requests may replay this provider-specific state.
+         */
+        remoteCompaction?: OpenAIResponsesRemoteCompactionState;
       }
     | {
         type: "agent-skill";

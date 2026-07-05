@@ -200,7 +200,7 @@ function configureOpenAICodexOAuth(
     service.setCodexOauthService({
       getValidAuth: () => Promise.resolve({ success: true, data: TEST_CODEX_OAUTH }),
       recordUsageHeaders: () => undefined,
-    } as CodexOauthService);
+    } as unknown as CodexOauthService);
   }
 }
 

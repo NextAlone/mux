@@ -71,6 +71,9 @@ import {
 } from "@/node/utils/gatewayStreamNormalization";
 import { EnvHttpProxyAgent, type Dispatcher } from "undici";
 import packageJson from "../../../package.json";
+import { applyOpenAIResponsesCompactionReplayToBody } from "@/node/services/openaiResponsesCompactionReplay";
+import type { OpenAIResponsesRemoteCompactionState } from "@/common/utils/compaction/remotePolicy";
+import type { CompactedResponse } from "openai/resources/responses/responses";
 
 // ---------------------------------------------------------------------------
 // Undici agent with unlimited timeouts for AI streaming requests.
@@ -607,6 +610,71 @@ export function parseModelString(modelString: string): [string, string] {
   return [providerName, modelId];
 }
 
+interface ProviderModelFactoryCreateOptions {
+  agentInitiated?: boolean;
+  workspaceId?: string;
+  routeContext?: RouteContext;
+  openAIResponsesCompactionReplays?: Record<string, OpenAIResponsesRemoteCompactionState>;
+  openAIResponsesCompactCapture?: (response: CompactedResponse) => void;
+}
+
+function hasOpenAIResponsesCompactionReplays(
+  opts: ProviderModelFactoryCreateOptions | undefined
+): boolean {
+  return Object.keys(opts?.openAIResponsesCompactionReplays ?? {}).length > 0;
+}
+
+function usesOpenAIResponsesCompactLane(
+  opts: ProviderModelFactoryCreateOptions | undefined
+): boolean {
+  return hasOpenAIResponsesCompactionReplays(opts) || opts?.openAIResponsesCompactCapture != null;
+}
+
+function buildOpenAIResponsesCompactUrl(urlString: string): string {
+  const url = new URL(urlString);
+  url.pathname = url.pathname.replace(/\/responses$/, "/responses/compact");
+  return url.toString();
+}
+
+function buildOpenAIResponsesCompactBody(body: string): string {
+  const json = JSON.parse(body) as Record<string, unknown>;
+  const compactBody: Record<string, unknown> = {
+    model: json.model,
+  };
+
+  if (json.input !== undefined) {
+    compactBody.input = json.input;
+  }
+  if (json.instructions !== undefined) {
+    compactBody.instructions = json.instructions;
+  }
+  if (json.previous_response_id !== undefined) {
+    compactBody.previous_response_id = json.previous_response_id;
+  }
+
+  return JSON.stringify(compactBody);
+}
+
+function createFakeOpenAIResponsesResponseForCompact(
+  compacted: CompactedResponse,
+  model: unknown
+): Record<string, unknown> {
+  return {
+    id: compacted.id,
+    created_at: compacted.created_at,
+    model: typeof model === "string" ? model : "unknown",
+    output: [
+      {
+        type: "message",
+        role: "assistant",
+        id: `${compacted.id}_message`,
+        content: [{ type: "output_text", text: "Compacted.", annotations: [] }],
+      },
+    ],
+    usage: compacted.usage,
+  };
+}
+
 /**
  * Classify a Copilot API request as "user" or "agent" initiated by inspecting
  * the last conversational item in the request body. GitHub Copilot bills premium
@@ -977,11 +1045,7 @@ export class ProviderModelFactory {
   async createModel(
     modelString: string,
     muxProviderOptions?: MuxProviderOptions,
-    opts?: {
-      agentInitiated?: boolean;
-      workspaceId?: string;
-      routeContext?: RouteContext;
-    }
+    opts?: ProviderModelFactoryCreateOptions
   ): Promise<Result<LanguageModel, SendMessageError>> {
     const result = await this._createModelCore(modelString, muxProviderOptions, opts);
     if (!result.success) {
@@ -1012,7 +1076,7 @@ export class ProviderModelFactory {
   private async _createModelCore(
     modelString: string,
     muxProviderOptions?: MuxProviderOptions,
-    opts?: { agentInitiated?: boolean; routeContext?: RouteContext }
+    opts?: ProviderModelFactoryCreateOptions
   ): Promise<Result<LanguageModel, SendMessageError>> {
     try {
       // Route resolution is centralized here so every caller gets identical,
@@ -1266,6 +1330,13 @@ export class ProviderModelFactory {
           return codexOauthDefaultAuth === "oauth";
         })();
 
+        if (usesOpenAIResponsesCompactLane(opts) && shouldRouteThroughCodexOauth) {
+          return Err({
+            type: "unknown",
+            raw: "OpenAI Responses compacted context requires direct OpenAI API-key routing. Switch OpenAI auth to API key or reset the workspace context before using this model.",
+          });
+        }
+
         // Only resolve op:// references when this request will use API-key auth.
         // OAuth requests use a placeholder key and override auth headers in fetch().
         const resolvedApiKey = shouldRouteThroughCodexOauth
@@ -1359,7 +1430,57 @@ export class ProviderModelFactory {
               let nextInput: Parameters<typeof fetch>[0] = input;
               let nextInit: Parameters<typeof fetch>[1] | undefined = init;
 
-              const body = init?.body;
+              let body = init?.body;
+              if (isOpenAIResponses && method === "POST" && typeof body === "string") {
+                const replayedBody = applyOpenAIResponsesCompactionReplayToBody(
+                  body,
+                  opts?.openAIResponsesCompactionReplays
+                );
+                if (replayedBody !== body) {
+                  const headers = new Headers(init?.headers);
+                  headers.delete("content-length");
+                  nextInit = {
+                    ...init,
+                    headers,
+                    body: replayedBody,
+                  };
+                  body = replayedBody;
+                }
+              }
+
+              if (
+                opts?.openAIResponsesCompactCapture &&
+                isOpenAIResponses &&
+                method === "POST" &&
+                typeof body === "string"
+              ) {
+                const headers = new Headers(nextInit?.headers);
+                headers.delete("content-length");
+                const compactResponse = await baseFetch(buildOpenAIResponsesCompactUrl(urlString), {
+                  ...nextInit,
+                  headers,
+                  body: buildOpenAIResponsesCompactBody(body),
+                });
+                const rawResponse = await compactResponse.text();
+                if (!compactResponse.ok) {
+                  return new Response(rawResponse, {
+                    status: compactResponse.status,
+                    statusText: compactResponse.statusText,
+                    headers: compactResponse.headers,
+                  });
+                }
+
+                const compacted = JSON.parse(rawResponse) as CompactedResponse;
+                opts.openAIResponsesCompactCapture(compacted);
+                const requestBody = JSON.parse(body) as Record<string, unknown>;
+                return new Response(
+                  JSON.stringify(
+                    createFakeOpenAIResponsesResponseForCompact(compacted, requestBody.model)
+                  ),
+                  { headers: { "Content-Type": "application/json" } }
+                );
+              }
+
               // Only parse the JSON body when routing through Codex OAuth, since Codex
               // requires instruction lifting, store=false, and stripping unsupported
               // Responses fields like `truncation`.
@@ -1370,10 +1491,10 @@ export class ProviderModelFactory {
                 typeof body === "string"
               ) {
                 try {
-                  const headers = new Headers(init?.headers);
+                  const headers = new Headers(nextInit?.headers);
                   headers.delete("content-length");
                   nextInit = {
-                    ...init,
+                    ...nextInit,
                     headers,
                     body: normalizeCodexResponsesBody(body, {
                       serviceTier: muxProviderOptions?.openai?.serviceTier,
@@ -1994,7 +2115,7 @@ export class ProviderModelFactory {
     modelString: string,
     thinkingLevel: ThinkingLevel,
     muxProviderOptions?: MuxProviderOptions,
-    opts?: { agentInitiated?: boolean; workspaceId?: string }
+    opts?: ProviderModelFactoryCreateOptions
   ): Promise<
     Result<
       {

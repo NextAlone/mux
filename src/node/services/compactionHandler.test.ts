@@ -185,6 +185,106 @@ describe("CompactionHandler", () => {
     await cleanup();
   });
 
+  describe("installOpenAIResponsesRemoteCompaction()", () => {
+    it("persists the opaque OpenAI Responses output as the only compacted boundary", async () => {
+      const onCompactionComplete = mock((_metadata: CompactionCompletionMetadata) => undefined);
+      handler = new CompactionHandler({
+        workspaceId,
+        historyService,
+        sessionDir,
+        telemetryService,
+        emitter: mockEmitter,
+        onCompactionComplete,
+        getCompactionSettings: () => ({
+          localStrategy: "pi-local",
+          fallbackLocalStrategies: ["mux-current"],
+          remotePolicy: "openai-responses-compact",
+          piLocal: {
+            keepRecentTokens: 3,
+            toolResultMaxChars: 1_000,
+          },
+          hybridLocal: {
+            keepRecentTokens: 1,
+            toolResultMaxChars: 1_000,
+          },
+        }),
+        estimateCompactionMessageTokens: (message) => (message.id === "recent-user" ? 3 : 4),
+      });
+      await seedHistory(
+        createMuxMessage("old-user", "user", "old context"),
+        createMuxMessage("recent-user", "user", "recent context", { timestamp: 123 }),
+        createCompactionRequest("compact-request")
+      );
+
+      const output = [
+        {
+          id: "ci_1",
+          type: "compaction",
+          encrypted_content: "opaque-ciphertext",
+        },
+      ];
+      const result = await handler.installOpenAIResponsesRemoteCompaction({
+        model: "openai:gpt-5.5",
+        responseId: "resp_compact_1",
+        output,
+        usage: { inputTokens: 100, outputTokens: 4, totalTokens: 104 },
+        duration: 250,
+        systemMessageTokens: 12,
+      });
+
+      expect(result.success).toBe(true);
+      if (!result.success) {
+        throw new Error(result.error);
+      }
+
+      const historyResult = await historyService.getHistoryFromLatestBoundary(workspaceId);
+      expect(historyResult.success).toBe(true);
+      if (!historyResult.success) {
+        throw new Error(historyResult.error);
+      }
+      expect(historyResult.data).toHaveLength(1);
+
+      const summary = historyResult.data[0];
+      expect(summary?.parts[0]).toMatchObject({
+        type: "text",
+        text: "OpenAI Responses compacted context installed.",
+      });
+      expect(summary?.metadata?.muxMetadata).toEqual({
+        type: "compaction-summary",
+        remoteCompaction: {
+          type: "openai-responses-compact",
+          responseId: "resp_compact_1",
+          output,
+        },
+      });
+      expect(summary?.metadata?.compactionBoundary).toBe(true);
+      expect(summary?.metadata?.model).toBe("openai:gpt-5.5");
+      expect(onCompactionComplete).toHaveBeenCalledTimes(1);
+      expect(result.data.summaryMessageId).toBe(summary?.id);
+
+      const emittedMessage = emittedEvents.find((event) => {
+        const message = event.data.message as { id?: unknown } | undefined;
+        return message?.id === summary?.id;
+      });
+      expect(emittedMessage).toBeDefined();
+    });
+
+    it("rejects remote compaction output without a compaction item", async () => {
+      await seedHistory(createCompactionRequest("compact-request"));
+
+      const result = await handler.installOpenAIResponsesRemoteCompaction({
+        model: "openai:gpt-5.5",
+        responseId: "resp_compact_1",
+        output: [{ type: "message", role: "assistant" }],
+      });
+
+      expect(result).toEqual({
+        success: false,
+        error: "OpenAI Responses compact returned invalid opaque output",
+      });
+    });
+  });
+
   describe("handleCompletion() - Normal Compaction Flow", () => {
     it("should return false when no compaction request found", async () => {
       const normalMsg = createMuxMessage("msg1", "user", "Hello", {

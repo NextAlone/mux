@@ -2,6 +2,7 @@ import type {
   CompactedResponse,
   ResponseCompactParams,
   ResponseInputItem,
+  ResponseOutputItem,
 } from "openai/resources/responses/responses";
 
 import type { Result } from "@/common/types/result";
@@ -27,6 +28,7 @@ export interface ExecuteOpenAIResponsesCompactOptions {
 export interface OpenAIResponsesCompactResult {
   responseId: string;
   compactionItem: OpenAIResponsesCompactionItem;
+  output: ResponseInputItem[];
   usage: CompactedResponse["usage"];
 }
 
@@ -66,9 +68,15 @@ export async function executeOpenAIResponsesCompact(
     return Err("OpenAI Responses compact did not return a compaction item");
   }
 
+  // The compact endpoint returns the canonical next context window. The OpenAI
+  // SDK types it as output items, while the next /responses call accepts those
+  // same item shapes as input. Keep the full opaque output unchanged.
+  const output = response.output as Array<ResponseOutputItem & ResponseInputItem>;
+
   return Ok({
     responseId: response.id,
     compactionItem,
+    output,
     usage: response.usage,
   });
 }

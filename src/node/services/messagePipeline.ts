@@ -30,6 +30,7 @@ import {
 } from "@/browser/utils/messages/modelMessageTransform";
 import { applyCacheControl, type AnthropicCacheTtl } from "@/common/utils/ai/cacheStrategy";
 import { log } from "./log";
+import { markOpenAIResponsesCompactionBoundaries } from "./openaiResponsesCompactionReplay";
 
 /** Options for the full message preparation pipeline. */
 export interface PrepareMessagesOptions {
@@ -129,13 +130,21 @@ export async function prepareMessagesForProvider(
     postCompactionAttachments
   );
 
+  const messagesWithRemoteCompactionMarkers =
+    providerForMessages === "openai"
+      ? markOpenAIResponsesCompactionBoundaries(messagesWithPostCompaction)
+      : messagesWithPostCompaction;
+
   // Expand @file mentions (e.g. @src/foo.ts#L1-20) into in-memory synthetic user messages.
   // Keeps chat history clean while giving the model immediate file context.
-  const messagesWithFileAtMentions = await injectFileAtMentions(messagesWithPostCompaction, {
-    runtime,
-    workspacePath,
-    abortSignal,
-  });
+  const messagesWithFileAtMentions = await injectFileAtMentions(
+    messagesWithRemoteCompactionMarkers,
+    {
+      runtime,
+      workspacePath,
+      abortSignal,
+    }
+  );
 
   // Apply centralized tool-output redaction BEFORE converting to provider ModelMessages.
   // Keeps the persisted/UI history intact while trimming heavy fields for the request.
