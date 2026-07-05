@@ -114,6 +114,7 @@ import {
 import { PolicyGetResponseSchema } from "./policy";
 import {
   AgentAiDefaultsSchema,
+  CompactionSettingsSchema,
   ModelFallbacksSchema,
   SubagentAiDefaultsSchema,
   UpdateChannelSchema,
@@ -2225,6 +2226,7 @@ export const config = {
       advisorMaxUsesPerTurn: AdvisorMaxUsesPerTurnSchema.optional(),
       advisorMaxOutputTokens: AdvisorMaxOutputTokensSchema.optional(),
       hiddenModels: z.array(z.string()).optional(),
+      compaction: CompactionSettingsSchema.optional(),
       workspaceCheckoutLocation: WorkspaceCheckoutLocationConfigSchema,
       coderWorkspaceArchiveBehavior: z.enum(CODER_ARCHIVE_BEHAVIORS),
       worktreeArchiveBehavior: z.enum(WORKTREE_ARCHIVE_BEHAVIORS),
@@ -2252,6 +2254,7 @@ export const config = {
       advisorThinkingLevel: AdvisorThinkingLevelSchema.nullish(),
       advisorMaxUsesPerTurn: AdvisorMaxUsesPerTurnSchema.nullish(),
       advisorMaxOutputTokens: AdvisorMaxOutputTokensSchema.nullish(),
+      compaction: CompactionSettingsSchema.nullish(),
       agentAiDefaults: AgentAiDefaultsSchema.optional(),
       // Legacy field (downgrade compatibility)
       subagentAiDefaults: SubagentAiDefaultsSchema.optional(),

@@ -756,6 +756,25 @@ describe("router config.saveConfig", () => {
     expect(config.loadConfigOrDefault().chatTranscriptFullWidth).toBeUndefined();
   });
 
+  test("round trips compaction settings", async () => {
+    const client = createRouterClient(router(), { context: createContext() });
+
+    expect((await client.config.getConfig()).compaction).toBeUndefined();
+
+    await client.config.saveConfig({
+      compaction: {
+        remotePolicy: "openai-responses-compact",
+      },
+    });
+
+    expect((await client.config.getConfig()).compaction).toEqual({
+      remotePolicy: "openai-responses-compact",
+    });
+    expect(config.loadConfigOrDefault().compaction).toEqual({
+      remotePolicy: "openai-responses-compact",
+    });
+  });
+
   test("getConfig and saveConfig round trip user preferences", async () => {
     const client = createRouterClient(router(), { context: createContext() });
 

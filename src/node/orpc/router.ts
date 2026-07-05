@@ -1010,6 +1010,7 @@ export const router = (authToken?: string) => {
             advisorMaxUsesPerTurn: config.advisorMaxUsesPerTurn,
             advisorMaxOutputTokens: config.advisorMaxOutputTokens,
             hiddenModels: config.hiddenModels,
+            compaction: config.compaction,
             workspaceCheckoutLocation: normalizeWorkspaceCheckoutLocationConfig(
               config.workspaceCheckoutLocation
             ),
@@ -1394,6 +1395,10 @@ export const router = (authToken?: string) => {
               result.advisorMaxOutputTokens = normalizeAdvisorMaxOutputTokens(
                 input.advisorMaxOutputTokens
               );
+            }
+
+            if (input.compaction !== undefined) {
+              result.compaction = input.compaction ?? undefined;
             }
 
             if (input.agentAiDefaults !== undefined) {

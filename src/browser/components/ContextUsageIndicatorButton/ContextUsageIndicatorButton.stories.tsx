@@ -1,5 +1,7 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { fn, userEvent, waitFor, within } from "@storybook/test";
+import type { ComponentProps, FC } from "react";
+import { useState } from "react";
 import { lightweightMeta } from "@/browser/stories/meta.js";
 import { TOKEN_COMPONENT_COLORS, type TokenMeterData } from "@/common/utils/tokens/tokenMeterUtils";
 import { ContextUsageIndicatorButton } from "./ContextUsageIndicatorButton.js";
@@ -54,6 +56,21 @@ export default meta;
 
 type Story = StoryObj<typeof meta>;
 
+const InteractiveRemoteCompactionStory: FC<ComponentProps<typeof ContextUsageIndicatorButton>> = (
+  props
+) => {
+  const [enabled, setEnabled] = useState(props.remoteCompaction?.enabled === true);
+  return (
+    <ContextUsageIndicatorButton
+      {...props}
+      remoteCompaction={{
+        enabled,
+        setEnabled,
+      }}
+    />
+  );
+};
+
 /**
  * Context meter with high usage and idle compaction enabled.
  * Shows the context usage indicator badge in the chat input area with the
@@ -64,6 +81,7 @@ export const ContextMeterWithIdleCompaction: Story = {
     data: CONTEXT_METER_DATA,
     autoCompaction: { threshold: 80, setThreshold: fn() },
     idleCompaction: { hours: 4, setHours: fn() },
+    remoteCompaction: { enabled: true, setEnabled: fn() },
   },
   render: (args) => (
     <div className="bg-background flex min-h-[180px] items-end p-6">
@@ -98,6 +116,7 @@ export const ContextMeterHoverSummaryTooltip: Story = {
     data: HOVER_SUMMARY_DATA,
     autoCompaction: { threshold: 80, setThreshold: fn() },
     idleCompaction: { hours: 4, setHours: fn() },
+    remoteCompaction: { enabled: true, setEnabled: fn() },
   },
   render: (args) => (
     <div className="bg-background flex min-h-[180px] items-end p-6">
@@ -131,6 +150,9 @@ export const ContextMeterHoverSummaryTooltip: Story = {
         if (!text.includes("Idle 4h")) {
           throw new Error("Expected idle compaction summary in tooltip");
         }
+        if (!text.includes("Remote compact on")) {
+          throw new Error("Expected remote compact summary in tooltip");
+        }
       },
       { interval: 50, timeout: 5000 }
     );
@@ -142,5 +164,31 @@ export const ContextMeterHoverSummaryTooltip: Story = {
           "Captures the context usage hover summary tooltip with one-line stats for context, auto-compaction threshold, and idle timer.",
       },
     },
+  },
+};
+
+export const ContextMeterRemoteCompactionSettings: Story = {
+  args: {
+    data: CONTEXT_METER_DATA,
+    autoCompaction: { threshold: 80, setThreshold: fn() },
+    idleCompaction: { hours: null, setHours: fn() },
+    remoteCompaction: { enabled: true, setEnabled: fn() },
+  },
+  render: (args) => (
+    <div className="bg-background flex min-h-[260px] items-end p-6">
+      <InteractiveRemoteCompactionStory {...args} />
+    </div>
+  ),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const contextButton = await waitFor(() =>
+      canvas.getByRole("button", { name: /context usage/i })
+    );
+
+    await userEvent.click(contextButton);
+
+    await waitFor(() => {
+      canvas.getByText("OpenAI remote compact");
+    });
   },
 };

@@ -1,5 +1,5 @@
 import React from "react";
-import { Hourglass } from "lucide-react";
+import { Cloud, Hourglass } from "lucide-react";
 import { TokenMeter } from "@/browser/features/RightSidebar/TokenMeter";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "../Dialog/Dialog";
 import {
@@ -86,10 +86,18 @@ export interface IdleCompactionConfig {
   setHours: (hours: number | null) => void;
 }
 
+export interface RemoteCompactionConfig {
+  /** Whether OpenAI Responses remote compaction is enabled globally. */
+  enabled: boolean;
+  /** Update the global remote compaction policy. */
+  setEnabled: (enabled: boolean) => void;
+}
+
 interface ContextUsageIndicatorButtonProps {
   data: TokenMeterData;
   autoCompaction?: AutoCompactionConfig;
   idleCompaction?: IdleCompactionConfig;
+  remoteCompaction?: RemoteCompactionConfig;
   /** Current model ID — used to show 1M context toggle for supported models */
   model?: string;
 }
@@ -122,8 +130,9 @@ const AutoCompactSettings: React.FC<{
   data: TokenMeterData;
   usageConfig?: AutoCompactionConfig;
   idleConfig?: IdleCompactionConfig;
+  remoteConfig?: RemoteCompactionConfig;
   model?: string;
-}> = ({ data, usageConfig, idleConfig, model }) => {
+}> = ({ data, usageConfig, idleConfig, remoteConfig, model }) => {
   const [idleInputValue, setIdleInputValue] = React.useState(idleConfig?.hours?.toString() ?? "24");
 
   // Sync idle input when external hours change
@@ -222,6 +231,26 @@ const AutoCompactSettings: React.FC<{
         </div>
       )}
 
+      {/* OpenAI Responses remote compaction */}
+      {remoteConfig && (
+        <div className="border-separator-light border-t pt-2">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-1">
+              <Cloud className="text-muted h-2.5 w-2.5" />
+              <span className="text-foreground text-[11px] font-medium">OpenAI remote compact</span>
+            </div>
+            <Switch
+              checked={remoteConfig.enabled}
+              onCheckedChange={remoteConfig.setEnabled}
+              className="scale-75"
+            />
+          </div>
+          <div className="text-muted mt-0.5 text-[10px]">
+            Use OpenAI Responses compact for OpenAI compaction models
+          </div>
+        </div>
+      )}
+
       {/* Warning for unknown model limits */}
       {!data.maxTokens && (
         <div className="text-subtle text-[10px] italic">
@@ -232,6 +261,7 @@ const AutoCompactSettings: React.FC<{
       {/* Persistence note */}
       <div className="text-muted border-separator-light border-t pt-2 text-[10px]">
         Usage threshold saved per model{idleConfig && "; idle timer saved per project"}
+        {remoteConfig && "; remote compact saved globally"}
       </div>
     </div>
   );
@@ -241,6 +271,7 @@ export const ContextUsageIndicatorButton: React.FC<ContextUsageIndicatorButtonPr
   data,
   autoCompaction,
   idleCompaction,
+  remoteCompaction,
   model,
 }) => {
   const idleHours = idleCompaction?.hours;
@@ -273,7 +304,12 @@ export const ContextUsageIndicatorButton: React.FC<ContextUsageIndicatorButtonPr
       ? `Idle ${idleHours}h`
       : "Idle off"
     : null;
-  const hoverSummary = [hoverUsageSummary, hoverAutoSummary, hoverIdleSummary]
+  const hoverRemoteSummary = remoteCompaction
+    ? remoteCompaction.enabled
+      ? "Remote compact on"
+      : "Remote compact off"
+    : null;
+  const hoverSummary = [hoverUsageSummary, hoverAutoSummary, hoverIdleSummary, hoverRemoteSummary]
     .filter((part): part is string => part !== null)
     .join(" · ");
 
@@ -335,6 +371,7 @@ export const ContextUsageIndicatorButton: React.FC<ContextUsageIndicatorButtonPr
           data={data}
           usageConfig={autoCompaction}
           idleConfig={idleCompaction}
+          remoteConfig={remoteCompaction}
           model={model}
         />
       </DialogContent>

@@ -115,6 +115,7 @@ import {
 } from "@/browser/utils/openaiServiceTier";
 import { useAutoCompactionSettings } from "@/browser/hooks/useAutoCompactionSettings";
 import { useIdleCompactionHours } from "@/browser/hooks/useIdleCompactionHours";
+import { useRemoteCompactionSettings } from "@/browser/hooks/useRemoteCompactionSettings";
 import { calculateTokenMeterData } from "@/common/utils/tokens/tokenMeterUtils";
 import {
   matchesKeybind,
@@ -864,6 +865,7 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
     }),
     [idleCompactionHours, setIdleCompactionHours]
   );
+  const remoteCompactionProps = useRemoteCompactionSettings();
 
   const setPreferredModel = useCallback(
     (model: string) => {
@@ -3558,6 +3560,7 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
                     data={contextUsageData}
                     autoCompaction={autoCompactionProps}
                     idleCompaction={idleCompactionProps}
+                    remoteCompaction={remoteCompactionProps}
                     model={contextDisplayModel}
                   />
                 )}
