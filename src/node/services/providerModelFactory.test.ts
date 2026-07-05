@@ -1014,30 +1014,328 @@ describe("ProviderModelFactory GitHub Copilot", () => {
     });
   });
 
-  it("rejects OpenAI Responses compaction replay on Codex OAuth routing", async () => {
+  it("captures Codex OAuth Responses compact calls using the SDK-shaped request body", async () => {
     await withTempConfig(async (config, factory) => {
-      config.saveProvidersConfig({
+      const originalOpenAIRegistry = PROVIDER_REGISTRY.openai;
+      const requests: Array<{
+        input: Parameters<typeof fetch>[0];
+        init?: Parameters<typeof fetch>[1];
+      }> = [];
+      const capturedCompactedResponses: unknown[] = [];
+      let capturedFetch: typeof fetch | undefined;
+      const auth = {
+        type: "oauth" as const,
+        access: "test-access-token",
+        refresh: "test-refresh-token",
+        expires: Date.now() + 60_000,
+        accountId: "test-account-id",
+      };
+
+      const baseFetch = (
+        input: Parameters<typeof fetch>[0],
+        init?: Parameters<typeof fetch>[1]
+      ) => {
+        requests.push({ input, init });
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              id: "resp_compact_oauth_1",
+              created_at: 123,
+              object: "response.compaction",
+              output: [
+                {
+                  id: "msg_1",
+                  type: "message",
+                  role: "user",
+                  status: "completed",
+                  content: [{ type: "input_text", text: "compact me" }],
+                },
+                {
+                  id: "cmp_1",
+                  type: "compaction_summary",
+                  encrypted_content: "oauth-opaque-ciphertext",
+                },
+              ],
+              usage: {
+                input_tokens: 10,
+                output_tokens: 2,
+                total_tokens: 12,
+              },
+            }),
+            { headers: { "Content-Type": "application/json" } }
+          )
+        );
+      };
+
+      config.loadProvidersConfig = () => ({
         openai: {
-          codexOauth: {
-            type: "oauth",
-            access: "test-access-token",
-            refresh: "test-refresh-token",
-            expires: Date.now() + 60_000,
-            accountId: "test-account-id",
-          },
+          codexOauth: auth,
+          fetch: baseFetch,
         },
       });
 
-      const result = await factory.createModel(KNOWN_MODELS.GPT_53_CODEX.id, undefined, {
-        openAIResponsesCompactionReplays: {
-          resp_compact_1: {
-            type: "openai-responses-compact",
-            responseId: "resp_compact_1",
+      const codexOauthService = Object.create(CodexOauthService.prototype) as CodexOauthService;
+      codexOauthService.getValidAuth = () => Promise.resolve(Ok(auth));
+      codexOauthService.recordUsageHeaders = () => undefined;
+      factory.codexOauthService = codexOauthService;
+
+      PROVIDER_REGISTRY.openai = async () => {
+        const module = await originalOpenAIRegistry();
+        return {
+          ...module,
+          createOpenAI: (options) => {
+            capturedFetch = options?.fetch;
+            return module.createOpenAI(options);
+          },
+        };
+      };
+
+      try {
+        const result = await factory.createModel("openai:gpt-5.5", undefined, {
+          openAIResponsesCompactCapture: (response) => {
+            capturedCompactedResponses.push(response);
+          },
+        });
+        expect(result.success).toBe(true);
+        if (!result.success) {
+          return;
+        }
+
+        if (!capturedFetch) {
+          throw new Error("Expected OpenAI fetch wrapper to be captured");
+        }
+
+        await capturedFetch("https://api.openai.com/v1/responses", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "Content-Length": "1000" },
+          body: JSON.stringify({
+            model: "gpt-5.5",
+            input: [{ role: "user", content: [{ type: "input_text", text: "compact me" }] }],
+            instructions: "Use project rules.",
+            tools: [{ type: "function", name: "ignored" }],
+            store: true,
+            stream: false,
+          }),
+        });
+
+        expect(requests).toHaveLength(1);
+        expect(requests[0]?.input).toBe(`${CODEX_ENDPOINT}/compact`);
+        const headers = new Headers(requests[0]?.init?.headers);
+        expect(headers.get("authorization")).toBe("Bearer test-access-token");
+        expect(headers.get("chatgpt-account-id")).toBe("test-account-id");
+        expect(headers.get("content-length")).toBeNull();
+        const sent = JSON.parse((requests[0]?.init?.body as string | undefined) ?? "{}") as Record<
+          string,
+          unknown
+        >;
+        expect(sent).toEqual({
+          model: "gpt-5.5",
+          input: [{ role: "user", content: [{ type: "input_text", text: "compact me" }] }],
+          instructions: "Use project rules.",
+        });
+        expect(capturedCompactedResponses).toEqual([
+          {
+            id: "resp_compact_oauth_1",
+            created_at: 123,
+            object: "response.compaction",
             output: [
               {
-                id: "ci_1",
-                type: "compaction",
-                encrypted_content: "opaque-ciphertext",
+                id: "msg_1",
+                type: "message",
+                role: "user",
+                status: "completed",
+                content: [{ type: "input_text", text: "compact me" }],
+              },
+              {
+                id: "cmp_1",
+                type: "compaction_summary",
+                encrypted_content: "oauth-opaque-ciphertext",
+              },
+            ],
+            usage: {
+              input_tokens: 10,
+              output_tokens: 2,
+              total_tokens: 12,
+            },
+          },
+        ]);
+      } finally {
+        PROVIDER_REGISTRY.openai = originalOpenAIRegistry;
+      }
+    });
+  });
+
+  it("replays Codex OAuth compacted context into Codex OAuth Responses requests", async () => {
+    await withTempConfig(async (config, factory) => {
+      const originalOpenAIRegistry = PROVIDER_REGISTRY.openai;
+      const requests: Array<{
+        input: Parameters<typeof fetch>[0];
+        init?: Parameters<typeof fetch>[1];
+      }> = [];
+      let capturedFetch: typeof fetch | undefined;
+      const auth = {
+        type: "oauth" as const,
+        access: "test-access-token",
+        refresh: "test-refresh-token",
+        expires: Date.now() + 60_000,
+        accountId: "test-account-id",
+      };
+
+      const baseFetch = (
+        input: Parameters<typeof fetch>[0],
+        init?: Parameters<typeof fetch>[1]
+      ) => {
+        requests.push({ input, init });
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              id: "resp_test",
+              created_at: 0,
+              model: "gpt-5.5",
+              output: [
+                {
+                  type: "message",
+                  role: "assistant",
+                  id: "msg_test",
+                  content: [{ type: "output_text", text: "ok", annotations: [] }],
+                },
+              ],
+              usage: {
+                input_tokens: 1,
+                output_tokens: 1,
+              },
+            }),
+            { headers: { "Content-Type": "application/json" } }
+          )
+        );
+      };
+
+      config.loadProvidersConfig = () => ({
+        openai: {
+          codexOauth: auth,
+          fetch: baseFetch,
+        },
+      });
+
+      const codexOauthService = Object.create(CodexOauthService.prototype) as CodexOauthService;
+      codexOauthService.getValidAuth = () => Promise.resolve(Ok(auth));
+      codexOauthService.recordUsageHeaders = () => undefined;
+      factory.codexOauthService = codexOauthService;
+
+      PROVIDER_REGISTRY.openai = async () => {
+        const module = await originalOpenAIRegistry();
+        return {
+          ...module,
+          createOpenAI: (options) => {
+            capturedFetch = options?.fetch;
+            return module.createOpenAI(options);
+          },
+        };
+      };
+
+      try {
+        const result = await factory.createModel("openai:gpt-5.5", undefined, {
+          openAIResponsesCompactionReplays: {
+            resp_compact_oauth_1: {
+              type: "openai-responses-compact",
+              responseId: "resp_compact_oauth_1",
+              route: "codex-oauth",
+              output: [
+                {
+                  id: "msg_1",
+                  type: "message",
+                  role: "user",
+                  status: "completed",
+                  content: [{ type: "input_text", text: "before compact" }],
+                },
+                {
+                  id: "cmp_1",
+                  type: "compaction_summary",
+                  encrypted_content: "oauth-opaque-ciphertext",
+                },
+              ],
+            },
+          },
+        });
+        expect(result.success).toBe(true);
+        if (!result.success) {
+          return;
+        }
+
+        if (!capturedFetch) {
+          throw new Error("Expected OpenAI fetch wrapper to be captured");
+        }
+
+        const originalBody = JSON.stringify({
+          model: "gpt-5.5",
+          input: [
+            {
+              role: "assistant",
+              content: [
+                {
+                  type: "output_text",
+                  text: createOpenAIResponsesCompactionBoundaryMarker("resp_compact_oauth_1"),
+                },
+              ],
+            },
+            { role: "user", content: [{ type: "input_text", text: "after compact" }] },
+          ],
+          stream: true,
+        });
+
+        await capturedFetch("https://api.openai.com/v1/responses", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: originalBody,
+        });
+
+        expect(requests).toHaveLength(1);
+        expect(requests[0]?.input).toBe(CODEX_ENDPOINT);
+        const sent = JSON.parse((requests[0]?.init?.body as string | undefined) ?? "{}") as {
+          input?: unknown;
+          store?: unknown;
+        };
+        expect(sent.store).toBe(false);
+        expect(sent.input).toEqual([
+          {
+            id: "msg_1",
+            type: "message",
+            role: "user",
+            status: "completed",
+            content: [{ type: "input_text", text: "before compact" }],
+          },
+          {
+            id: "cmp_1",
+            type: "compaction_summary",
+            encrypted_content: "oauth-opaque-ciphertext",
+          },
+          { role: "user", content: [{ type: "input_text", text: "after compact" }] },
+        ]);
+      } finally {
+        PROVIDER_REGISTRY.openai = originalOpenAIRegistry;
+      }
+    });
+  });
+
+  it("rejects replay when the compacted context belongs to the other OpenAI auth lane", async () => {
+    await withTempConfig(async (config, factory) => {
+      config.saveProvidersConfig({
+        openai: {
+          apiKey: "sk-test",
+        },
+      });
+
+      const result = await factory.createModel("openai:gpt-5.5", undefined, {
+        openAIResponsesCompactionReplays: {
+          resp_compact_oauth_1: {
+            type: "openai-responses-compact",
+            responseId: "resp_compact_oauth_1",
+            route: "codex-oauth",
+            output: [
+              {
+                id: "cmp_1",
+                type: "compaction_summary",
+                encrypted_content: "oauth-opaque-ciphertext",
               },
             ],
           },
@@ -1048,7 +1346,7 @@ describe("ProviderModelFactory GitHub Copilot", () => {
       if (!result.success) {
         expect(result.error).toEqual({
           type: "unknown",
-          raw: "OpenAI Responses compacted context requires direct OpenAI API-key routing. Switch OpenAI auth to API key or reset the workspace context before using this model.",
+          raw: "This workspace context was compacted with Codex OAuth routing. Switch OpenAI auth to Codex OAuth or reset the workspace context before using direct OpenAI API-key routing.",
         });
       }
     });

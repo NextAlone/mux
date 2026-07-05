@@ -118,6 +118,7 @@ import {
   isOpenAIResponsesCompactionOutput,
   resolveRemoteCompactionPolicy,
   type OpenAIResponsesCompactionOutput,
+  type OpenAIResponsesCompactionRoute,
 } from "@/common/utils/compaction/remotePolicy";
 import { buildLocalStrategyCompactionMessageText } from "@/common/utils/compaction/compactionPrompt";
 import { getProjects, isMultiProject } from "@/common/utils/multiProject";
@@ -445,6 +446,7 @@ export interface StreamMessageOptions {
   installOpenAIResponsesRemoteCompaction?: (params: {
     model: string;
     responseId: string;
+    route?: OpenAIResponsesCompactionRoute;
     output: OpenAIResponsesCompactionOutput;
     usage?: LanguageModelV2Usage;
     duration?: number;
@@ -2749,6 +2751,7 @@ export class AIService extends EventEmitter {
             const installResult = await installOpenAIResponsesRemoteCompaction({
               model: canonicalModelString,
               responseId: compactedResponse.id,
+              route: compactModelResult.data.openAIResponsesCompactionRoute,
               output: compactedResponse.output,
               usage: convertOpenAICompactUsage(compactedResponse.usage),
               duration: Date.now() - remoteCompactionStartedAt,

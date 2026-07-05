@@ -63,6 +63,7 @@ import {
 import {
   isOpenAIResponsesRemoteCompactionState,
   type OpenAIResponsesCompactionOutput,
+  type OpenAIResponsesCompactionRoute,
 } from "@/common/utils/compaction/remotePolicy";
 
 const OPENAI_RESPONSES_REMOTE_COMPACTION_SUMMARY_TEXT =
@@ -829,6 +830,7 @@ export class CompactionHandler {
   async installOpenAIResponsesRemoteCompaction(params: {
     model: string;
     responseId: string;
+    route?: OpenAIResponsesCompactionRoute;
     output: OpenAIResponsesCompactionOutput;
     usage?: LanguageModelV2Usage;
     duration?: number;
@@ -839,6 +841,7 @@ export class CompactionHandler {
     const remoteCompaction = {
       type: "openai-responses-compact" as const,
       responseId: params.responseId,
+      ...(params.route ? { route: params.route } : {}),
       output: params.output,
     };
     if (!isOpenAIResponsesRemoteCompactionState(remoteCompaction)) {

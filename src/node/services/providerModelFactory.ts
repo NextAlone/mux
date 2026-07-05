@@ -72,7 +72,10 @@ import {
 import { EnvHttpProxyAgent, type Dispatcher } from "undici";
 import packageJson from "../../../package.json";
 import { applyOpenAIResponsesCompactionReplayToBody } from "@/node/services/openaiResponsesCompactionReplay";
-import type { OpenAIResponsesRemoteCompactionState } from "@/common/utils/compaction/remotePolicy";
+import type {
+  OpenAIResponsesCompactionRoute,
+  OpenAIResponsesRemoteCompactionState,
+} from "@/common/utils/compaction/remotePolicy";
 import type { CompactedResponse } from "openai/resources/responses/responses";
 
 // ---------------------------------------------------------------------------
@@ -618,16 +621,19 @@ interface ProviderModelFactoryCreateOptions {
   openAIResponsesCompactCapture?: (response: CompactedResponse) => void;
 }
 
-function hasOpenAIResponsesCompactionReplays(
-  opts: ProviderModelFactoryCreateOptions | undefined
-): boolean {
-  return Object.keys(opts?.openAIResponsesCompactionReplays ?? {}).length > 0;
+function getOpenAIResponsesCompactionReplayRoute(
+  state: OpenAIResponsesRemoteCompactionState
+): OpenAIResponsesCompactionRoute {
+  return state.route ?? "openai-api-key";
 }
 
-function usesOpenAIResponsesCompactLane(
-  opts: ProviderModelFactoryCreateOptions | undefined
+function hasOpenAIResponsesCompactionReplayForOtherRoute(
+  opts: ProviderModelFactoryCreateOptions | undefined,
+  route: OpenAIResponsesCompactionRoute
 ): boolean {
-  return hasOpenAIResponsesCompactionReplays(opts) || opts?.openAIResponsesCompactCapture != null;
+  return Object.values(opts?.openAIResponsesCompactionReplays ?? {}).some(
+    (state) => getOpenAIResponsesCompactionReplayRoute(state) !== route
+  );
 }
 
 function buildOpenAIResponsesCompactUrl(urlString: string): string {
@@ -1330,10 +1336,15 @@ export class ProviderModelFactory {
           return codexOauthDefaultAuth === "oauth";
         })();
 
-        if (usesOpenAIResponsesCompactLane(opts) && shouldRouteThroughCodexOauth) {
+        const openAIResponsesCompactionRoute: OpenAIResponsesCompactionRoute =
+          shouldRouteThroughCodexOauth ? "codex-oauth" : "openai-api-key";
+        if (hasOpenAIResponsesCompactionReplayForOtherRoute(opts, openAIResponsesCompactionRoute)) {
           return Err({
             type: "unknown",
-            raw: "OpenAI Responses compacted context requires direct OpenAI API-key routing. Switch OpenAI auth to API key or reset the workspace context before using this model.",
+            raw:
+              openAIResponsesCompactionRoute === "codex-oauth"
+                ? "This workspace context was compacted with direct OpenAI API-key routing. Switch OpenAI auth to API key or reset the workspace context before using Codex OAuth."
+                : "This workspace context was compacted with Codex OAuth routing. Switch OpenAI auth to Codex OAuth or reset the workspace context before using direct OpenAI API-key routing.",
           });
         }
 
@@ -1456,7 +1467,25 @@ export class ProviderModelFactory {
               ) {
                 const headers = new Headers(nextInit?.headers);
                 headers.delete("content-length");
-                const compactResponse = await baseFetch(buildOpenAIResponsesCompactUrl(urlString), {
+                let compactInput = buildOpenAIResponsesCompactUrl(urlString);
+                if (shouldRouteThroughCodexOauth) {
+                  if (!codexOauthService) {
+                    throw new Error("Codex OAuth service not initialized");
+                  }
+
+                  const authResult = await codexOauthService.getValidAuth();
+                  if (!authResult.success) {
+                    throw new Error(authResult.error);
+                  }
+
+                  headers.set("Authorization", `Bearer ${authResult.data.access}`);
+                  if (authResult.data.accountId) {
+                    headers.set("ChatGPT-Account-Id", authResult.data.accountId);
+                  }
+                  compactInput = buildOpenAIResponsesCompactUrl(CODEX_ENDPOINT);
+                }
+
+                const compactResponse = await baseFetch(compactInput, {
                   ...nextInit,
                   headers,
                   body: buildOpenAIResponsesCompactBody(body),
@@ -2120,6 +2149,8 @@ export class ProviderModelFactory {
     Result<
       {
         model: LanguageModel;
+        /** Auth/backend lane that owns OpenAI Responses compacted context for this model. */
+        openAIResponsesCompactionRoute?: OpenAIResponsesCompactionRoute;
         /** Model string after routing (direct provider or gateway provider prefix). */
         effectiveModelString: string;
         /** Model string with gateway prefix stripped (canonical provider:model). */
@@ -2175,6 +2206,10 @@ export class ProviderModelFactory {
 
     return Ok({
       model: modelResult.data,
+      openAIResponsesCompactionRoute:
+        canonicalProviderName === "openai" && routeProvider === "openai"
+          ? this.resolveOpenAIResponsesCompactionRoute(canonicalModelString)
+          : undefined,
       effectiveModelString,
       canonicalModelString,
       canonicalProviderName,
@@ -2205,6 +2240,32 @@ export class ProviderModelFactory {
       },
       isGatewayModelAccessible
     );
+  }
+
+  private resolveOpenAIResponsesCompactionRoute(
+    canonicalModelString: string
+  ): OpenAIResponsesCompactionRoute {
+    const [providerName] = parseModelString(canonicalModelString);
+    if (providerName !== "openai") {
+      return "openai-api-key";
+    }
+
+    const providerConfig = (this.config.loadProvidersConfig()?.openai ?? {}) as Record<
+      string,
+      unknown
+    >;
+    const storedCodexOauth = parseCodexOauthAuth(providerConfig.codexOauth);
+    const creds = resolveProviderCredentials("openai", providerConfig);
+    const codexOauthDefaultAuth =
+      providerConfig.codexOauthDefaultAuth === "apiKey" ? "apiKey" : "oauth";
+    const codexOauthAllowed = isCodexOauthAllowedModelId(canonicalModelString);
+    const codexOauthRequired = isCodexOauthRequiredModelId(canonicalModelString);
+    const shouldRouteThroughCodexOauth =
+      codexOauthAllowed &&
+      storedCodexOauth != null &&
+      (codexOauthRequired || !creds.isConfigured || codexOauthDefaultAuth === "oauth");
+
+    return shouldRouteThroughCodexOauth ? "codex-oauth" : "openai-api-key";
   }
 
   resolveGatewayModelString(

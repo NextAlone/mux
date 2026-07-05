@@ -1,17 +1,19 @@
 import { canUseRemoteCompactionPolicy, type CompactionStrategySettings } from "./strategyConfig";
 
 export interface OpenAIResponsesCompactionItem {
-  type: "compaction";
+  type: "compaction" | "compaction_summary";
   encrypted_content: string;
   id?: string | null;
   created_by?: string;
 }
 
 export type OpenAIResponsesCompactionOutput = Array<Record<string, unknown>>;
+export type OpenAIResponsesCompactionRoute = "openai-api-key" | "codex-oauth";
 
 export interface OpenAIResponsesRemoteCompactionState {
   type: "openai-responses-compact";
   responseId: string;
+  route?: OpenAIResponsesCompactionRoute;
   output: OpenAIResponsesCompactionOutput;
 }
 
@@ -55,7 +57,10 @@ export function isOpenAIResponsesCompactionItem(
   }
 
   const record = value as Record<string, unknown>;
-  return record.type === "compaction" && typeof record.encrypted_content === "string";
+  return (
+    (record.type === "compaction" || record.type === "compaction_summary") &&
+    typeof record.encrypted_content === "string"
+  );
 }
 
 export function isOpenAIResponsesCompactionOutput(
@@ -72,10 +77,12 @@ export function isOpenAIResponsesRemoteCompactionState(
   }
 
   const record = value as Record<string, unknown>;
+  const route = record.route;
   return (
     record.type === "openai-responses-compact" &&
     typeof record.responseId === "string" &&
     record.responseId.trim().length > 0 &&
+    (route === undefined || route === "openai-api-key" || route === "codex-oauth") &&
     isOpenAIResponsesCompactionOutput(record.output) &&
     record.output.some(isOpenAIResponsesCompactionItem)
   );
