@@ -409,6 +409,19 @@ describe("AgentListItem", () => {
     expect(rowView.queryByText("Workflow running")).toBeNull();
   });
 
+  test("keeps the active dot when only background terminal commands are running", () => {
+    mockWorkspaceSidebarState = createWorkspaceSidebarState({
+      terminalActiveCount: 1,
+      terminalSessionCount: 1,
+    });
+
+    const { row } = renderWorkspaceItem();
+    const rowView = within(row);
+
+    expect(row.querySelector(".workspace-status-dot-active")).toBeTruthy();
+    expect(rowView.getByText("1 terminal running commands")).toBeTruthy();
+  });
+
   test("shows active delegated workflow work on idle workspace rows", () => {
     const { row } = renderWorkspaceItem({
       delegatedActivity: {

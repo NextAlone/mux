@@ -634,6 +634,9 @@ function RegularAgentListItemInner(props: AgentListItemProps) {
   const hasError = lastAbortReason?.reason === "system";
   const hasActiveWorkflowRun = activeWorkflowRunCount > 0;
   const hasActiveDelegatedWork = (delegatedActivity?.activeCount ?? 0) > 0;
+  // A completed agent turn can leave background terminal commands running; keep the row active
+  // until those commands exit so the sidebar does not imply the workspace is idle.
+  const hasActiveTerminalWork = terminalActiveCount > 0;
   const delegatedStatusText = delegatedActivity
     ? formatDelegatedActivityText(delegatedActivity)
     : null;
@@ -653,7 +656,8 @@ function RegularAgentListItemInner(props: AgentListItemProps) {
     isArchiving: isArchiving === true,
     isWorking,
     isStarting: displayStreamingStatusPhase === "starting",
-    hasActiveDelegatedWork: hasActiveDelegatedWork || hasActiveWorkflowRun,
+    hasActiveDelegatedWork:
+      hasActiveDelegatedWork || hasActiveWorkflowRun || hasActiveTerminalWork,
     isUnread,
     isSelected,
     hasError,
