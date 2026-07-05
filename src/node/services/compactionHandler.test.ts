@@ -267,6 +267,29 @@ describe("CompactionHandler", () => {
         return message?.id === summary?.id;
       });
       expect(emittedMessage).toBeDefined();
+
+      const emittedStreamEnd = emittedEvents
+        .map((event) => event.data.message)
+        .find(
+          (message): message is StreamEndEvent =>
+            typeof message === "object" &&
+            message !== null &&
+            "type" in message &&
+            (message as { type?: unknown }).type === "stream-end"
+        );
+      expect(emittedStreamEnd).toMatchObject({
+        type: "stream-end",
+        workspaceId,
+        messageId: summary?.id,
+        parts: [{ type: "text", text: "OpenAI Responses compacted context installed." }],
+        metadata: {
+          model: "openai:gpt-5.5",
+          usage: { inputTokens: 100, outputTokens: 4, totalTokens: 104 },
+          contextUsage: { inputTokens: 16, outputTokens: 0, totalTokens: 16 },
+          finishReason: "stop",
+          systemMessageTokens: 12,
+        },
+      });
     });
 
     it("rejects remote compaction output without a compaction item", async () => {

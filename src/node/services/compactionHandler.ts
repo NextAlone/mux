@@ -952,6 +952,8 @@ export class CompactionHandler {
 
     this.postCompactionAttachmentsPending = true;
     this.emitChatEvent({ ...summaryMessage, type: "message" });
+    // Remote compact bypasses StreamManager, so emit the terminal event that clears renderer state.
+    this.emitRemoteCompactionStreamEndEvent(summaryMessage);
 
     const completionMetadata: CompactionCompletionMetadata = {
       workspaceId: this.workspaceId,
@@ -968,6 +970,35 @@ export class CompactionHandler {
     }
 
     return Ok(completionMetadata);
+  }
+
+  private emitRemoteCompactionStreamEndEvent(summaryMessage: MuxMessage): void {
+    const metadata = summaryMessage.metadata ?? {};
+    assert(
+      typeof metadata.model === "string" && metadata.model.length > 0,
+      "Remote compaction stream-end requires a persisted model"
+    );
+    const contextUsage = this.computePostCompactionContextEstimate(
+      metadata.systemMessageTokens,
+      metadata.usage,
+      undefined,
+      undefined,
+      undefined
+    );
+    const streamEndEvent: StreamEndEvent = {
+      type: "stream-end",
+      workspaceId: this.workspaceId,
+      messageId: summaryMessage.id,
+      parts: [{ type: "text", text: OPENAI_RESPONSES_REMOTE_COMPACTION_SUMMARY_TEXT }],
+      metadata: {
+        ...metadata,
+        model: metadata.model,
+        finishReason: "stop",
+        ...(contextUsage ? { contextUsage } : {}),
+      },
+    };
+
+    this.emitChatEvent(streamEndEvent);
   }
 
   /**
