@@ -21,6 +21,7 @@ import {
   getModelKey,
   getProjectScopeId,
   getRuntimeKey,
+  getTrunkBranchKey,
 } from "@/common/constants/storage";
 import { CODER_RUNTIME_PLACEHOLDER } from "@/common/types/runtime";
 import type * as DraftWorkspaceSettingsModule from "./useDraftWorkspaceSettings";
@@ -248,6 +249,22 @@ describe("useDraftWorkspaceSettings", () => {
 
     await waitFor(() => {
       expect(result.current.settings.model).toBe("openrouter:openai/gpt-5");
+    });
+  });
+
+  test("keeps the parent revision source when bookmarks load", async () => {
+    const projectPath = "/tmp/project";
+
+    updatePersistedState(getTrunkBranchKey(projectPath), "@-");
+
+    const wrapper = createWrapper(projectPath);
+
+    const { result } = renderHook(() => useDraftWorkspaceSettings(projectPath, ["main"], "main"), {
+      wrapper,
+    });
+
+    await waitFor(() => {
+      expect(result.current.settings.trunkBranch).toBe("@-");
     });
   });
 

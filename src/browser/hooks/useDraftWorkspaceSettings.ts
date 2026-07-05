@@ -32,6 +32,7 @@ import {
 import type { ThinkingLevel } from "@/common/types/thinking";
 import { normalizeAgentId } from "@/common/utils/agentIds";
 import { WORKSPACE_DEFAULTS } from "@/constants/workspaceDefaults";
+import { PARENT_SOURCE_REVISION } from "@/common/constants/workspace";
 
 /**
  * Centralized draft workspace settings for project-level persistence
@@ -518,7 +519,8 @@ export function useDraftWorkspaceSettings(
 
   // Initialize source bookmark from backend recommendation or first bookmark
   useEffect(() => {
-    if (branches.length > 0 && (!trunkBranch || !branches.includes(trunkBranch))) {
+    const hasValidSource = trunkBranch === PARENT_SOURCE_REVISION || branches.includes(trunkBranch);
+    if (branches.length > 0 && (!trunkBranch || !hasValidSource)) {
       const defaultBranch = recommendedTrunk ?? branches[0];
       setTrunkBranch(defaultBranch);
     }

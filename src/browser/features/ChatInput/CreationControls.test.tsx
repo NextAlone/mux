@@ -11,7 +11,7 @@ import type { WorkspaceContext } from "@/browser/contexts/WorkspaceContext";
 import type { WorkspaceNameState } from "@/browser/hooks/useWorkspaceName";
 import { RUNTIME_MODE } from "@/common/types/runtime";
 import type { ProjectConfig } from "@/common/types/project";
-import { CreationControls } from "./CreationControls";
+import { CreationControls, buildSourceBookmarkOptions } from "./CreationControls";
 import type { RuntimeAvailabilityState } from "./useCreationWorkspace";
 
 const TEST_PROJECT_PATH = "/tmp/demo";
@@ -144,5 +144,13 @@ describe("CreationControls", () => {
 
     expect(view.queryByText("Source Bookmark")).not.toBeNull();
     expect(view.queryByLabelText("Select source bookmark")).not.toBeNull();
+  });
+
+  test("includes the parent revision source option", () => {
+    expect(buildSourceBookmarkOptions(["main", "develop"], "main")).toEqual([
+      "@-",
+      "main",
+      "develop",
+    ]);
   });
 });

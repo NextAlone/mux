@@ -48,6 +48,7 @@ import { getWorkspacePathHintForProject } from "@/node/services/workspaceProject
 import { validateWorkspaceName } from "@/common/utils/validation/workspaceValidation";
 import { ensurePrivateDir, isErrnoWithCode } from "@/node/utils/fs";
 import { CHAT_FILE_NAME, CHAT_ARCHIVE_FILE_NAME } from "@/common/constants/paths";
+import { PARENT_SOURCE_REVISION } from "@/common/constants/workspace";
 import { stripTrailingSlashes } from "@/node/utils/pathUtils";
 import { getProjects, isMultiProject } from "@/common/utils/multiProject";
 import { generateGitStatusScript, parseGitStatusScriptOutput } from "@/common/utils/git/gitStatus";
@@ -3536,6 +3537,10 @@ export class WorkspaceService extends EventEmitter {
         if (!normalizedPreferredTrunkBranch) {
           const localBranches = await listLocalBranches(projectPath);
           return detectDefaultTrunkBranch(projectPath, localBranches);
+        }
+
+        if (normalizedPreferredTrunkBranch === PARENT_SOURCE_REVISION) {
+          return normalizedPreferredTrunkBranch;
         }
 
         try {

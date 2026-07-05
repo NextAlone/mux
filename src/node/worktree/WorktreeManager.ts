@@ -6,6 +6,7 @@ import type {
   WorkspaceForkResult,
   InitLogger,
 } from "@/node/runtime/Runtime";
+import { PARENT_SOURCE_REVISION } from "@/common/constants/workspace";
 import { listLocalBranches } from "@/node/git";
 import { getProjectName } from "@/node/utils/runtime/helpers";
 import { getErrorMessage } from "@/common/utils/errors";
@@ -93,7 +94,13 @@ export class WorktreeManager {
       const localBookmarks = await listLocalBranches(projectPath);
       const branchExists = localBookmarks.includes(branchName);
       const baseRevision = startPoint ?? (branchExists ? branchName : trunkBranch);
-      if (!startPoint && !branchExists && !localBookmarks.includes(trunkBranch)) {
+      const isExplicitParentRevision = trunkBranch === PARENT_SOURCE_REVISION;
+      if (
+        !startPoint &&
+        !branchExists &&
+        !isExplicitParentRevision &&
+        !localBookmarks.includes(trunkBranch)
+      ) {
         return {
           success: false,
           error: `Source bookmark "${trunkBranch}" does not exist locally`,

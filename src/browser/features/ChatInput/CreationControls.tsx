@@ -39,6 +39,7 @@ import {
   type RuntimeIconProps,
 } from "@/browser/utils/runtimeUi";
 import { useWorkspaceCheckoutLocation } from "@/browser/hooks/useWorkspaceCheckoutLocation";
+import { PARENT_SOURCE_REVISION } from "@/common/constants/workspace";
 
 import type { WorkspaceNameState, WorkspaceNameUIError } from "@/browser/hooks/useWorkspaceName";
 import type { CoderInfo } from "@/common/orpc/schemas/coder";
@@ -57,6 +58,20 @@ import {
  */
 const INLINE_CONTROL_CLASSES =
   "h-7 w-[140px] rounded border border-border-medium bg-separator px-2 text-xs text-foreground focus:border-accent focus:outline-none disabled:cursor-not-allowed disabled:opacity-50";
+
+export function buildSourceBookmarkOptions(branches: string[], trunkBranch: string): string[] {
+  const sourceRevisionOptions: string[] = [PARENT_SOURCE_REVISION];
+  const shouldIncludeCurrentSource =
+    trunkBranch.length > 0 &&
+    !sourceRevisionOptions.includes(trunkBranch) &&
+    !branches.includes(trunkBranch);
+
+  return [
+    ...sourceRevisionOptions,
+    ...(shouldIncludeCurrentSource ? [trunkBranch] : []),
+    ...branches.filter((branch) => !sourceRevisionOptions.includes(branch)),
+  ];
+}
 
 /** Credential sharing checkbox - used by Docker and Devcontainer runtimes */
 function CredentialSharingCheckbox(props: {
@@ -564,10 +579,7 @@ export function CreationControls(props: CreationControlsProps) {
       availabilityMap.worktree.reason === "Requires jj repository") ||
     (props.branchesLoaded && props.branches.length === 0);
 
-  const bookmarkOptions =
-    props.trunkBranch && !props.branches.includes(props.trunkBranch)
-      ? [props.trunkBranch, ...props.branches]
-      : props.branches;
+  const bookmarkOptions = buildSourceBookmarkOptions(props.branches, props.trunkBranch);
   const isBookmarkSelectorDisabled =
     Boolean(props.disabled) || isNonGitRepo || bookmarkOptions.length === 0;
   const usesCurrentCheckout = selectedRuntime.mode === RUNTIME_MODE.LOCAL;

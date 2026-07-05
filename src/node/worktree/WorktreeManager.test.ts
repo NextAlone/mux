@@ -199,6 +199,75 @@ describe("WorktreeManager.createWorkspace", () => {
     }
   });
 
+  it("allows the parent revision source even when it is not a bookmark", async () => {
+    const rootDir = await fsPromises.realpath(
+      await fsPromises.mkdtemp(path.join(os.tmpdir(), "worktree-manager-jj-parent-revision-"))
+    );
+    const projectPath = path.join(rootDir, "repo");
+    const srcBaseDir = path.join(rootDir, "src");
+    const workspaceName = "agent-task";
+    const workspacePath = path.join(srcBaseDir, "repo", workspaceName);
+
+    await fsPromises.mkdir(path.join(projectPath, ".jj", "repo"), { recursive: true });
+    await fsPromises.mkdir(srcBaseDir, { recursive: true });
+
+    const execFileAsyncSpy = spyOn(disposableExec, "execFileAsync").mockImplementation(
+      (file, args) => {
+        if (file === "git") {
+          return createMockExecResult(
+            Promise.reject(new Error(`unexpected git command: ${(args ?? []).join(" ")}`))
+          );
+        }
+
+        expect(file).toBe("jj");
+        const commandArgs = args ?? [];
+        if (commandArgs.includes("bookmark") && commandArgs.includes("list")) {
+          return createMockExecResult(Promise.resolve({ stdout: "main\n", stderr: "" }));
+        }
+
+        if (commandArgs.includes("workspace") && commandArgs.includes("add")) {
+          expect(commandArgs).toEqual([
+            "--no-pager",
+            "--color",
+            "never",
+            "--repository",
+            projectPath,
+            "workspace",
+            "add",
+            "--name",
+            workspaceName,
+            "--revision",
+            "@-",
+            "--message",
+            workspaceName,
+            workspacePath,
+          ]);
+          return createMockExecResult(Promise.resolve({ stdout: "", stderr: "" }));
+        }
+
+        return createMockExecResult(
+          Promise.reject(new Error(`unexpected jj command: ${commandArgs.join(" ")}`))
+        );
+      }
+    );
+
+    try {
+      const manager = new WorktreeManager(srcBaseDir);
+      const result = await manager.createWorkspace({
+        projectPath,
+        branchName: workspaceName,
+        trunkBranch: "@-",
+        initLogger: createNullInitLogger(),
+        trusted: true,
+      });
+
+      expect(result.success).toBe(true);
+    } finally {
+      execFileAsyncSpy.mockRestore();
+      await fsPromises.rm(rootDir, { recursive: true, force: true });
+    }
+  });
+
   const rollbackCases = [
     {
       name: "rolls back failed new worktrees when submodule materialization fails",
