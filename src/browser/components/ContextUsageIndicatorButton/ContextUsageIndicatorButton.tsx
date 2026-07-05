@@ -341,7 +341,11 @@ export const ContextUsageIndicatorButton: React.FC<ContextUsageIndicatorButtonPr
             </button>
           </DialogTrigger>
         </TooltipTrigger>
-        <TooltipContent side="top" showArrow={false} className="whitespace-nowrap">
+        <TooltipContent
+          side="top"
+          showArrow={false}
+          className="max-w-[calc(100vw-2rem)] text-center leading-snug break-words whitespace-normal sm:max-w-sm"
+        >
           {hoverSummary}
         </TooltipContent>
       </Tooltip>

@@ -2,6 +2,7 @@ import { cleanup, render } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { GlobalWindow } from "happy-dom";
 import { TooltipProvider } from "@radix-ui/react-tooltip";
+import { APIProvider, type APIClient } from "@/browser/contexts/API";
 import type { DisplayedMessage } from "@/common/types/message";
 import { MessageRenderer } from "./MessageRenderer";
 
@@ -52,6 +53,34 @@ Live goal accounting at this continuation fire:
     expect(queryByText(/untrusted data/)).toBeNull();
     expect(queryByText(/Live goal accounting/)).toBeNull();
     expect(queryByText("auto")).toBeNull();
+  });
+
+  test("renders compaction duration in compacted assistant badges", () => {
+    const message: DisplayedMessage = {
+      type: "assistant",
+      id: "remote-compact",
+      historyId: "remote-compact",
+      content: "OpenAI Responses compacted context installed.",
+      historySequence: 25,
+      isStreaming: false,
+      isPartial: false,
+      isLastPartOfMessage: true,
+      isCompacted: true,
+      isIdleCompacted: false,
+      compactionDurationMs: 176_445,
+      model: "gpt-5.5",
+    };
+
+    const { getByText } = render(
+      <APIProvider client={{} as unknown as APIClient}>
+        <TooltipProvider>
+          <MessageRenderer message={message} />
+        </TooltipProvider>
+      </APIProvider>
+    );
+
+    expect(getByText("compacted")).toBeDefined();
+    expect(getByText("2m 56s")).toBeDefined();
   });
 
   test("labels synthetic budget-limit wrap-up messages distinctly without exposing model-only prompt details", () => {

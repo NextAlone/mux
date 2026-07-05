@@ -374,6 +374,12 @@ function appendAssistantTextRow(
   }
 ): void {
   const { message, part } = options;
+  const compactionDurationMs =
+    message.metadata?.compacted &&
+    typeof message.metadata.duration === "number" &&
+    Number.isFinite(message.metadata.duration)
+      ? message.metadata.duration
+      : undefined;
   displayedMessages.push({
     type: "assistant",
     id: `${message.id}-${options.partIndex}`,
@@ -387,6 +393,7 @@ function appendAssistantTextRow(
     // Support both new enum ("user"|"idle") and legacy boolean (true).
     isCompacted: !!message.metadata?.compacted,
     isIdleCompacted: message.metadata?.compacted === "idle",
+    ...(compactionDurationMs !== undefined ? { compactionDurationMs } : {}),
     sideQuestionBranch: getStandaloneSideQuestionBranch(message),
     isSideAnswer: isSideQuestionAnswerMessage(message) ? true : undefined,
     model: message.metadata?.model,

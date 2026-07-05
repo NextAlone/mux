@@ -14,6 +14,27 @@ const STAGED_ATTACHMENT = {
 };
 
 describe("buildDisplayedMessagesForMessage staged attachments", () => {
+  test("projects compaction duration for compacted assistant summaries", () => {
+    const message = createMuxMessage("summary-1", "assistant", "Compacted summary", {
+      compacted: "user",
+      duration: 176_445,
+      historySequence: 1,
+    });
+
+    const displayed = buildDisplayedMessagesForMessage({
+      message,
+      hasActiveStream: false,
+      isContextBoundaryMessage: () => false,
+    });
+
+    expect(displayed).toHaveLength(1);
+    const assistantMessage = displayed[0];
+    expect(assistantMessage?.type).toBe("assistant");
+    if (assistantMessage?.type !== "assistant") return;
+    expect(assistantMessage.isCompacted).toBe(true);
+    expect(assistantMessage.compactionDurationMs).toBe(176_445);
+  });
+
   test("preserves staged notices in compaction previews for chip rendering", () => {
     const followUpText = appendStagedAttachmentNotice("Continue work", [STAGED_ATTACHMENT]);
     const message = createMuxMessage("msg-1", "user", "/compact", {

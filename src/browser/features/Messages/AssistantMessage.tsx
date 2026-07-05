@@ -6,6 +6,7 @@ import { copyToClipboard } from "@/browser/utils/clipboard";
 import {
   Clipboard,
   ClipboardCheck,
+  Clock,
   FileText,
   GitBranch,
   ListStart,
@@ -29,6 +30,7 @@ import { MessageWindow } from "./MessageWindow";
 import { ModelDisplay } from "./ModelDisplay";
 import { ModelFallbackBadge } from "./ModelFallbackBadge";
 import { TypewriterMarkdown } from "./TypewriterMarkdown";
+import { formatDuration } from "@/common/utils/formatDuration";
 
 interface AssistantMessageProps {
   message: DisplayedMessage & { type: "assistant" };
@@ -220,6 +222,12 @@ export const AssistantMessage: React.FC<AssistantMessageProps> = ({
               <Package aria-hidden="true" className="h-3 w-3" />
             )}
             <span>{isIdleCompacted ? "idle-compacted" : "compacted"}</span>
+            {message.compactionDurationMs !== undefined && (
+              <span className="inline-flex items-center gap-0.5 normal-case">
+                <Clock aria-hidden="true" className="h-3 w-3" />
+                {formatDuration(message.compactionDurationMs, "precise")}
+              </span>
+            )}
           </span>
         )}
       </div>
