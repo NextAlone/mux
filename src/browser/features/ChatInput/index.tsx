@@ -193,6 +193,7 @@ import {
 } from "./draftAttachmentsStorage";
 import { RecordingOverlay } from "./RecordingOverlay";
 import { AttachedReviewsPanel } from "./AttachedReviewsPanel";
+import { ChatInputComposerFrame } from "./ChatInputComposerFrame";
 import {
   isEnterImmediatelyAfterCompositionEnd,
   isInputMethodCompositionKeyEvent,
@@ -3294,22 +3295,24 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
         data-component="ChatInputSection"
         data-autofocus-state="done"
       >
-        <div className={cn("w-full", variant !== "creation" && "mx-auto max-w-4xl")}>
-          {/* Toasts (overlay) */}
-          <div className="pointer-events-none absolute right-[15px] bottom-full left-[15px] z-[1000] mb-2 flex flex-col gap-2 [&>*]:pointer-events-auto">
-            <ConnectionStatusToast wrap={false} />
-            <ChatInputToast
-              toast={activeToast}
-              wrap={false}
-              onDismiss={() => {
-                handleToastDismiss();
-                if (variant === "creation") {
-                  creationState.setToast(null);
-                }
-              }}
-            />
-          </div>
-
+        <ChatInputComposerFrame
+          variant={variant}
+          toastLayer={
+            <>
+              <ConnectionStatusToast wrap={false} />
+              <ChatInputToast
+                toast={activeToast}
+                wrap={false}
+                onDismiss={() => {
+                  handleToastDismiss();
+                  if (variant === "creation") {
+                    creationState.setToast(null);
+                  }
+                }}
+              />
+            </>
+          }
+        >
           {/* Attached reviews preview - show styled blocks with remove/edit buttons */}
           {/* Hide during send to avoid duplicate display with the sent message */}
           {variant === "workspace" && !hideReviewsDuringSend && (
@@ -3679,7 +3682,7 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
               </div>
             </div>
           </div>
-        </div>
+        </ChatInputComposerFrame>
       </div>
 
       <ConfirmationModal
