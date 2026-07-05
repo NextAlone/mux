@@ -199,6 +199,7 @@ function configureOpenAICodexOAuth(
   if (options?.setOauthService !== false) {
     service.setCodexOauthService({
       getValidAuth: () => Promise.resolve({ success: true, data: TEST_CODEX_OAUTH }),
+      recordUsageHeaders: () => undefined,
     } as CodexOauthService);
   }
 }
