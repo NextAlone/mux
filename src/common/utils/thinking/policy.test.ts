@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import type { ProvidersConfigMap } from "@/common/orpc/types";
 import {
   getThinkingPolicyForModel,
   enforceThinkingPolicy,
@@ -6,6 +7,7 @@ import {
   isGeminiFlashThinkingLevelModelName,
   getDefaultMinimumThinkingLevel,
   resolveMinimumThinkingLevel,
+  resolveEffectiveThinkingLevel,
   getAvailableThinkingLevels,
 } from "./policy";
 
@@ -365,10 +367,10 @@ describe("getThinkingPolicyForModel", () => {
     ]);
   });
 
-  test("returns all 6 levels for Mythos-class Fable 5 / Mythos 5", () => {
-    // Fable / Mythos sit above Opus and support the native xhigh effort level.
+  test("excludes 'off' for Mythos-class Fable 5 / Mythos 5 (API rejects disabled thinking)", () => {
+    // Fable / Mythos sit above Opus and support the native xhigh effort level, but the
+    // API rejects `thinking: { type: "disabled" }`, so "off" is not offered.
     expect(getThinkingPolicyForModel("anthropic:claude-fable-5")).toEqual([
-      "off",
       "low",
       "medium",
       "high",
@@ -376,13 +378,54 @@ describe("getThinkingPolicyForModel", () => {
       "max",
     ]);
     expect(getThinkingPolicyForModel("anthropic:claude-mythos-5")).toEqual([
-      "off",
       "low",
       "medium",
       "high",
       "xhigh",
       "max",
     ]);
+  });
+
+  test("clamps 'off' up to 'low' for Mythos-class models", () => {
+    // A stored/legacy "off" selection must not reach the wire as disabled thinking.
+    expect(enforceThinkingPolicy("anthropic:claude-fable-5", "off")).toBe("low");
+    expect(enforceThinkingPolicy("anthropic:claude-mythos-5", "off")).toBe("low");
+  });
+
+  test("resolveEffectiveThinkingLevel clamps unset/off for Mythos-class only", () => {
+    // Mythos-class cannot disable thinking: unset and "off" both resolve to "low"
+    // so provider options, replay transforms, and metadata stay consistent with
+    // the provider's always-thinking behavior.
+    expect(resolveEffectiveThinkingLevel("anthropic:claude-fable-5", undefined)).toBe("low");
+    expect(resolveEffectiveThinkingLevel("anthropic:claude-fable-5", "off")).toBe("low");
+    expect(resolveEffectiveThinkingLevel("anthropic:claude-fable-5", "medium")).toBe("medium");
+    // Other models keep legacy behavior: unset means "off", explicit levels pass through
+    // unclamped (policy enforcement happens at the call sites that own it).
+    expect(resolveEffectiveThinkingLevel("anthropic:claude-opus-4-8", undefined)).toBe("off");
+    expect(resolveEffectiveThinkingLevel("openai:gpt-5-pro", undefined)).toBe("off");
+    expect(resolveEffectiveThinkingLevel("anthropic:claude-sonnet-4-5", "high")).toBe("high");
+  });
+
+  test("resolveEffectiveThinkingLevel resolves mappedToModel aliases before the Mythos check", () => {
+    // A configured alias entry mapped to a Mythos-class model must follow the same
+    // no-disabled-thinking rule as the canonical id, matching buildProviderOptions'
+    // capability resolution.
+    const providersConfig: ProvidersConfigMap = {
+      anthropic: {
+        apiKeySet: true,
+        isEnabled: true,
+        isConfigured: true,
+        models: [{ id: "internal-fable", mappedToModel: "anthropic:claude-fable-5" }],
+      },
+    };
+    expect(
+      resolveEffectiveThinkingLevel("anthropic:internal-fable", undefined, providersConfig)
+    ).toBe("low");
+    expect(resolveEffectiveThinkingLevel("anthropic:internal-fable", "off", providersConfig)).toBe(
+      "low"
+    );
+    // Without providers config the alias is unknown and keeps legacy off behavior.
+    expect(resolveEffectiveThinkingLevel("anthropic:internal-fable", undefined)).toBe("off");
   });
 
   test("returns all 6 levels for Sonnet 5 (native xhigh)", () => {

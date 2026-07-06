@@ -12,15 +12,18 @@
  * - Multiple elements = User can select from options
  */
 
+import type { ProvidersConfigMap } from "@/common/orpc/types";
 import {
   THINKING_LEVELS,
   DEFAULT_THINKING_LEVEL,
   THINKING_LEVEL_OFF,
+  anthropicRejectsDisabledThinking,
   anthropicSupportsNativeXhigh,
   stripModelProviderPrefixes,
   type ThinkingLevel,
   type ParsedThinkingInput,
 } from "@/common/types/thinking";
+import { resolveModelForMetadata } from "@/common/utils/providers/modelEntries";
 
 /**
  * Thinking policy is simply the set of allowed thinking levels for a model.
@@ -83,6 +86,13 @@ function getExplicitThinkingPolicy(modelString: string): ThinkingPolicy | null {
   // suffixes. Strips both a `provider:` prefix and any upstream-provider path segment that
   // proxies encode (e.g. `mux-gateway:openai/gpt-5.5-pro` -> `gpt-5.5-pro`).
   const withoutProviderNamespace = stripModelProviderPrefixes(modelString);
+
+  // Mythos-class models (Fable/Mythos) cannot disable thinking — the API rejects
+  // `thinking: { type: "disabled" }` and always thinks (adaptive by default) — so
+  // "off" is not offered and requests for it clamp up to "low".
+  if (anthropicRejectsDisabledThinking(modelString)) {
+    return ["low", "medium", "high", "xhigh", "max"];
+  }
 
   // Opus 4.7+ supports all 6 levels: xhigh is a native API effort level distinct from max.
   if (anthropicSupportsNativeXhigh(modelString)) {
@@ -189,6 +199,35 @@ export function resolveMinimumThinkingLevel(
   override?: ThinkingLevel | null
 ): ThinkingLevel {
   return override ?? getDefaultMinimumThinkingLevel(modelString);
+}
+
+/**
+ * Resolve the effective thinking level for an outgoing stream request.
+ *
+ * Most models treat an unset level as "off". Models that reject disabled
+ * thinking (Mythos-class Anthropic, see {@link anthropicRejectsDisabledThinking})
+ * clamp unset/legacy "off" up through the thinking policy instead, so the
+ * level Mux tracks (provider options, replay transforms, metadata) matches the
+ * provider's actual always-thinking behavior. Without this, the wire request
+ * would run adaptive thinking while the message pipeline skips the Anthropic
+ * thinking replay transforms (`anthropicThinkingEnabled` keys off "off"),
+ * losing required signed thinking context on follow-up requests.
+ *
+ * Pass `providersConfig` so configured aliases (`mappedToModel`, e.g.
+ * `anthropic:internal-fable` -> `anthropic:claude-fable-5`) are resolved to
+ * their capability model before the Mythos check — matching how
+ * `buildProviderOptions` detects capabilities.
+ */
+export function resolveEffectiveThinkingLevel(
+  modelString: string,
+  requested: ThinkingLevel | null | undefined,
+  providersConfig?: ProvidersConfigMap | null
+): ThinkingLevel {
+  const level = requested ?? THINKING_LEVEL_OFF;
+  const capabilityModel = resolveModelForMetadata(modelString, providersConfig ?? null);
+  return anthropicRejectsDisabledThinking(capabilityModel)
+    ? enforceThinkingPolicy(capabilityModel, level)
+    : level;
 }
 
 /**
