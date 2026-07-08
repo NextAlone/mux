@@ -50,8 +50,18 @@ export type { AWSCredentialStatus, ProviderConfigInfo, ProvidersConfigMap };
 
 const DEFAULT_KIRO_MODELS: ProviderModelEntry[] = [
   "auto-kiro",
+  "claude-sonnet-4",
   "claude-sonnet-4.5",
+  "claude-sonnet-4.6",
   "claude-haiku-4.5",
+  "claude-opus-4.5",
+  "claude-opus-4.6",
+  "claude-opus-4.7",
+  "deepseek-3.2",
+  "glm-5",
+  "minimax-m2.1",
+  "minimax-m2.5",
+  "qwen3-coder-next",
 ];
 
 function filterProviderModelsByPolicy(

@@ -57,7 +57,7 @@ export class KiroLanguageModel implements LanguageModelV2 {
   private refreshedCredentials?: KiroOauthCredentials;
 
   constructor(config: KiroLanguageModelConfig) {
-    this.modelId = config.modelId;
+    this.modelId = normalizeKiroModelId(config.modelId);
     this.fetchFn = config.fetch;
     this.credentials = config.credentials;
     this.credentialsProvider = config.credentialsProvider;
@@ -707,4 +707,31 @@ function requireAccessToken(credentials: KiroOauthCredentials): KiroRuntimeCrede
     throw new Error("Kiro OAuth refresh response did not include an access token.");
   }
   return credentials as KiroRuntimeCredentials;
+}
+
+function normalizeKiroModelId(modelId: string): string {
+  if (modelId === "auto-kiro") {
+    return "auto";
+  }
+
+  const lower = modelId.toLowerCase().replace(/\[\d+[mk]\]$/i, "");
+
+  const standard = /^(claude-(?:haiku|sonnet|opus)-\d+)-(\d{1,2})(?:-(?:\d{8}|latest|\d+))?$/.exec(
+    lower
+  );
+  if (standard) {
+    return `${standard[1]}.${standard[2]}`;
+  }
+
+  const noMinor = /^(claude-(?:haiku|sonnet|opus)-\d+)(?:-\d{8})?$/.exec(lower);
+  if (noMinor) {
+    return noMinor[1];
+  }
+
+  const alreadyDotted = /^(claude-(?:haiku|sonnet|opus)-\d+\.\d+)(?:-\d{8})?$/.exec(lower);
+  if (alreadyDotted) {
+    return alreadyDotted[1];
+  }
+
+  return modelId;
 }

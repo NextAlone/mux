@@ -472,6 +472,34 @@ describe("ProviderService.getConfig", () => {
     });
   });
 
+  it("surfaces all known Kiro runtime fallback models by default", () => {
+    withTempConfig((config, service) => {
+      config.saveProvidersConfig({
+        kiro: {
+          accessToken: "kiro-access-token",
+        },
+      });
+
+      const cfg = service.getConfig();
+
+      expect(cfg.kiro.models).toEqual([
+        "auto-kiro",
+        "claude-sonnet-4",
+        "claude-sonnet-4.5",
+        "claude-sonnet-4.6",
+        "claude-haiku-4.5",
+        "claude-opus-4.5",
+        "claude-opus-4.6",
+        "claude-opus-4.7",
+        "deepseek-3.2",
+        "glm-5",
+        "minimax-m2.1",
+        "minimax-m2.5",
+        "qwen3-coder-next",
+      ]);
+    });
+  });
+
   it("surfaces keyless custom Anthropic-compatible providers", () => {
     withTempConfig((config, service) => {
       config.saveProvidersConfig({

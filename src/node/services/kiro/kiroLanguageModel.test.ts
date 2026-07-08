@@ -134,7 +134,7 @@ describe("KiroLanguageModel", () => {
     const currentMessage = conversationState.currentMessage as Record<string, unknown>;
     const userInputMessage = currentMessage.userInputMessage as Record<string, unknown>;
     expect(userInputMessage.content).toBe("Follow project rules.\n\nHello Kiro");
-    expect(userInputMessage.modelId).toBe("claude-sonnet-4-5");
+    expect(userInputMessage.modelId).toBe("claude-sonnet-4.5");
     expect(capturedBody?.profileArn).toBe(
       "arn:aws:codewhisperer:us-east-1:123456789012:profile/test"
     );
@@ -168,6 +168,36 @@ describe("KiroLanguageModel", () => {
         usage: { inputTokens: 3, outputTokens: 2, totalTokens: 5 },
       },
     ]);
+  });
+
+  it("normalizes user-facing Kiro model aliases before sending runtime requests", async () => {
+    const capturedModelIds: unknown[] = [];
+
+    restoreFetchers.push(
+      mockFetch((_url, init) => {
+        const body = getJsonBody(init);
+        const conversationState = body.conversationState as Record<string, unknown>;
+        const currentMessage = conversationState.currentMessage as Record<string, unknown>;
+        const userInputMessage = currentMessage.userInputMessage as Record<string, unknown>;
+        capturedModelIds.push(userInputMessage.modelId);
+        return Promise.resolve(createKiroStreamResponse(['{"content":"ok"}']));
+      })
+    );
+
+    for (const modelId of ["auto-kiro", "claude-sonnet-4-5-20251001"] as const) {
+      const model = new KiroLanguageModel({
+        modelId,
+        credentials: {
+          accessToken: "kiro-access-token",
+          region: "us-east-1",
+        },
+        fetch: globalThis.fetch,
+      });
+      const result = await model.doStream(createOptions());
+      await collectStreamParts(result.stream);
+    }
+
+    expect(capturedModelIds).toEqual(["auto", "claude-sonnet-4.5"]);
   });
 
   it("maps Kiro tool events to AI SDK tool-call stream parts", async () => {
