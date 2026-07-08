@@ -102,6 +102,7 @@ export interface SlashSuggestion {
 
 export interface SlashSuggestionContext extends SlashCommandVisibilityContext {
   agentSkills?: AgentSkillDescriptor[];
+  customModels?: readonly string[];
 }
 
 export interface SuggestionDefinition {

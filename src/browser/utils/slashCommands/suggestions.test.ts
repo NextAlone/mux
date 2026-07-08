@@ -145,6 +145,17 @@ describe("getSlashCommandSuggestions", () => {
     expect(displays).toContain("opus");
   });
 
+  it("suggests custom models after /model", () => {
+    const suggestions = getSlashCommandSuggestions("/model mi", {
+      customModels: ["mimo:mimo-v2.5-pro"],
+    });
+    const customModel = suggestions.find((suggestion) => suggestion.display === "mimo-v2.5-pro");
+
+    expect(customModel).toBeTruthy();
+    expect(customModel?.kind).toBe("model");
+    expect(customModel?.replacement).toBe("/model mimo-v2.5-pro");
+  });
+
   it("suggests model aliases as one-shot commands", () => {
     const suggestions = getSlashCommandSuggestions("/");
     const displays = suggestions.map((s) => s.display);

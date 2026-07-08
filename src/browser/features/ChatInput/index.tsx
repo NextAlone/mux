@@ -726,6 +726,7 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
   const focusBorderColor = currentAgent?.uiColor ?? "var(--color-border-light)";
   const {
     models,
+    customModels,
     hiddenModelsForSelector,
     ensureModelInSettings,
     defaultModel,
@@ -1666,6 +1667,7 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
   useLayoutEffect(() => {
     const suggestions = getSlashCommandSuggestions(input, {
       agentSkills: agentSkillDescriptors,
+      customModels,
       variant,
       isExperimentEnabled: (experimentId) =>
         resolveSlashCommandExperimentValue(experimentId, {
@@ -1680,6 +1682,7 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
   }, [
     input,
     agentSkillDescriptors,
+    customModels,
     variant,
     workspaceHeartbeatsExperimentEnabled,
     dynamicWorkflowsExperimentEnabled,

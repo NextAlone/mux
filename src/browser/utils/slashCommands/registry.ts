@@ -93,6 +93,50 @@ function filterAndMapSuggestions<T extends SuggestionDefinition>(
     .map((definition) => build(definition));
 }
 
+function getBareCustomModelId(model: string): string {
+  const colonIndex = model.indexOf(":");
+  return colonIndex > 0 && colonIndex < model.length - 1 ? model.slice(colonIndex + 1) : model;
+}
+
+function buildCustomModelDefinitions(customModels: readonly string[]): SuggestionDefinition[] {
+  const bareCounts = new Map<string, number>();
+  for (const customModel of customModels) {
+    const model = customModel.trim();
+    if (!model) {
+      continue;
+    }
+
+    const bareModel = getBareCustomModelId(model);
+    bareCounts.set(bareModel, (bareCounts.get(bareModel) ?? 0) + 1);
+  }
+
+  const seenKeys = new Set<string>();
+  const definitions: SuggestionDefinition[] = [];
+
+  for (const customModel of customModels) {
+    const model = customModel.trim();
+    if (!model) {
+      continue;
+    }
+
+    const bareModel = getBareCustomModelId(model);
+    // Custom providers persist as provider:model, but users often type the
+    // provider's model ID in /model; suggest that bare ID when it is unique.
+    const key = bareCounts.get(bareModel) === 1 ? bareModel : model;
+    if (seenKeys.has(key)) {
+      continue;
+    }
+
+    seenKeys.add(key);
+    definitions.push({
+      key,
+      description: model,
+    });
+  }
+
+  return definitions;
+}
+
 const clearCommandDefinition: SlashCommandDefinition = {
   key: "clear",
   description: "Clear history, or use --soft to reset context while preserving history",
@@ -233,7 +277,7 @@ const modelCommandDefinition: SlashCommandDefinition = {
       subcommand: cleanRemainingTokens[1],
     };
   },
-  suggestions: ({ stage, partialToken }) => {
+  suggestions: ({ stage, partialToken, context }) => {
     // Stage 1: /model [abbreviation]
     if (stage === 1) {
       const abbreviationSuggestions = Object.entries(MODEL_ABBREVIATIONS).map(
@@ -242,13 +286,19 @@ const modelCommandDefinition: SlashCommandDefinition = {
           description: fullModel,
         })
       );
+      const customModelSuggestions = buildCustomModelDefinitions(context.customModels ?? []);
 
-      return filterAndMapSuggestions(abbreviationSuggestions, partialToken, (definition) => ({
-        id: `command:model:${definition.key}`,
-        display: definition.key,
-        description: definition.description,
-        replacement: `/model ${definition.key}`,
-      }));
+      return filterAndMapSuggestions(
+        [...abbreviationSuggestions, ...customModelSuggestions],
+        partialToken,
+        (definition) => ({
+          id: `command:model:${definition.key}`,
+          display: definition.key,
+          description: definition.description,
+          kind: "model",
+          replacement: `/model ${definition.key}`,
+        })
+      );
     }
 
     return null;
