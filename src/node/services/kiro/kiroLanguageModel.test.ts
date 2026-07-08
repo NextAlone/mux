@@ -184,7 +184,15 @@ describe("KiroLanguageModel", () => {
       })
     );
 
-    for (const modelId of ["auto-kiro", "claude-sonnet-4-5-20251001"] as const) {
+    for (const modelId of [
+      "auto-kiro",
+      "kiro-auto",
+      "kiro/claude-opus-4.8-xhigh",
+      "kiro/MiniMax-M2.5",
+      "claude-sonnet-4.0",
+      "claude-4.5-sonnet",
+      "claude-sonnet-4-5-20251001",
+    ] as const) {
       const model = new KiroLanguageModel({
         modelId,
         credentials: {
@@ -197,7 +205,49 @@ describe("KiroLanguageModel", () => {
       await collectStreamParts(result.stream);
     }
 
-    expect(capturedModelIds).toEqual(["auto", "claude-sonnet-4.5"]);
+    expect(capturedModelIds).toEqual([
+      "auto",
+      "auto",
+      "claude-opus-4.8",
+      "minimax-m2.5",
+      "claude-sonnet-4",
+      "claude-sonnet-4.5",
+      "claude-sonnet-4.5",
+    ]);
+  });
+
+  it("injects Kiro thinking instructions when a thinking level is selected", async () => {
+    let capturedContent = "";
+
+    restoreFetchers.push(
+      mockFetch((_url, init) => {
+        const body = getJsonBody(init);
+        const conversationState = body.conversationState as Record<string, unknown>;
+        const currentMessage = conversationState.currentMessage as Record<string, unknown>;
+        const userInputMessage = currentMessage.userInputMessage as Record<string, unknown>;
+        capturedContent = String(userInputMessage.content);
+        return Promise.resolve(createKiroStreamResponse(['{"content":"ok"}']));
+      })
+    );
+
+    const model = new KiroLanguageModel({
+      modelId: "claude-sonnet-5",
+      credentials: {
+        accessToken: "kiro-access-token",
+        region: "us-east-1",
+      },
+      fetch: globalThis.fetch,
+    });
+    const result = await model.doStream({
+      ...createOptions(),
+      providerOptions: { kiro: { thinkingLevel: "high" } },
+    });
+    await collectStreamParts(result.stream);
+
+    expect(capturedContent).toContain("<thinking_mode>enabled</thinking_mode>");
+    expect(capturedContent).toContain("<max_thinking_length>819</max_thinking_length>");
+    expect(capturedContent).toContain("After thinking, respond in the user's language.");
+    expect(capturedContent).toEndWith("Hello Kiro");
   });
 
   it("maps Kiro tool events to AI SDK tool-call stream parts", async () => {

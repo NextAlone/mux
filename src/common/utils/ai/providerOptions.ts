@@ -66,6 +66,7 @@ type ProviderOptions =
   | { openrouter: OpenRouterReasoningOptions }
   | { xai: XaiProviderOptions }
   | { "github-copilot": OpenAICompatibleGatewayProviderOptions }
+  | { kiro: { thinkingLevel: ThinkingLevel } }
   | Record<string, never>; // Empty object for unsupported providers
 
 const OPENAI_REASONING_SUMMARY_UNSUPPORTED_MODELS = new Set<string>([
@@ -264,6 +265,10 @@ export function buildProviderOptions(
     capModelName,
     thinkingLevel,
   });
+
+  if (formatProvider === "kiro") {
+    return effectiveThinking === "off" ? {} : { kiro: { thinkingLevel: effectiveThinking } };
+  }
 
   // Build Anthropic-specific options
   if (formatProvider === "anthropic") {

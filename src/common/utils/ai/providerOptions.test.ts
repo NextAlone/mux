@@ -908,6 +908,18 @@ describe("buildProviderOptions - Google", () => {
   });
 });
 
+describe("buildProviderOptions - Kiro", () => {
+  test("passes the selected thinking level to the Kiro runtime adapter", () => {
+    expect(buildProviderOptions("kiro:claude-sonnet-5", "xhigh")).toEqual({
+      kiro: { thinkingLevel: "xhigh" },
+    });
+  });
+
+  test("omits Kiro thinking options when thinking is off", () => {
+    expect(buildProviderOptions("kiro:claude-sonnet-5", "off")).toEqual({});
+  });
+});
+
 describe("buildRequestHeaders", () => {
   for (const { name, model, options, expected } of [
     {

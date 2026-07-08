@@ -43,6 +43,14 @@ interface ParsedKiroEvent {
 
 const DEFAULT_REGION = "us-east-1";
 const KIRO_TARGET = "AmazonCodeWhispererStreamingService.GenerateAssistantResponse";
+const KIRO_THINKING_BUDGET_RATIO = {
+  low: 0.2,
+  medium: 0.5,
+  high: 0.8,
+  xhigh: 0.9,
+  max: 0.95,
+} as const;
+type KiroThinkingLevel = keyof typeof KIRO_THINKING_BUDGET_RATIO;
 
 export class KiroLanguageModel implements LanguageModelV2 {
   readonly specificationVersion = "v2" as const;
@@ -229,6 +237,12 @@ function buildKiroPayload(input: {
         }`;
       }
     }
+  }
+  const thinkingPrefix = buildKiroThinkingPrefix(input.options);
+  if (thinkingPrefix && currentMessage.role === "user" && !currentMessage.toolResults?.length) {
+    // Kiro runtime has no structured reasoning option, so encode Mux's thinking level as
+    // prompt tags used by Kiro-compatible providers instead of inventing a wire field.
+    currentContent = `${thinkingPrefix}\n\n${currentContent}`;
   }
 
   const userInputMessage: JsonRecord = {
@@ -710,28 +724,84 @@ function requireAccessToken(credentials: KiroOauthCredentials): KiroRuntimeCrede
 }
 
 function normalizeKiroModelId(modelId: string): string {
-  if (modelId === "auto-kiro") {
+  // Kiro provider projects use a mix of `kiro-auto`, `kiro/<id>`, dot-form Claude
+  // versions, and UI-only effort suffixes; normalize those before hitting runtime.
+  let normalized = modelId.trim().toLowerCase();
+  normalized = normalized.replace(/^kiro\//, "").replace(/^kiro-/, "");
+
+  if (normalized === "auto" || normalized === "auto-kiro") {
     return "auto";
   }
 
-  const lower = modelId.toLowerCase().replace(/\[\d+[mk]\]$/i, "");
+  normalized = normalized
+    .replace(/\[\d+[mk]\]$/i, "")
+    .replace(/-\d{8}$/, "")
+    .replace(/-latest$/, "")
+    .replace(/-(?:thinking-agentic|low|medium|high|xhigh|max|thinking|agentic)$/, "");
 
-  const standard = /^(claude-(?:haiku|sonnet|opus)-\d+)-(\d{1,2})(?:-(?:\d{8}|latest|\d+))?$/.exec(
-    lower
-  );
+  const oldClaude = /^claude-(\d+(?:[.-]\d+)?)-(sonnet|opus|haiku)$/.exec(normalized);
+  if (oldClaude) {
+    normalized = `claude-${oldClaude[2]}-${oldClaude[1]}`;
+  }
+
+  const standard = /^(claude-(?:haiku|sonnet|opus)-\d+)-(\d{1,2})$/.exec(normalized);
   if (standard) {
+    if (standard[2] === "0") {
+      return standard[1];
+    }
     return `${standard[1]}.${standard[2]}`;
   }
 
-  const noMinor = /^(claude-(?:haiku|sonnet|opus)-\d+)(?:-\d{8})?$/.exec(lower);
+  const noMinor = /^(claude-(?:haiku|sonnet|opus)-\d+)$/.exec(normalized);
   if (noMinor) {
     return noMinor[1];
   }
 
-  const alreadyDotted = /^(claude-(?:haiku|sonnet|opus)-\d+\.\d+)(?:-\d{8})?$/.exec(lower);
+  const alreadyDotted = /^(claude-(?:haiku|sonnet|opus)-\d+)\.(\d+)$/.exec(normalized);
   if (alreadyDotted) {
-    return alreadyDotted[1];
+    if (alreadyDotted[2] === "0") {
+      return alreadyDotted[1];
+    }
+    return `${alreadyDotted[1]}.${alreadyDotted[2]}`;
+  }
+
+  if (
+    /^(deepseek-\d+(?:\.\d+)?|glm-\d+|minimax-m\d+(?:\.\d+)?|qwen\d+-coder-next)$/.test(normalized)
+  ) {
+    return normalized;
   }
 
   return modelId;
+}
+
+function buildKiroThinkingPrefix(options: LanguageModelV2CallOptions): string | undefined {
+  const thinkingLevel = readKiroThinkingLevel(options.providerOptions?.kiro?.thinkingLevel);
+  if (!thinkingLevel) {
+    return undefined;
+  }
+
+  const maxOutputTokens =
+    typeof options.maxOutputTokens === "number" && Number.isFinite(options.maxOutputTokens)
+      ? options.maxOutputTokens
+      : 4096;
+  const budget = Math.max(
+    1,
+    Math.floor(maxOutputTokens * KIRO_THINKING_BUDGET_RATIO[thinkingLevel])
+  );
+  const instruction = [
+    "Think in English for better reasoning quality.",
+    "Be thorough and systematic, consider edge cases, challenge assumptions, and verify reasoning before answering.",
+    "After thinking, respond in the user's language.",
+  ].join("\n");
+  return [
+    "<thinking_mode>enabled</thinking_mode>",
+    `<max_thinking_length>${budget}</max_thinking_length>`,
+    `<thinking_instruction>${instruction}</thinking_instruction>`,
+  ].join("\n");
+}
+
+function readKiroThinkingLevel(value: unknown): KiroThinkingLevel | undefined {
+  return typeof value === "string" && value in KIRO_THINKING_BUDGET_RATIO
+    ? (value as KiroThinkingLevel)
+    : undefined;
 }
