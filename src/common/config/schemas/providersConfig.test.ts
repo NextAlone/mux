@@ -27,13 +27,19 @@ describe("ProvidersConfigSchema", () => {
     expect(ProvidersConfigSchema.safeParse(valid).success).toBe(true);
   });
 
-  it("allows unknown provider keys with custom OpenAI-compatible metadata", () => {
+  it("allows unknown provider keys with custom provider metadata", () => {
     const valid = {
       "custom-provider": {
         apiKey: "key",
         baseUrl: "http://localhost:8080",
         providerType: "openai-compatible",
         displayName: "Custom Provider",
+      },
+      "claude-proxy": {
+        apiKey: "key",
+        baseUrl: "http://localhost:9000",
+        providerType: "anthropic-compatible",
+        displayName: "Claude Proxy",
       },
     };
 
@@ -43,6 +49,8 @@ describe("ProvidersConfigSchema", () => {
     if (parsed.success) {
       expect(parsed.data["custom-provider"]?.providerType).toBe("openai-compatible");
       expect(parsed.data["custom-provider"]?.displayName).toBe("Custom Provider");
+      expect(parsed.data["claude-proxy"]?.providerType).toBe("anthropic-compatible");
+      expect(parsed.data["claude-proxy"]?.displayName).toBe("Claude Proxy");
     }
   });
 

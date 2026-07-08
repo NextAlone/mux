@@ -251,7 +251,7 @@ function patchProviderMethods(client: APIClient, providersConfig: ProvidersConfi
         baseUrl: input.baseUrl,
         displayName: input.displayName ?? input.provider,
         isCustom: true,
-        providerType: "openai-compatible",
+        providerType: input.providerType ?? "openai-compatible",
         models: input.models,
       };
       providersConfig[input.provider] = providerInfo;
@@ -414,6 +414,7 @@ describe("ProvidersSection", () => {
     await waitFor(() => {
       expect(view.addCustomOpenAICompatibleProvider).toHaveBeenCalledWith({
         provider: "team-openai",
+        providerType: "openai-compatible",
         displayName: "Team OpenAI",
         baseUrl: "https://team.example/v1",
         apiKey: undefined,
@@ -425,6 +426,37 @@ describe("ProvidersSection", () => {
       expect(view.queryByRole("button", { name: "Add custom provider" })).toBeNull();
     });
     expect(view.getByRole("button", { name: "Add provider" })).toBeTruthy();
+  });
+
+  test("submits Anthropic-compatible custom providers", async () => {
+    const view = renderProvidersSection();
+
+    fireEvent.click(await view.findByRole("button", { name: "Add provider" }));
+
+    const typeTrigger = view.getByRole("combobox", { name: "Provider API format" });
+    fireEvent.click(typeTrigger);
+    fireEvent.click(view.getByRole("button", { name: "Anthropic-compatible" }));
+
+    await userEvent.type(view.getByPlaceholderText("acme-openai"), "team-claude");
+    await userEvent.type(view.getByPlaceholderText("Acme OpenAI"), "Team Claude");
+    await userEvent.type(
+      view.getByPlaceholderText("https://api.acme.test/v1"),
+      "https://claude.example"
+    );
+    await userEvent.type(view.getByPlaceholderText("gpt-4o-mini"), "claude-local");
+    fireEvent.click(view.getByRole("button", { name: "Add custom provider" }));
+
+    await waitFor(() => {
+      expect(view.addCustomOpenAICompatibleProvider).toHaveBeenCalledWith({
+        provider: "team-claude",
+        providerType: "anthropic-compatible",
+        displayName: "Team Claude",
+        baseUrl: "https://claude.example",
+        apiKey: undefined,
+        apiKeyFile: undefined,
+        models: ["claude-local"],
+      });
+    });
   });
 
   test("shows OpenAI API service tier choices when API auth is active", async () => {

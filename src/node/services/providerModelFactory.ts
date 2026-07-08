@@ -26,6 +26,8 @@ import { isOpReference } from "@/common/utils/opRef";
 import { resolveConfigBaseUrl } from "@/common/utils/providers/baseUrl";
 import { isProviderDisabledInConfig } from "@/common/utils/providers/isProviderDisabled";
 import {
+  isCustomAnthropicCompatibleProviderConfig,
+  isCustomProviderConfig,
   isBuiltInProvider,
   isCustomOpenAICompatibleProviderConfig,
 } from "@/common/utils/providers/customProviders";
@@ -224,6 +226,7 @@ type FetchWithBunExtensions = typeof fetch & {
 
 const globalFetchWithExtras = fetch as FetchWithBunExtensions;
 const defaultFetchWithExtras = defaultFetchWithUnlimitedTimeout as FetchWithBunExtensions;
+const KEYLESS_CUSTOM_ANTHROPIC_API_KEY = "mux-keyless-custom-anthropic-provider";
 
 if (typeof globalFetchWithExtras.preconnect === "function") {
   defaultFetchWithExtras.preconnect = globalFetchWithExtras.preconnect.bind(globalFetchWithExtras);
@@ -527,6 +530,28 @@ function getProviderFetch(providerConfig: ProviderConfig): typeof fetch {
   };
 
   return Object.assign(wrappedFetch, customFetch) as typeof fetch;
+}
+
+function wrapFetchStrippingSyntheticAnthropicApiKey(baseFetch: typeof fetch): typeof fetch {
+  const wrappedFetch = async (
+    input: Parameters<typeof fetch>[0],
+    init?: Parameters<typeof fetch>[1]
+  ): Promise<Response> => {
+    const headers = new Headers(input instanceof Request ? input.headers : undefined);
+    if (init?.headers) {
+      for (const [key, value] of new Headers(init.headers).entries()) {
+        headers.set(key, value);
+      }
+    }
+
+    if (headers.get("x-api-key") === KEYLESS_CUSTOM_ANTHROPIC_API_KEY) {
+      headers.delete("x-api-key");
+    }
+
+    return baseFetch(input, { ...init, headers });
+  };
+
+  return Object.assign(wrappedFetch, baseFetch) as typeof fetch;
 }
 
 // ---------------------------------------------------------------------------
@@ -1111,17 +1136,22 @@ export class ProviderModelFactory {
       const providerIsBuiltIn = isBuiltInProvider(providerName);
       const providerIsCustomOpenAICompatible =
         providerConfigEntry != null && isCustomOpenAICompatibleProviderConfig(providerConfigEntry);
+      const providerIsCustomAnthropicCompatible =
+        providerConfigEntry != null &&
+        isCustomAnthropicCompatibleProviderConfig(providerConfigEntry);
+      const providerIsCustom =
+        providerConfigEntry != null && isCustomProviderConfig(providerConfigEntry);
 
-      // Check if provider is supported. Explicit custom OpenAI-compatible config wins
+      // Check if provider is supported. Explicit custom provider config wins
       // even if a future release adds a built-in provider with the same id.
-      if (!providerIsCustomOpenAICompatible && providerIsBuiltIn) {
+      if (!providerIsCustom && providerIsBuiltIn) {
         if (!Object.hasOwn(PROVIDER_REGISTRY, providerName)) {
           return Err({
             type: "provider_not_supported",
             provider: providerName,
           });
         }
-      } else if (!providerIsCustomOpenAICompatible) {
+      } else if (!providerIsCustom) {
         return Err({
           type: "provider_not_supported",
           provider: providerName,
@@ -1148,12 +1178,21 @@ export class ProviderModelFactory {
       // Anthropic-routed model (direct Anthropic, mux-gateway:anthropic/*,
       // openrouter:anthropic/*). We still allow request-level values when config
       // is unset for backward compatibility with older clients.
-      const configAnthropicCacheTtl = parseAnthropicCacheTtl(providersConfig.anthropic?.cacheTtl);
+      const customAnthropicConfig = providerIsCustomAnthropicCompatible
+        ? (providerConfigEntry as { cacheTtl?: unknown; disableBetaFeatures?: unknown })
+        : undefined;
+      const configAnthropicCacheTtl = parseAnthropicCacheTtl(
+        customAnthropicConfig?.cacheTtl ?? providersConfig.anthropic?.cacheTtl
+      );
       const isAnthropicRoutedModel =
-        providerName === "anthropic" || modelId.startsWith("anthropic/");
+        providerName === "anthropic" ||
+        providerIsCustomAnthropicCompatible ||
+        modelId.startsWith("anthropic/");
 
       // Anthropic-specific: merge global disableBetaFeatures into muxProviderOptions.
-      const configDisableBeta = providersConfig.anthropic?.disableBetaFeatures;
+      const configDisableBeta =
+        customAnthropicConfig?.disableBetaFeatures ??
+        providersConfig.anthropic?.disableBetaFeatures;
       if (isAnthropicRoutedModel && configDisableBeta === true) {
         muxProviderOptions ??= {};
         muxProviderOptions.anthropic = {
@@ -1232,6 +1271,39 @@ export class ProviderModelFactory {
           name: providerName,
           baseURL: credentials.baseURL,
           ...(credentials.apiKey != null ? { apiKey: credentials.apiKey } : {}),
+          headers: { ...muxAttributionHeaders },
+          fetch: providerFetch,
+        });
+        return Ok(provider(modelId));
+      }
+
+      if (providerIsCustomAnthropicCompatible) {
+        const credentials = await resolveCustomProviderCredentials(
+          providerName,
+          providerConfig,
+          this.opResolver
+        );
+        if (!credentials.ok) {
+          return Err(formatCustomProviderRequirementError(providerName, credentials.error));
+        }
+
+        const { createAnthropic } = await PROVIDER_REGISTRY.anthropic();
+        const baseFetch = getProviderFetch(providerConfig);
+        const fetchWithoutSyntheticKey =
+          credentials.apiKey == null
+            ? wrapFetchStrippingSyntheticAnthropicApiKey(baseFetch)
+            : baseFetch;
+        const disableBeta = muxProviderOptions?.anthropic?.disableBetaFeatures === true;
+        const providerFetch = wrapFetchWithAnthropicCacheControl(
+          fetchWithoutSyntheticKey,
+          effectiveAnthropicCacheTtl,
+          { injectCacheControl: !disableBeta }
+        );
+        const muxAttributionHeaders = buildAppAttributionHeaders(providerConfig.headers);
+        const provider = createAnthropic({
+          name: `${providerName}.messages`,
+          baseURL: normalizeAnthropicBaseURL(credentials.baseURL),
+          apiKey: credentials.apiKey ?? KEYLESS_CUSTOM_ANTHROPIC_API_KEY,
           headers: { ...muxAttributionHeaders },
           fetch: providerFetch,
         });
@@ -2294,7 +2366,7 @@ export class ProviderModelFactory {
     }
 
     const providersConfig = this.config.loadProvidersConfig() ?? {};
-    if (isCustomOpenAICompatibleProviderConfig(providersConfig[originProviderName])) {
+    if (isCustomProviderConfig(providersConfig[originProviderName])) {
       // Manual providers.jsonc edits can shadow a built-in provider id. Custom providers
       // are direct-only, so keep the user's model pointed at the custom endpoint.
       return canonicalModelString;

@@ -27,6 +27,14 @@ function localVllmConfig(overrides: Record<string, unknown> = {}): Record<string
   };
 }
 
+function localClaudeConfig(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    providerType: "anthropic-compatible",
+    baseUrl: "http://localhost:9000/v1",
+    ...overrides,
+  };
+}
+
 async function saveRoutePriority(
   config: Config,
   routePriority: string[],
@@ -464,6 +472,37 @@ describe("ProviderService.getConfig", () => {
     });
   });
 
+  it("surfaces keyless custom Anthropic-compatible providers", () => {
+    withTempConfig((config, service) => {
+      config.saveProvidersConfig({
+        "local-claude": {
+          providerType: "anthropic-compatible",
+          displayName: "Local Claude",
+          baseUrl: "http://localhost:9000/v1",
+        },
+      });
+
+      const cfg = service.getConfig();
+
+      expect(cfg["local-claude"]).toEqual({
+        apiKeySet: false,
+        apiKeyIsOpRef: undefined,
+        apiKeyOpRef: undefined,
+        apiKeyOpLabel: undefined,
+        apiKeyFile: undefined,
+        apiKeySource: "keyless",
+        baseUrl: "http://localhost:9000/v1",
+        models: [],
+        displayName: "Local Claude",
+        providerType: "anthropic-compatible",
+        isCustom: true,
+        isEnabled: true,
+        isConfigured: true,
+      });
+      expect(service.list()).toContain("local-claude");
+    });
+  });
+
   it("omits unknown provider keys without a custom providerType", () => {
     withTempConfig((config, service) => {
       config.saveProvidersConfig({
@@ -749,6 +788,44 @@ describe("ProviderService custom provider mutations", () => {
           "llama-3",
           { id: "mixtral", contextWindowTokens: 32_768, mappedToModel: "openai/gpt-4o" },
         ],
+      });
+    });
+  });
+
+  it("adds a custom Anthropic-compatible provider and returns provider info", () => {
+    withTempConfig((config, service) => {
+      const result = service.addCustomOpenAICompatibleProvider({
+        provider: " local-claude ",
+        providerType: "anthropic-compatible",
+        displayName: " Local Claude ",
+        baseUrl: " http://localhost:9000 ",
+        apiKey: " sk-ant-local ",
+        models: [" claude-local "] as unknown as ProviderModelEntry[],
+      });
+
+      expect(result.success).toBe(true);
+      if (!result.success) {
+        throw new Error(result.error.message);
+      }
+
+      expect(result.data).toMatchObject({
+        apiKeySet: true,
+        isCustom: true,
+        displayName: "Local Claude",
+        providerType: "anthropic-compatible",
+        isEnabled: true,
+        isConfigured: true,
+        baseUrl: "http://localhost:9000",
+        models: ["claude-local"],
+      });
+
+      expect(config.loadProvidersConfig()?.["local-claude"]).toEqual({
+        providerType: "anthropic-compatible",
+        baseUrl: "http://localhost:9000",
+        enabled: true,
+        displayName: "Local Claude",
+        apiKey: "sk-ant-local",
+        models: ["claude-local"],
       });
     });
   });
@@ -1289,18 +1366,38 @@ describe("ProviderService.setConfig", () => {
     });
   });
 
+  it("rejects invalid ids when setConfig creates an Anthropic-compatible provider", async () => {
+    await withTempConfigAsync(async (config, service) => {
+      const result = await service.setConfig(
+        "bad provider",
+        ["providerType"],
+        "anthropic-compatible"
+      );
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error).toContain("Invalid custom provider id");
+      }
+      expect(config.loadProvidersConfig()?.["bad provider"]).toBeUndefined();
+    });
+  });
+
   it("rejects custom providers as route override targets", () => {
     withTempConfig((config, service) => {
       config.saveProvidersConfig({
         "local-vllm": localVllmConfig(),
+        "local-claude": localClaudeConfig(),
       });
 
-      const result = service.validateRouteOverrides({ "openai:gpt-5": "local-vllm" });
+      const result = service.validateRouteOverrides({
+        "openai:gpt-5": "local-vllm",
+        "anthropic:claude-sonnet-4-5": "local-claude",
+      });
 
       expect(result.success).toBe(false);
       if (!result.success) {
         expect(result.error).toContain("Custom providers are direct-only");
-        expect(result.error).toContain("local-vllm");
+        expect(result.error).toMatch(/local-(vllm|claude)/);
       }
     });
   });

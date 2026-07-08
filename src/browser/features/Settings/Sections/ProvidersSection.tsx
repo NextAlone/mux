@@ -66,12 +66,13 @@ import {
   TooltipTrigger,
 } from "@/browser/components/Tooltip/Tooltip";
 import { getErrorMessage } from "@/common/utils/errors";
+import type { CustomProviderType } from "@/common/config/schemas/providersConfig";
 
 import { repairLocalModelPreferencesForRemovedProvider } from "@/browser/utils/modelPreferenceRepair";
 import {
   formatProviderDisplayName,
   isBuiltInProvider,
-  isCustomOpenAICompatibleProviderConfig,
+  isCustomProviderConfig,
   validateCustomProviderId,
 } from "@/common/utils/providers/customProviders";
 import type {
@@ -104,6 +105,15 @@ interface OAuthMessage {
   error?: unknown;
 }
 
+const CUSTOM_PROVIDER_TYPE_OPTIONS: Array<{ value: CustomProviderType; label: string }> = [
+  { value: "openai-compatible", label: "OpenAI-compatible" },
+  { value: "anthropic-compatible", label: "Anthropic-compatible" },
+];
+
+function isCustomProviderType(value: string): value is CustomProviderType {
+  return value === "openai-compatible" || value === "anthropic-compatible";
+}
+
 function getServerAuthToken(): string | null {
   const urlToken = new URLSearchParams(window.location.search).get("token")?.trim();
   return urlToken?.length ? urlToken : getStoredAuthToken();
@@ -117,16 +127,16 @@ interface FieldConfig {
   optional?: boolean;
 }
 
-function isCustomOpenAICompatibleProviderInfo(
+function isCustomProviderInfo(
   providerInfo: ProviderConfigInfo | undefined
 ): providerInfo is ProviderConfigInfo & {
   isCustom: true;
-  providerType: "openai-compatible";
+  providerType: CustomProviderType;
 } {
   return (
     providerInfo?.isCustom === true &&
-    providerInfo.providerType === "openai-compatible" &&
-    isCustomOpenAICompatibleProviderConfig(providerInfo)
+    providerInfo.providerType != null &&
+    isCustomProviderConfig(providerInfo)
   );
 }
 
@@ -135,12 +145,15 @@ function isCustomOpenAICompatibleProviderInfo(
  * Most providers use API Key + Base URL, but some (like Bedrock) have different needs.
  */
 function getProviderFields(provider: string, providerInfo?: ProviderConfigInfo): FieldConfig[] {
-  if (isCustomOpenAICompatibleProviderInfo(providerInfo)) {
+  if (isCustomProviderInfo(providerInfo)) {
     return [
       {
         key: "displayName",
         label: "Display name",
-        placeholder: "My OpenAI-compatible provider",
+        placeholder:
+          providerInfo.providerType === "anthropic-compatible"
+            ? "My Anthropic-compatible provider"
+            : "My OpenAI-compatible provider",
         type: "text",
       },
       {
@@ -405,10 +418,7 @@ export function ProvidersSection() {
     const policyAllowedSet = new Set(visibleProviders);
 
     for (const provider of visibleProviders) {
-      if (
-        !isBuiltInProvider(provider) ||
-        isCustomOpenAICompatibleProviderInfo(config?.[provider])
-      ) {
+      if (!isBuiltInProvider(provider) || isCustomProviderInfo(config?.[provider])) {
         continue;
       }
 
@@ -416,7 +426,7 @@ export function ProvidersSection() {
     }
 
     for (const [provider, providerInfo] of Object.entries(config ?? {})) {
-      if (!policyAllowedSet.has(provider) || !isCustomOpenAICompatibleProviderInfo(providerInfo)) {
+      if (!policyAllowedSet.has(provider) || !isCustomProviderInfo(providerInfo)) {
         continue;
       }
 
@@ -1091,6 +1101,8 @@ export function ProvidersSection() {
   const [opPickerProvider, setOpPickerProvider] = useState<string | null>(null);
 
   const [customProviderFormOpen, setCustomProviderFormOpen] = useState(false);
+  const [customProviderType, setCustomProviderType] =
+    useState<CustomProviderType>("openai-compatible");
   const [customProviderId, setCustomProviderId] = useState("");
   const [customProviderDisplayName, setCustomProviderDisplayName] = useState("");
   const [customProviderBaseUrl, setCustomProviderBaseUrl] = useState("");
@@ -1396,6 +1408,7 @@ export function ProvidersSection() {
     (customProviderTouchedFields.baseUrl || customProviderSubmitAttempted);
 
   const clearCustomProviderForm = useCallback(() => {
+    setCustomProviderType("openai-compatible");
     setCustomProviderId("");
     setCustomProviderDisplayName("");
     setCustomProviderBaseUrl("");
@@ -1428,6 +1441,7 @@ export function ProvidersSection() {
     }
 
     const provider = customProviderId.trim();
+    const providerType = customProviderType;
     const displayName = customProviderDisplayName.trim();
     const baseUrl = customProviderBaseUrl.trim();
     const apiKey = customProviderApiKey.trim();
@@ -1449,6 +1463,7 @@ export function ProvidersSection() {
       : undefined;
     const input: AddCustomOpenAICompatibleProviderInput = {
       provider,
+      providerType,
       displayName,
       baseUrl,
       apiKey: apiKey || undefined,
@@ -1494,6 +1509,7 @@ export function ProvidersSection() {
     customProviderDisplayName,
     customProviderId,
     customProviderInitialModelId,
+    customProviderType,
     clearCustomProviderForm,
     refresh,
     setProvidersExpandedProvider,
@@ -1645,7 +1661,7 @@ export function ProvidersSection() {
               const apiKeySource = providerInfo?.apiKeySource;
               const gatewayRouteTargets =
                 providerDefinition?.kind === "gateway" ? (providerDefinition.routes ?? []) : [];
-              const isCustomOpenAICompatible = isCustomOpenAICompatibleProviderInfo(providerInfo);
+              const isCustomProvider = isCustomProviderInfo(providerInfo);
               const statusDotColor = !enabled
                 ? "bg-warning"
                 : configured
@@ -1695,7 +1711,7 @@ export function ProvidersSection() {
                   {/* Provider settings */}
                   {isExpanded && (
                     <div className="border-border-medium space-y-3 border-t px-4 py-3">
-                      {isBuiltInProvider(provider) && isCustomOpenAICompatible && (
+                      {isBuiltInProvider(provider) && isCustomProvider && (
                         <div className="border-warning/40 bg-warning/10 text-warning rounded-md border px-3 py-2 text-xs">
                           This custom provider id now matches a built-in provider. Mux will keep
                           using your custom configuration.
@@ -2684,7 +2700,7 @@ export function ProvidersSection() {
                           );
                         })()}
 
-                      {isCustomOpenAICompatible && (
+                      {isCustomProvider && (
                         <div className="border-border-light space-y-2 border-t pt-3">
                           <div className="flex items-center justify-between gap-3">
                             <div>
@@ -2723,10 +2739,10 @@ export function ProvidersSection() {
                 <div className="flex items-center justify-between gap-3">
                   <div>
                     <div className="text-foreground text-xs font-medium">
-                      OpenAI-compatible providers
+                      API-compatible providers
                     </div>
                     <div className="text-muted text-xs">
-                      Add providers that expose an OpenAI-compatible API.
+                      Add providers that expose OpenAI-compatible or Anthropic-compatible APIs.
                     </div>
                   </div>
                   <Button
@@ -2756,6 +2772,29 @@ export function ProvidersSection() {
 
                 {customProviderFormOpen && (
                   <form className="space-y-3" onSubmit={handleCustomProviderFormSubmit}>
+                    <div className="block space-y-1">
+                      <span className="text-muted text-xs">Provider API format</span>
+                      <Select
+                        value={customProviderType}
+                        onValueChange={(next) => {
+                          if (isCustomProviderType(next)) {
+                            setCustomProviderType(next);
+                          }
+                        }}
+                      >
+                        <SelectTrigger aria-label="Provider API format" className="w-full">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {CUSTOM_PROVIDER_TYPE_OPTIONS.map((option) => (
+                            <SelectItem key={option.value} value={option.value}>
+                              {option.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
                     <label className="block space-y-1">
                       <span className="text-muted text-xs">Provider ID</span>
                       <input

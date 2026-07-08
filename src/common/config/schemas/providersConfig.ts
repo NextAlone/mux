@@ -4,6 +4,8 @@ import { ModelParametersByModelSchema } from "./modelParameters";
 import { ProviderModelEntrySchema } from "./providerModelEntry";
 
 export const CacheTtlSchema = z.enum(["5m", "1h"]);
+export const CustomProviderTypeSchema = z.enum(["openai-compatible", "anthropic-compatible"]);
+export type CustomProviderType = z.infer<typeof CustomProviderTypeSchema>;
 // Codex OAuth's subscription-backed endpoint supports "fast" even though the
 // public OpenAI SDK only exposes the platform tiers below.
 export const ServiceTierSchema = z.enum(["auto", "default", "flex", "priority", "fast"]);
@@ -19,7 +21,7 @@ export const BaseProviderConfigSchema = z
     baseURL: z.string().optional(),
     headers: z.record(z.string(), z.string()).optional(),
     enabled: z.boolean().optional(),
-    providerType: z.literal("openai-compatible").optional(),
+    providerType: CustomProviderTypeSchema.optional(),
     displayName: z.string().min(1).optional(),
     models: z.array(ProviderModelEntrySchema).optional(),
     modelParameters: ModelParametersByModelSchema.optional(),

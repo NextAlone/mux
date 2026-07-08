@@ -2,6 +2,7 @@ import { eventIterator } from "@orpc/server";
 import { UIModeSchema } from "../../types/mode";
 import { z } from "zod";
 import { CODER_ARCHIVE_BEHAVIORS } from "@/common/config/coderArchiveBehavior";
+import { CustomProviderTypeSchema } from "@/common/config/schemas/providersConfig";
 import { WORKTREE_ARCHIVE_BEHAVIORS } from "@/common/config/worktreeArchiveBehavior";
 import { WORKSPACE_CHECKOUT_LOCATION_MODES } from "@/common/config/workspaceCheckoutLocation";
 import { HEARTBEAT_MAX_INTERVAL_MS, HEARTBEAT_MIN_INTERVAL_MS } from "@/constants/heartbeat";
@@ -246,7 +247,7 @@ export const ProviderConfigInfoSchema = z.object({
   baseUrlSource: z.enum(["config", "env"]).nullish(),
   /** Active base URL for display only. Env values must not be persisted from this field. */
   baseUrlResolved: z.string().nullish(),
-  providerType: z.literal("openai-compatible").optional(),
+  providerType: CustomProviderTypeSchema.optional(),
   displayName: z.string().optional(),
   isCustom: z.boolean().optional(),
   models: z.array(ProviderModelEntrySchema).optional(),
@@ -327,6 +328,7 @@ export const providers = {
   addCustomOpenAICompatibleProvider: {
     input: z.object({
       provider: z.string(),
+      providerType: CustomProviderTypeSchema.optional(),
       displayName: z.string().optional(),
       baseUrl: z.string(),
       apiKey: z.string().optional(),

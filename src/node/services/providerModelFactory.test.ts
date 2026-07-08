@@ -361,6 +361,28 @@ describe("ProviderModelFactory.createModel", () => {
     });
   });
 
+  it("creates custom Anthropic-compatible models", async () => {
+    await withTempConfig(async (config, factory) => {
+      config.saveProvidersConfig({
+        "local-claude": {
+          providerType: "anthropic-compatible",
+          baseUrl: "http://localhost:9000",
+          apiKey: "sk-ant-local",
+          models: ["claude-local"],
+        },
+      });
+
+      const result = await factory.createModel("local-claude:claude-local");
+      expect(result.success).toBe(true);
+      if (!result.success) {
+        return;
+      }
+
+      expect((result.data as { provider?: unknown }).provider).toBe("local-claude.messages");
+      expect(result.data.constructor.name).toBe("AnthropicMessagesLanguageModel");
+    });
+  });
+
   it("allows policy-allowed custom OpenAI-compatible providers when policy is enforced", async () => {
     await withTempPolicyProviderFactory(
       {

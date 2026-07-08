@@ -3,9 +3,13 @@ import { SUPPORTED_PROVIDERS } from "@/common/constants/providers";
 import type { ProvidersConfig } from "@/common/config/schemas/providersConfig";
 import {
   formatProviderDisplayName,
+  getCustomProviderIds,
   getCustomOpenAICompatibleProviderIds,
+  getShadowedCustomProviderIds,
   getShadowedCustomOpenAICompatibleProviderIds,
   isBuiltInProvider,
+  isCustomAnthropicCompatibleProviderConfig,
+  isCustomProviderConfig,
   isCustomOpenAICompatibleProviderConfig,
   isValidCustomProviderId,
   validateCustomProviderId,
@@ -70,6 +74,33 @@ describe("isCustomOpenAICompatibleProviderConfig", () => {
   });
 });
 
+describe("isCustomAnthropicCompatibleProviderConfig", () => {
+  test("returns true for Anthropic-compatible custom provider config", () => {
+    expect(
+      isCustomAnthropicCompatibleProviderConfig({
+        providerType: "anthropic-compatible",
+        baseUrl: "http://localhost:8000/v1",
+      })
+    ).toBe(true);
+  });
+
+  test("returns false for OpenAI-compatible custom provider config", () => {
+    expect(
+      isCustomAnthropicCompatibleProviderConfig({
+        providerType: "openai-compatible",
+        baseUrl: "http://localhost:8000/v1",
+      })
+    ).toBe(false);
+  });
+});
+
+describe("isCustomProviderConfig", () => {
+  test("accepts supported custom provider API formats", () => {
+    expect(isCustomProviderConfig({ providerType: "openai-compatible" })).toBe(true);
+    expect(isCustomProviderConfig({ providerType: "anthropic-compatible" })).toBe(true);
+  });
+});
+
 describe("getCustomOpenAICompatibleProviderIds", () => {
   test("returns custom OpenAI-compatible providers in config key order", () => {
     const providersConfig: ProvidersConfig = {
@@ -94,6 +125,30 @@ describe("getCustomOpenAICompatibleProviderIds", () => {
   });
 });
 
+describe("getCustomProviderIds", () => {
+  test("returns all supported custom provider types in config key order", () => {
+    const providersConfig: ProvidersConfig = {
+      anthropic: { providerType: "anthropic-compatible", apiKey: "key" },
+      "legacy-custom": { apiKey: "legacy-key" },
+      "local-vllm": {
+        providerType: "openai-compatible",
+        baseUrl: "http://localhost:8000/v1",
+      },
+      "claude-proxy": {
+        providerType: "anthropic-compatible",
+        baseUrl: "http://localhost:8080/v1",
+      },
+    };
+
+    expect(getCustomProviderIds(providersConfig)).toEqual([
+      "anthropic",
+      "local-vllm",
+      "claude-proxy",
+    ]);
+    expect(getShadowedCustomProviderIds(providersConfig)).toEqual(["anthropic"]);
+  });
+});
+
 describe("formatProviderDisplayName", () => {
   test("prefers shadowed custom display name over built-in display name", () => {
     expect(
@@ -102,6 +157,15 @@ describe("formatProviderDisplayName", () => {
         displayName: "Shadowed OpenAI",
       })
     ).toBe("Shadowed OpenAI");
+  });
+
+  test("prefers Anthropic-compatible custom display name over built-in display name", () => {
+    expect(
+      formatProviderDisplayName("anthropic", {
+        providerType: "anthropic-compatible",
+        displayName: "Shadowed Anthropic",
+      })
+    ).toBe("Shadowed Anthropic");
   });
 
   test("uses built-in provider display names", () => {

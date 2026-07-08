@@ -5,7 +5,10 @@ import {
   SUPPORTED_PROVIDERS,
   type ProviderName,
 } from "@/common/constants/providers";
-import type { BaseProviderConfig } from "@/common/config/schemas/providersConfig";
+import type {
+  BaseProviderConfig,
+  CustomProviderType,
+} from "@/common/config/schemas/providersConfig";
 import type { Result } from "@/common/types/result";
 import type {
   AddCustomOpenAICompatibleProviderInput,
@@ -19,10 +22,10 @@ import { isProviderDisabledInConfig } from "@/common/utils/providers/isProviderD
 import { modelStringStartsWithProvider } from "@/common/utils/providers/modelString";
 import { resolveConfigBaseUrl } from "@/common/utils/providers/baseUrl";
 import {
-  getCustomOpenAICompatibleProviderIds,
-  getShadowedCustomOpenAICompatibleProviderIds,
+  getCustomProviderIds,
+  getShadowedCustomProviderIds,
   isBuiltInProvider,
-  isCustomOpenAICompatibleProviderConfig,
+  isCustomProviderConfig,
   validateCustomProviderId,
   type ProvidersConfigWithProviderType,
 } from "@/common/utils/providers/customProviders";
@@ -73,6 +76,7 @@ function buildCustomProviderConfigInfo(
   const apiKeySet = typeof config.apiKey === "string" && config.apiKey.trim().length > 0;
   const apiKeyFile = typeof config.apiKeyFile === "string" ? config.apiKeyFile : undefined;
   const isEnabled = !isProviderDisabledInConfig(config);
+  const providerType = resolveCustomProviderType(config);
 
   return {
     apiKeySet,
@@ -84,11 +88,17 @@ function buildCustomProviderConfigInfo(
     baseUrl,
     models,
     displayName: config.displayName,
-    providerType: "openai-compatible",
+    providerType,
     isCustom: true,
     isEnabled,
     isConfigured: isEnabled && baseUrl !== undefined,
   };
+}
+
+function resolveCustomProviderType(config: BaseProviderConfig): CustomProviderType {
+  return config.providerType === "anthropic-compatible"
+    ? "anthropic-compatible"
+    : "openai-compatible";
 }
 
 const DENIED_KEY_PATH_SEGMENTS = new Set(["__proto__", "prototype", "constructor"]);
@@ -245,9 +255,7 @@ export class ProviderService {
   private detectAndLogShadowedProviders(
     providersConfig: ProvidersConfigWithProviderType
   ): Set<string> {
-    const shadowedProviderIds = new Set(
-      getShadowedCustomOpenAICompatibleProviderIds(providersConfig)
-    );
+    const shadowedProviderIds = new Set(getShadowedCustomProviderIds(providersConfig));
 
     // list() and getConfig() can run during one UI render, so remember the
     // last detected shadow set to avoid duplicate warning noise for that cycle.
@@ -272,7 +280,7 @@ export class ProviderService {
     try {
       const providers = this.listBuiltInProviders();
       const providersConfig = this.config.loadProvidersConfig() ?? {};
-      const customProviderIds = getCustomOpenAICompatibleProviderIds(providersConfig);
+      const customProviderIds = getCustomProviderIds(providersConfig);
       this.detectAndLogShadowedProviders(providersConfig);
       const allowedCustomProviderIds = this.policyService?.isEnforced()
         ? customProviderIds.filter((p) => this.policyService?.isProviderAllowed(p) ?? false)
@@ -452,9 +460,9 @@ export class ProviderService {
       result[provider] = providerInfo;
     }
 
-    for (const providerId of getCustomOpenAICompatibleProviderIds(providersConfig)) {
+    for (const providerId of getCustomProviderIds(providersConfig)) {
       const providerConfig = providersConfig[providerId];
-      if (!isCustomOpenAICompatibleProviderConfig(providerConfig)) {
+      if (!isCustomProviderConfig(providerConfig)) {
         continue;
       }
 
@@ -552,7 +560,7 @@ export class ProviderService {
           success: false,
           error: {
             code: "invalid_base_url",
-            message: "Custom OpenAI-compatible providers require an HTTP or HTTPS base URL.",
+            message: "Custom providers require an HTTP or HTTPS base URL.",
           },
         };
       }
@@ -590,8 +598,9 @@ export class ProviderService {
       const displayName = input.displayName?.trim();
       const apiKey = input.apiKey?.trim();
       const apiKeyFile = input.apiKeyFile?.trim();
+      const providerType = input.providerType ?? "openai-compatible";
       const providerConfig: BaseProviderConfig = {
-        providerType: "openai-compatible",
+        providerType,
         baseUrl: persistedBaseUrl,
         enabled: true,
         ...(displayName ? { displayName } : {}),
@@ -636,7 +645,7 @@ export class ProviderService {
     // Manual providers.jsonc edits can shadow a built-in id. Removing that entry
     // restores the built-in default, so only reject bona fide built-in configs.
     const isShadowedCustomProvider =
-      isBuiltInProvider(provider) && isCustomOpenAICompatibleProviderConfig(providerConfig);
+      isBuiltInProvider(provider) && isCustomProviderConfig(providerConfig);
 
     if (isBuiltInProvider(provider) && !isShadowedCustomProvider) {
       return {
@@ -668,12 +677,12 @@ export class ProviderService {
       };
     }
 
-    if (!isCustomOpenAICompatibleProviderConfig(providersConfig[provider])) {
+    if (!isCustomProviderConfig(providersConfig[provider])) {
       return {
         success: false,
         error: {
           code: "not_custom_provider",
-          message: `Provider ${provider} is not a custom OpenAI-compatible provider.`,
+          message: `Provider ${provider} is not a custom provider.`,
         },
       };
     }
@@ -682,12 +691,12 @@ export class ProviderService {
       const latestProvidersConfig = getProviderConfigRecord(
         this.config.loadProvidersConfig() ?? {}
       );
-      if (!isCustomOpenAICompatibleProviderConfig(latestProvidersConfig[provider])) {
+      if (!isCustomProviderConfig(latestProvidersConfig[provider])) {
         return {
           success: false,
           error: {
             code: "not_custom_provider",
-            message: `Provider ${provider} is not a custom OpenAI-compatible provider.`,
+            message: `Provider ${provider} is not a custom provider.`,
           },
         };
       }
@@ -1012,9 +1021,11 @@ export class ProviderService {
         }
       }
 
-      const isOpenAICompatibleProviderTypeEdit =
-        keyPath.length === 1 && keyPath[0] === "providerType" && value === "openai-compatible";
-      if (isOpenAICompatibleProviderTypeEdit) {
+      const isCustomProviderTypeEdit =
+        keyPath.length === 1 &&
+        keyPath[0] === "providerType" &&
+        (value === "openai-compatible" || value === "anthropic-compatible");
+      if (isCustomProviderTypeEdit) {
         const validation = validateCustomProviderId(provider);
         if (!validation.ok) {
           return { success: false, error: `Invalid custom provider id: ${validation.reason}` };
@@ -1098,7 +1109,7 @@ export class ProviderService {
     const providersConfig = this.config.loadProvidersConfig() ?? {};
     for (const routeTarget of Object.values(routeOverrides)) {
       const targetConfig = providersConfig[routeTarget];
-      if (isCustomOpenAICompatibleProviderConfig(targetConfig)) {
+      if (isCustomProviderConfig(targetConfig)) {
         return {
           success: false,
           error: `Custom providers are direct-only and cannot be the target of a routeOverride: ${routeTarget}.`,

@@ -110,7 +110,7 @@ describe("ProviderConfigInfoSchema conformance", () => {
       apiKeySource: "keyless",
       baseUrlSource: "config",
       baseUrlResolved: "https://custom.endpoint.com",
-      providerType: "openai-compatible",
+      providerType: "anthropic-compatible",
       displayName: "Local vLLM",
       isCustom: true,
       models: ["claude-3-opus", "claude-3-sonnet"],

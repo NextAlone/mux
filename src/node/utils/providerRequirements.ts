@@ -15,7 +15,7 @@ import { PROVIDER_DEFINITIONS, type ProviderName } from "@/common/constants/prov
 import { isOpReference } from "@/common/utils/opRef";
 import { resolveConfigBaseUrl } from "@/common/utils/providers/baseUrl";
 import { isProviderDisabledInConfig } from "@/common/utils/providers/isProviderDisabled";
-import { isCustomOpenAICompatibleProviderConfig } from "@/common/utils/providers/customProviders";
+import { isCustomProviderConfig } from "@/common/utils/providers/customProviders";
 import type {
   BaseProviderConfig,
   BedrockProviderConfig,
@@ -598,7 +598,7 @@ export function hasAnyConfiguredProvider(providers: ProvidersConfig | null | und
 
     if (!(providerKey in PROVIDER_DEFINITIONS)) {
       if (
-        isCustomOpenAICompatibleProviderConfig(rawConfig) &&
+        isCustomProviderConfig(rawConfig) &&
         !isProviderDisabledInConfig(rawConfig) &&
         resolveConfigBaseUrl(rawConfig) !== undefined
       ) {
