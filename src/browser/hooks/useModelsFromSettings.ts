@@ -26,7 +26,7 @@ import {
   isGatewayModelAccessibleFromAuthoritativeCatalog,
   isProviderModelAccessibleFromAuthoritativeCatalog,
 } from "@/common/utils/providers/gatewayModelCatalog";
-import { getProviderModelEntryId } from "@/common/utils/providers/modelEntries";
+import { getProviderModelEntryIdForProvider } from "@/common/utils/providers/modelEntries";
 
 const BUILT_IN_MODELS: string[] = Object.values(KNOWN_MODELS).map((m) => m.id);
 const BUILT_IN_MODEL_SET = new Set<string>(BUILT_IN_MODELS);
@@ -43,7 +43,7 @@ function getCustomModels(config: ProvidersConfigMap | null): string[] {
     if (!info.isEnabled) continue;
     if (!info.models) continue;
     for (const modelEntry of info.models) {
-      const modelId = getProviderModelEntryId(modelEntry);
+      const modelId = getProviderModelEntryIdForProvider(provider, modelEntry);
       models.push(`${provider}:${modelId}`);
     }
   }
@@ -62,7 +62,7 @@ function getAllCustomModels(config: ProvidersConfigMap | null): string[] {
     if (!info.models) continue;
 
     for (const modelEntry of info.models) {
-      const modelId = getProviderModelEntryId(modelEntry);
+      const modelId = getProviderModelEntryIdForProvider(provider, modelEntry);
       models.push(`${provider}:${modelId}`);
     }
   }
@@ -371,7 +371,13 @@ export function useModelsFromSettings() {
         if (!isSupportedSettingsProvider(provider, providerConfig)) return;
 
         const existingModels: ProviderModelEntry[] = providerConfig[provider]?.models ?? [];
-        if (existingModels.some((entry) => getProviderModelEntryId(entry) === modelId)) return;
+        if (
+          existingModels.some(
+            (entry) => getProviderModelEntryIdForProvider(provider, entry) === modelId
+          )
+        ) {
+          return;
+        }
 
         await api.providers.setModels({ provider, models: [...existingModels, modelId] });
         await refresh();

@@ -821,6 +821,40 @@ describe("processSlashCommand - model-set", () => {
       openSettings: mock(() => undefined),
     });
 
+  test("resolves bare custom model ids from provider-scoped settings", async () => {
+    const setPreferredModel = mock(() => undefined);
+    const context = createModelSetContext({
+      providers: {
+        getConfig: mock(() =>
+          Promise.resolve({
+            mimo: {
+              apiKeySet: true,
+              isEnabled: true,
+              isConfigured: true,
+              isCustom: true,
+              providerType: "openai-compatible",
+              baseUrl: "https://mimo.example/v1",
+              models: ["mimo-v2.5-pro"],
+            },
+          })
+        ),
+        setModels: mock(() => Promise.resolve(undefined)),
+      },
+      workspace: {
+        getGoal: mock(() => Promise.resolve({ goal: null })),
+      },
+    } as unknown as SlashCommandContext["api"]);
+    context.setPreferredModel = setPreferredModel;
+
+    const result = await processSlashCommand(
+      { type: "model-set", modelString: "mimo-v2.5-pro" },
+      context
+    );
+
+    expect(result).toEqual({ clearInput: true, toastShown: true });
+    expect(setPreferredModel).toHaveBeenCalledWith("mimo:mimo-v2.5-pro");
+  });
+
   test("reports backend verification failure for custom providers when config loading fails", async () => {
     const getConfig = mock(() => Promise.reject(new Error("backend offline")));
     const context = createModelSetContext({

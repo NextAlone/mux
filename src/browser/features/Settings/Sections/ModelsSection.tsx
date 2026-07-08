@@ -31,7 +31,7 @@ import { LAST_CUSTOM_MODEL_PROVIDER_KEY } from "@/common/constants/storage";
 import type { ProviderModelEntry } from "@/common/orpc/types";
 import {
   getProviderModelEntryContextWindowTokens,
-  getProviderModelEntryId,
+  getProviderModelEntryIdForProvider,
   getProviderModelEntryMappedTo,
 } from "@/common/utils/providers/modelEntries";
 import { formatProviderDisplayName } from "@/common/utils/providers/customProviders";
@@ -173,7 +173,7 @@ export function ModelsSection() {
       if (!config) return false;
       const currentModels = config[provider]?.models ?? [];
       return currentModels.some((entry) => {
-        const currentModelId = getProviderModelEntryId(entry);
+        const currentModelId = getProviderModelEntryIdForProvider(provider, entry);
         return currentModelId === modelId && currentModelId !== excludeOriginal;
       });
     },
@@ -216,7 +216,7 @@ export function ModelsSection() {
 
       // Optimistic update - returns new models array for API call
       const updatedModels = updateModelsOptimistically(provider, (models) =>
-        models.filter((entry) => getProviderModelEntryId(entry) !== modelId)
+        models.filter((entry) => getProviderModelEntryIdForProvider(provider, entry) !== modelId)
       );
 
       // Save in background
@@ -309,7 +309,11 @@ export function ModelsSection() {
       let replaced = false;
 
       for (const modelEntry of models) {
-        if (!replaced && getProviderModelEntryId(modelEntry) === editing.originalModelId) {
+        if (
+          !replaced &&
+          getProviderModelEntryIdForProvider(editing.provider, modelEntry) ===
+            editing.originalModelId
+        ) {
           nextModels.push(replacementEntry);
           replaced = true;
           continue;
@@ -362,7 +366,7 @@ export function ModelsSection() {
       if (!providerConfig.models) continue;
 
       for (const modelEntry of providerConfig.models) {
-        const modelId = getProviderModelEntryId(modelEntry);
+        const modelId = getProviderModelEntryIdForProvider(provider, modelEntry);
         models.push({
           provider,
           modelId,

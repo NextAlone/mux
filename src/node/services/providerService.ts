@@ -32,7 +32,9 @@ import {
 import { isOpReference } from "@/common/utils/opRef";
 import {
   getProviderModelEntryId,
+  getProviderModelEntryIdForProvider,
   normalizeProviderModelEntries,
+  normalizeProviderModelEntriesForProvider,
 } from "@/common/utils/providers/modelEntries";
 import { log } from "@/node/services/log";
 import {
@@ -67,6 +69,7 @@ const DEFAULT_KIRO_MODELS: ProviderModelEntry[] = [
 ];
 
 function filterProviderModelsByPolicy(
+  provider: string,
   models: ProviderModelEntry[] | undefined,
   allowedModels: string[] | null
 ): ProviderModelEntry[] | undefined {
@@ -78,16 +81,20 @@ function filterProviderModelsByPolicy(
     return models;
   }
 
-  return models.filter((entry) => allowedModels.includes(getProviderModelEntryId(entry)));
+  return models.filter((entry) =>
+    allowedModels.includes(getProviderModelEntryIdForProvider(provider, entry))
+  );
 }
 
 function buildCustomProviderConfigInfo(
+  provider: string,
   config: BaseProviderConfig,
   policy?: { forcedBaseUrl?: string; allowedModels?: string[] | null }
 ): ProviderConfigInfo {
   const baseUrl = policy?.forcedBaseUrl ?? resolveConfigBaseUrl(config);
   const models = filterProviderModelsByPolicy(
-    normalizeProviderModelEntries(config.models),
+    provider,
+    normalizeProviderModelEntriesForProvider(provider, config.models),
     policy?.allowedModels ?? null
   );
   const apiKeyIsOpRef = isOpReference(config.apiKey);
@@ -365,12 +372,18 @@ export class ProviderService {
         : null;
 
       const normalizedModels =
-        config.models === undefined ? undefined : normalizeProviderModelEntries(config.models);
+        config.models === undefined
+          ? undefined
+          : normalizeProviderModelEntriesForProvider(provider, config.models);
       const effectiveModels =
         normalizedModels === undefined && provider === "kiro"
           ? DEFAULT_KIRO_MODELS
           : normalizedModels;
-      const filteredModels = filterProviderModelsByPolicy(normalizedModels, allowedModels);
+      const filteredModels = filterProviderModelsByPolicy(
+        provider,
+        normalizedModels,
+        allowedModels
+      );
 
       const codexOauthSet =
         provider === "openai" && parseCodexOauthAuth(config.codexOauth) !== null;
@@ -394,7 +407,7 @@ export class ProviderService {
         apiKeyFile: typeof config.apiKeyFile === "string" ? config.apiKeyFile : undefined,
         models:
           provider === "kiro"
-            ? filterProviderModelsByPolicy(effectiveModels, allowedModels)
+            ? filterProviderModelsByPolicy(provider, effectiveModels, allowedModels)
             : filteredModels,
       };
 
@@ -514,6 +527,7 @@ export class ProviderService {
       // not enforced, it returns {}, which buildCustomProviderConfigInfo handles
       // identically (both forcedBaseUrl and allowedModels fall back to defaults).
       result[providerId] = buildCustomProviderConfigInfo(
+        providerId,
         providerConfig,
         this.getProviderPolicy(providerId)
       );
@@ -551,7 +565,7 @@ export class ProviderService {
     }
 
     return models
-      .map((entry) => getProviderModelEntryId(entry))
+      .map((entry) => getProviderModelEntryIdForProvider(provider, entry))
       .filter((modelId) => !allowedModels.includes(modelId));
   }
 
@@ -623,7 +637,7 @@ export class ProviderService {
         };
       }
 
-      const normalizedModels = normalizeProviderModelEntries(input.models);
+      const normalizedModels = normalizeProviderModelEntriesForProvider(provider, input.models);
       const disallowedModels = this.getDisallowedModelsByPolicy(provider, normalizedModels);
       if (disallowedModels.length > 0) {
         return {
@@ -860,7 +874,7 @@ export class ProviderService {
    */
   public setModels(provider: string, models: ProviderModelEntry[]): Result<void, string> {
     try {
-      const normalizedModels = normalizeProviderModelEntries(models);
+      const normalizedModels = normalizeProviderModelEntriesForProvider(provider, models);
 
       if (this.policyService?.isEnforced()) {
         if (!this.policyService.isProviderAllowed(provider)) {

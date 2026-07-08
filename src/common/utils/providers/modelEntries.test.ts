@@ -33,6 +33,19 @@ describe("resolveModelForMetadata", () => {
     expect(resolveModelForMetadata("ollama:custom", config)).toBe("anthropic:claude-sonnet-4-6");
   });
 
+  test("matches legacy same-provider-prefixed entries inside scoped model lists", () => {
+    const config: ProvidersConfigMap = {
+      mimo: {
+        apiKeySet: true,
+        isEnabled: true,
+        isConfigured: true,
+        models: [{ id: "mimo:mimo-v2.5-pro", mappedToModel: "openai:gpt-5.5" }],
+      },
+    };
+
+    expect(resolveModelForMetadata("mimo:mimo-v2.5-pro", config)).toBe("openai:gpt-5.5");
+  });
+
   test("returns original model when model not in provider", () => {
     const config: ProvidersConfigMap = {
       ollama: { apiKeySet: false, isEnabled: true, isConfigured: true, models: ["other"] },

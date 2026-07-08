@@ -64,7 +64,7 @@ import type { ChatAttachment } from "../features/ChatInput/ChatAttachments";
 import { dispatchWorkspaceSwitch } from "./workspaceEvents";
 import { getRuntimeKey, copyWorkspaceStorage } from "@/common/constants/storage";
 import { buildCompactionMessageText } from "@/common/utils/compaction/compactionPrompt";
-import { getProviderModelEntryId } from "@/common/utils/providers/modelEntries";
+import { getProviderModelEntryIdForProvider } from "@/common/utils/providers/modelEntries";
 import { isCustomProviderConfig } from "@/common/utils/providers/customProviders";
 import { isValidProvider } from "@/common/constants/providers";
 import { openInEditor } from "@/browser/utils/openInEditor";
@@ -93,6 +93,46 @@ import {
 } from "@/common/utils/workflowRunMessages";
 
 const BUILT_IN_MODEL_SET = new Set<string>(Object.values(KNOWN_MODELS).map((model) => model.id));
+
+type ModelInputResolution =
+  | { type: "resolved"; model: string }
+  | { type: "invalid-format" }
+  | { type: "ambiguous"; matches: string[] };
+
+function resolveModelInputFromProviderConfig(
+  modelString: string,
+  providersConfig: ProvidersConfigMap | null
+): ModelInputResolution {
+  const normalized = normalizeModelInput(modelString);
+  if (normalized.model) {
+    return { type: "resolved", model: normalized.model };
+  }
+
+  const modelId = modelString.trim();
+  if (!providersConfig || !modelId || modelId.includes(":")) {
+    return { type: "invalid-format" };
+  }
+
+  const matches: string[] = [];
+  for (const [provider, providerConfig] of Object.entries(providersConfig)) {
+    if (providerConfig.isEnabled === false || !providerConfig.models) {
+      continue;
+    }
+
+    for (const entry of providerConfig.models) {
+      if (getProviderModelEntryIdForProvider(provider, entry) === modelId) {
+        matches.push(`${provider}:${modelId}`);
+        break;
+      }
+    }
+  }
+
+  if (matches.length === 1) {
+    return { type: "resolved", model: matches[0] };
+  }
+
+  return matches.length > 1 ? { type: "ambiguous", matches } : { type: "invalid-format" };
+}
 
 export interface ForkOptions {
   client: RouterClient<AppRouter>;
@@ -286,23 +326,6 @@ export async function processSlashCommand(
     const modelString = parsed.modelString;
 
     const activeClient = client;
-    const normalized = normalizeModelInput(modelString);
-
-    if (!normalized.model) {
-      setToast({
-        id: Date.now().toString(),
-        type: "error",
-        message: `Invalid model format: expected "provider:model"`,
-      });
-      return { clearInput: false, toastShown: true };
-    }
-
-    const selectedModel = normalized.model;
-    const separatorIndex = selectedModel.indexOf(":");
-    const provider = selectedModel.slice(0, separatorIndex);
-    const modelId = selectedModel.slice(separatorIndex + 1);
-    const canonicalModel = normalizeToCanonical(selectedModel);
-    const explicitGateway = getExplicitGatewayPrefix(selectedModel);
 
     try {
       let providersConfig: ProvidersConfigMap | null = null;
@@ -316,6 +339,25 @@ export async function processSlashCommand(
         }
       }
 
+      const resolvedModel = resolveModelInputFromProviderConfig(modelString, providersConfig);
+      if (resolvedModel.type !== "resolved") {
+        setToast({
+          id: Date.now().toString(),
+          type: "error",
+          message:
+            resolvedModel.type === "ambiguous"
+              ? `Ambiguous model "${modelString}". Use one of: ${resolvedModel.matches.join(", ")}`
+              : `Invalid model format: expected "provider:model"`,
+        });
+        return { clearInput: false, toastShown: true };
+      }
+
+      const selectedModel = resolvedModel.model;
+      const separatorIndex = selectedModel.indexOf(":");
+      const provider = selectedModel.slice(0, separatorIndex);
+      const modelId = selectedModel.slice(separatorIndex + 1);
+      const canonicalModel = normalizeToCanonical(selectedModel);
+      const explicitGateway = getExplicitGatewayPrefix(selectedModel);
       const providerConfig = providersConfig?.[provider];
       if (!isValidProvider(provider) && !isCustomProviderConfig(providerConfig)) {
         setToast({
@@ -345,7 +387,11 @@ export async function processSlashCommand(
       ) {
         try {
           const existingModels: ProviderModelEntry[] = providerConfig?.models ?? [];
-          if (!existingModels.some((entry) => getProviderModelEntryId(entry) === modelId)) {
+          if (
+            !existingModels.some(
+              (entry) => getProviderModelEntryIdForProvider(provider, entry) === modelId
+            )
+          ) {
             // Add model via the same API as settings
             await activeClient.providers.setModels({
               provider,

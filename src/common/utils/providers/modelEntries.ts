@@ -27,12 +27,26 @@ export function maybeGetProviderModelEntryId(entry: unknown): string | null {
   return null;
 }
 
+function stripSameProviderPrefix(provider: string, modelId: string): string {
+  const prefix = `${provider}:`;
+  return modelId.startsWith(prefix) && modelId.length > prefix.length
+    ? modelId.slice(prefix.length)
+    : modelId;
+}
+
 export function getProviderModelEntryId(entry: ProviderModelEntry): string {
   const modelId = maybeGetProviderModelEntryId(entry);
   if (modelId == null) {
     throw new Error("Invalid ProviderModelEntry");
   }
   return modelId;
+}
+
+export function getProviderModelEntryIdForProvider(
+  provider: string,
+  entry: ProviderModelEntry
+): string {
+  return stripSameProviderPrefix(provider, getProviderModelEntryId(entry));
 }
 
 export function getProviderModelEntryContextWindowTokens(entry: ProviderModelEntry): number | null {
@@ -77,7 +91,7 @@ function findProviderModelEntry(
       continue;
     }
 
-    if (getProviderModelEntryId(entry) === modelId) {
+    if (getProviderModelEntryIdForProvider(provider, entry) === modelId) {
       return entry;
     }
   }
@@ -188,6 +202,23 @@ export function normalizeProviderModelEntry(rawEntry: unknown): ProviderModelEnt
   };
 }
 
+export function normalizeProviderModelEntryForProvider(
+  provider: string,
+  rawEntry: unknown
+): ProviderModelEntry | null {
+  const entry = normalizeProviderModelEntry(rawEntry);
+  if (entry == null) {
+    return null;
+  }
+
+  const modelId = getProviderModelEntryIdForProvider(provider, entry);
+  if (typeof entry === "string") {
+    return modelId;
+  }
+
+  return { ...entry, id: modelId };
+}
+
 export function normalizeProviderModelEntries(rawEntries: unknown): ProviderModelEntry[] {
   if (!Array.isArray(rawEntries)) {
     return [];
@@ -198,6 +229,35 @@ export function normalizeProviderModelEntries(rawEntries: unknown): ProviderMode
 
   for (const rawEntry of rawEntries) {
     const normalizedEntry = normalizeProviderModelEntry(rawEntry);
+    if (!normalizedEntry) {
+      continue;
+    }
+
+    const modelId = getProviderModelEntryId(normalizedEntry);
+    if (seen.has(modelId)) {
+      continue;
+    }
+
+    seen.add(modelId);
+    normalized.push(normalizedEntry);
+  }
+
+  return normalized;
+}
+
+export function normalizeProviderModelEntriesForProvider(
+  provider: string,
+  rawEntries: unknown
+): ProviderModelEntry[] {
+  if (!Array.isArray(rawEntries)) {
+    return [];
+  }
+
+  const normalized: ProviderModelEntry[] = [];
+  const seen = new Set<string>();
+
+  for (const rawEntry of rawEntries) {
+    const normalizedEntry = normalizeProviderModelEntryForProvider(provider, rawEntry);
     if (!normalizedEntry) {
       continue;
     }
