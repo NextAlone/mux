@@ -48,6 +48,12 @@ import { WORKSPACE_DEFAULTS } from "@/constants/workspaceDefaults";
 // Re-export types for backward compatibility
 export type { AWSCredentialStatus, ProviderConfigInfo, ProvidersConfigMap };
 
+const DEFAULT_KIRO_MODELS: ProviderModelEntry[] = [
+  "auto-kiro",
+  "claude-sonnet-4.5",
+  "claude-haiku-4.5",
+];
+
 function filterProviderModelsByPolicy(
   models: ProviderModelEntry[] | undefined,
   allowedModels: string[] | null
@@ -326,6 +332,11 @@ export class ProviderService {
         bearerToken?: string;
         accessKeyId?: string;
         secretAccessKey?: string;
+        /** Kiro-only: persisted OAuth metadata and credential file locations. */
+        accessToken?: string;
+        oauthCredentialsPath?: string;
+        oauthSqlitePath?: string;
+        profileArn?: string;
         /** Persisted provider toggle: only `false` is stored; missing means enabled. */
         enabled?: unknown;
         /** OpenAI-only: stored Codex OAuth tokens (never sent to frontend). */
@@ -343,6 +354,10 @@ export class ProviderService {
 
       const normalizedModels =
         config.models === undefined ? undefined : normalizeProviderModelEntries(config.models);
+      const effectiveModels =
+        normalizedModels === undefined && provider === "kiro"
+          ? DEFAULT_KIRO_MODELS
+          : normalizedModels;
       const filteredModels = filterProviderModelsByPolicy(normalizedModels, allowedModels);
 
       const codexOauthSet =
@@ -365,7 +380,10 @@ export class ProviderService {
         isConfigured: false, // computed below
         baseUrl: forcedBaseUrl ?? explicitBaseUrl,
         apiKeyFile: typeof config.apiKeyFile === "string" ? config.apiKeyFile : undefined,
-        models: filteredModels,
+        models:
+          provider === "kiro"
+            ? filterProviderModelsByPolicy(effectiveModels, allowedModels)
+            : filteredModels,
       };
 
       // OpenAI-specific fields
@@ -426,6 +444,15 @@ export class ProviderService {
           bearerTokenSet: !!config.bearerToken,
           accessKeyIdSet: !!config.accessKeyId,
           secretAccessKeySet: !!config.secretAccessKey,
+        };
+      }
+
+      if (provider === "kiro") {
+        providerInfo.kiro = {
+          oauthCredentialsPath: config.oauthCredentialsPath,
+          oauthSqlitePath: config.oauthSqlitePath,
+          region: config.region,
+          profileArn: config.profileArn,
         };
       }
 

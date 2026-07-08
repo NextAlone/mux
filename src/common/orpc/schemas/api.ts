@@ -228,6 +228,13 @@ export const AWSCredentialStatusSchema = z.object({
   secretAccessKeySet: z.boolean(),
 });
 
+export const KiroCredentialStatusSchema = z.object({
+  oauthCredentialsPath: z.string().optional(),
+  oauthSqlitePath: z.string().optional(),
+  region: z.string().optional(),
+  profileArn: z.string().optional(),
+});
+
 export const ProviderConfigInfoSchema = z.object({
   apiKeySet: z.boolean(),
   apiKeyIsOpRef: z.boolean().optional(),
@@ -268,6 +275,8 @@ export const ProviderConfigInfoSchema = z.object({
   codexOauthDefaultAuth: CodexOauthDefaultAuthSchema.optional(),
   /** AWS-specific fields (only present for bedrock provider) */
   aws: AWSCredentialStatusSchema.optional(),
+  /** Kiro-specific non-secret OAuth fields */
+  kiro: KiroCredentialStatusSchema.optional(),
   /** Mux Gateway-specific fields */
   couponCodeSet: z.boolean().optional(),
   /** Mux Gateway-specific: which models are enabled for gateway routing */

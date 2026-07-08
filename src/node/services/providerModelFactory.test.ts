@@ -383,6 +383,29 @@ describe("ProviderModelFactory.createModel", () => {
     });
   });
 
+  it("creates Kiro OAuth models as a standalone provider", async () => {
+    await withTempConfig(async (config, factory) => {
+      config.saveProvidersConfig({
+        kiro: {
+          accessToken: "kiro-access-token",
+          profileArn: "arn:aws:codewhisperer:us-east-1:123456789012:profile/test",
+          region: "us-east-1",
+          models: ["claude-sonnet-4-5"],
+        },
+      } as Parameters<Config["saveProvidersConfig"]>[0]);
+
+      const result = await factory.createModel("kiro:claude-sonnet-4-5");
+
+      expect(result.success).toBe(true);
+      if (!result.success) {
+        return;
+      }
+
+      expect((result.data as { provider?: unknown }).provider).toBe("kiro.runtime");
+      expect(result.data.constructor.name).toBe("KiroLanguageModel");
+    });
+  });
+
   it("allows policy-allowed custom OpenAI-compatible providers when policy is enforced", async () => {
     await withTempPolicyProviderFactory(
       {

@@ -39,6 +39,8 @@ import {
   toCopilotModelId,
 } from "@/common/utils/copilot/modelRouting";
 import { CopilotResponsesLanguageModel } from "@/node/services/copilot/copilotResponsesLanguageModel";
+import { KiroLanguageModel } from "@/node/services/kiro/kiroLanguageModel";
+import { loadKiroOauthCredentials } from "@/node/services/kiro/kiroAuth";
 import type { PolicyService } from "@/node/services/policyService";
 import type { ProviderService } from "@/node/services/providerService";
 import type { CodexOauthService } from "@/node/services/codexOauthService";
@@ -2147,6 +2149,22 @@ export class ProviderModelFactory {
           fetch: providerFetch,
         });
         return Ok(provider.chat(outboundCopilotModelId));
+      }
+
+      if (providerName === "kiro") {
+        const credentials = loadKiroOauthCredentials(providerConfig);
+        if (!credentials) {
+          return Err({ type: "api_key_not_found", provider: providerName });
+        }
+
+        return Ok(
+          new KiroLanguageModel({
+            modelId,
+            fetch: getProviderFetch(providerConfig),
+            baseUrl: providerConfig.baseURL,
+            credentialsProvider: () => Promise.resolve(loadKiroOauthCredentials(providerConfig)),
+          }) as LanguageModel
+        );
       }
 
       // Generic handler for simple providers (standard API key + factory pattern)
