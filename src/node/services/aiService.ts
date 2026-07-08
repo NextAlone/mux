@@ -2490,6 +2490,7 @@ export class AIService extends EventEmitter {
         effectiveThinkingLevel,
         modelString,
         anthropicCacheTtl: effectiveMuxProviderOptions.anthropic?.cacheTtl,
+        providersConfig: this.providerService.getConfig(),
         workspaceId,
       });
       recordStartupPhaseTiming("prepareMessagesForProviderMs", prepareMessagesForProviderStartedAt);
@@ -2969,6 +2970,7 @@ export class AIService extends EventEmitter {
                     effectiveThinkingLevel: nextThinkingLevel,
                     modelString: next.canonicalModelString,
                     anthropicCacheTtl: effectiveMuxProviderOptions.anthropic?.cacheTtl,
+                    providersConfig: this.providerService.getConfig(),
                     workspaceId,
                   });
 

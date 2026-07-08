@@ -1,7 +1,8 @@
 import { tool as createTool, type ModelMessage, type Tool } from "ai";
 import assert from "@/common/utils/assert";
 import { cloneToolPreservingDescriptors } from "@/common/utils/tools/cloneToolPreservingDescriptors";
-import { normalizeToCanonical } from "./models";
+import type { ProvidersConfigMap } from "@/common/orpc/types";
+import { hasAnthropicClaudeCapabilities } from "./anthropicCapabilities";
 
 /**
  * Anthropic prompt cache TTL value.
@@ -14,11 +15,11 @@ export type AnthropicCacheTtl = "5m" | "1h";
 /**
  * Check if a model supports Anthropic cache control.
  */
-export function supportsAnthropicCache(modelString: string): boolean {
-  const normalized = normalizeToCanonical(modelString);
-  // After normalizeToCanonical, all gateway Anthropic models normalize to "anthropic:..."
-  // so we only need to check for the "anthropic:" prefix.
-  return normalized.startsWith("anthropic:");
+export function supportsAnthropicCache(
+  modelString: string,
+  providersConfig?: ProvidersConfigMap | null
+): boolean {
+  return hasAnthropicClaudeCapabilities(modelString, providersConfig);
 }
 
 /** Build cache control providerOptions for Anthropic with optional TTL. */
@@ -92,10 +93,11 @@ function addCacheControlToLastContentPart(
 export function applyCacheControl(
   messages: ModelMessage[],
   modelString: string,
-  cacheTtl?: AnthropicCacheTtl | null
+  cacheTtl?: AnthropicCacheTtl | null,
+  providersConfig?: ProvidersConfigMap | null
 ): ModelMessage[] {
   // Only apply cache control for Anthropic models
-  if (!supportsAnthropicCache(modelString)) {
+  if (!supportsAnthropicCache(modelString, providersConfig)) {
     return messages;
   }
 
@@ -122,9 +124,10 @@ export function applyCacheControl(
 export function createCachedSystemMessage(
   systemContent: string,
   modelString: string,
-  cacheTtl?: AnthropicCacheTtl | null
+  cacheTtl?: AnthropicCacheTtl | null,
+  providersConfig?: ProvidersConfigMap | null
 ): ModelMessage | null {
-  if (!systemContent || !supportsAnthropicCache(modelString)) {
+  if (!systemContent || !supportsAnthropicCache(modelString, providersConfig)) {
     return null;
   }
 
@@ -153,10 +156,15 @@ export function createCachedSystemMessage(
 export function applyCacheControlToTools<T extends Record<string, Tool>>(
   tools: T,
   modelString: string,
-  cacheTtl?: AnthropicCacheTtl | null
+  cacheTtl?: AnthropicCacheTtl | null,
+  providersConfig?: ProvidersConfigMap | null
 ): T {
   // Only apply cache control for Anthropic models
-  if (!supportsAnthropicCache(modelString) || !tools || Object.keys(tools).length === 0) {
+  if (
+    !supportsAnthropicCache(modelString, providersConfig) ||
+    !tools ||
+    Object.keys(tools).length === 0
+  ) {
     return tools;
   }
 

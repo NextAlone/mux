@@ -3562,6 +3562,7 @@ export const BUILTIN_SKILL_FILES: Record<string, Record<string, string>> = {
       "| OpenRouter     | `OPENROUTER_API_KEY`                               |",
       "| DeepSeek       | `DEEPSEEK_API_KEY`                                 |",
       "| github-copilot | `GITHUB_COPILOT_TOKEN`                             |",
+      "| kiro           | `KIRO_ACCESS_TOKEN`                                |",
       "| Bedrock        | `AWS_REGION` (credentials via AWS SDK chain)       |",
       "",
       "<details>",

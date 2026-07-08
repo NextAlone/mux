@@ -4,6 +4,7 @@ import { openai } from "@ai-sdk/openai";
 import type { ModelMessage, Tool } from "ai";
 import { tool } from "ai";
 import { z } from "zod";
+import type { ProvidersConfigMap } from "@/common/orpc/types";
 import {
   supportsAnthropicCache,
   applyCacheControl,
@@ -13,6 +14,28 @@ import {
 import { markBuiltInTaskTool, isBuiltInTaskTool } from "@/node/services/tools/task";
 
 describe("cacheStrategy", () => {
+  const customAnthropicCompatibleProviders: ProvidersConfigMap = {
+    minimax: {
+      apiKeySet: true,
+      isEnabled: true,
+      isConfigured: true,
+      providerType: "anthropic-compatible",
+      models: ["abab6.5-chat"],
+    },
+    "claude-relay": {
+      apiKeySet: true,
+      isEnabled: true,
+      isConfigured: true,
+      providerType: "anthropic-compatible",
+      models: [
+        {
+          id: "sonnet",
+          mappedToModel: "anthropic:claude-sonnet-4-5-20250514",
+        },
+      ],
+    },
+  };
+
   describe("supportsAnthropicCache", () => {
     it("should return true for direct Anthropic models", () => {
       expect(supportsAnthropicCache("anthropic:claude-3-5-sonnet-20241022")).toBe(true);
@@ -31,6 +54,15 @@ describe("cacheStrategy", () => {
       expect(supportsAnthropicCache("openrouter:meta-llama/llama-3.1")).toBe(false);
       expect(supportsAnthropicCache("mux-gateway:openai/gpt-5.2")).toBe(false);
     });
+
+    it("distinguishes custom Anthropic wire format from Claude cache capability", () => {
+      expect(
+        supportsAnthropicCache("minimax:abab6.5-chat", customAnthropicCompatibleProviders)
+      ).toBe(false);
+      expect(
+        supportsAnthropicCache("claude-relay:sonnet", customAnthropicCompatibleProviders)
+      ).toBe(true);
+    });
   });
 
   describe("applyCacheControl", () => {
@@ -42,6 +74,37 @@ describe("cacheStrategy", () => {
       ];
       const result = applyCacheControl(messages, "openai:gpt-4");
       expect(result).toEqual(messages);
+    });
+
+    it("should not modify unmapped custom Anthropic-compatible third-party models", () => {
+      const messages: ModelMessage[] = [{ role: "user", content: "Hello" }];
+      const result = applyCacheControl(
+        messages,
+        "minimax:abab6.5-chat",
+        undefined,
+        customAnthropicCompatibleProviders
+      );
+      expect(result).toEqual(messages);
+    });
+
+    it("should add cache control for custom relays mapped to Claude", () => {
+      const messages: ModelMessage[] = [{ role: "user", content: "Hello" }];
+      const result = applyCacheControl(
+        messages,
+        "claude-relay:sonnet",
+        undefined,
+        customAnthropicCompatibleProviders
+      );
+      expect(result[0]).toEqual({
+        ...messages[0],
+        providerOptions: {
+          anthropic: {
+            cacheControl: {
+              type: "ephemeral",
+            },
+          },
+        },
+      });
     });
 
     it("should add cache control to single message for Anthropic models", () => {

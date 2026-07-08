@@ -62,6 +62,7 @@ import {
   getExplicitGatewayPrefix as getExplicitGatewayProvider,
   normalizeToCanonical,
 } from "@/common/utils/ai/models";
+import { hasAnthropicClaudeCapabilities } from "@/common/utils/ai/anthropicCapabilities";
 import type { AnthropicCacheTtl } from "@/common/utils/ai/cacheStrategy";
 import { MUX_APP_ATTRIBUTION_TITLE, MUX_APP_ATTRIBUTION_URL } from "@/constants/appAttribution";
 import {
@@ -1176,26 +1177,30 @@ export class ProviderModelFactory {
         }
       }
 
-      // Backend config is authoritative for Anthropic prompt cache TTL on any
-      // Anthropic-routed model (direct Anthropic, mux-gateway:anthropic/*,
-      // openrouter:anthropic/*). We still allow request-level values when config
-      // is unset for backward compatibility with older clients.
-      const customAnthropicConfig = providerIsCustomAnthropicCompatible
-        ? (providerConfigEntry as { cacheTtl?: unknown; disableBetaFeatures?: unknown })
-        : undefined;
-      const configAnthropicCacheTtl = parseAnthropicCacheTtl(
-        customAnthropicConfig?.cacheTtl ?? providersConfig.anthropic?.cacheTtl
+      const modelHasAnthropicClaudeCapabilities = hasAnthropicClaudeCapabilities(
+        `${providerName}:${modelId}`,
+        providersConfig
       );
-      const isAnthropicRoutedModel =
-        providerName === "anthropic" ||
-        providerIsCustomAnthropicCompatible ||
-        modelId.startsWith("anthropic/");
+
+      // Backend config is authoritative for Claude prompt-cache/beta knobs on
+      // models whose capability model is Anthropic. Anthropic-compatible custom
+      // providers can also front third-party models; providerType alone is only
+      // a wire-format signal and must not inherit Claude-only behavior.
+      const customAnthropicConfig =
+        providerIsCustomAnthropicCompatible && modelHasAnthropicClaudeCapabilities
+          ? (providerConfigEntry as { cacheTtl?: unknown; disableBetaFeatures?: unknown })
+          : undefined;
+      const configAnthropicCacheTtl = modelHasAnthropicClaudeCapabilities
+        ? parseAnthropicCacheTtl(
+            customAnthropicConfig?.cacheTtl ?? providersConfig.anthropic?.cacheTtl
+          )
+        : undefined;
 
       // Anthropic-specific: merge global disableBetaFeatures into muxProviderOptions.
       const configDisableBeta =
         customAnthropicConfig?.disableBetaFeatures ??
         providersConfig.anthropic?.disableBetaFeatures;
-      if (isAnthropicRoutedModel && configDisableBeta === true) {
+      if (modelHasAnthropicClaudeCapabilities && configDisableBeta === true) {
         muxProviderOptions ??= {};
         muxProviderOptions.anthropic = {
           ...(muxProviderOptions.anthropic ?? {}),
@@ -1203,7 +1208,7 @@ export class ProviderModelFactory {
         };
       }
 
-      if (isAnthropicRoutedModel && configAnthropicCacheTtl && muxProviderOptions) {
+      if (modelHasAnthropicClaudeCapabilities && configAnthropicCacheTtl && muxProviderOptions) {
         muxProviderOptions.anthropic = {
           ...(muxProviderOptions.anthropic ?? {}),
           cacheTtl: configAnthropicCacheTtl,
@@ -1296,11 +1301,15 @@ export class ProviderModelFactory {
             ? wrapFetchStrippingSyntheticAnthropicApiKey(baseFetch)
             : baseFetch;
         const disableBeta = muxProviderOptions?.anthropic?.disableBetaFeatures === true;
-        const providerFetch = wrapFetchWithAnthropicCacheControl(
-          fetchWithoutSyntheticKey,
-          effectiveAnthropicCacheTtl,
-          { injectCacheControl: !disableBeta }
-        );
+        const providerFetch = modelHasAnthropicClaudeCapabilities
+          ? wrapFetchWithAnthropicCacheControl(
+              fetchWithoutSyntheticKey,
+              effectiveAnthropicCacheTtl,
+              {
+                injectCacheControl: !disableBeta,
+              }
+            )
+          : fetchWithoutSyntheticKey;
         const muxAttributionHeaders = buildAppAttributionHeaders(providerConfig.headers);
         const provider = createAnthropic({
           name: `${providerName}.messages`,

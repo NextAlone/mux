@@ -18,6 +18,7 @@ import { convertDataUriFilePartsForSdk } from "@/node/utils/messages/convertData
 import type { MuxMessage } from "@/common/types/message";
 import type { EditedFileAttachment } from "@/node/services/agentSession";
 import type { PostCompactionAttachment } from "@/common/types/attachment";
+import type { ProvidersConfigMap } from "@/common/orpc/types";
 import type { ThinkingLevel } from "@/common/types/thinking";
 import type { Runtime } from "@/node/runtime/Runtime";
 import { injectFileAtMentions } from "./fileAtMentions";
@@ -29,6 +30,10 @@ import {
   injectPostCompactionAttachments,
 } from "@/browser/utils/messages/modelMessageTransform";
 import { applyCacheControl, type AnthropicCacheTtl } from "@/common/utils/ai/cacheStrategy";
+import {
+  hasAnthropicClaudeCapabilities,
+  usesAnthropicMessagesWireFormat,
+} from "@/common/utils/ai/anthropicCapabilities";
 import { log } from "./log";
 import { markOpenAIResponsesCompactionBoundaries } from "./openaiResponsesCompactionReplay";
 
@@ -56,12 +61,18 @@ export interface PrepareMessagesOptions {
   abortSignal: AbortSignal;
   /** Canonical provider name for provider-specific transforms. */
   providerForMessages: string;
+  /** Whether the request uses the Anthropic Messages wire format. */
+  usesAnthropicMessagesApi?: boolean;
+  /** Whether Anthropic Extended Thinking history should be preserved. */
+  anthropicThinkingEnabled?: boolean;
   /** Thinking level for provider-specific behavior. */
   effectiveThinkingLevel: ThinkingLevel;
   /** Full model string (used for cache control). */
   modelString: string;
   /** Optional Anthropic cache TTL override for prompt caching. */
   anthropicCacheTtl?: AnthropicCacheTtl | null;
+  /** Provider metadata used to distinguish wire format from model capabilities. */
+  providersConfig?: ProvidersConfigMap | null;
   /** Workspace ID (used only for debug logging). */
   workspaceId: string;
 }
@@ -101,11 +112,20 @@ export async function prepareMessagesForProvider(
     workspacePath,
     abortSignal,
     providerForMessages,
+    usesAnthropicMessagesApi,
+    anthropicThinkingEnabled,
     effectiveThinkingLevel,
     modelString,
     anthropicCacheTtl,
+    providersConfig,
     workspaceId,
   } = opts;
+  const isAnthropicMessagesApi =
+    usesAnthropicMessagesApi ?? usesAnthropicMessagesWireFormat(modelString, providersConfig);
+  const preserveAnthropicThinking =
+    anthropicThinkingEnabled ??
+    (hasAnthropicClaudeCapabilities(modelString, providersConfig) &&
+      effectiveThinkingLevel !== "off");
 
   // --- MuxMessage-level transforms ---
 
@@ -163,10 +183,9 @@ export async function prepareMessagesForProvider(
 
   // Sanitize PDF filenames for Anthropic (request-only, preserves original in UI/history).
   // Anthropic rejects document names containing periods, underscores, etc.
-  const messagesWithSanitizedPdf =
-    providerForMessages === "anthropic"
-      ? sanitizeAnthropicPdfFilenames(messagesWithInlinedSvg)
-      : messagesWithInlinedSvg;
+  const messagesWithSanitizedPdf = isAnthropicMessagesApi
+    ? sanitizeAnthropicPdfFilenames(messagesWithInlinedSvg)
+    : messagesWithInlinedSvg;
 
   // Rewrite supported tool-result attachments to small text placeholders + file parts.
   // Prevents providers from treating large base64 payloads as text/JSON context.
@@ -197,18 +216,23 @@ export async function prepareMessagesForProvider(
   log.debug_obj(`${workspaceId}/2_model_messages.json`, modelMessages);
 
   // Apply ModelMessage transforms based on provider requirements
-  const transformedMessages = transformModelMessages(modelMessages, providerForMessages, {
-    anthropicThinkingEnabled:
-      providerForMessages === "anthropic" && effectiveThinkingLevel !== "off",
+  const providerForTransforms = isAnthropicMessagesApi ? "anthropic" : providerForMessages;
+  const transformedMessages = transformModelMessages(modelMessages, providerForTransforms, {
+    anthropicThinkingEnabled: preserveAnthropicThinking,
   });
 
   // Apply cache control for Anthropic models AFTER transformation
-  const finalMessages = applyCacheControl(transformedMessages, modelString, anthropicCacheTtl);
+  const finalMessages = applyCacheControl(
+    transformedMessages,
+    modelString,
+    anthropicCacheTtl,
+    providersConfig
+  );
 
   log.debug_obj(`${workspaceId}/3_final_messages.json`, finalMessages);
 
   // Validate the messages meet Anthropic requirements (Anthropic only)
-  if (providerForMessages === "anthropic") {
+  if (isAnthropicMessagesApi) {
     const validation = validateAnthropicCompliance(finalMessages);
     if (!validation.valid) {
       log.error(`Anthropic compliance validation failed: ${validation.error ?? "unknown error"}`);

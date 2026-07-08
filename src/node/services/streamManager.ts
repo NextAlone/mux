@@ -1485,9 +1485,15 @@ export class StreamManager extends EventEmitter {
     let finalSystem: string | undefined = system;
     const anthropicCacheTtl =
       anthropicCacheTtlOverride ?? getAnthropicCacheTtl(finalProviderOptions);
+    const providersConfig = this.getProvidersConfig();
 
     // For Anthropic models, convert system message to a cached message at the start
-    const cachedSystemMessage = createCachedSystemMessage(system, modelString, anthropicCacheTtl);
+    const cachedSystemMessage = createCachedSystemMessage(
+      system,
+      modelString,
+      anthropicCacheTtl,
+      providersConfig
+    );
     if (cachedSystemMessage) {
       // Prepend cached system message and set system parameter to undefined
       // Note: Must be undefined, not empty string, to avoid Anthropic API error
@@ -1497,7 +1503,7 @@ export class StreamManager extends EventEmitter {
 
     // Apply cache control to tools for Anthropic models
     if (tools) {
-      finalTools = applyCacheControlToTools(tools, modelString, anthropicCacheTtl);
+      finalTools = applyCacheControlToTools(tools, modelString, anthropicCacheTtl, providersConfig);
     }
 
     // Use the runtime model's max_output_tokens if available and caller didn't

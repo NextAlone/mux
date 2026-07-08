@@ -28,6 +28,11 @@ import { resolveModelForMetadata } from "@/common/utils/providers/modelEntries";
 import { log } from "@/node/services/log";
 import type { MuxMessage } from "@/common/types/message";
 import { normalizeToCanonical, supports1MContext } from "./models";
+import {
+  hasAnthropicClaudeCapabilities,
+  resolveAnthropicCapabilityModel,
+  usesAnthropicMessagesWireFormat,
+} from "./anthropicCapabilities";
 
 /**
  * Request header used to override Anthropic's `output_config.effort` at the
@@ -60,7 +65,7 @@ type OpenAICompatibleGatewayProviderOptions = Pick<
  * Provider-specific options structure for AI SDK
  */
 type ProviderOptions =
-  | { anthropic: AnthropicProviderOptions }
+  | Record<string, AnthropicProviderOptions>
   | { openai: OpenAIResponsesProviderOptions }
   | { google: GoogleGenerativeAIProviderOptions }
   | { openrouter: OpenRouterReasoningOptions }
@@ -107,7 +112,7 @@ function resolveAnthropic1MCapabilityModel(
   const normalizedModel = normalizeToCanonical(modelString);
   return {
     normalizedModel,
-    capabilityModel: resolveModelForMetadata(normalizedModel, providersConfig ?? null),
+    capabilityModel: resolveAnthropicCapabilityModel(modelString, providersConfig),
   };
 }
 
@@ -247,6 +252,8 @@ export function buildProviderOptions(
   // while transforming gateways use the route provider's payload schema.
   const formatProvider =
     providerOptionsNamespaceKey === origin ? origin : (routeProvider ?? origin);
+  const usesAnthropicWireFormat = usesAnthropicMessagesWireFormat(modelString, providersConfig);
+  const supportsClaudeCapabilities = hasAnthropicClaudeCapabilities(modelString, providersConfig);
 
   // Resolve aliases to their base model for capability detection while keeping
   // the original modelString for provider routing and metadata lookups.
@@ -260,6 +267,8 @@ export function buildProviderOptions(
     routeProvider,
     providerOptionsNamespaceKey,
     formatProvider,
+    usesAnthropicWireFormat,
+    supportsClaudeCapabilities,
     modelName,
     capabilityModel,
     capModelName,
@@ -271,7 +280,14 @@ export function buildProviderOptions(
   }
 
   // Build Anthropic-specific options
-  if (formatProvider === "anthropic") {
+  if (formatProvider === "anthropic" || (routeProvider == null && usesAnthropicWireFormat)) {
+    if (!supportsClaudeCapabilities) {
+      return {};
+    }
+
+    const anthropicOptionsNamespaceKey =
+      formatProvider === "anthropic" ? providerOptionsNamespaceKey : origin;
+
     // Anthropic prompt caching is already applied on Mux's manual cache markers
     // (cached system message, conversation tail, last tool) deeper in the
     // request pipeline. Do not also send top-level cacheControl here: the SDK
@@ -322,7 +338,7 @@ export function buildProviderOptions(
         effort: effortLevel,
       };
 
-      return { anthropic: anthropicOptions };
+      return { [anthropicOptionsNamespaceKey]: anthropicOptions };
     }
 
     // Other Anthropic models: Use thinking parameter with budgetTokens
@@ -333,7 +349,7 @@ export function buildProviderOptions(
     });
 
     const options = {
-      anthropic: {
+      [anthropicOptionsNamespaceKey]: {
         disableParallelToolUse: false, // Always enable concurrent tool execution
         sendReasoning: true, // Include reasoning traces in requests sent to the model
         // Conditionally add thinking configuration (non-Opus 4.5 models)
@@ -344,7 +360,7 @@ export function buildProviderOptions(
           },
         }),
       },
-    } satisfies { anthropic: AnthropicProviderOptions };
+    } satisfies Record<string, AnthropicProviderOptions>;
     log.debug("buildProviderOptions: Returning Anthropic options", options);
     return options;
   }
@@ -591,14 +607,17 @@ export function buildRequestHeaders(
 
   const normalized = normalizeToCanonical(modelString);
   const [origin] = normalized.split(":", 2);
+  const usesAnthropicWireFormat = usesAnthropicMessagesWireFormat(modelString, providersConfig);
+  const supportsClaudeCapabilities = hasAnthropicClaudeCapabilities(modelString, providersConfig);
 
   // 1M context header — only when origin supports it AND route is passthrough (or direct)
   const routePassesHeaders =
     origin != null && resolveProviderOptionsNamespaceKey(origin, routeProvider) === origin;
+  const routeCanUseAnthropicHeaders =
+    routePassesHeaders && usesAnthropicWireFormat && supportsClaudeCapabilities;
 
   if (
-    origin === "anthropic" &&
-    routePassesHeaders &&
+    routeCanUseAnthropicHeaders &&
     isAnthropic1MEffectivelyEnabled(modelString, muxProviderOptions, providersConfig)
   ) {
     headers["anthropic-beta"] = ANTHROPIC_1M_CONTEXT_HEADER;
@@ -612,11 +631,11 @@ export function buildRequestHeaders(
   // (direct Anthropic or passthrough gateways like mux-gateway). Non-passthrough
   // gateways (OpenRouter, Bedrock, github-copilot) must not see this header —
   // they would forward it externally verbatim and strict proxies may reject it.
+  const capabilityModel = resolveAnthropicCapabilityModel(modelString, providersConfig);
   if (
-    origin === "anthropic" &&
-    routePassesHeaders &&
+    routeCanUseAnthropicHeaders &&
     thinkingLevel === "xhigh" &&
-    anthropicSupportsNativeXhigh(modelString)
+    anthropicSupportsNativeXhigh(capabilityModel)
   ) {
     headers[MUX_ANTHROPIC_EFFORT_OVERRIDE_HEADER] = "xhigh";
   }

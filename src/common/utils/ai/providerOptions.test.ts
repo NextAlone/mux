@@ -278,6 +278,119 @@ describe("buildProviderOptions - mappedToModel resolution", () => {
   });
 });
 
+describe("buildProviderOptions - custom Anthropic-compatible providers", () => {
+  test("omits Claude-only options for third-party models that only use Anthropic wire format", () => {
+    const providersConfig: ProvidersConfigMap = {
+      minimax: {
+        apiKeySet: true,
+        isEnabled: true,
+        isConfigured: true,
+        providerType: "anthropic-compatible",
+        models: ["abab6.5-chat"],
+      },
+    };
+
+    expect(
+      buildProviderOptions(
+        "minimax:abab6.5-chat",
+        "medium",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        providersConfig
+      )
+    ).toEqual({});
+  });
+
+  test("uses the custom provider namespace when the model maps to Claude", () => {
+    const providersConfig: ProvidersConfigMap = {
+      "claude-relay": {
+        apiKeySet: true,
+        isEnabled: true,
+        isConfigured: true,
+        providerType: "anthropic-compatible",
+        models: [
+          {
+            id: "sonnet",
+            mappedToModel: "anthropic:claude-sonnet-4-5-20250514",
+          },
+        ],
+      },
+    };
+
+    expect(
+      buildProviderOptions(
+        "claude-relay:sonnet",
+        "medium",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        providersConfig
+      )
+    ).toEqual({
+      "claude-relay": {
+        disableParallelToolUse: false,
+        sendReasoning: true,
+        thinking: {
+          type: "enabled",
+          budgetTokens: 10000,
+        },
+      },
+    });
+  });
+
+  test("does not emit Anthropic beta headers for unmapped third-party compatible models", () => {
+    const providersConfig: ProvidersConfigMap = {
+      minimax: {
+        apiKeySet: true,
+        isEnabled: true,
+        isConfigured: true,
+        providerType: "anthropic-compatible",
+        models: ["abab6.5-chat"],
+      },
+    };
+
+    expect(
+      buildRequestHeaders(
+        "minimax:abab6.5-chat",
+        { anthropic: { use1MContext: true } },
+        undefined,
+        providersConfig
+      )
+    ).toBeUndefined();
+  });
+
+  test("emits Anthropic beta headers for custom relays mapped to beta Claude models", () => {
+    const providersConfig: ProvidersConfigMap = {
+      "claude-relay": {
+        apiKeySet: true,
+        isEnabled: true,
+        isConfigured: true,
+        providerType: "anthropic-compatible",
+        models: [
+          {
+            id: "sonnet",
+            mappedToModel: "anthropic:claude-sonnet-4-5-20250514",
+          },
+        ],
+      },
+    };
+
+    expect(
+      buildRequestHeaders(
+        "claude-relay:sonnet",
+        { anthropic: { use1MContext: true } },
+        undefined,
+        providersConfig
+      )
+    ).toEqual({ "anthropic-beta": ANTHROPIC_1M_CONTEXT_HEADER });
+  });
+});
+
 describe("isAnthropic1MEffectivelyEnabled", () => {
   test("returns true for beta-only Sonnet models with global 1M flag", () => {
     expect(

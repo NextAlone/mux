@@ -656,8 +656,7 @@ function RegularAgentListItemInner(props: AgentListItemProps) {
     isArchiving: isArchiving === true,
     isWorking,
     isStarting: displayStreamingStatusPhase === "starting",
-    hasActiveDelegatedWork:
-      hasActiveDelegatedWork || hasActiveWorkflowRun || hasActiveTerminalWork,
+    hasActiveDelegatedWork: hasActiveDelegatedWork || hasActiveWorkflowRun || hasActiveTerminalWork,
     isUnread,
     isSelected,
     hasError,
