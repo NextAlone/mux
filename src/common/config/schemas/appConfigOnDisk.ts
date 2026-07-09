@@ -41,6 +41,27 @@ export const SubagentAiDefaultsEntrySchema = z.object({
 
 export const SubagentAiDefaultsSchema = z.record(AgentIdSchema, SubagentAiDefaultsEntrySchema);
 
+export const FusionModelConfigSchema = z.object({
+  modelString: z.string().trim().min(1),
+  thinkingLevel: ThinkingLevelSchema.optional(),
+});
+
+export const FusionConfigSchema = z
+  .object({
+    panel: z.array(FusionModelConfigSchema).min(2).max(8),
+    judge: FusionModelConfigSchema,
+  })
+  .superRefine((config, ctx) => {
+    const distinctModels = new Set(config.panel.map((entry) => entry.modelString));
+    if (distinctModels.size !== config.panel.length) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Fusion panel models must be distinct.",
+        path: ["panel"],
+      });
+    }
+  });
+
 export const GoalDefaultsSchema = z.object({
   defaultBudgetCents: z
     .number()
@@ -179,6 +200,8 @@ export const AppConfigOnDiskSchema = z
      * to agentAiDefaults instead.
      */
     subagentAiDefaults: SubagentAiDefaultsSchema.optional(),
+    /** Required defaults for Fusion; natural-language overrides are deliberately one-shot. */
+    fusion: FusionConfigSchema.optional(),
     migrations: AppConfigMigrationsSchema.optional(),
     useSSH2Transport: z.boolean().optional(),
     muxGovernorUrl: z.string().optional(),
@@ -200,6 +223,8 @@ export type AgentAiDefaultsEntry = z.infer<typeof AgentAiDefaultsEntrySchema>;
 export type AgentAiDefaults = z.infer<typeof AgentAiDefaultsSchema>;
 export type SubagentAiDefaultsEntry = z.infer<typeof SubagentAiDefaultsEntrySchema>;
 export type SubagentAiDefaults = z.infer<typeof SubagentAiDefaultsSchema>;
+export type FusionModelConfig = z.infer<typeof FusionModelConfigSchema>;
+export type FusionConfig = z.infer<typeof FusionConfigSchema>;
 export type GoalDefaultsConfig = z.infer<typeof GoalDefaultsSchema>;
 export type ModelFallbackTrigger = z.infer<typeof ModelFallbackTriggerSchema>;
 export type ModelFallbackEntry = z.infer<typeof ModelFallbackEntrySchema>;

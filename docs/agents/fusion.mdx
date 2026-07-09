@@ -7,13 +7,23 @@ Fusion sends the same task to two or more models in parallel, then asks a judge 
 
 Use it for architecture decisions, unfamiliar debugging, reviews, research, or other work where a second independent reasoning path can change the answer. Routine edits usually do not justify the extra latency and token cost.
 
-Invoke the built-in skill with the task and the models you want to use:
+Configure the default panel (two to eight models) and judge in **Settings → Fusion** first. Fusion refuses to run without these defaults.
+
+Then invoke the built-in skill with only the task:
 
 ```text
-/fusion Compare the smallest safe approaches to this refactor. Use sonnet, codex, and gemini; use opus as judge.
+/fusion Compare the smallest safe approaches to this refactor.
 ```
 
-You can use model aliases or full `provider:model` IDs. Mux asks you to choose models when none are specified rather than guessing which providers are configured. Panel agents have read-only workspace access, so they can inspect evidence without making concurrent edits.
+You can temporarily replace the models in ordinary language:
+
+```text
+/fusion Compare the smallest safe approaches to this refactor. Use Mimo and Gemini to review; use GPT as judge.
+```
+
+“Use A and B” replaces the panel for that run, while “also add C” appends to the saved panel. Naming a judge replaces only the judge for that run. These overrides never update Settings; the next run starts from the saved defaults again. You can use model aliases, unique configured provider/model names, or full `provider:model` IDs.
+
+Panel agents have read-only workspace access, so they can inspect evidence without making concurrent edits.
 
 Fusion runs as a durable workflow. Its panel steps execute concurrently, completed steps survive interruption, and the workflow card keeps each child report available for inspection.
 

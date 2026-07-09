@@ -1011,6 +1011,7 @@ export const router = (authToken?: string) => {
             advisorMaxOutputTokens: config.advisorMaxOutputTokens,
             hiddenModels: config.hiddenModels,
             compaction: config.compaction,
+            fusion: config.fusion,
             workspaceCheckoutLocation: normalizeWorkspaceCheckoutLocationConfig(
               config.workspaceCheckoutLocation
             ),
@@ -1399,6 +1400,10 @@ export const router = (authToken?: string) => {
 
             if (input.compaction !== undefined) {
               result.compaction = input.compaction ?? undefined;
+            }
+
+            if (input.fusion !== undefined) {
+              result.fusion = input.fusion ?? undefined;
             }
 
             if (input.agentAiDefaults !== undefined) {

@@ -302,6 +302,9 @@ export type WorkflowRunToolSuccessResult = z.infer<typeof WorkflowRunToolResultS
 
 export type WorkflowRunToolResult = WorkflowRunToolSuccessResult | ToolErrorResult;
 
+export type FusionToolArgs = z.infer<typeof TOOL_DEFINITIONS.fusion.schema>;
+export type FusionToolResult = WorkflowRunToolSuccessResult | ToolErrorResult;
+
 // Workflow Resume Tool Types
 export type WorkflowResumeToolArgs = z.infer<typeof TOOL_DEFINITIONS.workflow_resume.schema>;
 

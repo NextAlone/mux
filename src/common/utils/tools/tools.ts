@@ -47,6 +47,7 @@ import { createMuxAgentsWriteTool } from "@/node/services/tools/mux_agents_write
 import { createMuxConfigReadTool } from "@/node/services/tools/mux_config_read";
 import { createMuxConfigWriteTool } from "@/node/services/tools/mux_config_write";
 import { createWorkflowRunTool } from "@/node/services/tools/workflow_run";
+import { createFusionTool } from "@/node/services/tools/fusion";
 import { createWorkflowResumeTool } from "@/node/services/tools/workflow_resume";
 import { createAgentReportTool } from "@/node/services/tools/agent_report";
 import { wrapWithInitWait } from "@/node/services/tools/wrapWithInitWait";
@@ -78,6 +79,7 @@ import type { FileState } from "@/node/services/agentSession";
 import type { AgentDefinitionDescriptor } from "@/common/types/agentDefinition";
 import type { AgentSkillDescriptor } from "@/common/types/agentSkill";
 import type { ModelMessage } from "@/common/types/message";
+import type { FusionConfig } from "@/common/config/schemas/appConfigOnDisk";
 import type { GoalDefaults } from "@/constants/goals";
 import type { ProjectRef, WorkspaceMetadata } from "@/common/types/workspace";
 
@@ -245,6 +247,9 @@ export interface ToolConfiguration {
       projectTrusted: boolean;
     }): Promise<{ runId: string; status: string; result: unknown }>;
   };
+  /** Saved Fusion defaults plus selectable model IDs used to resolve temporary shorthand. */
+  fusionConfig?: FusionConfig;
+  fusionAvailableModels?: string[];
   /** Workspace heartbeat settings service for model-facing heartbeat configuration. */
   workspaceHeartbeatService?: WorkspaceHeartbeatToolService;
   /** Workspace goal lifecycle service for model-facing goal tools. */
@@ -608,6 +613,7 @@ export async function getToolsForModel(
       ? {
           workflow_run: createWorkflowRunTool(config),
           workflow_resume: createWorkflowResumeTool(config),
+          ...(!config.enableAgentReport ? { fusion: createFusionTool(config) } : {}),
         }
       : {}),
     ...(config.enableAgentReport ? { agent_report: createAgentReportTool(config) } : {}),

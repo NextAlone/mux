@@ -87,8 +87,8 @@ describe("WorkflowRunner", () => {
       source,
       args: {
         prompt: "Choose the safest design",
-        models: ["openai:gpt-test", "anthropic:claude-test"],
-        judgeModel: "google:gemini-test",
+        panel: [{ model: "openai:gpt-test" }, { model: "anthropic:claude-test" }],
+        judge: { model: "google:gemini-test" },
       },
       now: "2026-05-29T00:00:00.000Z",
     });
@@ -114,7 +114,9 @@ describe("WorkflowRunner", () => {
         return {
           taskId,
           reportMarkdown:
-            spec.id === "synthesize" ? "Fused answer" : `Answer from ${spec.modelString}`,
+            spec.id === "synthesize"
+              ? "Fused answer"
+              : `Answer from ${spec.modelString ?? "inherited model"}`,
           structuredOutput: {},
         };
       },

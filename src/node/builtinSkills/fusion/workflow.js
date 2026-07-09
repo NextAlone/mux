@@ -6,33 +6,48 @@ export const meta = {
   argsSchema: s.object(
     {
       prompt: s.string({ minLength: 1 }),
-      models: s.array(s.string({ minLength: 1 }), { minItems: 2, maxItems: 8 }),
-      judgeModel: s.optional(s.string({ minLength: 1 })),
-      thinking: s.optional(s.enum(["off", "low", "medium", "high", "xhigh", "max"])),
+      panel: s.array(
+        s.object(
+          {
+            model: s.string({ minLength: 1 }),
+            thinking: s.optional(s.enum(["off", "low", "medium", "high", "xhigh", "max"])),
+          },
+          { additionalProperties: false }
+        ),
+        { minItems: 2, maxItems: 8 }
+      ),
+      judge: s.object(
+        {
+          model: s.string({ minLength: 1 }),
+          thinking: s.optional(s.enum(["off", "low", "medium", "high", "xhigh", "max"])),
+        },
+        { additionalProperties: false }
+      ),
     },
     { additionalProperties: false }
   ),
 };
 
 export default function workflow({ args, phase, agent, parallel }) {
-  const models = uniqueStrings(args.models);
-  if (models.length < 2) {
+  const panel = uniquePanel(args.panel);
+  if (panel.length < 2) {
     return {
       reportMarkdown: "Fusion needs at least two distinct model aliases or provider:model IDs.",
     };
   }
 
+  const models = panel.map((entry) => entry.model);
   phase("panel", { models });
   const responses = parallel(
-    models.map(
-      (model, index) => () =>
+    panel.map(
+      (entry, index) => () =>
         agent(panelPrompt(args.prompt), {
           id: "panel-" + index,
-          title: "Panel: " + model,
+          title: "Panel: " + entry.model,
           // Independent panelists only gather evidence; parallel writes would make results order-dependent.
           agentId: "explore",
-          model,
-          ...(args.thinking ? { thinking: args.thinking } : {}),
+          model: entry.model,
+          ...(entry.thinking ? { thinking: entry.thinking } : {}),
         })
     ),
     { maxParallel: models.length }
@@ -43,8 +58,8 @@ export default function workflow({ args, phase, agent, parallel }) {
     id: "synthesize",
     title: "Synthesize panel",
     agentId: "explore",
-    ...(args.judgeModel ? { model: args.judgeModel } : {}),
-    ...(args.thinking ? { thinking: args.thinking } : {}),
+    model: args.judge.model,
+    ...(args.judge.thinking ? { thinking: args.judge.thinking } : {}),
   });
 
   return {
@@ -52,20 +67,20 @@ export default function workflow({ args, phase, agent, parallel }) {
     structuredOutput: {
       prompt: args.prompt,
       models,
-      judgeModel: args.judgeModel || null,
+      judgeModel: args.judge.model,
       responseCount: responses.length,
     },
   };
 }
 
-function uniqueStrings(values) {
+function uniquePanel(values) {
   const seen = {};
   const output = [];
   for (const value of values) {
-    const normalized = String(value).trim();
-    if (normalized && !seen[normalized]) {
-      seen[normalized] = true;
-      output.push(normalized);
+    const model = String(value.model).trim();
+    if (model && !seen[model]) {
+      seen[model] = true;
+      output.push({ model, ...(value.thinking ? { thinking: value.thinking } : {}) });
     }
   }
   return output;

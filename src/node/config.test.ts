@@ -113,6 +113,44 @@ describe("Config", () => {
     });
   });
 
+  describe("Fusion defaults", () => {
+    it("round-trips the panel, judge, and per-model reasoning", async () => {
+      await config.editConfig((current) => ({
+        ...current,
+        fusion: {
+          panel: [
+            { modelString: "mimo:mimo-v2.5-pro", thinkingLevel: "high" },
+            { modelString: "google:gemini-3.1-pro-preview", thinkingLevel: "low" },
+          ],
+          judge: { modelString: "openai:gpt-5.4", thinkingLevel: "xhigh" },
+        },
+      }));
+
+      expect(new Config(tempDir).loadConfigOrDefault().fusion).toEqual({
+        panel: [
+          { modelString: "mimo:mimo-v2.5-pro", thinkingLevel: "high" },
+          { modelString: "google:gemini-3.1-pro-preview", thinkingLevel: "low" },
+        ],
+        judge: { modelString: "openai:gpt-5.4", thinkingLevel: "xhigh" },
+      });
+    });
+
+    it("drops malformed persisted defaults instead of exposing a partial configuration", () => {
+      fs.writeFileSync(
+        path.join(tempDir, "config.json"),
+        JSON.stringify({
+          projects: [],
+          fusion: {
+            panel: [{ modelString: "openai:gpt-5.4" }],
+            judge: { modelString: "anthropic:claude-opus-4-6" },
+          },
+        })
+      );
+
+      expect(config.loadConfigOrDefault().fusion).toBeUndefined();
+    });
+  });
+
   describe("editConfig", () => {
     it("serializes concurrent edits so no update is lost", async () => {
       // Regression: editConfig used to be a non-serialized read-modify-write

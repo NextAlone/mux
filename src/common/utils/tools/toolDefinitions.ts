@@ -1281,6 +1281,31 @@ export const WorkflowRunToolResultSchema = z
   })
   .strict();
 
+// Fusion is a typed launch surface over the packaged durable workflow. The parent
+// model interprets phrases such as "use Gemini and Mimo" into these one-shot fields;
+// the executor never writes those overrides back to config.
+export const FusionToolArgsSchema = z
+  .object({
+    prompt: z.string().min(1),
+    panelOverride: z
+      .object({
+        mode: z.enum(["replace", "append"]),
+        models: z.array(z.string().min(1)).min(1).max(8),
+        thinking: z.enum(THINKING_LEVELS).nullish(),
+      })
+      .strict()
+      .nullish(),
+    judgeOverride: z
+      .object({
+        model: z.string().min(1),
+        thinking: z.enum(THINKING_LEVELS).nullish(),
+      })
+      .strict()
+      .nullish(),
+    run_in_background: z.boolean().nullish().default(false),
+  })
+  .strict();
+
 // Resuming replays the durable event log and continues from the last checkpoint; completed
 // steps never re-execute. Checkpoint retry of a *failed* run re-executes whatever followed the
 // last durable event (potentially side-effectful), so it must be requested explicitly via mode.
@@ -2182,6 +2207,13 @@ export const TOOL_DEFINITIONS = {
       "Use task_await for running/backgrounded runs, workflow_resume for pending/interrupted runs, workflow_resume({ mode: 'retry_from_checkpoint' }) only for eligible failed runs, and inspect/refetch completed results instead of rerunning. " +
       "Use background mode only when you intend to start another workflow/task or do independent work while the workflow runs; a background run is non-blocking and Mux wakes this workspace with the terminal workflow result, so call task_await only when the current request depends on the output before you can answer.",
     schema: WorkflowRunToolArgsSchema,
+  },
+  fusion: {
+    description:
+      "Run the preconfigured Fusion panel and judge. This is the preferred tool when the user asks multiple models to review, compare, debate, or synthesize one task. " +
+      "The saved Fusion configuration is mandatory. Use panelOverride only when the user explicitly requests temporary panel models: wording like 'use A and B' means mode='replace', while 'also add C' means mode='append'. " +
+      "Use judgeOverride only when the user explicitly names a temporary summarizer/judge. Overrides affect this run only and must never be written to configuration. Omit override fields to use the saved defaults.",
+    schema: FusionToolArgsSchema,
   },
   workflow_resume: {
     description:
@@ -3098,7 +3130,9 @@ export function getAvailableTools(
     "task_terminate",
     "task_workspace_lifecycle",
     "task_list",
-    ...(enableDynamicWorkflows ? ["workflow_run", "workflow_resume"] : []),
+    ...(enableDynamicWorkflows
+      ? ["workflow_run", "workflow_resume", ...(!enableAgentReport ? ["fusion"] : [])]
+      : []),
     ...(enableAgentReport ? ["agent_report"] : []),
     "set_goal",
     "get_goal",

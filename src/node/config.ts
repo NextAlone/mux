@@ -25,7 +25,7 @@ import type {
   ModelFallbacks,
   ProvidersConfig as CanonicalProvidersConfig,
 } from "@/common/config/schemas";
-import { CompactionSettingsSchema } from "@/common/config/schemas";
+import { CompactionSettingsSchema, FusionConfigSchema } from "@/common/config/schemas";
 import { DEFAULT_MODEL_FALLBACKS, sanitizeModelFallbacks } from "@/common/utils/ai/modelFallbacks";
 import {
   DEFAULT_TASK_SETTINGS,
@@ -182,6 +182,11 @@ function parseOptionalBoolean(value: unknown): boolean | undefined {
 
 function normalizeCompactionSettingsConfig(value: unknown): ProjectsConfig["compaction"] {
   const result = CompactionSettingsSchema.safeParse(value);
+  return result.success ? result.data : undefined;
+}
+
+function normalizeFusionConfig(value: unknown): ProjectsConfig["fusion"] {
+  const result = FusionConfigSchema.safeParse(value);
   return result.success ? result.data : undefined;
 }
 
@@ -1089,6 +1094,7 @@ export class Config {
         const layoutPresets = isLayoutPresetsConfigEmpty(layoutPresetsRaw)
           ? undefined
           : layoutPresetsRaw;
+        const fusion = normalizeFusionConfig(parsed.fusion);
 
         return {
           projects: projectsMap,
@@ -1127,6 +1133,7 @@ export class Config {
           advisorMaxOutputTokens,
           hiddenModels,
           compaction,
+          fusion,
           agentAiDefaults,
           // Subagent defaults: exec is canonical active storage, non-exec entries
           // support legacy mirror compatibility.
@@ -1272,6 +1279,11 @@ export class Config {
       const compaction = normalizeCompactionSettingsConfig(config.compaction);
       if (compaction !== undefined) {
         data.compaction = compaction;
+      }
+
+      const fusion = normalizeFusionConfig(config.fusion);
+      if (fusion !== undefined) {
+        data.fusion = fusion;
       }
 
       const routePriority = parseOptionalStringArray(config.routePriority);
@@ -1447,6 +1459,7 @@ export class Config {
       await writeFileAtomic(this.configFile, JSON.stringify(data, null, 2), "utf-8");
     } catch (error) {
       log.error("Error saving config:", error);
+      throw error;
     }
   }
 

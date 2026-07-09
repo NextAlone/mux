@@ -16,6 +16,7 @@ import {
   ShieldCheck,
   Server,
   Lock,
+  Blend,
 } from "lucide-react";
 import { useSettings } from "@/browser/contexts/SettingsContext";
 import { useOnboardingPause } from "@/browser/features/SplashScreens/SplashScreenProvider";
@@ -26,6 +27,7 @@ import { GeneralSection } from "./Sections/GeneralSection";
 import { TasksSection } from "./Sections/TasksSection";
 import { ProvidersSection } from "./Sections/ProvidersSection";
 import { ModelsSection } from "./Sections/ModelsSection";
+import { FusionSection } from "./Sections/FusionSection";
 import { GovernorSection } from "./Sections/GovernorSection";
 import { MemorySection } from "./Sections/MemorySection";
 import { Button } from "@/browser/components/Button/Button";
@@ -65,6 +67,12 @@ const BASE_SECTIONS: SettingsSection[] = [
     label: "Models",
     icon: <Cpu className="h-4 w-4" />,
     component: ModelsSection,
+  },
+  {
+    id: "fusion",
+    label: "Fusion",
+    icon: <Blend className="h-4 w-4" />,
+    component: FusionSection,
   },
   {
     id: "mcp",

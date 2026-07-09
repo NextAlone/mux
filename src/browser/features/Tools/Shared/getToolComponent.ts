@@ -48,6 +48,7 @@ import { SetGoalToolCall } from "../SetGoalToolCall";
 import { GetGoalToolCall } from "../GetGoalToolCall";
 import { HeartbeatToolCall } from "../HeartbeatToolCall";
 import { WorkflowResumeToolCall, WorkflowRunToolCall } from "../WorkflowRunToolCall";
+import { FusionToolCall } from "../FusionToolCall";
 import { CompleteGoalToolCall } from "../CompleteGoalToolCall";
 
 /**
@@ -196,6 +197,10 @@ const TOOL_REGISTRY: Record<string, ToolRegistryEntry> = {
   workflow_run: {
     component: WorkflowRunToolCall,
     schema: TOOL_DEFINITIONS.workflow_run.schema,
+  },
+  fusion: {
+    component: FusionToolCall,
+    schema: TOOL_DEFINITIONS.fusion.schema,
   },
   workflow_resume: {
     component: WorkflowResumeToolCall,

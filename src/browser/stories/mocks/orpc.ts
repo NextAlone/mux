@@ -79,6 +79,7 @@ import {
 import type { z } from "zod";
 import type { ProjectRemoveErrorSchema } from "@/common/orpc/schemas/errors";
 import { isWorkspaceArchived } from "@/common/utils/archive";
+import type { FusionConfig } from "@/common/config/schemas/appConfigOnDisk";
 
 /** Session usage data structure matching SessionUsageFileSchema */
 export interface MockSessionUsage {
@@ -134,6 +135,8 @@ export interface MockORPCClientOptions {
   userPreferences?: UserPreferences;
   /** Initial task settings for config.getConfig (e.g., Settings → Tasks section) */
   taskSettings?: Partial<TaskSettings>;
+  /** Initial saved Fusion panel and judge. */
+  fusion?: FusionConfig;
   /** Initial unified AI defaults for agents (plan/exec/compact + subagents) */
   agentAiDefaults?: AgentAiDefaults;
   /** Agent definitions to expose via agents.list */
@@ -383,6 +386,7 @@ export function createMockORPCClient(options: MockORPCClientOptions = {}): APICl
     mcpOauthAuthStatus = new Map<string, MCPOAuthAuthStatus>(),
     userPreferences: initialUserPreferences,
     taskSettings: initialTaskSettings,
+    fusion: initialFusion,
     subagentAiDefaults: initialSubagentAiDefaults,
     agentAiDefaults: initialAgentAiDefaults,
     coderWorkspaceArchiveBehavior: initialCoderWorkspaceArchiveBehavior = "stop",
@@ -512,6 +516,7 @@ export function createMockORPCClient(options: MockORPCClientOptions = {}): APICl
   let userPreferences = normalizeUserPreferences(initialUserPreferences);
   let userPreferencesInitialized = initialUserPreferences !== undefined;
   let taskSettings = normalizeTaskSettings(initialTaskSettings ?? DEFAULT_TASK_SETTINGS);
+  let fusion = initialFusion;
 
   let agentAiDefaults = normalizeAgentAiDefaults(
     initialAgentAiDefaults ?? ({ ...(initialSubagentAiDefaults ?? {}) } as const)
@@ -720,6 +725,7 @@ export function createMockORPCClient(options: MockORPCClientOptions = {}): APICl
           userPreferencesInitialized,
           userPreferences,
           taskSettings,
+          fusion,
           muxGatewayEnabled,
           muxGatewayModels,
           routePriority,
@@ -745,6 +751,7 @@ export function createMockORPCClient(options: MockORPCClientOptions = {}): APICl
         userPreferences?: unknown;
         agentAiDefaults?: unknown;
         subagentAiDefaults?: unknown;
+        fusion?: FusionConfig | null;
       }) => {
         if (input.taskSettings != null) {
           taskSettings = normalizeTaskSettings(input.taskSettings);
@@ -769,6 +776,10 @@ export function createMockORPCClient(options: MockORPCClientOptions = {}): APICl
           }
 
           agentAiDefaults = normalizeAgentAiDefaults(nextAgentAiDefaults);
+        }
+
+        if (input.fusion !== undefined) {
+          fusion = input.fusion ?? undefined;
         }
 
         notifyConfigChanged();

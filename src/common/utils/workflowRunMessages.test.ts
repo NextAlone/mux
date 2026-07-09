@@ -38,6 +38,21 @@ describe("workflowRunMessages", () => {
     });
   });
 
+  test("strips large run snapshots from Fusion proxy outputs", () => {
+    const stripped = stripWorkflowRunRecordForModel("fusion", {
+      status: "completed",
+      runId: run.id,
+      result: { reportMarkdown: "done" },
+      run,
+    });
+
+    expect(stripped).toEqual({
+      status: "completed",
+      runId: run.id,
+      result: { reportMarkdown: "done" },
+    });
+  });
+
   test("strips durable inline run source while preserving original tool input source", () => {
     const inlineSource = "export default function inlineSecretWorkflow() { return null; }";
     const part = buildWorkflowRunToolPart(

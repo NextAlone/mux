@@ -7,19 +7,27 @@ description: "[Workflow] Ask multiple selected models in parallel, then synthesi
 
 Use this workflow when the user wants multiple models to independently analyze the same prompt and combine their answers. It is most useful for architecture, debugging, reviews, research, and other decisions where model disagreement is valuable. Skip it for routine edits where the extra latency and cost do not help.
 
-The user must choose at least two model aliases or full `provider:model` strings. Do not guess which providers are configured. If models are missing, ask one concise question before invoking the workflow.
+Fusion requires saved defaults in **Settings > Fusion**: at least two panel models and one judge. If it is not configured, tell the user to configure it; temporary model names do not bypass that requirement.
+
+Interpret explicit natural-language model choices as one-shot overrides:
+
+- "使用 mimo、gemini 来评审" replaces the panel for this run.
+- "再加 kimi" appends a model for this run.
+- "mimo、gemini 评审，gpt 汇总" replaces the panel and judge for this run.
+
+These overrides never update saved configuration. Resolve familiar model names to a known alias or configured `provider:model` ID when calling the tool. If the user does not name temporary models, omit both override fields.
 
 Invoke with:
 
 ```js
-workflow_run({
-  script_path: "skill://fusion/workflow.js",
-  args: {
-    prompt: "<question or task>",
-    models: ["<model 1>", "<model 2>"],
-    judgeModel: "<optional judge model>",
+fusion({
+  prompt: "<question or task>",
+  panelOverride: {
+    mode: "replace",
+    models: ["<temporary model 1>", "<temporary model 2>"],
   },
+  judgeOverride: { model: "<temporary judge>" },
 });
 ```
 
-The panel runs read-only so parallel models cannot clobber the workspace. The judge receives every panel response and returns one report that preserves consensus, contradictions, unique insights, blind spots, and a final recommendation. Omit `judgeModel` to use the workflow's inherited model.
+The panel runs read-only so parallel models cannot clobber the workspace. The configured or temporary judge receives every panel response and returns one report that preserves consensus, contradictions, unique insights, blind spots, and a final recommendation.

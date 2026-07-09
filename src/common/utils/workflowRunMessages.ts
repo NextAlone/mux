@@ -13,6 +13,7 @@ export const WORKFLOW_RESULT_METADATA_TYPE = "workflow-result";
  * this single predicate so a future run-emitting tool is a one-line change.
  */
 export const WORKFLOW_RUN_EMITTING_TOOL_NAMES: ReadonlySet<string> = new Set([
+  "fusion",
   "workflow_run",
   "workflow_resume",
 ]);

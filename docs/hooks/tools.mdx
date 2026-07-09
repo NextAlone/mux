@@ -522,6 +522,22 @@ If a value is too large for the environment, it may be omitted (not set). Mux al
 </details>
 
 <details>
+<summary>fusion (8)</summary>
+
+| Env var                                        | JSON path                       | Type    | Description                                |
+| ---------------------------------------------- | ------------------------------- | ------- | ------------------------------------------ |
+| `MUX_TOOL_INPUT_JUDGE_OVERRIDE_MODEL`          | `judgeOverride.model`           | string  | —                                          |
+| `MUX_TOOL_INPUT_JUDGE_OVERRIDE_THINKING`       | `judgeOverride.thinking`        | enum    | —                                          |
+| `MUX_TOOL_INPUT_PANEL_OVERRIDE_MODE`           | `panelOverride.mode`            | enum    | —                                          |
+| `MUX_TOOL_INPUT_PANEL_OVERRIDE_MODELS_<INDEX>` | `panelOverride.models[<INDEX>]` | string  | —                                          |
+| `MUX_TOOL_INPUT_PANEL_OVERRIDE_MODELS_COUNT`   | `panelOverride.models.length`   | number  | Number of elements in panelOverride.models |
+| `MUX_TOOL_INPUT_PANEL_OVERRIDE_THINKING`       | `panelOverride.thinking`        | enum    | —                                          |
+| `MUX_TOOL_INPUT_PROMPT`                        | `prompt`                        | string  | —                                          |
+| `MUX_TOOL_INPUT_RUN_IN_BACKGROUND`             | `run_in_background`             | boolean | —                                          |
+
+</details>
+
+<details>
 <summary>heartbeat (7)</summary>
 
 | Env var                       | JSON path     | Type    | Description                                                                                                                                                                                                                                                                                                                                                                |

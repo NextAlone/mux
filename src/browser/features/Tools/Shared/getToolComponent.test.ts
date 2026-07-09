@@ -8,6 +8,7 @@ import { CompleteGoalToolCall } from "../CompleteGoalToolCall";
 import { DesktopActionToolCall } from "../DesktopActionToolCall";
 import { DesktopScreenshotToolCall } from "../DesktopScreenshotToolCall";
 import { GenericToolCall } from "../GenericToolCall";
+import { FusionToolCall } from "../FusionToolCall";
 import { GoogleSearchToolCall } from "../GoogleSearchToolCall";
 import { SetGoalToolCall } from "../SetGoalToolCall";
 import { WorkflowResumeToolCall, WorkflowRunToolCall } from "../WorkflowRunToolCall";
@@ -31,6 +32,11 @@ describe("getToolComponent", () => {
   test("returns WorkflowResumeToolCall for workflow_resume", () => {
     const component = getToolComponent("workflow_resume", { run_id: "wfr_123" });
     expect(component).toBe(WorkflowResumeToolCall);
+  });
+
+  test("returns FusionToolCall for fusion", () => {
+    const component = getToolComponent("fusion", { prompt: "Review this" });
+    expect(component).toBe(FusionToolCall);
   });
 
   test("returns AgentReportToolCall for agent_report", () => {

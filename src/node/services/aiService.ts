@@ -20,6 +20,7 @@ import {
   resolveAdvisorEnabledForAgent,
 } from "@/common/constants/advisor";
 import { EXPERIMENT_IDS } from "@/common/constants/experiments";
+import { KNOWN_MODELS } from "@/common/constants/knownModels";
 
 import type { GoalRecordV1 } from "@/common/types/goal";
 import type { ModelMessage, MuxMessage, MuxMessageMetadata } from "@/common/types/message";
@@ -124,6 +125,7 @@ import { buildLocalStrategyCompactionMessageText } from "@/common/utils/compacti
 import { getProjects, isMultiProject } from "@/common/utils/multiProject";
 import { uniqueSuffix } from "@/common/utils/hasher";
 import { isWorkspaceTrustedForSharedExecution } from "@/node/services/utils/workspaceTrust";
+import { getProviderModelEntryIdForProvider } from "@/common/utils/providers/modelEntries";
 
 import { DEFAULT_GOAL_DEFAULTS, normalizeGoalDefaults } from "@/constants/goals";
 import { mergeGoalDefaults } from "@/common/utils/goals/resolveGoalSetIntent";
@@ -184,6 +186,17 @@ import { resolveWorkflowScript } from "@/node/services/workflows/workflowScriptR
 import { isProjectTrusted } from "@/node/utils/projectTrust";
 
 const STREAM_STARTUP_DIAGNOSTIC_THRESHOLD_MS = 1_000;
+
+function getFusionAvailableModels(config: ProvidersConfigMap): string[] {
+  const models = new Set<string>(Object.values(KNOWN_MODELS).map((model) => model.id));
+  for (const [provider, providerConfig] of Object.entries(config)) {
+    if (providerConfig.isEnabled === false) continue;
+    for (const entry of providerConfig.models ?? []) {
+      models.add(`${provider}:${getProviderModelEntryIdForProvider(provider, entry)}`);
+    }
+  }
+  return [...models];
+}
 
 interface ProviderRequestLocalCompactionOptions {
   strategy: LocalCompactionStrategy;
@@ -2285,6 +2298,8 @@ export class AIService extends EventEmitter {
         codexImageGenerationService: this.codexImageGenerationService,
         workspaceHeartbeatService: this.workspaceHeartbeatService,
         workflowService,
+        fusionConfig: cfg.fusion,
+        fusionAvailableModels: getFusionAvailableModels(this.providerService.getConfig()),
         goalService: workspaceGoalService,
         goalDefaults: effectiveGoalDefaults,
         enableGoalTools: goalToolAvailability,

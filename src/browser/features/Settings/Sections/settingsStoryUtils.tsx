@@ -31,6 +31,7 @@ import type { TaskSettings } from "@/common/types/tasks";
 import type { GoalDefaults } from "@/constants/goals";
 import type { LayoutPresetsConfig } from "@/common/types/uiLayouts";
 import type { FrontendWorkspaceMetadata } from "@/common/types/workspace";
+import type { FusionConfig } from "@/common/config/schemas/appConfigOnDisk";
 
 interface SettingsSectionStoryProps {
   setup: () => APIClient;
@@ -139,6 +140,7 @@ interface SetupSettingsStoryOptions {
   providersList?: string[];
   agentAiDefaults?: AgentAiDefaults;
   taskSettings?: Partial<TaskSettings>;
+  fusion?: FusionConfig;
   /** Initial global heartbeat default prompt for config.getConfig */
   heartbeatDefaultPrompt?: string;
   /** Initial global heartbeat default interval for config.getConfig */
@@ -174,6 +176,7 @@ export function setupSettingsStory(options: SetupSettingsStoryOptions): APIClien
     heartbeatDefaultIntervalMs: options.heartbeatDefaultIntervalMs,
     goalDefaults: options.goalDefaults,
     taskSettings: options.taskSettings,
+    fusion: options.fusion,
     serverAuthSessions: options.serverAuthSessions,
     layoutPresets: options.layoutPresets,
   });

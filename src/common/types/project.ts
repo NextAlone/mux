@@ -9,6 +9,7 @@ import type { WorkspaceCheckoutLocationConfig } from "@/common/config/workspaceC
 import type {
   AppConfigMigrations,
   CompactionSettings,
+  FusionConfig,
   ModelFallbacks,
   UpdateChannel,
 } from "@/common/config/schemas/appConfigOnDisk";
@@ -137,6 +138,8 @@ export interface ProjectsConfig {
   hiddenModels?: string[];
   /** Optional compaction strategy configuration. Missing means mux-current behavior. */
   compaction?: CompactionSettings;
+  /** Required default panel and judge for one-shot Fusion runs. */
+  fusion?: FusionConfig;
   /** Default model + thinking overrides per agentId (applies to UI agents and subagents). */
   agentAiDefaults?: AgentAiDefaults;
   /**
