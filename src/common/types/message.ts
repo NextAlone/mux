@@ -756,6 +756,8 @@ export type DisplayedMessage =
       isLastPartOfMessage?: boolean; // True if this is the last part of a multi-part message
       isCompacted: boolean; // Whether this is a compacted summary
       isIdleCompacted: boolean; // Whether this compaction was auto-triggered due to inactivity
+      /** Duration of the assistant turn, when stream metadata includes it. */
+      assistantDurationMs?: number;
       /** Duration of the compaction request, when this row is a compacted summary. */
       compactionDurationMs?: number;
       /** True when this assistant row predates the latest Context Boundary. */

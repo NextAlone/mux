@@ -55,6 +55,33 @@ Live goal accounting at this continuation fire:
     expect(queryByText("auto")).toBeNull();
   });
 
+  test("renders assistant turn duration in settled assistant metadata", () => {
+    const message: DisplayedMessage = {
+      type: "assistant",
+      id: "assistant-duration",
+      historyId: "assistant-duration",
+      content: "Done.",
+      historySequence: 24,
+      isStreaming: false,
+      isPartial: false,
+      isLastPartOfMessage: true,
+      isCompacted: false,
+      isIdleCompacted: false,
+      assistantDurationMs: 12_345,
+      model: "anthropic:claude-sonnet-5",
+    };
+
+    const { getByText } = render(
+      <APIProvider client={{} as unknown as APIClient}>
+        <TooltipProvider>
+          <MessageRenderer message={message} />
+        </TooltipProvider>
+      </APIProvider>
+    );
+
+    expect(getByText("12s")).toBeDefined();
+  });
+
   test("renders compaction duration in compacted assistant badges", () => {
     const message: DisplayedMessage = {
       type: "assistant",

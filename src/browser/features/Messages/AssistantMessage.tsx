@@ -214,6 +214,12 @@ export const AssistantMessage: React.FC<AssistantMessageProps> = ({
         {message.modelFallback && (
           <ModelFallbackBadge modelFallback={message.modelFallback} effectiveModel={modelName} />
         )}
+        {message.assistantDurationMs !== undefined && (
+          <span className="inline-flex items-center gap-0.5 whitespace-nowrap">
+            <Clock aria-hidden="true" className="h-3 w-3" />
+            {formatDuration(message.assistantDurationMs, "precise")}
+          </span>
+        )}
         {isCompacted && (
           <span className="text-plan-mode bg-plan-mode/10 inline-flex items-center gap-1 rounded-sm px-1.5 py-0.5 text-[10px] font-medium uppercase">
             {isIdleCompacted ? (

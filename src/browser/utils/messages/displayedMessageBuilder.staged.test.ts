@@ -14,6 +14,26 @@ const STAGED_ATTACHMENT = {
 };
 
 describe("buildDisplayedMessagesForMessage staged attachments", () => {
+  test("projects assistant duration for normal assistant turns", () => {
+    const message = createMuxMessage("assistant-1", "assistant", "Done", {
+      duration: 12_345,
+      historySequence: 1,
+    });
+
+    const displayed = buildDisplayedMessagesForMessage({
+      message,
+      hasActiveStream: false,
+      isContextBoundaryMessage: () => false,
+    });
+
+    expect(displayed).toHaveLength(1);
+    const assistantMessage = displayed[0];
+    expect(assistantMessage?.type).toBe("assistant");
+    if (assistantMessage?.type !== "assistant") return;
+    expect(assistantMessage.assistantDurationMs).toBe(12_345);
+    expect(assistantMessage.compactionDurationMs).toBeUndefined();
+  });
+
   test("projects compaction duration for compacted assistant summaries", () => {
     const message = createMuxMessage("summary-1", "assistant", "Compacted summary", {
       compacted: "user",
