@@ -29,6 +29,7 @@ import { createAnalyticsQueryTool } from "@/node/services/tools/analyticsQuery";
 import { createDesktopTools } from "@/node/services/tools/desktopTools";
 import type { MuxToolScope } from "@/common/types/toolScope";
 import { createTaskTool } from "@/node/services/tools/task";
+import { createMcpRestartTool } from "@/node/services/tools/mcp_restart";
 import { createTaskApplyGitPatchTool } from "@/node/services/tools/task_apply_git_patch";
 import { createTaskAwaitTool } from "@/node/services/tools/task_await";
 import { createTaskTerminateTool } from "@/node/services/tools/task_terminate";
@@ -65,6 +66,7 @@ import type { Runtime } from "@/node/runtime/Runtime";
 import type { InitStateManager } from "@/node/services/initStateManager";
 import type { BackgroundProcessManager } from "@/node/services/backgroundProcessManager";
 import type { DesktopSessionManager } from "@/node/services/desktop/DesktopSessionManager";
+import type { MCPServerManager } from "@/node/services/mcpServerManager";
 import type { TaskService } from "@/node/services/taskService";
 import type { MemoryIndexEntry, MemoryService } from "@/node/services/memoryService";
 import type { CodexImageGenerator } from "@/node/services/codexImageGenerationService";
@@ -309,6 +311,8 @@ export interface ToolConfiguration {
   };
   /** Desktop session manager for desktop automation tools */
   desktopSessionManager?: DesktopSessionManager;
+  /** MCP server manager for restarting cached workspace clients. */
+  mcpServerManager?: Pick<MCPServerManager, "stopServers">;
 }
 
 /**
@@ -593,6 +597,7 @@ export async function getToolsForModel(
     ...(config.advisorRuntime ? { advisor: createAdvisorTool(config) } : {}),
     ask_user_question: createAskUserQuestionTool(config),
     propose_plan: createProposePlanTool(config),
+    mcp_restart: createMcpRestartTool(config),
     // propose_name and propose_status are intentionally NOT registered here —
     // they are only used by the internal workspace-naming path
     // (workspaceTitleGenerator.ts) and the sidebar agent-status path
@@ -683,12 +688,11 @@ export async function getToolsForModel(
 
         // Only add web search for models that support it
         if (useResponsesTools && (modelId.includes("gpt-5") || modelId.includes("gpt-4"))) {
-          const { openai } = await import("@ai-sdk/openai");
           allTools = {
             ...baseTools,
             ...sanitizedMcpTools,
             // Provider-specific tool types are compatible with Tool at runtime
-            web_search: openai.tools.webSearch({
+            web_search: (await import("@ai-sdk/openai")).openai.tools.webSearch({
               searchContextSize: "high",
             }) as Tool,
           };
@@ -704,14 +708,13 @@ export async function getToolsForModel(
 
       case "google": {
         if (supportsGoogleNativeToolsWithFunctionTools(modelId)) {
-          const { google } = await import("@ai-sdk/google");
           allTools = {
             ...baseTools,
             ...(mcpTools ?? {}),
             // Google exposes native Search and URL Context as provider-executed tools for
             // Gemini 3+. These coexist with Mux function tools in the standard streaming API.
-            google_search: google.tools.googleSearch({}) as Tool,
-            url_context: google.tools.urlContext({}) as Tool,
+            google_search: (await import("@ai-sdk/google")).google.tools.googleSearch({}) as Tool,
+            url_context: (await import("@ai-sdk/google")).google.tools.urlContext({}) as Tool,
           };
         }
         break;

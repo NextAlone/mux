@@ -987,6 +987,19 @@ export const TaskApplyGitPatchToolResultSchema = z.union([
 ]);
 
 // -----------------------------------------------------------------------------
+// mcp_restart (restart cached MCP clients for this workspace)
+// -----------------------------------------------------------------------------
+export const McpRestartToolArgsSchema = z.object({}).strict();
+
+export const McpRestartToolResultSchema = z
+  .object({
+    success: z.boolean(),
+    restarted: z.boolean(),
+    note: z.string(),
+  })
+  .strict();
+
+// -----------------------------------------------------------------------------
 // task_terminate (terminate sub-agent/bash tasks, interrupt workflow runs)
 // -----------------------------------------------------------------------------
 export const TaskTerminateToolArgsSchema = z
@@ -2089,6 +2102,12 @@ export const TOOL_DEFINITIONS = {
     description: buildTaskToolDescription(undefined),
     schema: TaskToolArgsSchema,
   },
+  mcp_restart: {
+    description:
+      "Restart cached MCP server clients for this workspace. Use after MCP OAuth/API credentials were refreshed and MCP tool calls still fail with stale authentication. " +
+      "This closes current MCP clients; fresh clients are created on the next model turn/tool setup. Do not call MCP tools again in the same turn after this.",
+    schema: McpRestartToolArgsSchema,
+  },
   task_apply_git_patch: {
     description:
       "Apply a completed sub-agent task's jj-native task-change artifact to the current workspace using `jj restore`. " +
@@ -2935,6 +2954,7 @@ export type BridgeableToolName =
   // from the PTC sandbox for those sessions. That silent absence is intentional and accepted.
   | "web_fetch"
   | "task"
+  | "mcp_restart"
   | "task_await"
   | "task_apply_git_patch"
   | "task_list"
@@ -2962,6 +2982,7 @@ export const RESULT_SCHEMAS: Record<BridgeableToolName, z.ZodType> = {
   file_edit_replace_string: FileEditReplaceStringToolResultSchema,
   web_fetch: WebFetchToolResultSchema,
   task: TaskToolResultSchema,
+  mcp_restart: McpRestartToolResultSchema,
   task_await: TaskAwaitToolResultSchema,
   task_apply_git_patch: TaskApplyGitPatchToolResultSchema,
   task_list: TaskListToolResultSchema,
@@ -3070,6 +3091,7 @@ export function getAvailableTools(
     "ask_user_question",
     "propose_plan",
     "bash",
+    "mcp_restart",
     "task",
     "task_await",
     "task_apply_git_patch",

@@ -2366,6 +2366,7 @@ export class AIService extends EventEmitter {
         taskService: this.taskService,
         analyticsService: this.analyticsService,
         desktopSessionManager: this.desktopSessionManager,
+        mcpServerManager: this.mcpServerManager,
         // Agent memory (memory experiment): per-scope write policy derived from
         // the agent class (exec-like / plan-like / read-only). Project memory is
         // host-local under muxHome, keyed by the stable project identity.
