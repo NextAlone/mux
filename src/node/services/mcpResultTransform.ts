@@ -9,6 +9,7 @@ import { log } from "@/node/services/log";
  * pass normal screenshots while preventing pathological payloads.
  */
 export const MAX_IMAGE_DATA_BYTES = 8 * 1024 * 1024; // 8MB guard per image
+export const MAX_TEXT_CONTENT_CHARS = 64_000;
 
 /**
  * MCP CallToolResult content types (from @ai-sdk/mcp)
@@ -56,6 +57,14 @@ function formatBytesSI(bytes: number): string {
   return `${Math.round(bytes / 1000)} KB`;
 }
 
+function truncateTextContent(text: string): string {
+  if (text.length <= MAX_TEXT_CONTENT_CHARS) {
+    return text;
+  }
+
+  return `${text.slice(0, MAX_TEXT_CONTENT_CHARS)}\n\n[MCP text result truncated by Mux: ${text.length.toLocaleString()} characters exceeded ${MAX_TEXT_CONTENT_CHARS.toLocaleString()}. Ask the tool for a narrower query or pagination.]`;
+}
+
 /**
  * Transform MCP tool result to AI SDK format.
  * Converts MCP's "image" content type to AI SDK's "media" type.
@@ -78,15 +87,22 @@ export function transformMCPResult(result: unknown): unknown {
     return result;
   }
 
-  // Check if any content is an image
   const hasImage = typed.content.some((c) => c.type === "image");
-  if (!hasImage) {
+  const hasOversizedText = typed.content.some(
+    (c) =>
+      (c.type === "text" && c.text.length > MAX_TEXT_CONTENT_CHARS) ||
+      (c.type === "resource" && (c.resource.text?.length ?? 0) > MAX_TEXT_CONTENT_CHARS)
+  );
+  if (!hasImage && !hasOversizedText) {
     return result;
   }
 
   // Debug: log what we received from MCP
   log.debug("[MCP] transformMCPResult input", {
     contentTypes: typed.content.map((c) => c.type),
+    textItems: typed.content
+      .filter((c): c is MCPTextContent => c.type === "text")
+      .map((c) => ({ type: c.type, textLen: c.text.length })),
     imageItems: typed.content
       .filter((c): c is MCPImageContent => c.type === "image")
       .map((c) => ({ type: c.type, mimeType: c.mimeType, dataLen: c.data?.length })),
@@ -95,7 +111,7 @@ export function transformMCPResult(result: unknown): unknown {
   // Transform to AI SDK content format
   const transformedContent: AISDKContentPart[] = typed.content.map((item) => {
     if (item.type === "text") {
-      return { type: "text" as const, text: item.text };
+      return { type: "text" as const, text: truncateTextContent(item.text) };
     }
     if (item.type === "image") {
       const imageItem = item;
@@ -120,7 +136,7 @@ export function transformMCPResult(result: unknown): unknown {
     // For resource type, convert to text representation
     if (item.type === "resource") {
       const text = item.resource.text ?? item.resource.uri;
-      return { type: "text" as const, text };
+      return { type: "text" as const, text: truncateTextContent(text) };
     }
     // Fallback: stringify unknown content
     return { type: "text" as const, text: JSON.stringify(item) };

@@ -1,7 +1,41 @@
 import { describe, it, expect } from "bun:test";
-import { transformMCPResult, MAX_IMAGE_DATA_BYTES } from "./mcpResultTransform";
+import {
+  transformMCPResult,
+  MAX_IMAGE_DATA_BYTES,
+  MAX_TEXT_CONTENT_CHARS,
+} from "./mcpResultTransform";
 
 describe("transformMCPResult", () => {
+  describe("text overflow handling", () => {
+    it("truncates oversized MCP text content", () => {
+      const longText = `start-${"x".repeat(MAX_TEXT_CONTENT_CHARS + 100)}-end`;
+      const result = transformMCPResult({
+        content: [{ type: "text", text: longText }],
+      });
+
+      const transformed = result as {
+        type: "content";
+        value: Array<{ type: string; text?: string }>;
+      };
+
+      expect(transformed.type).toBe("content");
+      expect(transformed.value[0].text).toStartWith("start-");
+      expect(transformed.value[0].text).not.toContain("-end");
+      expect(transformed.value[0].text).toContain("MCP text result truncated by Mux");
+    });
+
+    it("leaves small text-only content untouched", () => {
+      const textOnly = {
+        content: [
+          { type: "text" as const, text: "Hello" },
+          { type: "text" as const, text: "World" },
+        ],
+      };
+
+      expect(transformMCPResult(textOnly)).toBe(textOnly);
+    });
+  });
+
   describe("image data overflow handling", () => {
     it("should pass through small images unchanged", () => {
       const smallImageData = "a".repeat(1000); // 1KB of base64 data
