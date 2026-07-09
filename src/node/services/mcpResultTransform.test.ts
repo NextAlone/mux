@@ -1,5 +1,6 @@
 import { describe, it, expect } from "bun:test";
 import {
+  persistOversizedMCPTextResult,
   transformMCPResult,
   MAX_IMAGE_DATA_BYTES,
   MAX_TEXT_CONTENT_CHARS,
@@ -7,6 +8,48 @@ import {
 
 describe("transformMCPResult", () => {
   describe("text overflow handling", () => {
+    it("persists oversized MCP text content when a writer is provided", async () => {
+      const writes: string[] = [];
+      const longText = `start-${"x".repeat(MAX_TEXT_CONTENT_CHARS + 100)}-end`;
+      const result = await persistOversizedMCPTextResult(
+        {
+          content: [{ type: "text", text: longText }],
+        },
+        {
+          writeTextFile: (content: string) => {
+            writes.push(content);
+            return Promise.resolve("/tmp/mux-mcp-results/mcp-test.txt");
+          },
+        }
+      );
+
+      const transformed = result as { content: Array<{ type: string; text?: string }> };
+      expect(writes).toEqual([longText]);
+      expect(transformed.content[0].text).toContain(
+        "Full result saved to /tmp/mux-mcp-results/mcp-test.txt"
+      );
+      expect(transformed.content[0].text).not.toContain("-end");
+
+      expect(transformMCPResult(result)).toBe(result);
+    });
+
+    it("falls back to truncation when persistence fails", async () => {
+      const longText = `start-${"x".repeat(MAX_TEXT_CONTENT_CHARS + 100)}-end`;
+      const result = await persistOversizedMCPTextResult(
+        {
+          content: [{ type: "text", text: longText }],
+        },
+        {
+          writeTextFile: () => Promise.reject(new Error("disk full")),
+        }
+      );
+
+      const transformed = result as { content: Array<{ type: string; text?: string }> };
+      expect(transformed.content[0].text).toContain("MCP text result truncated by Mux");
+      expect(transformed.content[0].text).not.toContain("Full result saved");
+      expect(transformed.content[0].text).not.toContain("-end");
+    });
+
     it("truncates oversized MCP text content", () => {
       const longText = `start-${"x".repeat(MAX_TEXT_CONTENT_CHARS + 100)}-end`;
       const result = transformMCPResult({

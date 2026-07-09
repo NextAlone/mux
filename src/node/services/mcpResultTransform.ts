@@ -30,6 +30,10 @@ interface MCPResourceContent {
   resource: { uri: string; text?: string; blob?: string; mimeType?: string };
 }
 
+export interface MCPTextPersistence {
+  writeTextFile: (content: string) => Promise<string>;
+}
+
 type MCPContent = MCPTextContent | MCPImageContent | MCPResourceContent;
 
 export interface MCPCallToolResult {
@@ -57,12 +61,84 @@ function formatBytesSI(bytes: number): string {
   return `${Math.round(bytes / 1000)} KB`;
 }
 
+function createTextOverflowNotice(text: string, savedPath?: string): string {
+  const saved = savedPath ? ` Full result saved to ${savedPath}.` : "";
+  const suffix = `\n\n[MCP text result truncated by Mux: ${text.length.toLocaleString()} characters exceeded ${MAX_TEXT_CONTENT_CHARS.toLocaleString()}.${saved} Ask the tool for a narrower query or pagination.]`;
+  return `${text.slice(0, Math.max(0, MAX_TEXT_CONTENT_CHARS - suffix.length))}${suffix}`;
+}
+
 function truncateTextContent(text: string): string {
   if (text.length <= MAX_TEXT_CONTENT_CHARS) {
     return text;
   }
 
-  return `${text.slice(0, MAX_TEXT_CONTENT_CHARS)}\n\n[MCP text result truncated by Mux: ${text.length.toLocaleString()} characters exceeded ${MAX_TEXT_CONTENT_CHARS.toLocaleString()}. Ask the tool for a narrower query or pagination.]`;
+  return createTextOverflowNotice(text);
+}
+
+function isMCPCallToolResult(value: unknown): value is MCPCallToolResult {
+  return typeof value === "object" && value !== null;
+}
+
+async function persistTextIfOversized(
+  text: string,
+  persistence: MCPTextPersistence
+): Promise<string> {
+  if (text.length <= MAX_TEXT_CONTENT_CHARS) {
+    return text;
+  }
+
+  try {
+    const savedPath = await persistence.writeTextFile(text);
+    return createTextOverflowNotice(text, savedPath);
+  } catch (error) {
+    log.warn("[MCP] Failed to persist oversized text result, falling back to truncation", {
+      error: error instanceof Error ? error.message : String(error),
+      textLength: text.length,
+    });
+    return createTextOverflowNotice(text);
+  }
+}
+
+export async function persistOversizedMCPTextResult(
+  result: unknown,
+  persistence: MCPTextPersistence
+): Promise<unknown> {
+  if (!isMCPCallToolResult(result)) {
+    return result;
+  }
+
+  const typed = result;
+  if (typed.isError || typed.toolResult !== undefined) {
+    return result;
+  }
+
+  if (!typed.content || !Array.isArray(typed.content)) {
+    return result;
+  }
+
+  let changed = false;
+  const content: MCPContent[] = [];
+  for (const item of typed.content) {
+    if (item.type === "text") {
+      const text = await persistTextIfOversized(item.text, persistence);
+      changed ||= text !== item.text;
+      content.push(text === item.text ? item : { ...item, text });
+      continue;
+    }
+
+    if (item.type === "resource" && item.resource.text !== undefined) {
+      const text = await persistTextIfOversized(item.resource.text, persistence);
+      changed ||= text !== item.resource.text;
+      content.push(
+        text === item.resource.text ? item : { ...item, resource: { ...item.resource, text } }
+      );
+      continue;
+    }
+
+    content.push(item);
+  }
+
+  return changed ? { ...typed, content } : result;
 }
 
 /**

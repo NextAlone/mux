@@ -1,3 +1,4 @@
+import path from "node:path";
 import { createMCPClient, type OAuthClientProvider } from "@ai-sdk/mcp";
 import type { Tool } from "ai";
 import { log } from "@/node/services/log";
@@ -20,7 +21,11 @@ import {
   type McpOauthService,
 } from "@/node/services/mcpOauthService";
 import { createRuntime } from "@/node/runtime/runtimeFactory";
-import { transformMCPResult, type MCPCallToolResult } from "@/node/services/mcpResultTransform";
+import {
+  persistOversizedMCPTextResult,
+  transformMCPResult,
+  type MCPCallToolResult,
+} from "@/node/services/mcpResultTransform";
 import { buildMcpToolName } from "@/common/utils/tools/mcpToolName";
 import { getErrorMessage } from "@/common/utils/errors";
 
@@ -129,13 +134,34 @@ function shouldRecycleClientAfterToolError(error: unknown): boolean {
   return isClosedClientError(error) || error instanceof MCPDeadlineError;
 }
 
+async function writeMCPTextResult(
+  runtime: Runtime,
+  content: string,
+  abortSignal?: AbortSignal
+): Promise<string> {
+  const tempDir = await runtime.tempDir();
+  const outputDir = path.posix.join(tempDir, "mux-mcp-results");
+  await runtime.ensureDir(outputDir, abortSignal);
+
+  const fileId = Math.random().toString(16).slice(2, 10);
+  const outputPath = path.posix.join(outputDir, `mcp-${fileId}.txt`);
+  const writer = runtime.writeFile(outputPath, abortSignal);
+  const writerInstance = writer.getWriter();
+  try {
+    await writerInstance.write(new TextEncoder().encode(content));
+  } finally {
+    await writerInstance.close();
+  }
+  return outputPath;
+}
+
 /**
  * Wrap MCP tools to transform their results to AI SDK format.
  * This ensures image content is properly converted to media type.
  */
 export function wrapMCPTools(
   tools: Record<string, Tool>,
-  options?: { onActivity?: () => void; onClosed?: () => void }
+  options?: { onActivity?: () => void; onClosed?: () => void; runtime?: Runtime }
 ): Record<string, Tool> {
   const { onActivity, onClosed } = options ?? {};
   const wrapped: Record<string, Tool> = {};
@@ -164,7 +190,13 @@ export function wrapMCPTools(
             () => Promise.resolve(originalExecute(args, context)) as Promise<unknown>,
             { toolName, timeoutMs: MCP_TOOL_CALL_TIMEOUT_MS, signal: abortSignal }
           );
-          return transformMCPResult(result as MCPCallToolResult);
+          const runtime = options?.runtime;
+          const persistedResult = runtime
+            ? await persistOversizedMCPTextResult(result, {
+                writeTextFile: (content) => writeMCPTextResult(runtime, content, abortSignal),
+              })
+            : result;
+          return transformMCPResult(persistedResult as MCPCallToolResult);
         } catch (error) {
           if (shouldRecycleClientAfterToolError(error)) {
             try {
@@ -1782,6 +1814,7 @@ export class MCPServerManager {
 
         const tools = wrapMCPTools(rawTools as unknown as Record<string, Tool>, {
           onActivity,
+          runtime,
           onClosed: () => {
             if (instanceRef.current) instanceRef.current.isClosed = true;
           },
@@ -1972,6 +2005,7 @@ export class MCPServerManager {
 
       const tools = wrapMCPTools(rawTools as unknown as Record<string, Tool>, {
         onActivity,
+        runtime,
         onClosed: () => {
           if (instanceRef.current) instanceRef.current.isClosed = true;
         },
