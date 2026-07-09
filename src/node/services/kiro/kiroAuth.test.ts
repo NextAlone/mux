@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+import { execFileSync } from "node:child_process";
 import * as fs from "fs";
 import { writeFile } from "fs/promises";
 import * as os from "os";
@@ -32,6 +33,23 @@ function requestUrlToString(url: RequestInfo | URL): string {
     return url;
   }
   return url instanceof URL ? url.href : url.url;
+}
+
+function sqlString(value: string): string {
+  return `'${value.replaceAll("'", "''")}'`;
+}
+
+function writeKiroSqliteDb(dbPath: string, records: Record<string, Record<string, unknown>>): void {
+  const inserts = Object.entries(records)
+    .map(
+      ([key, value]) =>
+        `INSERT INTO auth_kv (key, value) VALUES (${sqlString(key)}, ${sqlString(JSON.stringify(value))});`
+    )
+    .join("\n");
+  execFileSync("sqlite3", [
+    dbPath,
+    `CREATE TABLE auth_kv (key TEXT PRIMARY KEY, value TEXT);\n${inserts}`,
+  ]);
 }
 
 describe("Kiro OAuth credentials", () => {
@@ -115,6 +133,87 @@ describe("Kiro OAuth credentials", () => {
       expect(credentials?.clientId).toBe("client-id");
       expect(credentials?.clientSecret).toBe("client-secret");
       expect(credentials?.expiresAt).toBe(Date.parse("2099-02-03T04:05:06.123Z"));
+    });
+  });
+
+  it("loads AWS SSO client registration referenced by Kiro JSON credentials", async () => {
+    await withTempDir(async (dir) => {
+      const cacheDir = path.join(dir, ".aws", "sso", "cache");
+      fs.mkdirSync(cacheDir, { recursive: true });
+      await writeFile(
+        path.join(cacheDir, "kiro-auth-token.json"),
+        JSON.stringify({
+          accessToken: "sso-access-token",
+          refreshToken: "sso-refresh-token",
+          expiresAt: "2099-01-01T00:00:00Z",
+          clientIdHash: "registration-hash",
+          region: "ap-southeast-1",
+        }),
+        "utf-8"
+      );
+      await writeFile(
+        path.join(cacheDir, "registration-hash.json"),
+        JSON.stringify({
+          clientId: "client-id",
+          clientSecret: "client-secret",
+        }),
+        "utf-8"
+      );
+
+      const credentials = loadKiroOauthCredentials({}, { env: {}, homeDir: dir });
+
+      expect(credentials?.accessToken).toBe("sso-access-token");
+      expect(credentials?.refreshToken).toBe("sso-refresh-token");
+      expect(credentials?.clientId).toBe("client-id");
+      expect(credentials?.clientSecret).toBe("client-secret");
+      expect(credentials?.region).toBe("us-east-1");
+      expect(credentials?.ssoRegion).toBe("ap-southeast-1");
+    });
+  });
+
+  it("prefers AWS SSO sqlite credentials over default desktop JSON credentials", async () => {
+    await withTempDir(async (dir) => {
+      const jsonPath = path.join(dir, ".aws", "sso", "cache", "kiro-auth-token.json");
+      fs.mkdirSync(path.dirname(jsonPath), { recursive: true });
+      await writeFile(
+        jsonPath,
+        JSON.stringify({
+          accessToken: "desktop-access-token",
+          refreshToken: "desktop-refresh-token",
+          region: "ap-southeast-1",
+        }),
+        "utf-8"
+      );
+
+      const sqlitePath = path.join(
+        dir,
+        "Library",
+        "Application Support",
+        "kiro-cli",
+        "data.sqlite3"
+      );
+      fs.mkdirSync(path.dirname(sqlitePath), { recursive: true });
+      writeKiroSqliteDb(sqlitePath, {
+        "kirocli:odic:token": {
+          accessToken: "sso-access-token",
+          refreshToken: "sso-refresh-token",
+          region: "eu-central-1",
+        },
+        "kirocli:odic:device-registration": {
+          clientId: "client-id",
+          clientSecret: "client-secret",
+          region: "us-east-1",
+        },
+      });
+
+      const credentials = loadKiroOauthCredentials({}, { env: {}, homeDir: dir });
+
+      expect(credentials?.accessToken).toBe("sso-access-token");
+      expect(credentials?.refreshToken).toBe("sso-refresh-token");
+      expect(credentials?.clientId).toBe("client-id");
+      expect(credentials?.clientSecret).toBe("client-secret");
+      expect(credentials?.region).toBe("eu-central-1");
+      expect(credentials?.ssoRegion).toBe("us-east-1");
     });
   });
 

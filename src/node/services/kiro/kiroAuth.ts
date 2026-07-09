@@ -43,6 +43,7 @@ const KIRO_DESKTOP_REFRESH_URL_TEMPLATE =
 const AWS_SSO_OIDC_REFRESH_URL_TEMPLATE = "https://oidc.{region}.amazonaws.com/token";
 const JSON_CREDENTIAL_CANDIDATES = ["~/.aws/sso/cache/kiro-auth-token.json"] as const;
 const SQLITE_CREDENTIAL_CANDIDATES = [
+  "~/Library/Application Support/kiro-cli/data.sqlite3",
   "~/.local/share/kiro-cli/data.sqlite3",
   "~/.local/share/amazon-q/data.sqlite3",
 ] as const;
@@ -125,6 +126,10 @@ function parseCredentialRecord(record: Record<string, unknown>): KiroOauthCreden
   };
 }
 
+function canRefreshWithAwsSsoOidc(credentials: KiroOauthCredentials): boolean {
+  return Boolean(credentials.clientId && credentials.clientSecret);
+}
+
 function readJsonFile(filePath: string, homeDir?: string): Record<string, unknown> | null {
   try {
     const expanded = expandHome(filePath, homeDir);
@@ -138,6 +143,35 @@ function readJsonFile(filePath: string, homeDir?: string): Record<string, unknow
   } catch {
     return null;
   }
+}
+
+function loadJsonCredentials(filePath: string, homeDir?: string): KiroOauthCredentials | null {
+  const record = readJsonFile(filePath, homeDir);
+  const credentials = record ? parseCredentialRecord(record) : null;
+  if (!record || !credentials || canRefreshWithAwsSsoOidc(credentials)) {
+    return credentials;
+  }
+
+  const clientIdHash = firstString(record.clientIdHash, record.client_id_hash);
+  if (!clientIdHash) {
+    return credentials;
+  }
+
+  const registration = readJsonFile(
+    path.join(path.dirname(expandHome(filePath, homeDir)), `${clientIdHash}.json`)
+  );
+  if (!registration) {
+    return credentials;
+  }
+
+  credentials.clientId ??= firstString(registration.clientId, registration.client_id);
+  credentials.clientSecret ??= firstString(registration.clientSecret, registration.client_secret);
+  credentials.ssoRegion =
+    firstString(registration.ssoRegion, registration.sso_region, registration.region) ??
+    credentials.ssoRegion;
+  // AWS SSO cache `region` is the login/OIDC region, not necessarily a Kiro runtime region.
+  credentials.region = firstString(record.apiRegion, record.api_region) ?? DEFAULT_REGION;
+  return credentials;
 }
 
 function readSqliteJsonRows(
@@ -193,14 +227,14 @@ function loadSqliteCredentials(dbPath: string, homeDir?: string): KiroOauthCrede
   if (!credentials) {
     return null;
   }
-  credentials.ssoRegion ??= credentials.region;
-
   const registrationRows = readSqliteJsonRows(dbPath, "auth_kv", SQLITE_REGISTRATION_KEYS, homeDir);
   const registration = SQLITE_REGISTRATION_KEYS.map((key) => registrationRows[key]).find(Boolean);
   if (registration) {
     credentials.clientId ??= firstString(registration.clientId, registration.client_id);
     credentials.clientSecret ??= firstString(registration.clientSecret, registration.client_secret);
-    credentials.ssoRegion ??= firstString(registration.region);
+    // Device registration owns the IAM Identity Center OIDC region; the token row's
+    // region can be the CodeWhisperer runtime/profile region.
+    credentials.ssoRegion = firstString(registration.region) ?? credentials.ssoRegion;
     credentials.region ??= credentials.ssoRegion;
   }
 
@@ -213,6 +247,7 @@ function loadSqliteCredentials(dbPath: string, homeDir?: string): KiroOauthCrede
   }
 
   credentials.region ??= DEFAULT_REGION;
+  credentials.ssoRegion ??= credentials.region;
   return credentials;
 }
 
@@ -258,26 +293,31 @@ export function loadKiroOauthCredentials(
     return inline;
   }
 
+  const explicitJson = explicitJsonPath(config, env);
+  if (explicitJson) {
+    return loadJsonCredentials(explicitJson, options?.homeDir);
+  }
+
   const { jsonPaths, sqlitePaths } = getKiroOauthCredentialPaths(config, env);
+  const fallbackJsonCredentials: KiroOauthCredentials[] = [];
   for (const jsonPath of jsonPaths) {
-    const record = readJsonFile(jsonPath, options?.homeDir);
-    if (!record) {
-      continue;
-    }
-    const credentials = parseCredentialRecord(record);
+    const credentials = loadJsonCredentials(jsonPath, options?.homeDir);
     if (credentials) {
-      return credentials;
+      fallbackJsonCredentials.push(credentials);
     }
   }
 
+  let fallbackSqliteCredentials: KiroOauthCredentials | null = null;
   for (const sqlitePath of sqlitePaths) {
     const credentials = loadSqliteCredentials(sqlitePath, options?.homeDir);
-    if (credentials) {
+    if (credentials && canRefreshWithAwsSsoOidc(credentials)) {
+      // AWS IAM Identity Center tokens must refresh against oidc.{region}.amazonaws.com.
       return credentials;
     }
+    fallbackSqliteCredentials ??= credentials;
   }
 
-  return null;
+  return fallbackJsonCredentials[0] ?? fallbackSqliteCredentials;
 }
 
 export function isKiroOauthConfigured(
@@ -286,6 +326,10 @@ export function isKiroOauthConfigured(
 ): boolean {
   if (loadKiroOauthCredentials(config, { env }) !== null) {
     return true;
+  }
+
+  if (explicitJsonPath(config, env)) {
+    return false;
   }
 
   const { jsonPaths, sqlitePaths } = getKiroOauthCredentialPaths(config, env);
