@@ -68,7 +68,7 @@ describe("LastResponseStatsBarrier", () => {
   });
 
   test("renders Codex remaining usage summary and details when quota is known", () => {
-    currentSnapshot = completedSnapshot();
+    currentSnapshot = completedSnapshot({ model: "openai:gpt-5.3-codex" });
     currentCodexUsageSnapshot = {
       source: "headers",
       updatedAt: new Date(2026, 6, 4, 1, 0, 0).getTime(),
@@ -103,6 +103,20 @@ describe("LastResponseStatsBarrier", () => {
     expect(view.getByText("5 小时")).toBeTruthy();
     expect(view.getByText("1 周")).toBeTruthy();
     expect(view.getByText("Jul 7")).toBeTruthy();
+  });
+
+  test("hides Codex usage while the last response used a non-Codex model", () => {
+    currentSnapshot = completedSnapshot({ model: "mify-anthropic:ppio/pa/claude-sonnet-5" });
+    currentCodexUsageSnapshot = {
+      source: "headers",
+      updatedAt: Date.now(),
+      remainingPercent: 80,
+      windows: { fiveHour: null, weekly: null },
+    };
+
+    const view = render(<LastResponseStatsBarrier workspaceId="ws-1" />);
+
+    expect(view.queryByText("剩余用量")).toBeNull();
   });
 
   test("hides while a stream is active", () => {

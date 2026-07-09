@@ -6,7 +6,9 @@ import { useWorkspaceStatsSnapshot } from "@/browser/stores/WorkspaceStore";
 import { TooltipIfPresent } from "@/browser/components/Tooltip/Tooltip";
 import { calculateAverageTPS } from "@/browser/utils/messages/StreamingTPSCalculator";
 import { cn } from "@/common/lib/utils";
+import { isCodexOauthAllowedModelId } from "@/common/constants/codexOAuth";
 import type { CodexUsageSnapshot, CodexUsageWindow } from "@/common/orpc/types";
+import { getModelName } from "@/common/utils/ai/models";
 import { BaseBarrier } from "./BaseBarrier";
 
 interface LastResponseStatsBarrierProps {
@@ -175,8 +177,11 @@ export const LastResponseStatsBarrier: React.FC<LastResponseStatsBarrierProps> =
       ? calculateAverageTPS(lastRequest.streamingMs, lastRequest.modelTimeMs, totalTokens, null)
       : null;
   const showLastResponseStats = Boolean(avgTPS && totalTokens > 0);
+  const showCodexUsage = Boolean(
+    codexUsageSnapshot && lastRequest && isCodexOauthAllowedModelId(getModelName(lastRequest.model))
+  );
 
-  if (!showLastResponseStats && !codexUsageSnapshot) {
+  if (!showLastResponseStats && !showCodexUsage) {
     return null;
   }
 
@@ -200,7 +205,9 @@ export const LastResponseStatsBarrier: React.FC<LastResponseStatsBarrierProps> =
           </TooltipIfPresent>
         </div>
       )}
-      {codexUsageSnapshot && <CodexUsageRemaining snapshot={codexUsageSnapshot} />}
+      {showCodexUsage && codexUsageSnapshot && (
+        <CodexUsageRemaining snapshot={codexUsageSnapshot} />
+      )}
     </div>
   );
 };
