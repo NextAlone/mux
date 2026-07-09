@@ -1,0 +1,28 @@
+---
+title: Multi-model fusion
+description: Run several selected models in parallel and synthesize one answer
+---
+
+Fusion sends the same task to two or more models in parallel, then asks a judge model to combine the results. The final report keeps agreement, disagreements, model-specific insights, blind spots, and a concrete recommendation separate.
+
+Use it for architecture decisions, unfamiliar debugging, reviews, research, or other work where a second independent reasoning path can change the answer. Routine edits usually do not justify the extra latency and token cost.
+
+Invoke the built-in skill with the task and the models you want to use:
+
+```text
+/fusion Compare the smallest safe approaches to this refactor. Use sonnet, codex, and gemini; use opus as judge.
+```
+
+You can use model aliases or full `provider:model` IDs. Mux asks you to choose models when none are specified rather than guessing which providers are configured. Panel agents have read-only workspace access, so they can inspect evidence without making concurrent edits.
+
+Fusion runs as a durable workflow. Its panel steps execute concurrently, completed steps survive interruption, and the workflow card keeps each child report available for inspection.
+
+## Model-built workflows
+
+Mux also lets the active model construct a one-off workflow directly. Describe a process with multiple phases, parallel lanes, loops, or verification gates; when a durable workflow is the right fit, the model can generate an inline `script_source` and run it without requiring you to create a JavaScript file first.
+
+```text
+Build and run a workflow that asks three reviewers to inspect security, correctness, and UX in parallel, then verifies every P0/P1 finding and summarizes the result.
+```
+
+Inline workflows are snapshotted with the run, so restart/resume does not depend on regenerating the source. Reusable team workflows should still be saved in a skill or an explicit workspace `.js` file.

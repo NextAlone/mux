@@ -180,10 +180,10 @@ describe("workflow task metadata schema", () => {
 });
 
 describe("workflow experiment gate", () => {
-  test("keeps dynamic workflows opt-in during rollout", () => {
+  test("enables model-built workflows by default", () => {
     const experiment = EXPERIMENTS[EXPERIMENT_IDS.DYNAMIC_WORKFLOWS];
 
-    expect(experiment.enabledByDefault).toBe(false);
+    expect(experiment.enabledByDefault).toBe(true);
     expect(experiment.userOverridable).toBe(true);
     expect(experiment.showInSettings).toBe(true);
   });

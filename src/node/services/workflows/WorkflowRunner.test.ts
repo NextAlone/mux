@@ -5,6 +5,8 @@ import { describe, expect, mock, test } from "bun:test";
 import { QuickJSRuntimeFactory } from "@/node/services/ptc/quickjsRuntime";
 import { ForegroundWaitBackgroundedError } from "@/node/services/taskService";
 import { DisposableTempDir } from "@/node/services/tempDir";
+import { SkillNameSchema } from "@/common/orpc/schemas";
+import { readBuiltInSkillFile } from "@/node/services/agentSkills/builtInSkillDefinitions";
 import { WorkflowRunStore } from "./WorkflowRunStore";
 import {
   WorkflowRunBackgroundedError,
@@ -71,6 +73,67 @@ function createDeferred() {
 }
 
 describe("WorkflowRunner", () => {
+  test("runs the built-in fusion panel with per-step models before judge synthesis", async () => {
+    using tmp = new DisposableTempDir("workflow-runner-fusion");
+    const store = new WorkflowRunStore({
+      sessionDir: tmp.path,
+      staleLeaseMs: WORKFLOW_RUNNER_TEST_STALE_LEASE_MS,
+    });
+    const source = readBuiltInSkillFile(SkillNameSchema.parse("fusion"), "workflow.js").content;
+    await store.createRun({
+      id: "wfr_fusion",
+      workspaceId: "workspace-1",
+      workflow: { ...definition, name: "fusion" },
+      source,
+      args: {
+        prompt: "Choose the safest design",
+        models: ["openai:gpt-test", "anthropic:claude-test"],
+        judgeModel: "google:gemini-test",
+      },
+      now: "2026-05-29T00:00:00.000Z",
+    });
+
+    const panelSpecs: WorkflowAgentSpec[] = [];
+    let judgeSpec: WorkflowAgentSpec | undefined;
+    const runner = createRunner(store, {
+      async runAgent() {
+        throw new Error("fusion uses task reservation for panel and judge steps");
+      },
+      async createAgentTasks(specs, lifecycle) {
+        if (specs.length === 1 && specs[0]?.id === "synthesize") {
+          judgeSpec = specs[0];
+        } else {
+          panelSpecs.push(...specs);
+        }
+        for (const [index, spec] of specs.entries()) {
+          await lifecycle?.onTaskCreated?.(index, `task_${spec.id}`);
+        }
+        return specs.map((spec) => ({ taskId: `task_${spec.id}`, status: "starting" as const }));
+      },
+      async waitForAgentTask(taskId, spec) {
+        return {
+          taskId,
+          reportMarkdown:
+            spec.id === "synthesize" ? "Fused answer" : `Answer from ${spec.modelString}`,
+          structuredOutput: {},
+        };
+      },
+    });
+
+    await expect(runner.run("wfr_fusion")).resolves.toMatchObject({
+      reportMarkdown: "Fused answer",
+      structuredOutput: { responseCount: 2 },
+    });
+    expect(panelSpecs.map((spec) => spec.modelString)).toEqual([
+      "openai:gpt-test",
+      "anthropic:claude-test",
+    ]);
+    expect(panelSpecs.every((spec) => spec.agentId === "explore")).toBe(true);
+    expect(judgeSpec?.modelString).toBe("google:gemini-test");
+    expect(judgeSpec?.prompt).toContain("Answer from openai:gpt-test");
+    expect(judgeSpec?.prompt).toContain("Answer from anthropic:claude-test");
+  });
+
   test("runs onRunEnded after a successful workflow", async () => {
     using tmp = new DisposableTempDir("workflow-runner");
     const store = await createRunStore(tmp.path);

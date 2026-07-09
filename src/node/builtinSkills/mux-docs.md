@@ -83,6 +83,7 @@ Use this index to find a page's:
     - System Prompt (`/agents/system-prompt`) → `references/docs/agents/system-prompt.mdx` — How Mux constructs the system prompt for AI models
     - Prompting Tips (`/agents/prompting-tips`) → `references/docs/agents/prompting-tips.mdx` — Tips and tricks for getting the most out of your AI agents
     - Best of N (`/agents/best-of-n`) → `references/docs/agents/best-of-n.mdx` — Improve plans, analysis, and reviews by asking Mux to explore multiple candidate answers in parallel
+    - Multi-model fusion (`/agents/fusion`) → `references/docs/agents/fusion.mdx` — Run several selected models in parallel and synthesize one answer
   - **Configuration**
     - MCP Servers (`/config/mcp-servers`) → `references/docs/config/mcp-servers.mdx` — Extend agent capabilities with Model Context Protocol servers
     - Policy File (`/config/policy-file`) → `references/docs/config/policy-file.mdx` — Admin-enforced restrictions for providers, models, MCP, and runtimes
