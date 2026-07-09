@@ -103,9 +103,13 @@ function buildCustomProviderConfigInfo(
 }
 
 function resolveCustomProviderType(config: BaseProviderConfig): CustomProviderType {
-  return config.providerType === "anthropic-compatible"
-    ? "anthropic-compatible"
-    : "openai-compatible";
+  if (config.providerType === "anthropic-compatible") {
+    return "anthropic-compatible";
+  }
+  if (config.providerType === "google-compatible") {
+    return "google-compatible";
+  }
+  return "openai-compatible";
 }
 
 const DENIED_KEY_PATH_SEGMENTS = new Set(["__proto__", "prototype", "constructor"]);
@@ -1038,7 +1042,9 @@ export class ProviderService {
       const isCustomProviderTypeEdit =
         keyPath.length === 1 &&
         keyPath[0] === "providerType" &&
-        (value === "openai-compatible" || value === "anthropic-compatible");
+        (value === "openai-compatible" ||
+          value === "anthropic-compatible" ||
+          value === "google-compatible");
       if (isCustomProviderTypeEdit) {
         const validation = validateCustomProviderId(provider);
         if (!validation.ok) {

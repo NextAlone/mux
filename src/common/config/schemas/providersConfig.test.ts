@@ -41,6 +41,12 @@ describe("ProvidersConfigSchema", () => {
         providerType: "anthropic-compatible",
         displayName: "Claude Proxy",
       },
+      "google-proxy": {
+        apiKey: "key",
+        baseUrl: "http://localhost:9100",
+        providerType: "google-compatible",
+        displayName: "Google Proxy",
+      },
     };
 
     const parsed = ProvidersConfigSchema.safeParse(valid);
@@ -51,6 +57,8 @@ describe("ProvidersConfigSchema", () => {
       expect(parsed.data["custom-provider"]?.displayName).toBe("Custom Provider");
       expect(parsed.data["claude-proxy"]?.providerType).toBe("anthropic-compatible");
       expect(parsed.data["claude-proxy"]?.displayName).toBe("Claude Proxy");
+      expect(parsed.data["google-proxy"]?.providerType).toBe("google-compatible");
+      expect(parsed.data["google-proxy"]?.displayName).toBe("Google Proxy");
     }
   });
 

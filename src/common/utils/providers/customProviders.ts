@@ -70,10 +70,15 @@ export function isCustomAnthropicCompatibleProviderConfig(config: unknown): bool
   return isCustomProviderConfigOfType(config, "anthropic-compatible");
 }
 
+export function isCustomGoogleCompatibleProviderConfig(config: unknown): boolean {
+  return isCustomProviderConfigOfType(config, "google-compatible");
+}
+
 export function isCustomProviderConfig(config: unknown): boolean {
   return (
     isCustomOpenAICompatibleProviderConfig(config) ||
-    isCustomAnthropicCompatibleProviderConfig(config)
+    isCustomAnthropicCompatibleProviderConfig(config) ||
+    isCustomGoogleCompatibleProviderConfig(config)
   );
 }
 

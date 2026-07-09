@@ -393,6 +393,28 @@ describe("ProviderModelFactory.createModel", () => {
     });
   });
 
+  it("creates custom Google-compatible models", async () => {
+    await withTempConfig(async (config, factory) => {
+      config.saveProvidersConfig({
+        "local-google": {
+          providerType: "google-compatible",
+          baseUrl: "http://localhost:9100",
+          apiKey: "gemini-local",
+          models: ["gemini-local"],
+        },
+      });
+
+      const result = await factory.createModel("local-google:gemini-local");
+      expect(result.success).toBe(true);
+      if (!result.success) {
+        return;
+      }
+
+      expect((result.data as { provider?: unknown }).provider).toBe("local-google");
+      expect(result.data.constructor.name).toBe("GoogleGenerativeAILanguageModel");
+    });
+  });
+
   it("allows policy-allowed custom OpenAI-compatible providers when policy is enforced", async () => {
     await withTempPolicyProviderFactory(
       {

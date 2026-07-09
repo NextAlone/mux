@@ -30,6 +30,7 @@ import {
   isCustomProviderConfig,
   isBuiltInProvider,
   isCustomOpenAICompatibleProviderConfig,
+  isCustomGoogleCompatibleProviderConfig,
 } from "@/common/utils/providers/customProviders";
 import { isGatewayModelAccessibleFromAuthoritativeCatalog } from "@/common/utils/providers/gatewayModelCatalog";
 import { maybeGetProviderModelEntryId } from "@/common/utils/providers/modelEntries";
@@ -1157,6 +1158,8 @@ export class ProviderModelFactory {
       const providerIsCustomAnthropicCompatible =
         providerConfigEntry != null &&
         isCustomAnthropicCompatibleProviderConfig(providerConfigEntry);
+      const providerIsCustomGoogleCompatible =
+        providerConfigEntry != null && isCustomGoogleCompatibleProviderConfig(providerConfigEntry);
       const providerIsCustom =
         providerConfigEntry != null && isCustomProviderConfig(providerConfigEntry);
 
@@ -1332,6 +1335,27 @@ export class ProviderModelFactory {
           apiKey: credentials.apiKey ?? KEYLESS_CUSTOM_ANTHROPIC_API_KEY,
           headers: { ...muxAttributionHeaders },
           fetch: providerFetch,
+        });
+        return Ok(provider(modelId));
+      }
+
+      if (providerIsCustomGoogleCompatible) {
+        const credentials = await resolveCustomProviderCredentials(
+          providerName,
+          providerConfig,
+          this.opResolver
+        );
+        if (!credentials.ok) {
+          return Err(formatCustomProviderRequirementError(providerName, credentials.error));
+        }
+
+        const { createGoogleGenerativeAI } = await PROVIDER_REGISTRY.google();
+        const provider = createGoogleGenerativeAI({
+          name: providerName,
+          baseURL: credentials.baseURL,
+          ...(credentials.apiKey != null ? { apiKey: credentials.apiKey } : {}),
+          headers: { ...buildAppAttributionHeaders(providerConfig.headers) },
+          fetch: getProviderFetch(providerConfig),
         });
         return Ok(provider(modelId));
       }

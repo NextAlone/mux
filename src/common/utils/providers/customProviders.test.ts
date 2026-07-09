@@ -10,6 +10,7 @@ import {
   isBuiltInProvider,
   isCustomAnthropicCompatibleProviderConfig,
   isCustomProviderConfig,
+  isCustomGoogleCompatibleProviderConfig,
   isCustomOpenAICompatibleProviderConfig,
   isValidCustomProviderId,
   validateCustomProviderId,
@@ -94,10 +95,22 @@ describe("isCustomAnthropicCompatibleProviderConfig", () => {
   });
 });
 
+describe("isCustomGoogleCompatibleProviderConfig", () => {
+  test("returns true for Google-compatible custom provider config", () => {
+    expect(
+      isCustomGoogleCompatibleProviderConfig({
+        providerType: "google-compatible",
+        baseUrl: "http://localhost:8000/v1",
+      })
+    ).toBe(true);
+  });
+});
+
 describe("isCustomProviderConfig", () => {
   test("accepts supported custom provider API formats", () => {
     expect(isCustomProviderConfig({ providerType: "openai-compatible" })).toBe(true);
     expect(isCustomProviderConfig({ providerType: "anthropic-compatible" })).toBe(true);
+    expect(isCustomProviderConfig({ providerType: "google-compatible" })).toBe(true);
   });
 });
 
@@ -138,12 +151,17 @@ describe("getCustomProviderIds", () => {
         providerType: "anthropic-compatible",
         baseUrl: "http://localhost:8080/v1",
       },
+      "gemini-proxy": {
+        providerType: "google-compatible",
+        baseUrl: "http://localhost:9000/v1",
+      },
     };
 
     expect(getCustomProviderIds(providersConfig)).toEqual([
       "anthropic",
       "local-vllm",
       "claude-proxy",
+      "gemini-proxy",
     ]);
     expect(getShadowedCustomProviderIds(providersConfig)).toEqual(["anthropic"]);
   });

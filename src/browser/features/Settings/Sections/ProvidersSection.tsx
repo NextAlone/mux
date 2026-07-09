@@ -108,10 +108,15 @@ interface OAuthMessage {
 const CUSTOM_PROVIDER_TYPE_OPTIONS: Array<{ value: CustomProviderType; label: string }> = [
   { value: "openai-compatible", label: "OpenAI-compatible" },
   { value: "anthropic-compatible", label: "Anthropic-compatible" },
+  { value: "google-compatible", label: "Google-compatible" },
 ];
 
 function isCustomProviderType(value: string): value is CustomProviderType {
-  return value === "openai-compatible" || value === "anthropic-compatible";
+  return (
+    value === "openai-compatible" ||
+    value === "anthropic-compatible" ||
+    value === "google-compatible"
+  );
 }
 
 function getServerAuthToken(): string | null {
@@ -151,9 +156,11 @@ function getProviderFields(provider: string, providerInfo?: ProviderConfigInfo):
         key: "displayName",
         label: "Display name",
         placeholder:
-          providerInfo.providerType === "anthropic-compatible"
-            ? "My Anthropic-compatible provider"
-            : "My OpenAI-compatible provider",
+          providerInfo.providerType === "google-compatible"
+            ? "My Google-compatible provider"
+            : providerInfo.providerType === "anthropic-compatible"
+              ? "My Anthropic-compatible provider"
+              : "My OpenAI-compatible provider",
         type: "text",
       },
       {
@@ -1262,7 +1269,7 @@ export function ProvidersSection() {
     if (field === "apiKey") {
       void api.providers.setProviderConfig({ provider, keyPath: ["apiKeyOpLabel"], value: "" });
     }
-  }, [api, config, editingField, editValue, updateOptimistically]);
+  }, [api, editingField, editValue, updateOptimistically]);
 
   const handleClearField = useCallback(
     (provider: string, field: string) => {
@@ -1289,7 +1296,7 @@ export function ProvidersSection() {
       // Save in background
       void api.providers.setProviderConfig({ provider, keyPath: [field], value: "" });
     },
-    [api, config, updateOptimistically]
+    [api, updateOptimistically]
   );
 
   const isEnabled = (provider: string): boolean => {
@@ -1698,10 +1705,7 @@ export function ProvidersSection() {
                     <TooltipProvider>
                       <Tooltip>
                         <TooltipTrigger asChild>
-                          <div
-                            className={`h-2 w-2 rounded-full ${statusDotColor}`}
-                            title={statusDotTitle}
-                          />
+                          <div className={`h-2 w-2 rounded-full ${statusDotColor}`} />
                         </TooltipTrigger>
                         <TooltipContent side="bottom">{statusDotTitle}</TooltipContent>
                       </Tooltip>
@@ -1741,15 +1745,16 @@ export function ProvidersSection() {
                       {/* Quick link to get API key */}
                       {providerKeyUrl && (
                         <div className="space-y-1">
-                          <a
-                            href={providerKeyUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
+                          <button
+                            type="button"
+                            onClick={() =>
+                              window.open(providerKeyUrl, "_blank", "noopener,noreferrer")
+                            }
                             className="text-muted hover:text-accent inline-flex items-center gap-1 text-xs transition-colors"
                           >
                             Get API Key
                             <ExternalLink className="h-2.5 w-2.5" />
-                          </a>
+                          </button>
                           {configured &&
                             config?.[provider]?.apiKeySet === false &&
                             // OpenAI can be configured via ChatGPT OAuth, not just env vars
