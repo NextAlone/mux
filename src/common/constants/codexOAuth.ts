@@ -8,6 +8,11 @@
  * UI can reference the same endpoints and model gating rules.
  */
 
+import {
+  resolveModelForMetadata,
+  type ProviderModelsConfig,
+} from "@/common/utils/providers/modelEntries";
+
 // NOTE: These endpoints + params follow the OpenCode Codex OAuth guide.
 // If OpenAI changes them, keep all updates centralized here.
 
@@ -140,6 +145,64 @@ export function isCodexOauthAllowedModelId(modelId: string): boolean {
 
 export function isCodexOauthRequiredModelId(modelId: string): boolean {
   return CODEX_OAUTH_REQUIRED_MODELS.has(normalizeCodexOauthModelId(modelId));
+}
+
+function normalizeOpenAIModelString(modelId: string): string | null {
+  const trimmedModelId = modelId.trim();
+  if (!trimmedModelId) {
+    return null;
+  }
+
+  if (trimmedModelId.startsWith("openai:")) {
+    return trimmedModelId.length > "openai:".length ? trimmedModelId : null;
+  }
+
+  if (trimmedModelId.startsWith("openai/")) {
+    return trimmedModelId.length > "openai/".length
+      ? `openai:${trimmedModelId.slice("openai/".length)}`
+      : null;
+  }
+
+  return trimmedModelId.includes(":") || trimmedModelId.includes("/")
+    ? null
+    : `openai:${trimmedModelId}`;
+}
+
+/**
+ * Resolve the OpenAI model whose capabilities a runtime model inherits.
+ *
+ * Custom OpenAI IDs may opt into Codex OAuth compatibility by mapping to a known
+ * OpenAI model. The runtime ID is still sent to OpenAI; only capability checks
+ * inherit from mappedToModel. Treat-as mappings also accept the bare and
+ * LiteLLM-style OpenAI IDs supported by metadata lookups.
+ */
+export function getCodexOauthCompatibilityModelId(
+  modelId: string,
+  providersConfig: ProviderModelsConfig | null
+): string | null {
+  const runtimeModelId = normalizeOpenAIModelString(modelId);
+  if (runtimeModelId === null || !modelId.trim().startsWith("openai:")) {
+    return null;
+  }
+
+  const mappedModelId = resolveModelForMetadata(runtimeModelId, providersConfig);
+  return normalizeOpenAIModelString(mappedModelId) ?? runtimeModelId;
+}
+
+export function isCodexOauthAllowedModel(
+  modelId: string,
+  providersConfig: ProviderModelsConfig | null
+): boolean {
+  const compatibilityModelId = getCodexOauthCompatibilityModelId(modelId, providersConfig);
+  return compatibilityModelId !== null && isCodexOauthAllowedModelId(compatibilityModelId);
+}
+
+export function isCodexOauthRequiredModel(
+  modelId: string,
+  providersConfig: ProviderModelsConfig | null
+): boolean {
+  const compatibilityModelId = getCodexOauthCompatibilityModelId(modelId, providersConfig);
+  return compatibilityModelId !== null && isCodexOauthRequiredModelId(compatibilityModelId);
 }
 
 export function getCodexOauthContextWindowOverride(modelId: string): number | null {
