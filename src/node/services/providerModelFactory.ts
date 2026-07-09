@@ -206,18 +206,22 @@ export function resolveOpenAIWebSocketResponsesUrl(baseURL: unknown): string | u
     return undefined;
   }
 
-  const url = new URL(resolvedBaseURL);
-  if (url.protocol === "https:") {
-    url.protocol = "wss:";
-  } else if (url.protocol === "http:") {
-    url.protocol = "ws:";
-  } else {
-    throw new Error(`Unsupported OpenAI WebSocket base URL protocol: ${url.protocol}`);
+  try {
+    const url = new URL(resolvedBaseURL);
+    if (url.protocol === "https:") {
+      url.protocol = "wss:";
+    } else if (url.protocol === "http:") {
+      url.protocol = "ws:";
+    } else {
+      return undefined;
+    }
+    url.pathname = `${url.pathname.replace(/\/+$/, "")}/responses`;
+    url.search = "";
+    url.hash = "";
+    return url.toString();
+  } catch {
+    return undefined;
   }
-  url.pathname = `${url.pathname.replace(/\/+$/, "")}/responses`;
-  url.search = "";
-  url.hash = "";
-  return url.toString();
 }
 
 type FetchWithBunExtensions = typeof fetch & {
@@ -663,28 +667,36 @@ function hasOpenAIResponsesCompactionReplayForOtherRoute(
 }
 
 function buildOpenAIResponsesCompactUrl(urlString: string): string {
-  const url = new URL(urlString);
-  url.pathname = url.pathname.replace(/\/responses$/, "/responses/compact");
-  return url.toString();
+  try {
+    const url = new URL(urlString);
+    url.pathname = url.pathname.replace(/\/responses$/, "/responses/compact");
+    return url.toString();
+  } catch {
+    return urlString;
+  }
 }
 
 function buildOpenAIResponsesCompactBody(body: string): string {
-  const json = JSON.parse(body) as Record<string, unknown>;
-  const compactBody: Record<string, unknown> = {
-    model: json.model,
-  };
+  try {
+    const json = JSON.parse(body) as Record<string, unknown>;
+    const compactBody: Record<string, unknown> = {
+      model: json.model,
+    };
 
-  if (json.input !== undefined) {
-    compactBody.input = json.input;
-  }
-  if (json.instructions !== undefined) {
-    compactBody.instructions = json.instructions;
-  }
-  if (json.previous_response_id !== undefined) {
-    compactBody.previous_response_id = json.previous_response_id;
-  }
+    if (json.input !== undefined) {
+      compactBody.input = json.input;
+    }
+    if (json.instructions !== undefined) {
+      compactBody.instructions = json.instructions;
+    }
+    if (json.previous_response_id !== undefined) {
+      compactBody.previous_response_id = json.previous_response_id;
+    }
 
-  return JSON.stringify(compactBody);
+    return JSON.stringify(compactBody);
+  } catch {
+    return body;
+  }
 }
 
 function createFakeOpenAIResponsesResponseForCompact(
@@ -861,7 +873,12 @@ export function normalizeCodexResponsesBody(
   body: string,
   options?: { serviceTier?: ServiceTier }
 ): string {
-  const json = JSON.parse(body) as Record<string, unknown>;
+  let json: Record<string, unknown>;
+  try {
+    json = JSON.parse(body) as Record<string, unknown>;
+  } catch {
+    return body;
+  }
 
   // ChatGPT's Codex endpoint is stricter than the public OpenAI Responses API
   // and currently rejects the `truncation` field entirely.
