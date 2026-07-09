@@ -210,6 +210,10 @@ export class ExperimentsService {
    * NOTE: This intentionally does not block on network calls.
    */
   isExperimentEnabled(experimentId: ExperimentId): boolean {
+    if (!this.isExperimentSupported(experimentId)) {
+      return false;
+    }
+
     const value = this.getExperimentValue(experimentId).value;
 
     // PostHog can return either boolean flags or string variants.
@@ -223,7 +227,9 @@ export class ExperimentsService {
       return value === "test";
     }
 
-    return false;
+    // Keep backend tool gates aligned with the Settings toggle when telemetry has
+    // no assignment: the renderer uses this same declared default as its fallback.
+    return EXPERIMENTS[experimentId].enabledByDefault;
   }
 
   async refreshAll(): Promise<void> {

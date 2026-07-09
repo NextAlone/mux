@@ -215,7 +215,7 @@ describe("ExperimentsService", () => {
     expect(setFeatureFlagVariant).toHaveBeenCalledWith(EXPERIMENT_IDS.PORTABLE_DESKTOP, null);
   });
 
-  test("returns disabled when telemetry is disabled", async () => {
+  test("uses declared defaults when telemetry is disabled", async () => {
     const telemetryService = {
       getPostHogClient: mock(() => null),
       getDistinctId: mock(() => null),
@@ -232,5 +232,6 @@ describe("ExperimentsService", () => {
     });
 
     expect(service.isExperimentEnabled(EXPERIMENT_IDS.PROGRAMMATIC_TOOL_CALLING)).toBe(false);
+    expect(service.isExperimentEnabled(EXPERIMENT_IDS.DYNAMIC_WORKFLOWS)).toBe(true);
   });
 });
