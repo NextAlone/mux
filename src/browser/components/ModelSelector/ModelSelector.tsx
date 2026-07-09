@@ -143,16 +143,22 @@ export const ModelSelector = forwardRef<ModelSelectorRef, ModelSelectorProps>(
     // Track which models are hidden (for rendering)
     const hiddenSet = new Set(hiddenModels);
 
-    const seenModelNames = new Set<string>();
-    const duplicateModelNames = new Set<string>();
+    const providersByDisplayName = new Map<string, Set<string>>();
     for (const model of filteredModels) {
-      const modelName = getModelName(model);
-      if (seenModelNames.has(modelName)) {
-        duplicateModelNames.add(modelName);
-      } else {
-        seenModelNames.add(modelName);
+      const provider = getModelProvider(model);
+      if (!provider) {
+        continue;
       }
+      const displayName = formatModelDisplayName(getModelName(model)).toLowerCase();
+      const providers = providersByDisplayName.get(displayName) ?? new Set<string>();
+      providers.add(provider);
+      providersByDisplayName.set(displayName, providers);
     }
+    const ambiguousDisplayNames = new Set(
+      [...providersByDisplayName.entries()]
+        .filter(([, providers]) => providers.size > 1)
+        .map(([displayName]) => displayName)
+    );
 
     // If the list shrinks (e.g., a model is hidden), keep the highlight in-bounds.
     useEffect(() => {
@@ -371,9 +377,11 @@ export const ModelSelector = forwardRef<ModelSelectorRef, ModelSelectorProps>(
               ) : (
                 filteredModels.map((model, index) => {
                   const modelName = getModelName(model);
+                  const modelDisplayName = formatModelDisplayName(modelName);
                   const modelProvider = getModelProvider(model);
                   const showProviderLabel =
-                    modelProvider.length > 0 && duplicateModelNames.has(modelName);
+                    modelProvider.length > 0 &&
+                    ambiguousDisplayNames.has(modelDisplayName.toLowerCase());
 
                   return (
                     <div
@@ -400,9 +408,7 @@ export const ModelSelector = forwardRef<ModelSelectorRef, ModelSelectorProps>(
                         className="text-muted h-3 w-3 shrink-0"
                       />
                       <span className="flex min-w-0 flex-1 items-baseline gap-1">
-                        <span className="min-w-0 truncate">
-                          {formatModelDisplayName(modelName)}
-                        </span>
+                        <span className="min-w-0 truncate">{modelDisplayName}</span>
                         {showProviderLabel && (
                           <span className="text-muted shrink-0 text-[10px]">
                             {formatProviderDisplayName(
