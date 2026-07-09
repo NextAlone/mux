@@ -349,9 +349,12 @@ export function ModelRow(props: ModelRowProps) {
       {/* Model ID + Provider + Aliases */}
       <td className="min-w-0 py-1.5 pr-2 pl-2 md:pl-3">
         <div className="flex min-w-0 items-center gap-2">
-          <span className="shrink-0" title={props.provider}>
-            <ProviderIcon provider={props.provider} className="text-muted h-3.5 w-3.5" />
-          </span>
+          <ProviderWithIcon
+            provider={props.provider}
+            displayName
+            className="text-muted w-24 shrink-0 overflow-hidden text-[10px] md:w-28"
+            iconClassName="h-3.5 w-3.5 shrink-0"
+          />
           <span className="text-foreground min-w-0 truncate font-mono text-xs">
             {props.modelId}
           </span>
