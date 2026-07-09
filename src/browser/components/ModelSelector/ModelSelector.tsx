@@ -143,23 +143,6 @@ export const ModelSelector = forwardRef<ModelSelectorRef, ModelSelectorProps>(
     // Track which models are hidden (for rendering)
     const hiddenSet = new Set(hiddenModels);
 
-    const providersByDisplayName = new Map<string, Set<string>>();
-    for (const model of filteredModels) {
-      const provider = getModelProvider(model);
-      if (!provider) {
-        continue;
-      }
-      const displayName = formatModelDisplayName(getModelName(model)).toLowerCase();
-      const providers = providersByDisplayName.get(displayName) ?? new Set<string>();
-      providers.add(provider);
-      providersByDisplayName.set(displayName, providers);
-    }
-    const ambiguousDisplayNames = new Set(
-      [...providersByDisplayName.entries()]
-        .filter(([, providers]) => providers.size > 1)
-        .map(([displayName]) => displayName)
-    );
-
     // If the list shrinks (e.g., a model is hidden), keep the highlight in-bounds.
     useEffect(() => {
       if (filteredModels.length === 0) {
@@ -379,9 +362,9 @@ export const ModelSelector = forwardRef<ModelSelectorRef, ModelSelectorProps>(
                   const modelName = getModelName(model);
                   const modelDisplayName = formatModelDisplayName(modelName);
                   const modelProvider = getModelProvider(model);
-                  const showProviderLabel =
-                    modelProvider.length > 0 &&
-                    ambiguousDisplayNames.has(modelDisplayName.toLowerCase());
+                  const providerDisplayName = modelProvider
+                    ? formatProviderDisplayName(modelProvider, providersConfig?.[modelProvider])
+                    : "";
 
                   return (
                     <div
@@ -407,17 +390,12 @@ export const ModelSelector = forwardRef<ModelSelectorRef, ModelSelectorProps>(
                         provider={modelProvider}
                         className="text-muted h-3 w-3 shrink-0"
                       />
-                      <span className="flex min-w-0 flex-1 items-baseline gap-1">
-                        <span className="min-w-0 truncate">{modelDisplayName}</span>
-                        {showProviderLabel && (
-                          <span className="text-muted shrink-0 text-[10px]">
-                            {formatProviderDisplayName(
-                              modelProvider,
-                              providersConfig?.[modelProvider]
-                            )}
-                          </span>
-                        )}
-                      </span>
+                      <span className="min-w-0 flex-1 truncate">{modelDisplayName}</span>
+                      {providerDisplayName && (
+                        <span className="text-muted max-w-28 shrink-0 truncate text-[10px]">
+                          {providerDisplayName}
+                        </span>
+                      )}
 
                       {/* Visibility toggle - Eye with line-through when hidden */}
                       {(onHideModel ?? onUnhideModel) && (
