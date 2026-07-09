@@ -189,14 +189,18 @@ export const LastResponseStatsBarrier: React.FC<LastResponseStatsBarrierProps> =
     <div className="flex items-center justify-between gap-3">
       {showLastResponseStats && avgTPS && (
         <div className="flex min-w-0 flex-1 items-center gap-2">
-          <BaseBarrier text="Response rate" color="var(--color-assistant-border)" />
+          <BaseBarrier
+            text="Response rate"
+            color="var(--color-assistant-border)"
+            className="my-0 py-0"
+          />
           <TooltipIfPresent tooltip={RESPONSE_RATE_TOOLTIP}>
             <span
               data-testid="last-response-stats"
-              className="text-assistant-border counter-nums-mono inline-flex min-w-[14ch] items-baseline justify-end text-[11px] whitespace-nowrap select-none"
+              className="text-assistant-border counter-nums-mono inline-flex min-w-[14ch] items-center justify-end text-[11px] leading-none whitespace-nowrap select-none"
             >
               <span>~{totalTokens.toLocaleString()} tokens</span>
-              <span className="text-dim ml-1 inline-flex min-w-[7ch] items-baseline justify-end gap-1">
+              <span className="text-dim ml-1 inline-flex min-w-[7ch] items-center justify-end gap-1">
                 <span>@</span>
                 <span>{Math.round(avgTPS)}</span>
                 <span>t/s</span>
