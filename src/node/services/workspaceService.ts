@@ -88,7 +88,10 @@ import {
   askSideQuestion,
   snapshotSideQuestionLiveStream,
 } from "@/node/services/sideQuestionService";
-import { NAME_GEN_PREFERRED_MODELS } from "@/common/constants/nameGeneration";
+import {
+  buildNameGenerationCandidates,
+  NAME_GEN_PREFERRED_MODELS,
+} from "@/common/constants/nameGeneration";
 import type { DevcontainerRuntime } from "@/node/runtime/DevcontainerRuntime";
 import { WorktreeRuntime } from "@/node/runtime/WorktreeRuntime";
 import {
@@ -5565,31 +5568,36 @@ export class WorkspaceService extends EventEmitter {
   }
 
   /**
-   * Candidate list for "small model" callers (title + AI sidebar status).
+   * Candidate list for generated workspace names/titles.
    * Global preferences first, then any workspace-configured model so a
-   * custom-model workspace still works when global preferences are
-   * unavailable. Public so AgentStatusService can share the precedence.
+   * custom-model workspace still works when global preferences are unavailable.
    */
   public async getWorkspaceTitleModelCandidates(workspaceId: string): Promise<string[]> {
-    const candidates: string[] = [...NAME_GEN_PREFERRED_MODELS];
+    return this.getWorkspaceNameModelCandidates(
+      workspaceId,
+      this.config.loadConfigOrDefault().titleGenerationModel
+    );
+  }
+
+  public async getWorkspaceStatusModelCandidates(workspaceId: string): Promise<string[]> {
+    return this.getWorkspaceNameModelCandidates(workspaceId, undefined);
+  }
+
+  private async getWorkspaceNameModelCandidates(
+    workspaceId: string,
+    configuredModel: string | undefined
+  ): Promise<string[]> {
     const metadataResult = await this.aiService.getWorkspaceMetadata(workspaceId);
     if (!metadataResult.success) {
-      return candidates;
+      return buildNameGenerationCandidates(configuredModel);
     }
 
-    const fallbackModels = [
+    return buildNameGenerationCandidates(configuredModel, [
       metadataResult.data.aiSettings?.model,
       ...Object.values(metadataResult.data.aiSettingsByAgent ?? {}).map(
         (settings) => settings.model
       ),
-    ];
-    for (const model of fallbackModels) {
-      if (model && !candidates.includes(model)) {
-        candidates.push(model);
-      }
-    }
-
-    return candidates;
+    ]);
   }
 
   /**

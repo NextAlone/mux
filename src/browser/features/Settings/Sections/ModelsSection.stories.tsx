@@ -60,6 +60,45 @@ export const ModelsEmpty: Story = {
   },
 };
 
+export const ModelsConfiguredMobile: Story = {
+  globals: {
+    viewport: { value: "mobile1", isRotated: false },
+  },
+  parameters: {
+    chromatic: {
+      modes: {
+        "dark-mobile": { theme: "dark", viewport: 375 },
+        "light-mobile": { theme: "light", viewport: 375 },
+      },
+    },
+  },
+  render: () => (
+    <div className="w-[343px] p-3">
+      <SettingsSectionStory
+        setup={() =>
+          setupSettingsStory({
+            providersConfig: {
+              anthropic: {
+                apiKeySet: true,
+                isEnabled: true,
+                isConfigured: true,
+                baseUrl: "",
+                models: ["claude-haiku-4-5"],
+              },
+            },
+          })
+        }
+      >
+        <ModelsSection />
+      </SettingsSectionStory>
+    </div>
+  ),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await canvas.findByText("Title generation model");
+  },
+};
+
 export const ModelsConfigured: Story = {
   render: () => (
     <SettingsSectionStory

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { ArrowRight, Info, Loader2, Plus, ShieldCheck } from "lucide-react";
 import { useProviderOptions } from "@/browser/hooks/useProviderOptions";
 import { Button } from "@/browser/components/Button/Button";
+import { SearchableModelSelect } from "@/browser/features/Settings/Components/SearchableModelSelect";
 import { ModelFallbacksEditor } from "./ModelFallbacksEditor";
 import { ProviderIcon } from "@/browser/components/ProviderIcon/ProviderIcon";
 import {
@@ -150,8 +151,16 @@ export function ModelsSection() {
     setLastProvider(allowedProviders[0] ?? "");
   }, [config, allowedProviders, lastProvider, setLastProvider]);
 
-  const { defaultModel, setDefaultModel, hiddenModels, hideModel, unhideModel } =
-    useModelsFromSettings();
+  const {
+    models,
+    defaultModel,
+    setDefaultModel,
+    titleGenerationModel,
+    setTitleGenerationModel,
+    hiddenModels,
+    hideModel,
+    unhideModel,
+  } = useModelsFromSettings();
   const routing = useRouting();
   const minThinking = useMinThinkingLevels();
   const { has1MContext, toggle1MContext } = useProviderOptions();
@@ -334,6 +343,11 @@ export function ModelsSection() {
     void api.providers.setModels({ provider: editing.provider, models: updatedModels });
   }, [api, editing, config, modelExists, updateModelsOptimistically]);
 
+  const titleGenerationModelOptions =
+    titleGenerationModel && !models.includes(titleGenerationModel)
+      ? [titleGenerationModel, ...models]
+      : models;
+
   // Show loading state while config is being fetched
   if (loading || !config) {
     return (
@@ -402,6 +416,25 @@ export function ModelsSection() {
           <span>Your settings are controlled by a policy.</span>
         </div>
       )}
+
+      <div className="border-border-medium bg-background-secondary/40 rounded-md border p-3">
+        <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+          <div className="min-w-0">
+            <div className="text-foreground text-sm font-medium">Title generation model</div>
+            <div className="text-muted text-xs">
+              Used for generated workspace names and titles before falling back to fast defaults.
+            </div>
+          </div>
+          <div className="w-full md:w-80">
+            <SearchableModelSelect
+              value={titleGenerationModel}
+              onChange={setTitleGenerationModel}
+              models={titleGenerationModelOptions}
+              emptyOption={{ value: "", label: "Auto (fast defaults)" }}
+            />
+          </div>
+        </div>
+      </div>
 
       {/* Custom Models */}
       <div className="space-y-3">

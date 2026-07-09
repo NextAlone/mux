@@ -38,6 +38,24 @@ describe("Config", () => {
     await config.editConfig((cfg) => cfg);
   }
 
+  function parseJsonForTest(raw: string): unknown {
+    try {
+      return JSON.parse(raw);
+    } catch (error) {
+      throw new Error(
+        `Failed to parse test JSON: ${error instanceof Error ? error.message : String(error)}`
+      );
+    }
+  }
+
+  function readJsonFile(filePath: string): unknown {
+    return parseJsonForTest(fs.readFileSync(filePath, "utf-8"));
+  }
+
+  function readConfigJson(): unknown {
+    return readJsonFile(path.join(tempDir, "config.json"));
+  }
+
   describe("loadConfigOrDefault with trailing slash migration", () => {
     it("should strip trailing slashes from project paths on load", () => {
       // Create config file with trailing slashes in project paths
@@ -110,6 +128,19 @@ describe("Config", () => {
 
       expect(project?.workflowSchedules).toBeUndefined();
       expect(workspace?.workflowSchedule).toBeUndefined();
+    });
+  });
+
+  describe("title generation model", () => {
+    it("round-trips the configured model", async () => {
+      await config.editConfig((current) => ({
+        ...current,
+        titleGenerationModel: "google:gemini-3.5-flash",
+      }));
+
+      expect(new Config(tempDir).loadConfigOrDefault().titleGenerationModel).toBe(
+        "google:gemini-3.5-flash"
+      );
     });
   });
 
@@ -322,7 +353,7 @@ describe("Config", () => {
         navigation: { projectOrder: ["/repo"] },
       });
 
-      const raw = JSON.parse(fs.readFileSync(path.join(tempDir, "config.json"), "utf-8")) as {
+      const raw = readConfigJson() as {
         migrations?: { userPreferencesInitialized?: unknown };
         userPreferences?: unknown;
       };
@@ -349,7 +380,7 @@ describe("Config", () => {
         llmDebugLogs: true,
       }));
 
-      const raw = JSON.parse(fs.readFileSync(path.join(tempDir, "config.json"), "utf-8")) as {
+      const raw = readConfigJson() as {
         userPreferences?: unknown;
         llmDebugLogs?: unknown;
       };
@@ -400,7 +431,7 @@ describe("Config", () => {
       const restartedConfig = new Config(tempDir);
       expect(restartedConfig.loadConfigOrDefault().chatTranscriptFullWidth).toBe(true);
 
-      const raw = JSON.parse(fs.readFileSync(path.join(tempDir, "config.json"), "utf-8")) as {
+      const raw = readConfigJson() as {
         chatTranscriptFullWidth?: unknown;
       };
       expect(raw.chatTranscriptFullWidth).toBe(true);
@@ -412,7 +443,7 @@ describe("Config", () => {
         return cfg;
       });
 
-      const raw = JSON.parse(fs.readFileSync(path.join(tempDir, "config.json"), "utf-8")) as {
+      const raw = readConfigJson() as {
         chatTranscriptFullWidth?: unknown;
       };
       expect(raw.chatTranscriptFullWidth).toBeUndefined();
@@ -539,7 +570,7 @@ describe("Config", () => {
 
       // Seed is written back so the flag survives restarts even without saves.
       await flushConfigEdits();
-      const raw = JSON.parse(fs.readFileSync(configFilePath(), "utf-8")) as {
+      const raw = readJsonFile(configFilePath()) as {
         modelFallbacks?: unknown;
         migrations?: { defaultModelFallbacksSeeded?: unknown };
       };
@@ -578,7 +609,7 @@ describe("Config", () => {
 
       // The user's chain must survive the seed write-back on disk unchanged.
       await flushConfigEdits();
-      const raw = JSON.parse(fs.readFileSync(configFilePath(), "utf-8")) as {
+      const raw = readJsonFile(configFilePath()) as {
         modelFallbacks?: unknown;
         migrations?: { defaultModelFallbacksSeeded?: unknown };
       };
@@ -625,7 +656,7 @@ describe("Config", () => {
       expect(loaded.modelFallbacks).toBeUndefined();
       expect(loaded.migrations?.defaultModelFallbacksSeeded).toBe(true);
 
-      const raw = JSON.parse(fs.readFileSync(configFilePath(), "utf-8")) as {
+      const raw = readJsonFile(configFilePath()) as {
         modelFallbacks?: unknown;
       };
       expect(raw.modelFallbacks).toEqual({ [FABLE]: { enabled: false, models: [] } });
@@ -644,7 +675,7 @@ describe("Config", () => {
 
       // A downgrade to this version + save must not strip flags it does not
       // know, or the corresponding one-time migrations re-run on re-upgrade.
-      const raw = JSON.parse(fs.readFileSync(configFilePath(), "utf-8")) as {
+      const raw = readJsonFile(configFilePath()) as {
         migrations?: Record<string, unknown>;
       };
       expect(raw.migrations?.futureFlag).toBe(true);
@@ -676,7 +707,7 @@ describe("Config", () => {
 
       await config.editConfig((cfg) => cfg);
 
-      const raw = JSON.parse(fs.readFileSync(configFilePath(), "utf-8")) as {
+      const raw = readJsonFile(configFilePath()) as {
         modelFallbacks?: unknown;
         migrations?: { defaultModelFallbacksSeeded?: unknown };
       };
@@ -696,7 +727,7 @@ describe("Config", () => {
       const restartedConfig = new Config(tempDir);
       expect(restartedConfig.getUpdateChannel()).toBe("nightly");
 
-      const raw = JSON.parse(fs.readFileSync(path.join(tempDir, "config.json"), "utf-8")) as {
+      const raw = readConfigJson() as {
         updateChannel?: unknown;
       };
       expect(raw.updateChannel).toBe("nightly");
@@ -709,7 +740,7 @@ describe("Config", () => {
       const restartedConfig = new Config(tempDir);
       expect(restartedConfig.getUpdateChannel()).toBe("stable");
 
-      const raw = JSON.parse(fs.readFileSync(path.join(tempDir, "config.json"), "utf-8")) as {
+      const raw = readConfigJson() as {
         updateChannel?: unknown;
       };
       expect(raw.updateChannel).toBe("stable");
@@ -765,7 +796,7 @@ describe("Config", () => {
 
   describe("coderWorkspaceArchiveBehavior", () => {
     const readRawArchiveConfig = () =>
-      JSON.parse(fs.readFileSync(path.join(tempDir, "config.json"), "utf-8")) as {
+      readConfigJson() as {
         coderWorkspaceArchiveBehavior?: unknown;
         stopCoderWorkspaceOnArchive?: unknown;
         terminalDefaultShell?: unknown;
@@ -886,7 +917,7 @@ describe("Config", () => {
 
   describe("worktreeArchiveBehavior", () => {
     const readRawArchiveConfig = () =>
-      JSON.parse(fs.readFileSync(path.join(tempDir, "config.json"), "utf-8")) as {
+      readConfigJson() as {
         worktreeArchiveBehavior?: unknown;
         deleteWorktreeOnArchive?: unknown;
       };
@@ -1116,7 +1147,7 @@ describe("Config", () => {
         return cfg;
       });
 
-      const raw = JSON.parse(fs.readFileSync(path.join(tempDir, "config.json"), "utf-8")) as {
+      const raw = readConfigJson() as {
         agentAiDefaults?: Record<string, { modelString?: string }>;
         subagentAiDefaults?: Record<string, { modelString?: string }>;
       };
@@ -1166,7 +1197,7 @@ describe("Config", () => {
       expect(loaded.migrations?.execSubagentDefaultsSplit).toBe(true);
 
       await flushConfigEdits();
-      const raw = JSON.parse(fs.readFileSync(path.join(tempDir, "config.json"), "utf-8")) as {
+      const raw = readConfigJson() as {
         subagentAiDefaults?: Record<string, unknown>;
         migrations?: { execSubagentDefaultsSplit?: boolean };
       };
@@ -1200,7 +1231,7 @@ describe("Config", () => {
       expect(loaded.migrations?.execSubagentDefaultsSplit).toBe(true);
 
       await flushConfigEdits();
-      const raw = JSON.parse(fs.readFileSync(path.join(tempDir, "config.json"), "utf-8")) as {
+      const raw = readConfigJson() as {
         subagentAiDefaults?: Record<string, unknown>;
         migrations?: { execSubagentDefaultsSplit?: boolean };
       };
@@ -1315,7 +1346,7 @@ describe("Config", () => {
         return cfg;
       });
 
-      const raw = JSON.parse(fs.readFileSync(path.join(tempDir, "config.json"), "utf-8")) as {
+      const raw = readConfigJson() as {
         subagentAiDefaults?: Record<string, unknown>;
       };
       expect(raw.subagentAiDefaults).toEqual({
@@ -1344,7 +1375,7 @@ describe("Config", () => {
         subagentAiDefaults: {},
       }));
 
-      const raw = JSON.parse(fs.readFileSync(path.join(tempDir, "config.json"), "utf-8")) as {
+      const raw = readConfigJson() as {
         subagentAiDefaults?: Record<string, unknown>;
       };
       expect(raw.subagentAiDefaults).toBeUndefined();
@@ -1388,7 +1419,7 @@ describe("Config", () => {
         return cfg;
       });
 
-      const raw = JSON.parse(fs.readFileSync(path.join(tempDir, "config.json"), "utf-8")) as {
+      const raw = readConfigJson() as {
         routeOverrides?: Record<string, string>;
       };
 
@@ -1470,7 +1501,7 @@ describe("Config", () => {
     };
 
     const readRawConfig = () =>
-      JSON.parse(fs.readFileSync(path.join(tempDir, "config.json"), "utf-8")) as {
+      readConfigJson() as {
         muxGatewayEnabled?: boolean;
         muxGatewayModels?: string[];
         routePriority?: string[];
@@ -2082,7 +2113,7 @@ describe("Config", () => {
       expect(config.getGlobalSecrets()).toEqual([{ key: "GLOBAL_A", value: "1" }]);
 
       const raw = fs.readFileSync(path.join(tempDir, "secrets.json"), "utf-8");
-      const parsed = JSON.parse(raw) as { __global__?: unknown };
+      const parsed = parseJsonForTest(raw) as { __global__?: unknown };
       expect(parsed.__global__).toEqual([{ key: "GLOBAL_A", value: "1" }]);
     });
 
@@ -2330,7 +2361,7 @@ describe("Config", () => {
       expect(config.getProjectSecrets(projectPathWithSlash)).toEqual([{ key: "A", value: "1" }]);
 
       const raw = fs.readFileSync(path.join(tempDir, "secrets.json"), "utf-8");
-      const parsed = JSON.parse(raw) as Record<string, unknown>;
+      const parsed = parseJsonForTest(raw) as Record<string, unknown>;
       expect(parsed[projectPath]).toEqual([{ key: "A", value: "1" }]);
       expect(parsed[projectPathWithSlash]).toBeUndefined();
     });

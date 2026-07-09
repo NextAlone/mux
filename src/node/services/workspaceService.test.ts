@@ -6065,7 +6065,7 @@ describe("WorkspaceService executeBash workspace path resolution", () => {
     expect(waitForInitMock).toHaveBeenCalledWith("ws-path");
   });
 
-  test("keeps default sub-project execution in the sub-project but runs repo-root mode at checkout root", async () => {
+  test("keeps default sub-project execution in the sub-project but runs jj at checkout root", async () => {
     getWorkspaceMetadataMock.mockReturnValue(
       Promise.resolve(
         Ok({
@@ -6083,13 +6083,13 @@ describe("WorkspaceService executeBash workspace path resolution", () => {
     const repoRootResult = await workspaceService.executeBash("ws-path", "git diff", {
       cwdMode: "repo-root",
     });
-    const gitCommandResult = await workspaceService.executeBash("ws-path", "", undefined, "git", [
+    const jjCommandResult = await workspaceService.executeBash("ws-path", "", undefined, "jj", [
       "status",
     ]);
 
     expect(defaultResult.success).toBe(true);
     expect(repoRootResult.success).toBe(true);
-    expect(gitCommandResult.success).toBe(true);
+    expect(jjCommandResult.success).toBe(true);
     expect(createBashToolSpy).toHaveBeenCalledTimes(3);
     expect(createBashToolSpy.mock.calls[0]?.[0]?.cwd).toBe(
       "/persisted/workspace-root/packages/api"
@@ -6611,7 +6611,7 @@ describe("WorkspaceService getProjectGitStatuses", () => {
     ]);
   });
 
-  test("returns gitStatus null with an error when output cannot be parsed", async () => {
+  test("returns gitStatus null with an error when jj status output cannot be parsed", async () => {
     const metadata: WorkspaceMetadata = {
       id: "ws-unparsable",
       name: "ws-unparsable",
@@ -6632,7 +6632,7 @@ describe("WorkspaceService getProjectGitStatuses", () => {
         projectPath: "/tmp/project-a",
         projectName: "project-a",
         gitStatus: null,
-        error: "Failed to parse git status script output",
+        error: "Failed to parse jj status script output",
       },
     ]);
   });
@@ -10758,6 +10758,7 @@ describe("WorkspaceService regenerateTitle", () => {
       srcDir: "/tmp/test",
       getSessionDir: mock(() => "/tmp/test/sessions"),
       generateStableId: mock(() => "test-id"),
+      loadConfigOrDefault: mock(() => ({ projects: new Map() })),
       findWorkspace: mock(() => ({ projectPath: "/tmp/proj", workspacePath: "/tmp/proj/ws" })),
     };
     const mockInitStateManager: Partial<InitStateManager> = {

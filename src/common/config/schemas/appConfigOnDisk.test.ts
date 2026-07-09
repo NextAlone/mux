@@ -9,6 +9,12 @@ describe("AppConfigOnDiskSchema", () => {
     expect(AppConfigOnDiskSchema.safeParse(valid).success).toBe(true);
   });
 
+  it("validates title generation model setting", () => {
+    const valid = { titleGenerationModel: "anthropic:claude-3-5-haiku-latest" };
+
+    expect(AppConfigOnDiskSchema.safeParse(valid).success).toBe(true);
+  });
+
   it("validates hiddenModels array", () => {
     const valid = { hiddenModels: ["openai:gpt-4o", "google:gemini-pro"] };
 

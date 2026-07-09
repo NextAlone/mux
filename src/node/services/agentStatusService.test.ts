@@ -119,7 +119,7 @@ describe("AgentStatusService", () => {
     emitWorkspaceActivityMock = mock(() => undefined);
     getCandidatesMock = mock((_id: string) => Promise.resolve(["anthropic:claude-haiku-4-5"]));
     mockWorkspaceService = {
-      getWorkspaceTitleModelCandidates: getCandidatesMock,
+      getWorkspaceStatusModelCandidates: getCandidatesMock,
       emitWorkspaceActivity: emitWorkspaceActivityMock,
     } as unknown as WorkspaceService;
 

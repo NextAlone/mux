@@ -2,8 +2,8 @@ import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import { z } from "zod";
 import { useAPI } from "@/browser/contexts/API";
 import { usePersistedState } from "@/browser/hooks/usePersistedState";
-import { getWorkspaceNameStateKey } from "@/common/constants/storage";
-import { NAME_GEN_PREFERRED_MODELS } from "@/common/constants/nameGeneration";
+import { getWorkspaceNameStateKey, TITLE_GENERATION_MODEL_KEY } from "@/common/constants/storage";
+import { buildNameGenerationCandidates } from "@/common/constants/nameGeneration";
 import type { NameGenerationError } from "@/common/types/errors";
 import { validateWorkspaceName } from "@/common/utils/validation/workspaceValidation";
 
@@ -12,19 +12,6 @@ export type WorkspaceNameUIError =
   | { kind: "generation"; error: NameGenerationError }
   | { kind: "validation"; message: string }
   | { kind: "transport"; message: string };
-
-/**
- * Build ordered candidate list for name generation.
- * Gateway routing is resolved automatically by createModel on the backend,
- * so candidates are sent as canonical model IDs.
- */
-function buildNameGenCandidates(userModel: string | undefined): string[] {
-  const candidates: string[] = [...NAME_GEN_PREFERRED_MODELS];
-  if (userModel && !candidates.includes(userModel)) {
-    candidates.push(userModel);
-  }
-  return candidates;
-}
 
 function buildFallbackWorkspaceIdentity(message: string): WorkspaceIdentity {
   const normalized = message
@@ -141,7 +128,13 @@ export function getDisplayTitleFromPersistedState(state: unknown): string {
 export function useWorkspaceName(options: UseWorkspaceNameOptions): UseWorkspaceNameReturn {
   const { message, debounceMs = 500, userModel, scopeId } = options;
   const { api } = useAPI();
-  const candidates = useMemo(() => buildNameGenCandidates(userModel), [userModel]);
+  const [titleGenerationModel] = usePersistedState<string>(TITLE_GENERATION_MODEL_KEY, "", {
+    listener: true,
+  });
+  const candidates = useMemo(
+    () => buildNameGenerationCandidates(titleGenerationModel, [userModel]),
+    [titleGenerationModel, userModel]
+  );
 
   // Always call usePersistedState, but only *use* it when scopeId is provided.
   // This prevents draft switching from leaking name state across different creation drafts.

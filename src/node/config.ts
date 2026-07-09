@@ -855,6 +855,14 @@ export class Config {
           }
         }
 
+        if (typeof parsed.titleGenerationModel === "string") {
+          const normalized = normalizeSelectedModel(parsed.titleGenerationModel.trim());
+          if (normalized !== parsed.titleGenerationModel) {
+            parsed.titleGenerationModel = normalized;
+            configModified = true;
+          }
+        }
+
         if (Array.isArray(parsed.hiddenModels)) {
           const sourceHiddenModels = parsed.hiddenModels.filter(
             (model): model is string => typeof model === "string"
@@ -976,6 +984,7 @@ export class Config {
         const modelFallbacks = normalizeModelFallbacks(parsed.modelFallbacks);
 
         const defaultModel = normalizeOptionalModelString(parsed.defaultModel);
+        const titleGenerationModel = normalizeOptionalModelString(parsed.titleGenerationModel);
         const advisorModelString = parseOptionalNonEmptyString(parsed.advisorModelString);
         const advisorThinkingLevel = parseOptionalThinkingLevel(parsed.advisorThinkingLevel);
         const advisorMaxUsesPerTurn =
@@ -1127,6 +1136,7 @@ export class Config {
           minThinkingLevelByModel,
           modelFallbacks,
           defaultModel,
+          titleGenerationModel,
           advisorModelString,
           advisorThinkingLevel,
           advisorMaxUsesPerTurn,
@@ -1241,6 +1251,11 @@ export class Config {
       const defaultModel = normalizeOptionalModelString(config.defaultModel);
       if (defaultModel !== undefined) {
         data.defaultModel = defaultModel;
+      }
+
+      const titleGenerationModel = normalizeOptionalModelString(config.titleGenerationModel);
+      if (titleGenerationModel !== undefined) {
+        data.titleGenerationModel = titleGenerationModel;
       }
 
       const advisorModelString = parseOptionalNonEmptyString(config.advisorModelString);
@@ -2645,7 +2660,7 @@ ${jsonString}`;
    *
    * Project secrets define which env vars are injected into this project/workspace.
    * Global secrets can be injected for all projects when `injectAll` is enabled,
-   * and are also used as a shared value store for `{ secret: "GLOBAL_KEY" }` references.
+   * and are also used as a shared value store for named global references.
    */
   getEffectiveSecrets(projectPath: string): Secret[] {
     const normalizedProjectPath = Config.normalizeSecretsProjectPath(projectPath) || projectPath;

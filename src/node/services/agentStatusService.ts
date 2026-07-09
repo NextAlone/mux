@@ -96,7 +96,7 @@ interface State {
 
 /**
  * Periodic backend job that produces the sidebar's AI-generated agent status
- * using the same "small model" path as workspace title generation.
+ * using the default fast small-model path, independent from explicit title-model overrides.
  *
  * Cadence: streaming workspaces refresh fast so the user can follow along;
  * idle workspaces back off. Both back off further when the desktop window
@@ -339,7 +339,7 @@ export class AgentStatusService {
         return;
       }
 
-      const candidates = await this.workspaceService.getWorkspaceTitleModelCandidates(workspaceId);
+      const candidates = await this.workspaceService.getWorkspaceStatusModelCandidates(workspaceId);
       if (candidates.length === 0) {
         // No configured small-model path is a config state, not a transcript result.
         // Consume recency priority so one workspace cannot starve the scheduler, but

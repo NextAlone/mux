@@ -20,7 +20,11 @@ import {
 } from "@/common/utils/ai/models";
 import { isModelAvailable } from "@/common/routing";
 import type { ProviderModelEntry, ProvidersConfigMap } from "@/common/orpc/types";
-import { DEFAULT_MODEL_KEY, HIDDEN_MODELS_KEY } from "@/common/constants/storage";
+import {
+  DEFAULT_MODEL_KEY,
+  HIDDEN_MODELS_KEY,
+  TITLE_GENERATION_MODEL_KEY,
+} from "@/common/constants/storage";
 
 import {
   isGatewayModelAccessibleFromAuthoritativeCatalog,
@@ -131,7 +135,7 @@ export function useModelsFromSettings() {
   const { api } = useAPI();
 
   const persistModelPrefs = useCallback(
-    (patch: { defaultModel?: string; hiddenModels?: string[] }) => {
+    (patch: { defaultModel?: string; titleGenerationModel?: string; hiddenModels?: string[] }) => {
       if (!api?.config?.updateModelPreferences) {
         return;
       }
@@ -166,6 +170,28 @@ export function useModelsFromSettings() {
       });
     },
     [persistModelPrefs, setDefaultModel]
+  );
+
+  const [titleGenerationModel, setTitleGenerationModel] = usePersistedState<string>(
+    TITLE_GENERATION_MODEL_KEY,
+    "",
+    { listener: true }
+  );
+
+  const setTitleGenerationModelAndPersist = useCallback(
+    (next: string) => {
+      setTitleGenerationModel((prev) => {
+        const selectedModel = normalizeSelectedModel(next);
+        const previousSelectedModel = normalizeSelectedModel(prev);
+
+        if (selectedModel !== previousSelectedModel) {
+          persistModelPrefs({ titleGenerationModel: selectedModel });
+        }
+
+        return selectedModel;
+      });
+    },
+    [persistModelPrefs, setTitleGenerationModel]
   );
 
   const [hiddenModels, setHiddenModels] = usePersistedState<string[]>(HIDDEN_MODELS_KEY, [], {
@@ -440,6 +466,8 @@ export function useModelsFromSettings() {
     unhideModel,
     defaultModel,
     setDefaultModel: setDefaultModelAndPersist,
+    titleGenerationModel,
+    setTitleGenerationModel: setTitleGenerationModelAndPersist,
     openaiApiKeySet,
     codexOauthSet,
   };

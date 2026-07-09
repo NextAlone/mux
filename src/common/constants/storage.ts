@@ -347,6 +347,12 @@ export function getLastRuntimeConfigKey(projectPath: string): string {
 export const DEFAULT_MODEL_KEY = "model-default";
 
 /**
+ * Get the localStorage key for the workspace title generation model (global).
+ * Format: "title-generation-model"
+ */
+export const TITLE_GENERATION_MODEL_KEY = "title-generation-model";
+
+/**
  * Get the localStorage key for the hidden models list (global).
  * Format: "hidden-models"
  */

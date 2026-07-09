@@ -38,6 +38,7 @@ import {
   GATEWAY_MODELS_KEY,
   HIDDEN_MODELS_KEY,
   LAUNCH_BEHAVIOR_KEY,
+  TITLE_GENERATION_MODEL_KEY,
   RUNTIME_ENABLEMENT_KEY,
   SELECTED_WORKSPACE_KEY,
   WORKSPACE_DRAFTS_BY_PROJECT_KEY,
@@ -599,6 +600,10 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
         if (cfg.defaultModel !== undefined) {
           updatePersistedState(DEFAULT_MODEL_KEY, cfg.defaultModel);
         }
+        updatePersistedState<string | undefined>(
+          TITLE_GENERATION_MODEL_KEY,
+          cfg.titleGenerationModel
+        );
         if (cfg.hiddenModels !== undefined) {
           updatePersistedState(HIDDEN_MODELS_KEY, cfg.hiddenModels);
         }

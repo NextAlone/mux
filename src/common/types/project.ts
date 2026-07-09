@@ -123,6 +123,8 @@ export interface ProjectsConfig {
    * Mirrors the browser localStorage cache (DEFAULT_MODEL_KEY).
    */
   defaultModel?: string;
+  /** Fast model used for generated workspace names and titles. */
+  titleGenerationModel?: string;
   /** Global advisor model override for the experimental advisor tool. */
   advisorModelString?: string;
   /** Global advisor reasoning override for the experimental advisor tool. */

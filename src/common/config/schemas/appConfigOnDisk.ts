@@ -185,6 +185,7 @@ export const AppConfigOnDiskSchema = z
      */
     modelFallbacks: ModelFallbacksSchema.optional(),
     defaultModel: z.string().optional(),
+    titleGenerationModel: z.string().optional(),
     advisorModelString: z.string().optional(),
     advisorThinkingLevel: ThinkingLevelSchema.optional(),
     advisorMaxUsesPerTurn: z.number().int().positive().nullable().optional(),

@@ -2239,6 +2239,7 @@ export const config = {
       minThinkingLevelByModel: z.record(z.string(), ThinkingLevelSchema).optional(),
       modelFallbacks: ModelFallbacksSchema.optional(),
       defaultModel: z.string().optional(),
+      titleGenerationModel: z.string().optional(),
       advisorModelString: AdvisorModelStringSchema,
       advisorThinkingLevel: AdvisorThinkingLevelSchema,
       advisorMaxUsesPerTurn: AdvisorMaxUsesPerTurnSchema.optional(),
@@ -2316,6 +2317,7 @@ export const config = {
   updateModelPreferences: {
     input: z.object({
       defaultModel: z.string().optional(),
+      titleGenerationModel: z.string().optional(),
       hiddenModels: z.array(z.string()).optional(),
     }),
     output: z.void(),

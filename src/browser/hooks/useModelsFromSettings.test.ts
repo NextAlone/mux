@@ -17,7 +17,11 @@ import type {
   ProviderModelEntry,
   ProvidersConfigMap,
 } from "@/common/orpc/types";
-import { DEFAULT_MODEL_KEY, HIDDEN_MODELS_KEY } from "@/common/constants/storage";
+import {
+  DEFAULT_MODEL_KEY,
+  HIDDEN_MODELS_KEY,
+  TITLE_GENERATION_MODEL_KEY,
+} from "@/common/constants/storage";
 
 function countOccurrences(haystack: string[], needle: string): number {
   return haystack.filter((v) => v === needle).length;
@@ -50,6 +54,7 @@ interface TestApi {
   config?: {
     updateModelPreferences?: (patch: {
       defaultModel?: string;
+      titleGenerationModel?: string;
       hiddenModels?: string[];
     }) => Promise<unknown>;
   };
@@ -251,6 +256,29 @@ describe("useModelsFromSettings selected model preservation", () => {
     );
     expect(updateModelPreferences).toHaveBeenCalledWith({
       defaultModel: "openrouter:openai/gpt-5",
+    });
+  });
+
+  test("setTitleGenerationModel persists the fast title model", async () => {
+    const updateModelPreferences = mock(() => Promise.resolve(undefined));
+    apiMock = {
+      config: { updateModelPreferences },
+    };
+
+    const { result } = renderHook(() => useModelsFromSettings());
+
+    act(() => {
+      result.current.setTitleGenerationModel("openrouter:anthropic/claude-3-haiku");
+    });
+
+    await waitFor(() =>
+      expect(result.current.titleGenerationModel).toBe("openrouter:anthropic/claude-3-haiku")
+    );
+    expect(globalThis.window.localStorage.getItem(TITLE_GENERATION_MODEL_KEY)).toBe(
+      JSON.stringify("openrouter:anthropic/claude-3-haiku")
+    );
+    expect(updateModelPreferences).toHaveBeenCalledWith({
+      titleGenerationModel: "openrouter:anthropic/claude-3-haiku",
     });
   });
 

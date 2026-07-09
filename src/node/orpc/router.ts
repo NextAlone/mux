@@ -14,6 +14,7 @@ import { Err, Ok } from "@/common/types/result";
 import { resolveProviderCredentials } from "@/node/utils/providerRequirements";
 import { isErrnoWithCode } from "@/node/utils/fs";
 import { isPathInsideDir, stripTrailingSlashes } from "@/node/utils/pathUtils";
+import { buildNameGenerationCandidates } from "@/common/constants/nameGeneration";
 import { generateWorkspaceIdentity } from "@/node/services/workspaceTitleGenerator";
 import {
   WorkspaceGoalChildWorkspaceError,
@@ -441,6 +442,21 @@ function normalizeOptionalConfigString(value: string | null | undefined): string
   }
 
   return trimmedValue;
+}
+
+function normalizeModelPreferenceString(value: string): string | undefined {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+
+  // Reject malformed mux-gateway strings ("mux-gateway:provider" without "/model").
+  if (trimmed.startsWith("mux-gateway:") && !trimmed.includes("/")) {
+    return undefined;
+  }
+
+  const normalized = normalizeSelectedModel(trimmed);
+  return isValidModelFormat(normalized) ? normalized : undefined;
 }
 
 function normalizeOptionalConfigThinkingLevel(value: string | null | undefined) {
@@ -1005,6 +1021,7 @@ export const router = (authToken?: string) => {
             minThinkingLevelByModel: config.minThinkingLevelByModel,
             modelFallbacks: config.modelFallbacks,
             defaultModel: config.defaultModel,
+            titleGenerationModel: config.titleGenerationModel,
             advisorModelString: config.advisorModelString ?? null,
             advisorThinkingLevel: config.advisorThinkingLevel ?? null,
             advisorMaxUsesPerTurn: config.advisorMaxUsesPerTurn,
@@ -1188,30 +1205,17 @@ export const router = (authToken?: string) => {
         .input(schemas.config.updateModelPreferences.input)
         .output(schemas.config.updateModelPreferences.output)
         .handler(async ({ context, input }) => {
-          const normalizeModelString = (value: string): string | undefined => {
-            const trimmed = value.trim();
-            if (!trimmed) {
-              return undefined;
-            }
-
-            // Reject malformed mux-gateway strings ("mux-gateway:provider" without "/model").
-            if (trimmed.startsWith("mux-gateway:") && !trimmed.includes("/")) {
-              return undefined;
-            }
-
-            const normalized = normalizeSelectedModel(trimmed);
-            if (!isValidModelFormat(normalized)) {
-              return undefined;
-            }
-
-            return normalized;
-          };
-
           await context.config.editConfig((config) => {
             const next = { ...config };
 
             if (input.defaultModel !== undefined) {
-              next.defaultModel = normalizeModelString(input.defaultModel);
+              next.defaultModel = normalizeModelPreferenceString(input.defaultModel);
+            }
+
+            if (input.titleGenerationModel !== undefined) {
+              next.titleGenerationModel = normalizeModelPreferenceString(
+                input.titleGenerationModel
+              );
             }
 
             if (input.hiddenModels !== undefined) {
@@ -1219,7 +1223,7 @@ export const router = (authToken?: string) => {
               const normalizedHidden: string[] = [];
 
               for (const modelString of input.hiddenModels) {
-                const normalized = normalizeModelString(modelString);
+                const normalized = normalizeModelPreferenceString(modelString);
                 if (!normalized) continue;
                 if (seen.has(normalized)) continue;
                 seen.add(normalized);
@@ -3778,9 +3782,13 @@ export const router = (authToken?: string) => {
         .handler(async ({ context, input }) => {
           // Frontend provides ordered candidate list; gateway routing resolved by createModel.
           // Backend tries candidates in order with retry on API errors.
+          const candidates = buildNameGenerationCandidates(
+            context.config.loadConfigOrDefault().titleGenerationModel,
+            input.candidates
+          );
           const result = await generateWorkspaceIdentity(
             input.message,
-            input.candidates,
+            candidates,
             context.aiService
           );
           if (!result.success) {
