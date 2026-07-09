@@ -158,6 +158,14 @@ async function withTempPolicyProviderFactory(
   }
 }
 
+function parseTestJson(value: string): unknown {
+  try {
+    return JSON.parse(value) as unknown;
+  } catch (error) {
+    throw new Error(`Invalid JSON in test fixture: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
 describe("resolveOpenAIWebSocketResponsesUrl", () => {
   it("uses the official default when no base URL is configured", () => {
     expect(resolveOpenAIWebSocketResponsesUrl(undefined)).toBeUndefined();
@@ -175,7 +183,7 @@ describe("resolveOpenAIWebSocketResponsesUrl", () => {
 
 describe("normalizeCodexResponsesBody", () => {
   it("enforces Codex-compatible fields, strips truncation, and lifts system prompts into instructions", () => {
-    const normalized = JSON.parse(
+    const normalized = parseTestJson(
       normalizeCodexResponsesBody(
         JSON.stringify({
           model: "gpt-5.3-codex",
@@ -218,7 +226,7 @@ describe("normalizeCodexResponsesBody", () => {
   });
 
   it("strips explicit truncation because the Codex endpoint rejects it", () => {
-    const normalized = JSON.parse(
+    const normalized = parseTestJson(
       normalizeCodexResponsesBody(
         JSON.stringify({
           model: "gpt-5.3-codex",
@@ -233,7 +241,7 @@ describe("normalizeCodexResponsesBody", () => {
   });
 
   it("injects priority for Codex fast mode after SDK provider option validation", () => {
-    const normalized = JSON.parse(
+    const normalized = parseTestJson(
       normalizeCodexResponsesBody(
         JSON.stringify({
           model: "gpt-5.5",
@@ -248,7 +256,7 @@ describe("normalizeCodexResponsesBody", () => {
   });
 
   it("forwards priority service tier to the Codex OAuth endpoint", () => {
-    const normalized = JSON.parse(
+    const normalized = parseTestJson(
       normalizeCodexResponsesBody(
         JSON.stringify({
           model: "gpt-5.5",
@@ -263,7 +271,7 @@ describe("normalizeCodexResponsesBody", () => {
   });
 
   it("does not forward OpenAI API service tiers to the Codex OAuth endpoint", () => {
-    const normalized = JSON.parse(
+    const normalized = parseTestJson(
       normalizeCodexResponsesBody(
         JSON.stringify({
           model: "gpt-5.5",
@@ -380,29 +388,6 @@ describe("ProviderModelFactory.createModel", () => {
 
       expect((result.data as { provider?: unknown }).provider).toBe("local-claude.messages");
       expect(result.data.constructor.name).toBe("AnthropicMessagesLanguageModel");
-    });
-  });
-
-  it("creates Kiro OAuth models as a standalone provider", async () => {
-    await withTempConfig(async (config, factory) => {
-      config.saveProvidersConfig({
-        kiro: {
-          accessToken: "kiro-access-token",
-          profileArn: "arn:aws:codewhisperer:us-east-1:123456789012:profile/test",
-          region: "us-east-1",
-          models: ["claude-sonnet-4-5"],
-        },
-      } as Parameters<Config["saveProvidersConfig"]>[0]);
-
-      const result = await factory.createModel("kiro:claude-sonnet-4-5");
-
-      expect(result.success).toBe(true);
-      if (!result.success) {
-        return;
-      }
-
-      expect((result.data as { provider?: unknown }).provider).toBe("kiro.runtime");
-      expect(result.data.constructor.name).toBe("KiroLanguageModel");
     });
   });
 
@@ -2269,7 +2254,7 @@ function createCapturingFetch(): { calls: CapturedFetchCall[]; fakeFetch: typeof
 }
 
 function parseSentBody(call: CapturedFetchCall): Record<string, unknown> {
-  return JSON.parse(call.init.body as string) as Record<string, unknown>;
+  return parseTestJson(call.init.body as string) as Record<string, unknown>;
 }
 
 describe("wrapFetchWithAnthropicCacheControl — Opus 4.7+ / Sonnet 5+ wire transforms", () => {

@@ -225,39 +225,6 @@ function getProviderFields(provider: string, providerInfo?: ProviderConfigInfo):
     return []; // OAuth-based, no manual key entry
   }
 
-  if (provider === "kiro") {
-    return [
-      {
-        key: "oauthCredentialsPath",
-        label: "OAuth JSON file",
-        placeholder: "~/.aws/sso/cache/kiro-auth-token.json",
-        type: "text",
-        optional: true,
-      },
-      {
-        key: "oauthSqlitePath",
-        label: "kiro-cli SQLite database",
-        placeholder: "~/.local/share/kiro-cli/data.sqlite3",
-        type: "text",
-        optional: true,
-      },
-      {
-        key: "region",
-        label: "Region",
-        placeholder: "us-east-1",
-        type: "text",
-        optional: true,
-      },
-      {
-        key: "profileArn",
-        label: "Profile ARN",
-        placeholder: "arn:aws:codewhisperer:us-east-1:...",
-        type: "text",
-        optional: true,
-      },
-    ];
-  }
-
   // Default for most providers
   return [
     { key: "apiKey", label: "API Key", placeholder: "Enter API key", type: "secret" },
@@ -1284,16 +1251,6 @@ export function ProvidersSection() {
       });
     } else if (field === "apiKeyFile") {
       updateOptimistically(provider, { apiKeyFile: editValue || undefined });
-    } else if (
-      provider === "kiro" &&
-      (field === "oauthCredentialsPath" ||
-        field === "oauthSqlitePath" ||
-        field === "region" ||
-        field === "profileArn")
-    ) {
-      updateOptimistically(provider, {
-        kiro: { ...config?.[provider]?.kiro, [field]: editValue || undefined },
-      });
     }
 
     setEditingField(null);
@@ -1327,16 +1284,6 @@ export function ProvidersSection() {
         });
       } else if (field === "apiKeyFile") {
         updateOptimistically(provider, { apiKeyFile: undefined });
-      } else if (
-        provider === "kiro" &&
-        (field === "oauthCredentialsPath" ||
-          field === "oauthSqlitePath" ||
-          field === "region" ||
-          field === "profileArn")
-      ) {
-        updateOptimistically(provider, {
-          kiro: { ...config?.[provider]?.kiro, [field]: undefined },
-        });
       }
 
       // Save in background
@@ -1387,16 +1334,6 @@ export function ProvidersSection() {
     // For bedrock, check aws nested object for region/profile
     if (provider === "bedrock" && (field === "region" || field === "profile")) {
       return field === "region" ? providerConfig.aws?.region : providerConfig.aws?.profile;
-    }
-
-    if (
-      provider === "kiro" &&
-      (field === "oauthCredentialsPath" ||
-        field === "oauthSqlitePath" ||
-        field === "region" ||
-        field === "profileArn")
-    ) {
-      return providerConfig.kiro?.[field];
     }
 
     // For standard fields like baseUrl

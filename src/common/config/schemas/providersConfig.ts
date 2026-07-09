@@ -50,20 +50,6 @@ export const BedrockProviderConfigSchema = BaseProviderConfigSchema.extend({
   secretAccessKey: z.string().optional(),
 });
 
-export const KiroProviderConfigSchema = BaseProviderConfigSchema.extend({
-  accessToken: z.string().optional(),
-  refreshToken: z.string().optional(),
-  expiresAt: z.union([z.string(), z.number()]).optional(),
-  profileArn: z.string().optional(),
-  region: z.string().optional(),
-  ssoRegion: z.string().optional(),
-  apiRegion: z.string().optional(),
-  clientId: z.string().optional(),
-  clientSecret: z.string().optional(),
-  oauthCredentialsPath: z.string().optional(),
-  oauthSqlitePath: z.string().optional(),
-});
-
 export const OpenRouterProviderConfigSchema = BaseProviderConfigSchema.extend({
   order: z.string().optional(),
   allow_fallbacks: z.boolean().optional(),
@@ -101,7 +87,6 @@ export const ProvidersConfigSchema = z
     deepseek: DeepSeekProviderConfigSchema.optional(),
     ollama: OllamaProviderConfigSchema.optional(),
     "github-copilot": GitHubCopilotProviderConfigSchema.optional(),
-    kiro: KiroProviderConfigSchema.optional(),
   })
   .catchall(BaseProviderConfigSchema);
 
@@ -116,6 +101,5 @@ export type GoogleProviderConfig = z.infer<typeof GoogleProviderConfigSchema>;
 export type DeepSeekProviderConfig = z.infer<typeof DeepSeekProviderConfigSchema>;
 export type OllamaProviderConfig = z.infer<typeof OllamaProviderConfigSchema>;
 export type GitHubCopilotProviderConfig = z.infer<typeof GitHubCopilotProviderConfigSchema>;
-export type KiroProviderConfig = z.infer<typeof KiroProviderConfigSchema>;
 
 export type ProvidersConfig = z.infer<typeof ProvidersConfigSchema>;

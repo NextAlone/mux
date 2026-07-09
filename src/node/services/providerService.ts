@@ -50,24 +50,6 @@ import { WORKSPACE_DEFAULTS } from "@/constants/workspaceDefaults";
 // Re-export types for backward compatibility
 export type { AWSCredentialStatus, ProviderConfigInfo, ProvidersConfigMap };
 
-const DEFAULT_KIRO_MODELS: ProviderModelEntry[] = [
-  "auto-kiro",
-  "claude-sonnet-4",
-  "claude-sonnet-4.5",
-  "claude-sonnet-4.6",
-  "claude-sonnet-5",
-  "claude-haiku-4.5",
-  "claude-opus-4.5",
-  "claude-opus-4.6",
-  "claude-opus-4.7",
-  "claude-opus-4.8",
-  "deepseek-3.2",
-  "glm-5",
-  "minimax-m2.1",
-  "minimax-m2.5",
-  "qwen3-coder-next",
-];
-
 function filterProviderModelsByPolicy(
   provider: string,
   models: ProviderModelEntry[] | undefined,
@@ -351,11 +333,6 @@ export class ProviderService {
         bearerToken?: string;
         accessKeyId?: string;
         secretAccessKey?: string;
-        /** Kiro-only: persisted OAuth metadata and credential file locations. */
-        accessToken?: string;
-        oauthCredentialsPath?: string;
-        oauthSqlitePath?: string;
-        profileArn?: string;
         /** Persisted provider toggle: only `false` is stored; missing means enabled. */
         enabled?: unknown;
         /** OpenAI-only: stored Codex OAuth tokens (never sent to frontend). */
@@ -375,10 +352,6 @@ export class ProviderService {
         config.models === undefined
           ? undefined
           : normalizeProviderModelEntriesForProvider(provider, config.models);
-      const effectiveModels =
-        normalizedModels === undefined && provider === "kiro"
-          ? DEFAULT_KIRO_MODELS
-          : normalizedModels;
       const filteredModels = filterProviderModelsByPolicy(
         provider,
         normalizedModels,
@@ -405,10 +378,7 @@ export class ProviderService {
         isConfigured: false, // computed below
         baseUrl: forcedBaseUrl ?? explicitBaseUrl,
         apiKeyFile: typeof config.apiKeyFile === "string" ? config.apiKeyFile : undefined,
-        models:
-          provider === "kiro"
-            ? filterProviderModelsByPolicy(provider, effectiveModels, allowedModels)
-            : filteredModels,
+        models: filteredModels,
       };
 
       // OpenAI-specific fields
@@ -469,15 +439,6 @@ export class ProviderService {
           bearerTokenSet: !!config.bearerToken,
           accessKeyIdSet: !!config.accessKeyId,
           secretAccessKeySet: !!config.secretAccessKey,
-        };
-      }
-
-      if (provider === "kiro") {
-        providerInfo.kiro = {
-          oauthCredentialsPath: config.oauthCredentialsPath,
-          oauthSqlitePath: config.oauthSqlitePath,
-          region: config.region,
-          profileArn: config.profileArn,
         };
       }
 

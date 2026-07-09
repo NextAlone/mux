@@ -22,7 +22,6 @@ export type ProviderName =
   | "deepseek"
   | "openrouter"
   | "github-copilot"
-  | "kiro"
   | "bedrock"
   | "ollama";
 
@@ -152,13 +151,6 @@ export const PROVIDER_DEFINITIONS = {
     // Intentionally omit fromGatewayModelId: github-copilot:* model strings are canonical identities
     // with Copilot-specific pricing/capabilities, including non-OpenAI families like Claude.
     toGatewayModelId: (_origin, modelId) => modelId,
-  },
-  kiro: {
-    displayName: "Kiro",
-    import: () => import("ai"),
-    factoryName: "createKiro",
-    requiresApiKey: false,
-    kind: "direct",
   },
   bedrock: {
     displayName: "Bedrock",

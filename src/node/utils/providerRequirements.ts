@@ -19,14 +19,12 @@ import { isCustomProviderConfig } from "@/common/utils/providers/customProviders
 import type {
   BaseProviderConfig,
   BedrockProviderConfig,
-  KiroProviderConfig,
   MuxGatewayProviderConfig,
   OpenAIProviderConfig,
 } from "@/common/config/schemas/providersConfig";
 import type { ExternalSecretResolver } from "@/common/types/secrets";
 import type { ProviderConfig, ProvidersConfig } from "@/node/config";
 import { parseCodexOauthAuth } from "@/node/utils/codexOauthAuth";
-import { isKiroOauthConfigured } from "@/node/services/kiro/kiroAuth";
 
 // ============================================================================
 // Environment variable mappings - single source of truth
@@ -69,10 +67,6 @@ export const PROVIDER_ENV_VARS: Partial<
   },
   "github-copilot": {
     apiKey: ["GITHUB_COPILOT_TOKEN"],
-  },
-  kiro: {
-    apiKey: ["KIRO_ACCESS_TOKEN"],
-    region: ["KIRO_REGION"],
   },
   bedrock: {
     region: ["AWS_REGION", "AWS_DEFAULT_REGION"],
@@ -126,20 +120,7 @@ type ProviderSpecificCredentialFields = Partial<
     "region" | "profile" | "bearerToken" | "accessKeyId" | "secretAccessKey"
   > &
     Pick<MuxGatewayProviderConfig, "couponCode" | "voucher"> &
-    Pick<OpenAIProviderConfig, "organization"> &
-    Pick<
-      KiroProviderConfig,
-      | "accessToken"
-      | "refreshToken"
-      | "expiresAt"
-      | "profileArn"
-      | "ssoRegion"
-      | "apiRegion"
-      | "clientId"
-      | "clientSecret"
-      | "oauthCredentialsPath"
-      | "oauthSqlitePath"
-    >
+    Pick<OpenAIProviderConfig, "organization">
 >;
 
 // Raw provider config as read from disk — before validation.
@@ -346,15 +327,6 @@ export function resolveProviderCredentials(
     return couponCode
       ? { isConfigured: true, couponCode }
       : { isConfigured: false, missingRequirement: "coupon_code" };
-  }
-
-  if (provider === "kiro") {
-    return isKiroOauthConfigured(config, env)
-      ? {
-          isConfigured: true,
-          region: typeof config.region === "string" ? config.region : undefined,
-        }
-      : { isConfigured: false, missingRequirement: "api_key" };
   }
 
   // Keyless providers (e.g., ollama): require explicit opt-in via baseUrl/baseURL or models
