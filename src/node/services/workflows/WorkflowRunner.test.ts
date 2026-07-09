@@ -15,6 +15,7 @@ import {
   type WorkflowTaskAdapter,
 } from "./WorkflowRunner";
 import { hashWorkflowStepInput } from "./workflowReplayKey";
+import { compileDeclarativeWorkflow } from "./declarativeWorkflow";
 
 const WORKFLOW_RUNNER_TEST_STALE_LEASE_MS = 100;
 
@@ -73,6 +74,84 @@ function createDeferred() {
 }
 
 describe("WorkflowRunner", () => {
+  test("runs a declarative Markdown workflow as durable sequential phases", async () => {
+    using tmp = new DisposableTempDir("workflow-runner-declarative");
+    const store = new WorkflowRunStore({
+      sessionDir: tmp.path,
+      staleLeaseMs: WORKFLOW_RUNNER_TEST_STALE_LEASE_MS,
+    });
+    const declarativeSource = `---
+version: 1
+name: three-stage-change
+description: Analyze, implement, and verify.
+inputs:
+  request:
+    required: true
+  context:
+    type: array
+    required: true
+steps:
+  - id: analyze
+    agent: explore
+  - id: implement
+    model: openai:gpt-test
+    thinking: high
+  - id: verify
+result:
+  report_markdown: \${{ steps.verify.output }}
+  structured_output:
+    analysis: \${{ steps.analyze.output }}
+---
+## analyze
+\${{ args.context }}
+## implement
+Implement \${{ args.request }} using \${{ steps.analyze.output }}
+## verify
+Verify \${{ steps.implement.output }}`;
+    await store.createRun({
+      id: "wfr_declarative",
+      workspaceId: "workspace-1",
+      workflow: { ...definition, name: "three-stage-change" },
+      source: compileDeclarativeWorkflow(declarativeSource),
+      args: { request: "add a safe feature", context: ["security", 3] },
+      now: "2026-05-29T00:00:00.000Z",
+    });
+
+    const specs: WorkflowAgentSpec[] = [];
+    const runner = createRunner(store, {
+      async runAgent(spec) {
+        specs.push(spec);
+        if (spec.id === "analyze") {
+          return { taskId: "task_analyze", reportMarkdown: "concrete analysis" };
+        }
+        if (spec.id === "implement") {
+          expect(spec.prompt).toContain("concrete analysis");
+          return { taskId: "task_implement", reportMarkdown: "implementation complete" };
+        }
+        expect(spec.prompt).toContain("implementation complete");
+        return { taskId: "task_verify", reportMarkdown: "verification passed" };
+      },
+    });
+
+    await expect(runner.run("wfr_declarative")).resolves.toEqual({
+      reportMarkdown: "verification passed",
+      structuredOutput: { analysis: "concrete analysis" },
+    });
+    expect(specs.map((spec) => spec.id)).toEqual(["analyze", "implement", "verify"]);
+    expect(specs[0]?.prompt).toBe('[\n  "security",\n  3\n]');
+    expect(specs[0]).toMatchObject({ agentId: "explore", isolation: "none" });
+    expect(specs[1]).toMatchObject({
+      agentId: "exec",
+      modelString: "openai:gpt-test",
+      thinkingLevel: "high",
+      isolation: "none",
+    });
+    const run = await store.getRun("wfr_declarative");
+    expect(run.events.filter((event) => event.type === "phase").map((event) => event.name)).toEqual(
+      ["analyze", "implement", "verify"]
+    );
+  });
+
   test("runs the built-in fusion panel with per-step models before judge synthesis", async () => {
     using tmp = new DisposableTempDir("workflow-runner-fusion");
     const store = new WorkflowRunStore({

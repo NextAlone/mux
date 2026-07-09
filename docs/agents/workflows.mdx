@@ -1,0 +1,113 @@
+---
+title: Workflows
+description: Define durable multi-agent processes as declarative Markdown templates
+---
+
+Mux workflows turn a repeatable process into durable phases. For ordinary analyze → implement → verify flows, write a declarative Markdown template. Mux compiles the template to its existing workflow runtime, so completed phases survive interruption and restart without exposing JavaScript to the author.
+
+Use the JavaScript API only when the flow needs conditions, loops, parallel branches, nested workflows, or patch integration.
+
+## Create a template
+
+Save a project template such as `./workflows/three-stage.md`:
+
+```markdown
+---
+version: 1
+name: three-stage-change
+description: Analyze, implement, and verify a requested change.
+inputs:
+  request:
+    description: Change to make
+    required: true
+steps:
+  - id: analyze
+    title: Analyze
+    agent: explore
+  - id: implement
+    title: Implement
+    agent: exec
+    isolation: none
+  - id: verify
+    title: Verify
+    agent: exec
+    isolation: none
+result:
+  report_markdown: ${{ steps.verify.output }}
+  structured_output:
+    analysis: ${{ steps.analyze.output }}
+---
+
+Follow the repository instructions in every phase.
+
+## analyze
+
+Analyze `${{ args.request }}` without editing files. Return an implementation brief.
+
+## implement
+
+Implement `${{ args.request }}` using this analysis:
+
+${{ steps.analyze.output }}
+
+## verify
+
+Verify the implementation against `${{ args.request }}`.
+
+Implementation report:
+${{ steps.implement.output }}
+```
+
+The YAML `steps` order is the execution order. Each step must have exactly one matching `## <step-id>` section in that same order. Text before the first step section is prepended to every phase prompt; use H3 or deeper headings inside a prompt.
+
+## Template fields
+
+| Field                      | Meaning                                                    |
+| -------------------------- | ---------------------------------------------------------- |
+| `version`                  | Template format version; currently `1`                     |
+| `name`                     | Lowercase kebab-case workflow name                         |
+| `description`              | Human-readable description shown in workflow launchers     |
+| `inputs`                   | Named structured arguments passed when the workflow starts |
+| `steps`                    | Ordered agent phases                                       |
+| `result.report_markdown`   | Final text shown to the user                               |
+| `result.structured_output` | Optional JSON result for another workflow or agent         |
+
+Inputs support `string`, `number`, `integer`, `boolean`, and `array`, plus `description`, `required`, `default`, and scalar `enum`.
+
+A step supports:
+
+- `id` and optional `title`
+- `agent` (`exec` by default)
+- optional `model` and `thinking`
+- `isolation: none | fork` (`none` by default, so later phases see earlier edits)
+- optional object `schema` for validated structured agent output
+- `on_refusal: fail | fallback`
+- optional `timeout`: `soft_ms` is 1,000ms–24h, `grace_ms` is 1,000ms–1h, and `final_instructions` is optional
+
+Plan-agent steps cannot declare `schema`; they already return their plan report and path.
+
+## Pass data between phases
+
+Templates accept only data references, not arbitrary code:
+
+- `${{ args.request }}` reads a declared input.
+- `${{ steps.analyze.output }}` reads a completed prior phase.
+- `${{ steps.analyze.output.field }}` reads a field from validated structured output.
+
+Forward references, unknown inputs or steps, malformed expressions, and prototype paths are rejected before a durable run is created. An expression that is the entire `structured_output` value preserves its JSON type; values embedded in Markdown are rendered as text or formatted JSON.
+
+## Run and share templates
+
+Ask an agent to run the explicit path, or use the CLI:
+
+```bash
+mux workflow run ./workflows/three-stage.md --arg request="Add request validation"
+```
+
+Project templates require [Project Trust](/reference/cli#mux-trust).
+
+To make a template discoverable in the Workflows panel and through a skill, package it alongside `SKILL.md` as `workflow.md`, then invoke `skill://<skill-name>/workflow.md`. If a skill contains both `workflow.md` and `workflow.js`, Mux prefers the Markdown template.
+
+## Advanced JavaScript workflows
+
+JavaScript conductors remain available for control flow that an ordered template cannot represent. They run in the same sandbox and use the same durable journal. Read the built-in `workflow-authoring` skill before writing one; the public primitives include `agent`, `parallel`, `pipeline`, nested `workflow`, `phase`, `log`, and `applyPatch`.

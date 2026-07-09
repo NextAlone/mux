@@ -162,8 +162,8 @@ export const WorkflowEmptyState: React.FC<WorkflowEmptyStateProps> = (props) => 
         </span>
         <div className="text-content-primary text-[15px] font-semibold">No workflow runs yet</div>
         <div className="text-muted max-w-[330px] text-[12.5px] leading-relaxed">
-          Workflows are deterministic JavaScript that orchestrate sub-agents — fan out, gather,
-          verify, synthesize. Run one to see live progress here.
+          Workflows are reusable Markdown phase templates or advanced JavaScript conductors. Run one
+          to see durable progress here.
         </div>
       </div>
 
@@ -236,7 +236,7 @@ export const WorkflowEmptyState: React.FC<WorkflowEmptyStateProps> = (props) => 
         <span className="border-border bg-surface-secondary rounded border px-1.5 py-px font-mono">
           {`/workflow ${SLASH_COMMAND_HINTS.workflow}`}
         </span>
-        ; workspace <span className="text-content-secondary font-mono">.js</span> workflows are
+        ; workspace <span className="text-content-secondary font-mono">.md/.js</span> workflows are
         loaded by explicit path.
       </div>
     </div>

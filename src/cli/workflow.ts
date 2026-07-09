@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 /**
- * `mux workflow` - Headless CLI runner for durable workflow scripts.
+ * `mux workflow` - Headless CLI runner for durable workflow definitions.
  */
 
 import * as fs from "node:fs/promises";
@@ -490,7 +490,7 @@ export async function main(): Promise<number> {
   program
     .name("mux workflow")
     .description(
-      "Run mux workflow scripts by explicit script path.\n\nExperimental: invoking this command implicitly enables the dynamic-workflows\nexperiment for this invocation only."
+      "Run declarative Markdown workflows or JavaScript conductors by explicit path.\n\nExperimental: invoking this command implicitly enables the dynamic-workflows\nexperiment for this invocation only."
     )
     .option("-d, --dir <path>", "project directory")
     .option("-r, --runtime <runtime>", "runtime type (currently only local is supported)", "local")
@@ -522,7 +522,7 @@ export async function main(): Promise<number> {
 
   program
     .command("run")
-    .argument("<script_path>", "explicit workflow script path")
+    .argument("<workflow_path>", "explicit .md template or .js conductor path")
     .allowExcessArguments(false)
     .description("Run a workflow in the foreground")
     .action(async (scriptPath: string) => {

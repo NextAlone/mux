@@ -1239,14 +1239,14 @@ export const WorkflowRunToolArgsSchema = z
       .min(1)
       .nullish()
       .describe(
-        'Explicit workflow script path, such as "skill://deep-research/workflow.js" or "./workflows/research.js". Use paths for reusable, reviewable, or skill-packaged workflows.'
+        'Explicit workflow definition path. Prefer a declarative Markdown template such as "skill://review/workflow.md" or "./workflows/review.md"; advanced JavaScript conductors such as "skill://deep-research/workflow.js" remain supported.'
       ),
     script_source: z
       .string()
       .min(1)
       .nullish()
       .describe(
-        "Inline JavaScript workflow source for one-off conductors, including prose-described processes codified in place. The exact source is snapshotted into the durable run for replay/resume."
+        "Inline declarative Markdown workflow template or advanced JavaScript conductor. Prefer Markdown for ordered phases; use JavaScript only for loops, branching, parallelism, or nested workflows. The compiled source is snapshotted for replay/resume."
       ),
     args: z.unknown().nullish(),
     run_in_background: z
@@ -2196,9 +2196,10 @@ export const TOOL_DEFINITIONS = {
   workflow_run: {
     // Prefer foreground workflows so callers do not waste a turn polling when no other work can proceed.
     description:
-      "Start a durable workflow run from exactly one launch source: script_path for a JavaScript file/skill workflow, or script_source for compact one-off inline workflow source. Workflows coordinate delegated agent tasks and preserve run state for replay/resume. " +
-      "Prefer script_path for reusable, reviewable, shared, slash/CLI-invokable, or skill-packaged workflows; use script_source for one-off conductors whose exact source should be snapshotted into the durable run. " +
-      "When a skill, instruction block, or plan describes a multi-phase, looping, or multi-agent process in prose and ships no packaged workflow script, prefer codifying that process as a one-off script_source workflow over executing every phase in-context: " +
+      "Start a durable workflow run from exactly one launch source: script_path for a reusable .md template or .js conductor, or script_source for an inline definition. Workflows coordinate delegated agent tasks and preserve run state for replay/resume. " +
+      "Prefer declarative Markdown workflows for ordered phases: YAML frontmatter declares inputs/steps/result and matching `## step-id` sections contain prompts. Use JavaScript only when the flow needs loops, branching, parallelism, or nesting. " +
+      "Prefer script_path for reusable, reviewable, shared, slash/CLI-invokable, or skill-packaged workflows; use script_source for one-off definitions whose compiled source should be snapshotted into the durable run. " +
+      "When a skill, instruction block, or plan describes a multi-phase process and ships no packaged workflow, prefer codifying it as a one-off declarative script_source workflow over executing every phase in-context: " +
       "the conductor follows the documented phases more faithfully and gains durable checkpoints, resume, and fresh delegated context per phase. " +
       "Use agent_skill_read / agent_skill_read_file to discover and inspect skill-packaged workflows; non-skill workflow files must be addressed by an explicit known path and can be inspected with normal file tools. " +
       "Prefer the default foreground mode (`run_in_background` omitted or false) so completed workflows return their result without an extra task_await round-trip. " +

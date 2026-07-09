@@ -145,6 +145,33 @@ describe("resolveWorkflowScript", () => {
     });
   });
 
+  test("compiles trusted inline declarative workflow source", async () => {
+    using tempDir = new TestTempDir("workflow-template-inline");
+    const resolved = await resolveWorkflowScript({
+      scriptSource: `---
+version: 1
+name: inline-template
+description: Run one declared phase
+steps:
+  - id: answer
+inputs:
+  question:
+    required: true
+result:
+  report_markdown: \${{ steps.answer.output }}
+---
+## answer
+Answer \${{ args.question }}`,
+      runtime: new LocalRuntime(tempDir.path),
+      workspacePath: tempDir.path,
+      projectTrusted: true,
+    });
+
+    expect(resolved.requestedScriptPath).toMatch(/^inline:\/\/workflow-[a-f0-9]{12}\.md$/u);
+    expect(resolved.source).toContain('"name": "inline-template"');
+    expect(resolved.source).toContain("export default function workflow");
+  });
+
   test("rejects unsafe inline workflow source inputs", async () => {
     using tempDir = new TestTempDir("workflow-script-inline-invalid");
     const runtime = new LocalRuntime(tempDir.path);
@@ -204,10 +231,41 @@ describe("resolveWorkflowScript", () => {
     expect(resolved.canonicalScriptPath).toBe("./workflows/smoke.js");
   });
 
-  test("rejects missing paths, directories, non-js files, traversal, and untrusted workspace files", async () => {
+  test("compiles an explicit trusted workspace Markdown template", async () => {
+    using tempDir = new TestTempDir("workflow-template-workspace-file");
+    await writeWorkflowFile(
+      tempDir.path,
+      "workflows/three-stage.md",
+      `---
+version: 1
+name: three-stage
+description: Analyze, implement, verify
+steps:
+  - id: analyze
+result:
+  report_markdown: \${{ steps.analyze.output }}
+---
+## analyze
+Analyze the task`
+    );
+
+    const resolved = await resolveWorkflowScript({
+      scriptPath: "./workflows/three-stage.md",
+      runtime: new LocalRuntime(tempDir.path),
+      workspacePath: tempDir.path,
+      projectTrusted: true,
+    });
+
+    expect(resolved.sourceKind).toBe("workspace-file");
+    expect(resolved.source).toContain('"name": "three-stage"');
+    expect(resolved.canonicalScriptPath).toBe("./workflows/three-stage.md");
+  });
+
+  test("rejects missing paths, directories, unsupported files, malformed templates, traversal, and untrusted workspace files", async () => {
     using tempDir = new TestTempDir("workflow-script-invalid");
     await fs.mkdir(path.join(tempDir.path, "workflows", "dir.js"), { recursive: true });
-    await writeWorkflowFile(tempDir.path, "workflows/readme.md", "not js");
+    await writeWorkflowFile(tempDir.path, "workflows/readme.md", "not a workflow template");
+    await writeWorkflowFile(tempDir.path, "workflows/readme.txt", "not supported");
     const runtime = new LocalRuntime(tempDir.path);
 
     await expect(
@@ -225,7 +283,7 @@ describe("resolveWorkflowScript", () => {
         workspacePath: tempDir.path,
         projectTrusted: true,
       })
-    ).rejects.toThrow("regular JavaScript file");
+    ).rejects.toThrow("regular .md or .js file");
     await expect(
       resolveWorkflowScript({
         scriptPath: "./workflows/readme.md",
@@ -233,7 +291,15 @@ describe("resolveWorkflowScript", () => {
         workspacePath: tempDir.path,
         projectTrusted: true,
       })
-    ).rejects.toThrow(".js");
+    ).rejects.toThrow("must start with YAML frontmatter");
+    await expect(
+      resolveWorkflowScript({
+        scriptPath: "./workflows/readme.txt",
+        runtime,
+        workspacePath: tempDir.path,
+        projectTrusted: true,
+      })
+    ).rejects.toThrow(".md template or .js script");
     await expect(
       resolveWorkflowScript({
         scriptPath: "../outside.js",
@@ -263,7 +329,7 @@ describe("resolveWorkflowScript", () => {
         workspacePath: tempDir.path,
         projectTrusted: true,
       })
-    ).rejects.toThrow("must include a relative .js file path");
+    ).rejects.toThrow("must include a relative .md template or .js script path");
     await expect(
       resolveWorkflowScript({
         scriptPath: "skill://research/../workflow.js",

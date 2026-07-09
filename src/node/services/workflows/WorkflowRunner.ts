@@ -1,3 +1,9 @@
+import {
+  WORKFLOW_AGENT_FINAL_INSTRUCTIONS_MAX_LENGTH,
+  WORKFLOW_AGENT_GRACE_TIMEOUT_MAX_MS,
+  WORKFLOW_AGENT_SOFT_TIMEOUT_MAX_MS,
+  WORKFLOW_AGENT_TIMEOUT_MIN_MS,
+} from "@/common/constants/workflows";
 import { StructuredTaskOutputSchema, WorkflowResultSchema } from "@/common/orpc/schemas";
 import { TaskApplyGitPatchToolResultSchema } from "@/common/utils/tools/toolDefinitions";
 import type {
@@ -3015,11 +3021,6 @@ function parseWorkflowAgentThinkingLevel(rawValue: unknown): ParsedThinkingInput
   );
   return parsed;
 }
-
-const WORKFLOW_AGENT_TIMEOUT_MIN_MS = 1_000;
-const WORKFLOW_AGENT_SOFT_TIMEOUT_MAX_MS = 24 * 60 * 60 * 1000;
-const WORKFLOW_AGENT_GRACE_TIMEOUT_MAX_MS = 60 * 60 * 1000;
-const WORKFLOW_AGENT_FINAL_INSTRUCTIONS_MAX_LENGTH = 4_000;
 
 function parseWorkflowAgentTimeoutSpec(rawValue: unknown): WorkflowAgentTimeoutSpec | undefined {
   if (rawValue === undefined) {

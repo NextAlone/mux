@@ -934,7 +934,7 @@ function getWorkflowScriptDefinitionName(
     script.sourceKind === "inline"
       ? `inline-${script.sourceHash.slice(0, 12)}`
       : (script.relativePath ?? script.resolvedPath ?? script.canonicalScriptPath);
-  const basename = displayName ?? path.basename(fallbackSource, ".js");
+  const basename = displayName ?? path.basename(fallbackSource, path.extname(fallbackSource));
   const normalized = basename
     .toLowerCase()
     .replace(/[^a-z0-9]+/gu, "-")

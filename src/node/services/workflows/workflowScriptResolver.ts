@@ -18,6 +18,7 @@ import {
 } from "@/node/services/tools/runtimeSkillPathUtils";
 import { isAbsolutePathAny } from "@/node/services/tools/skillFileUtils";
 import { readFileString } from "@/node/utils/runtime/helpers";
+import { compileDeclarativeWorkflow, isDeclarativeWorkflowSource } from "./declarativeWorkflow";
 
 export type WorkflowScriptSourceKind = "skill" | "workspace-file" | "inline";
 
@@ -44,6 +45,7 @@ export interface ResolveWorkflowScriptInput {
 
 const SKILL_SCRIPT_PATH_PREFIX = "skill://";
 const INLINE_SCRIPT_PATH_PREFIX = "inline://";
+const CONVENTIONAL_SKILL_WORKFLOW_ENTRIES = ["workflow.md", "workflow.js"] as const;
 
 export async function resolveWorkflowScript(
   input: ResolveWorkflowScriptInput
@@ -90,12 +92,15 @@ function buildInlineWorkflowScript(input: {
     throw new Error("Inline workflow script source must not be blank");
   }
   validateInlineWorkflowSourceByteLength(Buffer.byteLength(input.source, "utf8"));
-  const sourceHash = hashSource(input.source);
-  const virtualPath = `${INLINE_SCRIPT_PATH_PREFIX}workflow-${sourceHash.slice(0, 12)}.js`;
+  const declarative = isDeclarativeWorkflowSource(input.source);
+  const source = declarative ? compileDeclarativeWorkflow(input.source) : input.source;
+  const sourceHash = hashSource(source);
+  const extension = declarative ? "md" : "js";
+  const virtualPath = `${INLINE_SCRIPT_PATH_PREFIX}workflow-${sourceHash.slice(0, 12)}.${extension}`;
   return buildResolvedScript({
     requestedScriptPath: virtualPath,
     canonicalScriptPath: virtualPath,
-    source: input.source,
+    source,
     sourceKind: "inline",
   });
 }
@@ -114,9 +119,47 @@ async function resolveSkillWorkflowScript(
   input: ResolveWorkflowScriptInput & { scriptPath: string }
 ): Promise<ResolvedWorkflowScript> {
   const parsed = parseSkillWorkflowScriptPath(input.scriptPath);
-  assertJavaScriptWorkflowPath(parsed.relativePath);
+  return await resolveSkillWorkflowScriptCandidates({
+    ...input,
+    skillName: parsed.skillName,
+    candidates: [
+      {
+        requestedScriptPath: input.scriptPath,
+        relativePath: parsed.relativePath,
+      },
+    ],
+  });
+}
 
-  const resolvedSkill = await readAgentSkill(input.runtime, input.workspacePath, parsed.skillName, {
+/** Resolve the conventional skill entry with one skill/package lookup. */
+export async function resolveConventionalSkillWorkflowScript(
+  input: Omit<ResolveWorkflowScriptInput, "scriptPath" | "scriptSource"> & {
+    skillName: SkillName;
+  }
+): Promise<ResolvedWorkflowScript> {
+  return await resolveSkillWorkflowScriptCandidates({
+    ...input,
+    candidates: CONVENTIONAL_SKILL_WORKFLOW_ENTRIES.map((relativePath) => ({
+      requestedScriptPath: `${SKILL_SCRIPT_PATH_PREFIX}${input.skillName}/${relativePath}`,
+      relativePath,
+    })),
+  });
+}
+
+interface SkillWorkflowCandidate {
+  requestedScriptPath: string;
+  relativePath: string;
+}
+
+async function resolveSkillWorkflowScriptCandidates(
+  input: Omit<ResolveWorkflowScriptInput, "scriptPath" | "scriptSource"> & {
+    skillName: SkillName;
+    candidates: readonly SkillWorkflowCandidate[];
+  }
+): Promise<ResolvedWorkflowScript> {
+  input.candidates.forEach((candidate) => assertWorkflowDefinitionPath(candidate.relativePath));
+
+  const resolvedSkill = await readAgentSkill(input.runtime, input.workspacePath, input.skillName, {
     ...(input.roots != null ? { roots: input.roots } : {}),
     containment: { kind: "runtime", root: input.workspacePath },
   });
@@ -126,47 +169,75 @@ async function resolveSkillWorkflowScript(
   }
 
   if (resolvedSkill.package.scope === "built-in") {
-    const builtIn = readBuiltInSkillFile(parsed.skillName, parsed.relativePath);
-    return buildResolvedScript({
-      requestedScriptPath: input.scriptPath,
-      canonicalScriptPath: `${SKILL_SCRIPT_PATH_PREFIX}${parsed.skillName}/${builtIn.resolvedPath}`,
-      source: builtIn.content,
-      sourceKind: "skill",
-      scope: "built-in",
-      skillName: parsed.skillName,
-      relativePath: builtIn.resolvedPath,
+    return await firstResolvedWorkflowCandidate(input.candidates, (candidate) => {
+      const builtIn = readBuiltInSkillFile(input.skillName, candidate.relativePath);
+      return buildResolvedScript({
+        requestedScriptPath: candidate.requestedScriptPath,
+        canonicalScriptPath: `${SKILL_SCRIPT_PATH_PREFIX}${input.skillName}/${builtIn.resolvedPath}`,
+        source: prepareWorkflowSource(builtIn.content, builtIn.resolvedPath),
+        sourceKind: "skill",
+        scope: "built-in",
+        skillName: input.skillName,
+        relativePath: builtIn.resolvedPath,
+      });
     });
   }
 
   const skillRuntime = resolvedSkill.sourceRuntime;
   assert(skillRuntime != null, "resolveWorkflowScript: non-built-in skill runtime is required");
 
-  const resolvedPath = (
-    await resolveContainedSkillFilePathOnRuntime(
-      skillRuntime,
-      resolvedSkill.skillDir,
-      parsed.relativePath
-    )
-  ).resolvedPath;
+  return await firstResolvedWorkflowCandidate(input.candidates, async (candidate) => {
+    const resolvedPath = (
+      await resolveContainedSkillFilePathOnRuntime(
+        skillRuntime,
+        resolvedSkill.skillDir,
+        candidate.relativePath
+      )
+    ).resolvedPath;
 
-  const stat = await skillRuntime.stat(resolvedPath);
-  assertRegularJavaScriptFile(stat.isDirectory, parsed.relativePath);
-  const sizeValidation = validateFileSize(stat);
-  if (sizeValidation != null) {
-    throw new Error(sizeValidation.error);
-  }
+    const stat = await skillRuntime.stat(resolvedPath);
+    assertRegularWorkflowFile(stat.isDirectory, candidate.relativePath);
+    const sizeValidation = validateFileSize(stat);
+    if (sizeValidation != null) {
+      throw new Error(sizeValidation.error);
+    }
 
-  const source = await readFileString(skillRuntime, resolvedPath);
-  return buildResolvedScript({
-    requestedScriptPath: input.scriptPath,
-    canonicalScriptPath: `${SKILL_SCRIPT_PATH_PREFIX}${parsed.skillName}/${parsed.relativePath}`,
-    source,
-    sourceKind: "skill",
-    scope: resolvedSkill.package.scope,
-    skillName: parsed.skillName,
-    relativePath: parsed.relativePath,
-    resolvedPath,
+    const source = prepareWorkflowSource(
+      await readFileString(skillRuntime, resolvedPath),
+      candidate.relativePath
+    );
+    return buildResolvedScript({
+      requestedScriptPath: candidate.requestedScriptPath,
+      canonicalScriptPath: `${SKILL_SCRIPT_PATH_PREFIX}${input.skillName}/${candidate.relativePath}`,
+      source,
+      sourceKind: "skill",
+      scope: resolvedSkill.package.scope,
+      skillName: input.skillName,
+      relativePath: candidate.relativePath,
+      resolvedPath,
+    });
   });
+}
+
+async function firstResolvedWorkflowCandidate<T>(
+  candidates: readonly SkillWorkflowCandidate[],
+  resolve: (candidate: SkillWorkflowCandidate) => T | Promise<T>
+): Promise<T> {
+  let lastError: unknown;
+  for (const candidate of candidates) {
+    try {
+      return await resolve(candidate);
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError instanceof Error
+    ? lastError
+    : new Error(
+        lastError == null
+          ? "No workflow definition candidates were provided"
+          : getErrorMessage(lastError)
+      );
 }
 
 async function resolveWorkspaceFileWorkflowScript(
@@ -175,7 +246,7 @@ async function resolveWorkspaceFileWorkflowScript(
   if (!input.projectTrusted) {
     throw new Error("Project trust is required to run workspace workflow scripts");
   }
-  assertJavaScriptWorkflowPath(input.scriptPath);
+  assertWorkflowDefinitionPath(input.scriptPath);
 
   const resolvedPath = input.runtime.normalizePath(input.scriptPath, input.workspacePath);
   await ensureRuntimePathWithinWorkspace(
@@ -190,13 +261,16 @@ async function resolveWorkspaceFileWorkflowScript(
   });
 
   const stat = await input.runtime.stat(resolvedPath);
-  assertRegularJavaScriptFile(stat.isDirectory, input.scriptPath);
+  assertRegularWorkflowFile(stat.isDirectory, input.scriptPath);
   const sizeValidation = validateFileSize(stat);
   if (sizeValidation != null) {
     throw new Error(sizeValidation.error);
   }
 
-  const source = await readFileString(input.runtime, resolvedPath);
+  const source = prepareWorkflowSource(
+    await readFileString(input.runtime, resolvedPath),
+    input.scriptPath
+  );
   return buildResolvedScript({
     requestedScriptPath: input.scriptPath,
     canonicalScriptPath: input.scriptPath,
@@ -213,7 +287,9 @@ function parseSkillWorkflowScriptPath(scriptPath: string): {
   const remainder = scriptPath.slice(SKILL_SCRIPT_PATH_PREFIX.length);
   const slashIndex = remainder.indexOf("/");
   if (slashIndex <= 0 || slashIndex === remainder.length - 1) {
-    throw new Error("skill:// workflow script paths must include a relative .js file path");
+    throw new Error(
+      "skill:// workflow paths must include a relative .md template or .js script path"
+    );
   }
 
   const parsedName = SkillNameSchema.safeParse(remainder.slice(0, slashIndex));
@@ -233,7 +309,9 @@ function normalizeSkillRelativePath(filePath: string): string {
   const normalized = path.posix.normalize(filePath.replaceAll("\\", "/"));
   const stripped = normalized.startsWith("./") ? normalized.slice(2) : normalized;
   if (stripped === "" || stripped === "." || stripped.endsWith("/")) {
-    throw new Error("skill:// workflow script paths must include a relative .js file path");
+    throw new Error(
+      "skill:// workflow paths must include a relative .md template or .js script path"
+    );
   }
   if (stripped === ".." || stripped.startsWith("../") || stripped.includes("/../")) {
     throw new Error(`Invalid skill workflow path (path traversal): ${filePath}`);
@@ -241,17 +319,23 @@ function normalizeSkillRelativePath(filePath: string): string {
   return stripped;
 }
 
-function assertJavaScriptWorkflowPath(scriptPath: string): void {
-  if (!scriptPath.endsWith(".js")) {
-    throw new Error(`Workflow script paths must point to a .js file: ${scriptPath}`);
+function assertWorkflowDefinitionPath(scriptPath: string): void {
+  if (!scriptPath.endsWith(".js") && !scriptPath.endsWith(".md")) {
+    throw new Error(
+      `Workflow paths must point to a declarative .md template or .js script: ${scriptPath}`
+    );
   }
 }
 
-function assertRegularJavaScriptFile(isDirectory: boolean, scriptPath: string): void {
-  assertJavaScriptWorkflowPath(scriptPath);
+function assertRegularWorkflowFile(isDirectory: boolean, scriptPath: string): void {
+  assertWorkflowDefinitionPath(scriptPath);
   if (isDirectory) {
-    throw new Error(`Workflow script path must point to a regular JavaScript file: ${scriptPath}`);
+    throw new Error(`Workflow path must point to a regular .md or .js file: ${scriptPath}`);
   }
+}
+
+function prepareWorkflowSource(source: string, scriptPath: string): string {
+  return scriptPath.endsWith(".md") ? compileDeclarativeWorkflow(source) : source;
 }
 
 function buildResolvedScript(

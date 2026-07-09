@@ -27,10 +27,10 @@ If the `workflow_run` tool is unavailable in this session, skip this section and
 
 For long-horizon orchestration — many phases, a dependency DAG known up front, or repeated implement → gate → fixup → re-gate loops — encode the orchestration as a durable workflow instead of driving it turn-by-turn from the transcript:
 
-- Reuse packaged workflows before authoring one: read relevant workflow skills with `agent_skill_read`, inspect workflow scripts with `agent_skill_read_file` when needed, and invoke a fitting workflow with `workflow_run({ script_path: "skill://<skill>/workflow.js", args: {} })`.
+- Reuse packaged workflows before authoring one: read relevant workflow skills with `agent_skill_read`, inspect `workflow.md` (preferred) or `workflow.js` when needed, and invoke the fitting definition with `workflow_run`.
 - Read the built-in `workflow-authoring` skill first (`agent_skill_read({ name: "workflow-authoring" })`).
-- Author a local workflow at an explicit workspace path such as `./workflows/<name>.js` that encodes the DAG in code: `agent(...)` for sub-agent steps, `phase`/`log` for progress, and plain control flow for gate/fixup loops.
-- Run it with `workflow_run({ script_path: "./workflows/<name>.js", args: {} })`; resume interrupted runs with `workflow_resume`. Durable runs survive restarts and context compaction — completed steps are never re-executed.
+- Author ordered phases as a declarative `./workflows/<name>.md` template. Use `.js` only when the DAG needs branches, loops, parallel lanes, nested workflows, or patch integration.
+- Run it with `workflow_run({ script_path: "./workflows/<name>.md", args: {} })`; resume interrupted runs with `workflow_resume`. Durable runs survive restarts and context compaction — completed steps are never re-executed.
 
 Stay with the interactive task loop below when the work is exploratory, the user wants to steer between batches, or the batch is small (a handful of tasks) — there, workflow authoring overhead outweighs the durability benefit.
 

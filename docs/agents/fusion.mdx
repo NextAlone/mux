@@ -29,10 +29,10 @@ Fusion runs as a durable workflow. Its panel steps execute concurrently, complet
 
 ## Model-built workflows
 
-Mux also lets the active model construct a one-off workflow directly. Describe a process with multiple phases, parallel lanes, loops, or verification gates; when a durable workflow is the right fit, the model can generate an inline `script_source` and run it without requiring you to create a JavaScript file first.
+Mux also lets the active model construct a one-off workflow directly. Ordered processes are generated as [declarative Markdown templates](/agents/workflows); JavaScript is reserved for parallel lanes, loops, branching, or nested flows.
 
 ```text
-Build and run a workflow that asks three reviewers to inspect security, correctness, and UX in parallel, then verifies every P0/P1 finding and summarizes the result.
+Build and run a three-stage workflow that analyzes this change, implements it, and verifies the result.
 ```
 
-Inline workflows are snapshotted with the run, so restart/resume does not depend on regenerating the source. Reusable team workflows should still be saved in a skill or an explicit workspace `.js` file.
+The compiled workflow is snapshotted with the run, so restart/resume does not depend on regenerating the template. Reusable team workflows should be saved as a skill-packaged `workflow.md` or an explicit workspace `.md` file.

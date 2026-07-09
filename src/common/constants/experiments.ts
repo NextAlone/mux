@@ -138,7 +138,7 @@ export const EXPERIMENTS: Record<ExperimentId, ExperimentDefinition> = {
   [EXPERIMENT_IDS.DYNAMIC_WORKFLOWS]: {
     id: EXPERIMENT_IDS.DYNAMIC_WORKFLOWS,
     name: "Dynamic Workflows",
-    description: "Let models build and run durable JavaScript workflows for delegated agent tasks",
+    description: "Let models build and run durable multi-agent workflow templates",
     enabledByDefault: true,
     userOverridable: true,
     showInSettings: true,

@@ -2,31 +2,32 @@ import type { AgentSkillDescriptor, SkillName } from "@/common/types/agentSkill"
 import type { AvailableWorkflow } from "@/common/types/workflow";
 import { getErrorMessage } from "@/common/utils/errors";
 import type { Runtime } from "@/node/runtime/Runtime";
-import { discoverAgentSkills } from "@/node/services/agentSkills/agentSkillsService";
+import {
+  discoverAgentSkills,
+  type AgentSkillsRoots,
+} from "@/node/services/agentSkills/agentSkillsService";
 import { getBuiltInSkillDescriptors } from "@/node/services/agentSkills/builtInSkillDefinitions";
 import { log } from "@/node/services/log";
 
 import { buildWorkflowScriptDescriptor } from "./WorkflowService";
 import { parseWorkflowMetadata, summarizeWorkflowArgs } from "./workflowMetadata";
-import { resolveWorkflowScript } from "./workflowScriptResolver";
-
-/** Conventional entry file for a workflow-bearing skill (e.g. deep-research). */
-const WORKFLOW_SKILL_ENTRY = "workflow.js";
+import { resolveConventionalSkillWorkflowScript } from "./workflowScriptResolver";
 
 export interface DiscoverWorkflowScriptsInput {
   runtime: Runtime;
   workspacePath: string;
   projectTrusted: boolean;
+  roots?: AgentSkillsRoots;
 }
 
 /**
  * Enumerate the workflow scripts a workspace can run, for the Workflows tab's
  * empty-state launcher. There is no first-class workflow registry, so we probe
- * every known skill (built-in + project + global) for a `workflow.js` entry by
+ * every known skill (built-in + project + global) for a conventional workflow entry by
  * attempting to resolve it — a skill that resolves is a workflow; anything that
  * throws (no entry, or project trust missing) is skipped.
  *
- * Standalone `.mux/workflows/*.js` files are intentionally not enumerated here:
+ * Standalone `.mux/workflows/*.{md,js}` files are intentionally not enumerated here:
  * they're an advanced, trust-gated path still launchable from chat. Skill-based
  * workflows cover the common case.
  */
@@ -46,7 +47,11 @@ export async function discoverWorkflowScripts(
   // readAgentSkill resolves by precedence (project > global > built-in) when names collide.
   getBuiltInSkillDescriptors().forEach(addSkill);
   try {
-    (await discoverAgentSkills(input.runtime, input.workspacePath)).forEach(addSkill);
+    (
+      await discoverAgentSkills(input.runtime, input.workspacePath, {
+        ...(input.roots != null ? { roots: input.roots } : {}),
+      })
+    ).forEach(addSkill);
   } catch (error) {
     log.warn(`Workflow script discovery: failed to enumerate skills: ${getErrorMessage(error)}`);
   }
@@ -54,11 +59,12 @@ export async function discoverWorkflowScripts(
   const available: AvailableWorkflow[] = [];
   for (const skillName of skillNames) {
     try {
-      const resolved = await resolveWorkflowScript({
-        scriptPath: `skill://${skillName}/${WORKFLOW_SKILL_ENTRY}`,
+      const resolved = await resolveConventionalSkillWorkflowScript({
+        skillName,
         runtime: input.runtime,
         workspacePath: input.workspacePath,
         projectTrusted: input.projectTrusted,
+        ...(input.roots != null ? { roots: input.roots } : {}),
       });
       available.push({
         descriptor: buildWorkflowScriptDescriptor(resolved),
@@ -66,10 +72,7 @@ export async function discoverWorkflowScripts(
         args: summarizeWorkflowArgs(parseWorkflowMetadata(resolved.source)) ?? [],
       });
     } catch {
-      // Skip non-workflow skills (no workflow.js), untrusted project skills, AND scripts whose
-      // arg metadata fails to parse/summarize — keeping the whole body in the per-skill catch so
-      // one malformed workflow can't abort discovery and hide every other workflow.
-      continue;
+      // A malformed definition is isolated to this skill; JavaScript remains the fallback entry.
     }
   }
 

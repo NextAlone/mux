@@ -152,7 +152,7 @@ if (subcommand === "run") {
     program
       .command("workflow")
       .alias("wf")
-      .description("Run workflow scripts by explicit script path (experimental)");
+      .description("Run Markdown workflow templates or JavaScript conductors (experimental)");
   }
   if (isCommandAvailable("trust", env)) {
     program.command("trust").description("Trust a project so repo-controlled automation can run");

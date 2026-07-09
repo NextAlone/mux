@@ -84,6 +84,7 @@
               "agents/system-prompt",
               "agents/prompting-tips",
               "agents/best-of-n",
+              "agents/workflows",
               "agents/fusion"
             ]
           },

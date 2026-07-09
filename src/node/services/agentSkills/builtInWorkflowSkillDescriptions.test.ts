@@ -3,19 +3,21 @@ import { describe, expect, test } from "bun:test";
 import { getBuiltInSkillDefinitions, readBuiltInSkillFile } from "./builtInSkillDefinitions";
 
 function hasPackagedWorkflow(name: string): boolean {
-  try {
-    readBuiltInSkillFile(name, "workflow.js");
-    return true;
-  } catch (err) {
-    if (err instanceof Error && err.message.startsWith("Built-in skill file not found:")) {
-      return false;
+  for (const entry of ["workflow.md", "workflow.js"]) {
+    try {
+      readBuiltInSkillFile(name, entry);
+      return true;
+    } catch (err) {
+      if (!(err instanceof Error) || !err.message.startsWith("Built-in skill file not found:")) {
+        throw err;
+      }
     }
-    throw err;
   }
+  return false;
 }
 
 describe("built-in workflow skill descriptions", () => {
-  test("prefixes skills that ship a workflow script", () => {
+  test("prefixes skills that ship a workflow definition", () => {
     const workflowSkills = getBuiltInSkillDefinitions().filter((pkg) =>
       hasPackagedWorkflow(pkg.frontmatter.name)
     );

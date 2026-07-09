@@ -135,7 +135,7 @@ mux run --budget 2.00 "Refactor the authentication module"
 
 ## `mux workflow`
 
-Run a durable workflow JavaScript file from the command line without opening the desktop app. Workflows are addressed by explicit `script_path` values; there is no workflow discovery, `list`, or `show` command. Skill-packaged workflows use `skill://<skill-name>/<file.js>`, and local workflow files use an explicit workspace-contained `.js` path. `mux wf` is a shorthand alias for `mux workflow`.
+Run a durable [declarative Markdown workflow](/agents/workflows) or advanced JavaScript conductor from the command line without opening the desktop app. Workflows are addressed by explicit paths; there is no workflow discovery, `list`, or `show` command. Skill-packaged definitions use `skill://<skill-name>/workflow.md` (or legacy `workflow.js`), and local definitions use an explicit workspace-contained `.md` or `.js` path. `mux wf` is a shorthand alias for `mux workflow`.
 
 <Note>
   `mux workflow` is experimental. Invoking the command implicitly enables the `dynamic-workflows`
@@ -147,11 +147,11 @@ Run a durable workflow JavaScript file from the command line without opening the
 Use local workflow files for cheap CLI smoke tests. `skill://` paths run the packaged workflow they reference, which may require AI credentials or model budget.
 
 ```bash
-# Run a trusted local workflow file with explicit JSON args
-mux workflow run ./workflows/research.js --args-json '{"topic":"workflow runners"}'
+# Run a trusted declarative workflow template
+mux workflow run ./workflows/three-stage.md --arg request="Add validation"
 
 # Same as above, using the alias and machine-readable output
-mux wf run ./workflows/research.js --args-json '{"topic":"workflow runners"}' --json
+mux wf run ./workflows/three-stage.md --args-json '{"request":"Add validation"}' --json
 ```
 
 ### Workflow commands
@@ -188,7 +188,7 @@ Only one argument mode can be used per run:
 | `--args-file args.json`         | Exact JSON value read from a file         |
 | `--args-stdin`                  | Exact JSON value read from stdin          |
 
-Workspace-file workflow scripts are executable only after the project is trusted. If an explicit local `.js` script path points into an untrusted project, `mux workflow run` fails before executing repo-controlled workflow code. Linked jj workspaces inherit trust from the main repository path. Grant trust headlessly with [`mux trust`](#mux-trust).
+Workspace workflow definitions are executable only after the project is trusted. If an explicit local `.md` or `.js` path points into an untrusted project, `mux workflow run` fails before executing repo-controlled workflow code. Linked jj workspaces inherit trust from the main repository path. Grant trust headlessly with [`mux trust`](#mux-trust).
 
 ## `mux trust`
 

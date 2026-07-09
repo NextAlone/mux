@@ -1,36 +1,99 @@
 ---
 name: workflow-authoring
-description: Author durable JavaScript workflows for repeatable multi-agent orchestration
+description: Author declarative Markdown templates and advanced JavaScript workflows
 ---
 
 # Workflow Authoring
 
-Use this skill **before writing or editing a workflow script**. Workflows are durable JavaScript conductors that coordinate sub-agent tasks, validate structured reports, and preserve run state for replay/resume.
+Use this skill **before writing or editing a workflow**. Prefer declarative `workflow.md` templates for ordered phases. Mux compiles them to its durable runtime, so users get Claude Code / pi-style Markdown authoring while runs retain checkpoints, replay, and resume. Use JavaScript conductors only for control flow that templates cannot express.
 
 ## When to use a workflow
 
 Prefer a workflow when the task is a repeatable orchestration pattern, especially when it needs several of these:
 
-- Multiple phases with clear progress reporting (`phase`, `log`).
+- Multiple ordered phases with explicit prompts and hand-offs.
 - Parallel sub-agent fan-out with stable roles or lanes.
 - Structured output validation from sub-agents.
 - Adversarial verification / cross-checking of candidate findings.
 - Durable state so completed work is reused after resume/restart.
 - A reusable slash-invokable process, like deep research or deep review.
 - Durable patch application from workflow-owned sub-agent tasks.
-- Executing a skill or instruction block that is effectively a workflow description (ordered phases, loops, fan-out, verification gates) but ships no packaged `workflow.js` — codify the prose into a one-off conductor so execution matches the documented process instead of drifting in-context.
+- Executing a skill or instruction block that is effectively a workflow description but ships no packaged workflow — codify ordered phases as declarative Markdown; use JavaScript only for loops, fan-out, branching, or verification gates.
 
 Do **not** create a workflow for a small one-off edit or a single simple investigation. The conductor cannot run arbitrary host operations directly; delegate open-ended shell/filesystem/web investigation to sub-agents.
 
 ## Before authoring
 
-1. Use skills to discover packaged workflows. Read a workflow skill with `agent_skill_read({ name: "<skill>" })`, then inspect its script with `agent_skill_read_file({ name: "<skill>", filePath: "workflow.js" })` when needed.
-2. For reusable, reviewable, shared, slash/CLI-invokable, or longer local workflow drafts, write an explicit workspace-contained JavaScript file, for example `./workflows/<name>.js`.
-3. Use `script_source` for one-off conductors that fit comfortably in the tool call and do not need a reusable file — including in-place codifications of prose-described processes. Inline source is snapshotted into the durable run for replay/resume.
-4. Use normal file tools (`file_read`, `file_edit_insert`, `file_edit_replace_string`) when authoring a JavaScript file.
-5. Run file workflows by explicit path with `workflow_run({ script_path: "./workflows/<name>.js", args: {} })`; prefer foreground mode (omit `run_in_background` or set it to `false`) unless you have another workflow/task or independent work to run while it completes. If `workflow_run` returns `status: "running"` or `status: "backgrounded"`, await the returned `runId` before using the result.
+1. Use skills to discover packaged workflows. Read the skill, then inspect `workflow.md`; fall back to `workflow.js` only when no template exists.
+2. Write reusable ordered workflows as `./workflows/<name>.md` or skill-packaged `workflow.md` files.
+3. Use `script_source` for small one-off Markdown templates that do not need a file. The compiled conductor is snapshotted for replay/resume.
+4. Use a `.js` conductor only for parallel branches, loops, conditions, nested workflows, or patch integration.
+5. Run definitions with `workflow_run({ script_path: "./workflows/<name>.md", args: {} })`. Prefer foreground mode unless independent work can proceed; await any returned running/backgrounded `runId` before using its result.
 
-Workflow scripts should include `meta` with a description and a default exported function:
+## Declarative templates (default)
+
+A template has strict YAML frontmatter followed by one `## <step-id>` Markdown prompt section per declared step, in the same order:
+
+```markdown
+---
+version: 1
+name: three-stage-change
+description: Analyze, implement, and verify a requested change.
+inputs:
+  request:
+    description: Change to make
+    required: true
+steps:
+  - id: analyze
+    title: Analyze
+    agent: explore
+  - id: implement
+    title: Implement
+    agent: exec
+    isolation: none
+  - id: verify
+    title: Verify
+    agent: exec
+    isolation: none
+result:
+  report_markdown: ${{ steps.verify.output }}
+  structured_output:
+    analysis: ${{ steps.analyze.output }}
+---
+
+Follow repository instructions in every phase.
+
+## analyze
+
+Analyze `${{ args.request }}` without editing files. Return a concrete implementation brief.
+
+## implement
+
+Implement `${{ args.request }}` using this analysis:
+
+${{ steps.analyze.output }}
+
+## verify
+
+Verify the implementation against `${{ args.request }}`.
+
+Implementation report:
+${{ steps.implement.output }}
+```
+
+Template rules:
+
+- `version` is `1`; workflow names, input names, and step IDs use lowercase kebab-case.
+- `inputs` support `string`, `number`, `integer`, `boolean`, and `array`, plus `description`, `required`, `default`, and scalar `enum`.
+- Steps run sequentially. `agent` defaults to `exec`; `isolation` defaults to `none` so later phases see earlier workspace edits. Set `fork` for isolated work.
+- Optional step fields are `title`, `model`, `thinking`, `schema`, `on_refusal`, and `timeout`. `soft_ms` must be 1,000ms–24h, `grace_ms` must be 1,000ms–1h, and `final_instructions` is optional. A `plan` step cannot declare `schema`.
+- Prompts may reference declared inputs and prior outputs with `${{ args.name }}` and `${{ steps.step-id.output }}`. Forward, unknown, malformed, and prototype-path references fail before a run is created.
+- An exact expression in `structured_output` preserves its JSON type; embedded objects/arrays render as formatted JSON.
+- Every declared step must have exactly one matching H2 section. Use H3 or deeper headings inside a step prompt.
+
+## Advanced JavaScript conductors
+
+Use JavaScript when the workflow genuinely needs programmatic control flow. Scripts include `meta` and a default exported function:
 
 ```js
 export const meta = {
@@ -57,7 +120,7 @@ also allowed; `export {...}` lists are not. The export keywords are stripped lex
 sandbox evaluation, so never start a line inside a template literal with `export ` — it would be
 silently rewritten.
 
-Packaged reusable workflows should live inside skill directories and be invoked with `skill://<skill-name>/<file.js>`. Explicit workspace workflow files require Project Trust.
+Packaged reusable workflows live inside skill directories and are invoked with `skill://<skill-name>/workflow.md` or the advanced `workflow.js`. Explicit workspace workflow files require Project Trust.
 
 ## Running workflows
 
@@ -65,16 +128,25 @@ Default to foreground workflow runs. When a foreground `workflow_run` returns `s
 
 ### Inline one-off workflows
 
-For a small conductor that is not worth saving as a file, call `workflow_run` with `script_source` instead of `script_path`:
+For a small ordered workflow that is not worth saving as a file, call `workflow_run` with a declarative `script_source` instead of `script_path`:
 
 ```js
 workflow_run({
-  script_source:
-    'export const meta = { description: "Inline smoke" };\n' +
-    "export default function workflow({ args, phase }) {\n" +
-    '  phase("inline-smoke", { value: args.value });\n' +
-    '  return { reportMarkdown: "Inline workflow received " + args.value };\n' +
-    "}\n",
+  script_source: `---
+version: 1
+name: inline-review
+description: Review one value.
+inputs:
+  value:
+    required: true
+steps:
+  - id: review
+    agent: explore
+result:
+  report_markdown: ${{ steps.review.output }}
+---
+## review
+Review this value: ${{ args.value }}`,
   args: { value: "ok" },
 });
 ```
@@ -83,9 +155,9 @@ Use file or skill workflows instead when the conductor should be reviewed, reuse
 
 ### Codifying prose-described processes
 
-Inline workflows are also the preferred way to execute a process that exists only as prose. When a skill, instruction block, or plan reads like a workflow — ordered phases, loops, parallel lanes, verification gates, structured hand-offs — and ships no `workflow.js`, translate its steps into a one-off `script_source` conductor and run that, rather than performing every phase in your own context. The codified run stays faithful to the documented process (each phase is explicit instead of drifting as context grows), gives each phase a fresh delegated context, and survives interruption via resume.
+Inline templates are also the preferred way to execute an ordered process that exists only as prose. Translate its phases into `steps` plus matching Markdown sections instead of performing every phase in the parent context. The run stays faithful to the documented process, gives each phase fresh delegated context, and survives interruption via resume.
 
-Fit check before codifying: the conductor cannot run host operations directly, so every phase must be expressible as sub-agent delegation plus patch integration. If the process fundamentally needs this workspace's own working tree, uncommitted state, or interactive tools at every step, keep it in-context. If the codified conductor proves reusable, promote it to a `./workflows/<name>.js` file or a skill-packaged `workflow.js` afterwards.
+Fit check before codifying: each phase must be expressible as a delegated agent prompt. Use `isolation: none` for sequential workspace edits. If the process requires programmatic branching/loops/parallelism, use JavaScript; if it requires parent-context interaction between every phase, keep it in-context. Promote successful one-offs to `./workflows/<name>.md` or a skill-packaged `workflow.md`.
 
 ### Attention policy (internal, not author-settable)
 
@@ -257,7 +329,7 @@ const reviews = parallel(
 );
 ```
 
-Timeouts are optional and explicit. Mux does not provide default workflow-agent timeout durations. When `timeout` is present, both `softMs` and `graceMs` are required positive integer millisecond values:
+Timeouts are optional and explicit. Mux does not provide default workflow-agent timeout durations. When `timeout` is present, `softMs` is a required integer from 1,000ms through 24h and `graceMs` is a required integer from 1,000ms through 1h:
 
 ```js
 const report = agent("Investigate and report useful partial findings if time expires", {
