@@ -4126,6 +4126,10 @@ export const router = (authToken?: string) => {
               intervalMs: input.intervalMs,
               ...(input.message != null ? { message: input.message } : {}),
               ...(input.contextMode != null ? { contextMode: input.contextMode } : {}),
+              // trigger/whenBusy use key-presence semantics: a present key with null clears the
+              // persisted value back to unset (read-time default), an absent key preserves it.
+              ...("trigger" in input ? { trigger: input.trigger ?? null } : {}),
+              ...("whenBusy" in input ? { whenBusy: input.whenBusy ?? null } : {}),
             });
             if (!result.success) {
               return result;
@@ -4187,6 +4191,18 @@ export const router = (authToken?: string) => {
         .output(schemas.workspace.updateTitle.output)
         .handler(async ({ context, input }) => {
           return context.workspaceService.updateTitle(input.workspaceId, input.title);
+        }),
+      setPinned: t
+        .input(schemas.workspace.setPinned.input)
+        .output(schemas.workspace.setPinned.output)
+        .handler(async ({ context, input }) => {
+          return context.workspaceService.setPinned(input.workspaceId, input.pinned);
+        }),
+      reorderPinned: t
+        .input(schemas.workspace.reorderPinned.input)
+        .output(schemas.workspace.reorderPinned.output)
+        .handler(async ({ context, input }) => {
+          return context.workspaceService.reorderPinned(input.workspaceIds);
         }),
       updateTags: t
         .input(schemas.workspace.updateTags.input)

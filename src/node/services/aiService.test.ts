@@ -1421,7 +1421,7 @@ describe("AIService.streamMessage compaction boundary slicing", () => {
     advisorModelString = KNOWN_MODELS.SONNET.id
   ): Promise<void> {
     const baseConfig = harness.config.loadConfigOrDefault();
-    await harness.config.saveConfig({
+    await harness.config.editConfig(() => ({
       ...baseConfig,
       advisorModelString,
       agentAiDefaults: {
@@ -1431,7 +1431,7 @@ describe("AIService.streamMessage compaction boundary slicing", () => {
           advisorEnabled: true,
         },
       },
-    });
+    }));
   }
 
   async function startAdvisorStream(
@@ -2758,7 +2758,7 @@ describe("AIService.streamMessage compaction boundary slicing", () => {
       },
     });
     const baseConfig = harness.config.loadConfigOrDefault();
-    await harness.config.saveConfig({
+    await harness.config.editConfig(() => ({
       ...baseConfig,
       advisorModelString: KNOWN_MODELS.GPT_53_CODEX.id,
       agentAiDefaults: {
@@ -2768,7 +2768,7 @@ describe("AIService.streamMessage compaction boundary slicing", () => {
           advisorEnabled: true,
         },
       },
-    });
+    }));
 
     const result = await harness.service.streamMessage({
       messages: [createMuxMessage("latest-user", "user", "continue")],

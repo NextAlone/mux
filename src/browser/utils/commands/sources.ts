@@ -4,6 +4,7 @@ import type { APIClient } from "@/browser/contexts/API";
 import type { ConfirmDialogOptions } from "@/browser/contexts/ConfirmDialogContext";
 import { getContextResetSuccessMessage } from "@/browser/utils/contextResetFeedback";
 import { formatKeybind, KEYBINDS } from "@/browser/utils/ui/keybinds";
+import type { PinnedMoveDirection } from "@/browser/utils/ui/pinnedReorder";
 import { THINKING_LEVELS, type ThinkingLevel } from "@/common/types/thinking";
 import {
   enforceThinkingPolicy,
@@ -11,6 +12,7 @@ import {
   resolveMinimumThinkingLevel,
 } from "@/common/utils/thinking/policy";
 import assert from "@/common/utils/assert";
+import { isWorkspacePinnable, isWorkspacePinned } from "@/common/utils/pin";
 import { CUSTOM_EVENTS, createCustomEvent } from "@/common/constants/events";
 import { RIGHT_SIDEBAR_COLLAPSED_KEY } from "@/common/constants/storage";
 import { updatePersistedState } from "@/browser/hooks/usePersistedState";
@@ -105,6 +107,7 @@ export interface BuildSourcesParams {
   onRemoveProject: (path: string) => void;
   onToggleSidebar: () => void;
   onNavigateWorkspace: (dir: "next" | "prev") => void;
+  onMovePinnedChat: (direction: PinnedMoveDirection) => void;
   onOpenWorkspaceInTerminal: (workspaceId: string, runtimeConfig?: RuntimeConfig) => void;
   onToggleTheme: () => void;
   onSetTheme: (theme: ThemePreference) => void;
@@ -547,6 +550,44 @@ export function buildCoreSources(p: BuildSourcesParams): Array<() => CommandActi
           );
         },
       });
+      // Only live root chats are pinnable (sub-agents follow their pinned parent).
+      if (selectedMeta && isWorkspacePinnable(selectedMeta)) {
+        const pinned = isWorkspacePinned(selectedMeta);
+        list.push({
+          id: CommandIds.workspaceTogglePinned(),
+          title: pinned ? "Unpin Current Chat" : "Pin Current Chat",
+          subtitle: workspaceDisplayName,
+          shortcutHint: formatKeybind(KEYBINDS.PIN_WORKSPACE),
+          section: section.workspaces,
+          run: async () => {
+            if (!p.api) return;
+            await p.api.workspace.setPinned({
+              workspaceId: selected.workspaceId,
+              pinned: !pinned,
+            });
+          },
+        });
+        if (pinned) {
+          // Edge positions are handled inside the move handler (no-op), so the
+          // commands stay listed whenever the chat is pinned.
+          list.push({
+            id: CommandIds.workspaceMovePinnedUp(),
+            title: "Move Pinned Chat Up",
+            subtitle: workspaceDisplayName,
+            shortcutHint: formatKeybind(KEYBINDS.MOVE_PINNED_UP),
+            section: section.workspaces,
+            run: () => p.onMovePinnedChat("up"),
+          });
+          list.push({
+            id: CommandIds.workspaceMovePinnedDown(),
+            title: "Move Pinned Chat Down",
+            subtitle: workspaceDisplayName,
+            shortcutHint: formatKeybind(KEYBINDS.MOVE_PINNED_DOWN),
+            section: section.workspaces,
+            run: () => p.onMovePinnedChat("down"),
+          });
+        }
+      }
     }
 
     if (p.workspaceMetadata.size > 0) {

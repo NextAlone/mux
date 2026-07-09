@@ -26,6 +26,7 @@ import type {
   StreamErrorMessage,
 } from "@/common/orpc/types";
 import { WORKSPACE_DEFAULTS } from "@/constants/workspaceDefaults";
+import { HEARTBEAT_QUEUE_DEDUPE_KEY } from "@/constants/heartbeat";
 import {
   GOAL_BUDGET_LIMIT_KIND,
   GOAL_CONTINUATION_KIND,
@@ -3222,31 +3223,36 @@ export class AgentSession {
     return followUp;
   }
 
-  private getPreferredCompactionModel(): string | null {
+  private getPreferredCompactionSettings(): {
+    model: string | null;
+    thinkingLevel: ThinkingLevel | null;
+  } {
     try {
       const maybeConfig = this.config as Config & {
         loadConfigOrDefault?: () => {
-          agentAiDefaults?: Record<string, { modelString?: string }>;
+          agentAiDefaults?: Record<string, { modelString?: string; thinkingLevel?: string }>;
         } | null;
       };
       if (typeof maybeConfig.loadConfigOrDefault !== "function") {
-        return null;
+        return { model: null, thinkingLevel: null };
       }
 
-      const compactModelString =
-        maybeConfig.loadConfigOrDefault()?.agentAiDefaults?.compact?.modelString;
+      const compactDefaults = maybeConfig.loadConfigOrDefault()?.agentAiDefaults?.compact;
+      const thinkingLevel = coerceThinkingLevel(compactDefaults?.thinkingLevel) ?? null;
+
+      const compactModelString = compactDefaults?.modelString;
       if (typeof compactModelString !== "string") {
-        return null;
+        return { model: null, thinkingLevel };
       }
 
       const normalized = normalizeToCanonical(compactModelString.trim());
       if (!isValidModelFormat(normalized)) {
-        return null;
+        return { model: null, thinkingLevel };
       }
 
-      return normalized;
+      return { model: normalized, thinkingLevel };
     } catch {
-      return null;
+      return { model: null, thinkingLevel: null };
     }
   }
 
@@ -3262,7 +3268,8 @@ export class AgentSession {
   } {
     // Callers pass the stream model in baseOptions.model; avoid ambient session state
     // here because the current stream is cleared before compaction and could go stale.
-    const compactionModel = this.getPreferredCompactionModel() ?? params.baseOptions.model;
+    const compactSettings = this.getPreferredCompactionSettings();
+    const compactionModel = compactSettings.model ?? params.baseOptions.model;
     assert(
       typeof compactionModel === "string" && compactionModel.trim().length > 0,
       "auto-compaction requires a non-empty model"
@@ -3273,9 +3280,12 @@ export class AgentSession {
       agentId: "compact",
       skipAiSettingsPersistence: true,
       model: compactionModel,
+      // Prefer the compact agent's configured thinking level over the active
+      // stream's, matching desktop /compact (applyCompactionOverrides) — the
+      // stream's level was chosen for its model, not the compaction model.
       thinkingLevel: enforceThinkingPolicy(
         compactionModel,
-        params.baseOptions.thinkingLevel ?? "off"
+        compactSettings.thinkingLevel ?? params.baseOptions.thinkingLevel ?? "off"
       ),
       maxOutputTokens: undefined,
       toolPolicy: [{ regex_match: ".*", action: "disable" }],
@@ -5069,13 +5079,18 @@ export class AgentSession {
     internal?: {
       synthetic?: boolean;
       agentInitiated?: boolean;
+      /** Coalescing: drop the message when an entry with the same key is already queued. */
+      dedupeKey?: string;
       onAccepted?: () => Promise<void> | void;
       onAcceptedPreStreamFailure?: (error: SendMessageError) => Promise<void> | void;
       onCanceled?: (reason: string) => Promise<void> | void;
     }
   ): "tool-end" | "turn-end" | null {
     this.assertNotDisposed("queueMessage");
-    const didEnqueue = this.messageQueue.add(message, options, internal);
+    const didEnqueue =
+      internal?.dedupeKey != null
+        ? this.messageQueue.addOnce(message, options, internal.dedupeKey, internal)
+        : this.messageQueue.add(message, options, internal);
     if (!didEnqueue) {
       return null;
     }
@@ -5131,6 +5146,28 @@ export class AgentSession {
       !this.messageQueue.isEmpty() &&
       (dispatchMode == null || this.messageQueue.getQueueDispatchMode() === dispatchMode)
     );
+  }
+
+  /** Whether a message queued with this dedupe key is still pending (see MessageQueue.addOnce). */
+  hasQueuedDedupeKey(dedupeKey: string): boolean {
+    assert(dedupeKey.length > 0, "hasQueuedDedupeKey requires a dedupeKey");
+    return this.messageQueue.hasDedupeKey(dedupeKey);
+  }
+
+  /**
+   * Drop the queue when its only content is the entry queued under this dedupe key.
+   * Returns true when a drop happened. Supersede semantics for scheduled maintenance
+   * messages: new input must own its turn, not batch behind a pending heartbeat whose
+   * muxMetadata would mislabel it.
+   */
+  dropQueuedMessageWithOnlyDedupeKey(dedupeKey: string): boolean {
+    this.assertNotDisposed("dropQueuedMessageWithOnlyDedupeKey");
+    assert(dedupeKey.length > 0, "dropQueuedMessageWithOnlyDedupeKey requires a dedupeKey");
+    if (!this.messageQueue.holdsOnlyDedupeKey(dedupeKey)) {
+      return false;
+    }
+    this.clearQueue("Scheduled message superseded by new input.");
+    return true;
   }
 
   private requestQueuedToolEndDispatchAfterCurrentTool(): void {
@@ -5193,6 +5230,15 @@ export class AgentSession {
    */
   restoreQueueToInput(): void {
     this.assertNotDisposed("restoreQueueToInput");
+    // Restore-to-input exists to give the user their own words back (interrupt / edit).
+    // A queued scheduled heartbeat is backend-initiated maintenance, not user input —
+    // surfacing it as editable composer text would be confusing, so discard it instead
+    // (the check-in is periodic; its next slot fires anyway). It can only ever be the
+    // queue's sole content: it is enqueued exclusively into an empty queue, and any
+    // later user message supersedes it before queueing.
+    if (this.dropQueuedMessageWithOnlyDedupeKey(HEARTBEAT_QUEUE_DEDUPE_KEY)) {
+      return;
+    }
     if (!this.messageQueue.isEmpty()) {
       const displayText = this.messageQueue.getDisplayText();
       const fileParts = this.messageQueue.getFileParts();

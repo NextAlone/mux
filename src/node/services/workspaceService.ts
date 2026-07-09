@@ -5,6 +5,11 @@ import assert from "@/common/utils/assert";
 import { DEFAULT_WORKTREE_ARCHIVE_BEHAVIOR } from "@/common/config/worktreeArchiveBehavior";
 import type { WorktreeArchiveSnapshot } from "@/common/schemas/project";
 import { isWorkspaceArchived } from "@/common/utils/archive";
+import {
+  comparePinnedOrder,
+  isWorkspacePinned,
+  reassignPinnedTimestamps,
+} from "@/common/utils/pin";
 import { MULTI_PROJECT_CONFIG_KEY } from "@/common/constants/multiProject";
 import type { CompactionCompletionMetadata } from "@/common/types/compaction";
 import type { Config } from "@/node/config";
@@ -47,7 +52,11 @@ import {
 import { getWorkspacePathHintForProject } from "@/node/services/workspaceProjectRepos";
 import { validateWorkspaceName } from "@/common/utils/validation/workspaceValidation";
 import { ensurePrivateDir, isErrnoWithCode } from "@/node/utils/fs";
-import { CHAT_FILE_NAME, CHAT_ARCHIVE_FILE_NAME } from "@/common/constants/paths";
+import {
+  CHAT_FILE_NAME,
+  CHAT_ARCHIVE_FILE_NAME,
+  HEADLESS_USAGE_FILE_NAME,
+} from "@/common/constants/paths";
 import { PARENT_SOURCE_REVISION } from "@/common/constants/workspace";
 import { stripTrailingSlashes } from "@/node/utils/pathUtils";
 import { getProjects, isMultiProject } from "@/common/utils/multiProject";
@@ -177,8 +186,15 @@ import {
   HEARTBEAT_DEFAULT_MESSAGE_BODY,
   HEARTBEAT_MAX_INTERVAL_MS,
   HEARTBEAT_MIN_INTERVAL_MS,
+  HEARTBEAT_QUEUE_DEDUPE_KEY,
   HEARTBEAT_RESET_BOUNDARY_MESSAGE,
+  formatHeartbeatInterval,
+  isHeartbeatTrigger,
+  isHeartbeatWhenBusy,
+  isValidHeartbeatScheduleUpdatedAt,
+  resolveHeartbeatSchedulePolicy,
   type HeartbeatContextMode,
+  type HeartbeatSchedulePolicy,
 } from "@/constants/heartbeat";
 import { WORKSPACE_DEFAULTS } from "@/constants/workspaceDefaults";
 import {
@@ -212,10 +228,15 @@ import type {
 } from "@/node/services/workspaceGoalService";
 import type {
   BackgroundProcessManager,
+  MonitorArmedPayload,
   MonitorMatchPayload,
+  MonitorStoppedPayload,
 } from "@/node/services/backgroundProcessManager";
+import { BashMonitorRegistryStore } from "@/node/services/bashMonitorRegistryStore";
+import { MutexMap } from "@/node/utils/concurrency/mutexMap";
 import {
   BashMonitorWakeStore,
+  buildBashMonitorWakeMetadata,
   buildBashMonitorWakePrompt,
   type BashMonitorWakeRecord,
 } from "@/node/services/bashMonitorWakeStore";
@@ -280,11 +301,20 @@ type WorkspaceHeartbeatSettingsUpdate = Partial<WorkspaceHeartbeatSettings>;
 type WorkspaceGoalDefaultsOverride = z.infer<typeof WorkspaceGoalDefaultsOverrideSchema>;
 interface HeartbeatWorkspaceConfigEntry {
   normalizedWorkspaceId: string;
+  /** Project/workspace paths so editConfig transforms can re-find the FRESH entry. */
+  projectPath: string;
+  workspacePath: string;
   config: ProjectsConfig;
+  /**
+   * Entry from the pre-read snapshot: valid for read paths and input validation only.
+   * Mutations must re-resolve the entry from fresh config inside editConfig — persisting
+   * a stale snapshot loses concurrent edits (e.g. resurrects removed workspaces).
+   */
   workspaceEntry: Workspace;
 }
 interface HeartbeatExecutionRequest {
   contextMode: HeartbeatContextMode;
+  schedulePolicy: HeartbeatSchedulePolicy;
   sendOptions: SendMessageOptions;
   heartbeatPrompt: string;
   muxMetadata: Extract<MuxMessageMetadata, { type: "heartbeat-request" }>;
@@ -473,6 +503,14 @@ function normalizeHeartbeatSettings(
     intervalMs: sanitizeHeartbeatIntervalMs(settings.intervalMs, defaultIntervalMs),
     contextMode: sanitizeHeartbeatContextMode(settings.contextMode),
     ...(message != null ? { message } : {}),
+    // trigger/whenBusy stay sparse: unset values are never materialized so read-time
+    // defaulting (resolveHeartbeatSchedulePolicy) keeps working and "never touched"
+    // remains distinguishable from an explicit choice.
+    ...(isHeartbeatTrigger(settings.trigger) ? { trigger: settings.trigger } : {}),
+    ...(isHeartbeatWhenBusy(settings.whenBusy) ? { whenBusy: settings.whenBusy } : {}),
+    ...(isValidHeartbeatScheduleUpdatedAt(settings.scheduleUpdatedAt)
+      ? { scheduleUpdatedAt: settings.scheduleUpdatedAt }
+      : {}),
   };
 }
 
@@ -1182,6 +1220,24 @@ async function archiveChildSessionArtifactsIntoParentSessionDir(params: {
         },
       });
 
+      // Headless usage (status generation, memory sweeps) has no chat row;
+      // the archived sidecar is the only way the analytics ETL can restore
+      // that spend after clearWorkspace deletes the child's event rows.
+      await copyFileBestEffort({
+        srcPath: path.join(params.childSessionDir, HEADLESS_USAGE_FILE_NAME),
+        destPath: path.join(
+          params.parentSessionDir,
+          "subagent-transcripts",
+          params.childWorkspaceId,
+          HEADLESS_USAGE_FILE_NAME
+        ),
+        logContext: {
+          parentWorkspaceId: params.parentWorkspaceId,
+          childWorkspaceId: params.childWorkspaceId,
+          artifact: HEADLESS_USAGE_FILE_NAME,
+        },
+      });
+
       if (didCopyChat || didCopyPartial) {
         const nowMs = Date.now();
 
@@ -1522,8 +1578,24 @@ async function forEachWithConcurrencyLimit<T>(
 
 export interface WorkspaceServiceEvents {
   chat: (event: { workspaceId: string; message: WorkspaceChatMessage }) => void;
-  metadata: (event: { workspaceId: string; metadata: FrontendWorkspaceMetadata | null }) => void;
+  metadata: (event: {
+    workspaceId: string;
+    metadata: FrontendWorkspaceMetadata | null;
+    /**
+     * Set on removal (metadata === null) when the removed workspace was a
+     * sub-agent/task child: its transcript was archived into this parent's
+     * session dir, so analytics can re-ingest the parent to restore the
+     * child's spend after clearing the child's live rows.
+     */
+    removedParentWorkspaceId?: string;
+  }) => void;
   activity: (event: { workspaceId: string; activity: WorkspaceActivitySnapshot | null }) => void;
+  /**
+   * Request an incremental analytics ingest for a workspace whose chat.jsonl
+   * gained billable usage outside the StreamManager stream-end path (e.g. a
+   * /btw side question). ServiceContainer routes this to AnalyticsService.
+   */
+  analyticsIngest: (event: { workspaceId: string }) => void;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-unsafe-declaration-merging
@@ -1544,16 +1616,20 @@ function createDefaultActivitySnapshot(): WorkspaceActivitySnapshot {
   };
 }
 
-function mergeActiveWorkflowRunCount(
+// Merge an optional "active X count" field into an activity snapshot: a positive count
+// sets the field, zero deletes it so the snapshot stays sparse (absent === none). The
+// active-workflow-run and armed-bash-monitor counts share this identical shape.
+function mergeActiveCount(
   snapshot: WorkspaceActivitySnapshot | null,
-  activeWorkflowRunCount: number
+  key: "activeWorkflowRunCount" | "activeBashMonitorCount",
+  count: number
 ): WorkspaceActivitySnapshot {
-  assert(activeWorkflowRunCount >= 0, "active workflow run count must be non-negative");
+  assert(count >= 0, `${key} must be non-negative`);
   const merged: WorkspaceActivitySnapshot = { ...(snapshot ?? createDefaultActivitySnapshot()) };
-  if (activeWorkflowRunCount > 0) {
-    merged.activeWorkflowRunCount = activeWorkflowRunCount;
+  if (count > 0) {
+    merged[key] = count;
   } else {
-    delete merged.activeWorkflowRunCount;
+    delete merged[key];
   }
   return merged;
 }
@@ -1570,6 +1646,10 @@ export class WorkspaceService extends EventEmitter {
   >();
 
   private readonly bashMonitorWakeStore: BashMonitorWakeStore;
+  private readonly bashMonitorRegistryStore: BashMonitorRegistryStore;
+  // Construction timestamp; registry records armed at/after this instant belong to the
+  // live manager, so startup recovery must not convert them into "monitor lost" wakes.
+  private readonly constructedAtMs = Date.now();
   private readonly pendingBashMonitorWakeDrainsByOwner = new Map<string, Promise<void>>();
   private readonly pendingBashMonitorWakeIdleWaitsByOwner = new Map<string, Promise<void>>();
   private readonly cancelingBashMonitorWakeKeys = new Set<string>();
@@ -1579,6 +1659,97 @@ export class WorkspaceService extends EventEmitter {
     payload: MonitorMatchPayload
   ) => {
     void this.handleBashMonitorMatch(payload);
+  };
+  // Serializes every registry/wake mutation for one (workspace, processId) across the
+  // armed/stopped listeners and startup recovery. The registry and wake stores each have
+  // their own internal locks, but cross-store sequences (upsert-then-supersede,
+  // consume-then-enqueue) must not interleave, or a monitor re-armed during recovery can
+  // race the stale-notice conversion (false "monitor lost" wakes, or stale notices left
+  // pending for a live process). NOTE: listeners must call withLock synchronously —
+  // MutexMap enqueues per-key work in call order, so back-to-back armed/stopped events
+  // for a fast-exiting process resolve FIFO and the registry ends deleted.
+  private readonly bashMonitorRegistryLocks = new MutexMap<string>();
+  private readonly bashMonitorArmedListener = (
+    _workspaceId: string,
+    payload: MonitorArmedPayload
+  ) => {
+    this.bashMonitorRegistryLocks
+      .withLock(`${payload.workspaceId}:${payload.processId}`, async () => {
+        // Upsert must be durable before the supersede so no interleaving observes the
+        // live re-arm without its registry record.
+        await this.bashMonitorRegistryStore.upsert(payload);
+        // Re-arming a processId invalidates any undelivered "monitor lost" notice for it:
+        // post-restart IDs are generated against an empty manager map, so a relaunched
+        // display_name reuses the old ID and the pending notice would describe a live task.
+        await this.bashMonitorWakeStore.supersedePendingMonitorLost(
+          payload.workspaceId,
+          payload.processId
+        );
+      })
+      .catch((error: unknown) => {
+        log.error("Failed to persist armed bash monitor", {
+          workspaceId: payload.workspaceId,
+          error,
+        });
+      });
+  };
+  private readonly bashMonitorStoppedListener = (
+    workspaceId: string,
+    payload: MonitorStoppedPayload
+  ) => {
+    this.bashMonitorRegistryLocks
+      .withLock(`${workspaceId}:${payload.processId}`, () =>
+        this.bashMonitorRegistryStore.remove(workspaceId, payload.processId)
+      )
+      .catch((error: unknown) => {
+        log.error("Failed to remove retired bash monitor registry record", { workspaceId, error });
+      });
+  };
+  // Last armed-monitor count successfully broadcast per workspace, so background process
+  // churn that doesn't change the count (e.g. a monitorless bash exiting) skips the
+  // activity re-emit. A missing entry means "unknown" (never successfully emitted), which
+  // must never dedupe: renderers may have bootstrapped a non-zero count from
+  // getActivityList(), so suppressing an unknown->0 transition would strand the sidebar.
+  private readonly lastEmittedBashMonitorCounts = new Map<string, number>();
+  // Workspaces where an armed monitor has ever been observed (by the change listener or
+  // a getActivityList read). Deliberately never pruned and kept separate from the dedupe
+  // map above: the dedupe entry is dropped while emits are in flight or failed, but the
+  // tombstone decision in getActivityList must survive those windows, otherwise a
+  // renderer that bootstrapped a non-zero count can never see the zero-count clear.
+  private readonly bashMonitorSeenWorkspaces = new Set<string>();
+  private readonly bashProcessChangeListener = (workspaceId: string): void => {
+    const count = this.getActiveBashMonitorCount(workspaceId);
+    if (count > 0) {
+      this.bashMonitorSeenWorkspaces.add(workspaceId);
+    }
+    if (this.lastEmittedBashMonitorCounts.get(workspaceId) === count) {
+      return;
+    }
+    // Clear the entry synchronously BEFORE the async emit: while an emit is in flight
+    // the last delivered count is unknown (the snapshot read may fail, and renderers
+    // may observe transient counts via workspace.activity.list()). Deleting up front
+    // means a concurrent change event — e.g. a stop racing a slow armed emit in a fast
+    // 0 -> 1 -> 0 sequence — can never dedupe against a stale pre-emit value and drop
+    // the clear. Cost: an occasional duplicate emit, which renderers apply idempotently.
+    this.lastEmittedBashMonitorCounts.delete(workspaceId);
+    void this.extensionMetadata
+      .getSnapshot(workspaceId)
+      .then((snapshot) => {
+        this.emitWorkspaceActivity(workspaceId, snapshot);
+        // Record only after a successful emit. Re-read the count because the emit merges
+        // the live value, which may have moved past the one that triggered this listener.
+        this.lastEmittedBashMonitorCounts.set(
+          workspaceId,
+          this.getActiveBashMonitorCount(workspaceId)
+        );
+      })
+      .catch((error: unknown) => {
+        // Leave the entry absent ("unknown") so the next change event always re-emits.
+        log.debug("Failed to emit activity after background bash monitor change", {
+          workspaceId,
+          error,
+        });
+      });
   };
 
   // Lazily bootstrapped workflow activity cache so sidebar refreshes don't rescan run history.
@@ -1663,16 +1834,62 @@ export class WorkspaceService extends EventEmitter {
   ) {
     super();
     this.bashMonitorWakeStore = new BashMonitorWakeStore(config);
+    this.bashMonitorRegistryStore = new BashMonitorRegistryStore(config);
     if (typeof this.backgroundProcessManager.on === "function") {
       this.backgroundProcessManager.on("monitor:match", this.bashMonitorMatchListener);
+      this.backgroundProcessManager.on("monitor:armed", this.bashMonitorArmedListener);
+      this.backgroundProcessManager.on("monitor:stopped", this.bashMonitorStoppedListener);
+      this.backgroundProcessManager.on("change", this.bashProcessChangeListener);
     }
-    void this.schedulePersistedBashMonitorWakeDrains();
+    void this.recoverBashMonitorStateAfterRestart();
     this.policyService = policyService;
     this.telemetryService = telemetryService;
     this.experimentsService = experimentsService;
     this.sessionTimingService = sessionTimingService;
     this.setupMetadataListeners();
     this.setupInitMetadataListeners();
+  }
+
+  /**
+   * Startup recovery for bash monitors lost to a Mux restart (graceful or crash).
+   *
+   * The manager's process map is always empty at startup, so any persisted armed-monitor
+   * registry record found now describes a monitor that no longer exists: its process was
+   * terminated on shutdown (or orphaned by a crash). Convert those stale records into
+   * pending "monitor-lost" wakes *before* scheduling drains, so the existing drain
+   * machinery delivers the termination notice (merged with any undelivered match lines).
+   */
+  private async recoverBashMonitorStateAfterRestart(): Promise<void> {
+    try {
+      for (const ownerWorkspaceId of await this.bashMonitorRegistryStore.listOwnerWorkspaceIds()) {
+        for (const record of await this.bashMonitorRegistryStore.listAll(ownerWorkspaceId)) {
+          // Defensive: monitors armed after this service was constructed belong to the
+          // live manager; its own retirement events maintain their registry records.
+          if (Date.parse(record.createdAt) >= this.constructedAtMs) continue;
+          // Consume-then-enqueue runs under the same per-key lock as the armed listener,
+          // so a monitor re-armed during recovery is fully ordered against this section:
+          // an earlier re-arm replaces the registry record (consume returns null, no
+          // notice); a later one runs after the notice exists and supersedes it. A match
+          // wake written by the live monitor meanwhile is protected by enqueueMonitorLost
+          // itself, which refuses to upgrade match records updated at/after boot.
+          await this.bashMonitorRegistryLocks.withLock(
+            `${ownerWorkspaceId}:${record.processId}`,
+            async () => {
+              const consumed = await this.bashMonitorRegistryStore.consumeIfArmedBefore(
+                ownerWorkspaceId,
+                record.processId,
+                this.constructedAtMs
+              );
+              if (consumed == null) return;
+              await this.bashMonitorWakeStore.enqueueMonitorLost(consumed, this.constructedAtMs);
+            }
+          );
+        }
+      }
+    } catch (error) {
+      log.debug("Failed to convert stale bash monitor registry records into wakes", { error });
+    }
+    await this.schedulePersistedBashMonitorWakeDrains();
   }
 
   private async schedulePersistedBashMonitorWakeDrains(): Promise<void> {
@@ -1783,7 +2000,69 @@ export class WorkspaceService extends EventEmitter {
       return;
     }
 
-    const prompt = buildBashMonitorWakePrompt(pending);
+    // Both terminal transitions return false when the persisted record picked up new merged
+    // matches after this drain snapshotted `pending`; in that case reschedule so the freshly
+    // merged lines get their own drain pass. The delivered/superseded callbacks differ only in
+    // which store transition they apply, so share the resolve-each-then-reschedule-on-any-miss
+    // loop rather than copy-pasting it. Defined ahead of the delivery gate below so the gate can
+    // reuse markSupersededSnapshots for matches it drops as already-shown.
+    const resolveWakeSnapshots = async (
+      records: readonly BashMonitorWakeRecord[],
+      resolve: (record: BashMonitorWakeRecord) => Promise<boolean>
+    ): Promise<void> => {
+      let hasUnresolvedMergedMatches = false;
+      for (const record of records) {
+        if (!(await resolve(record))) {
+          hasUnresolvedMergedMatches = true;
+        }
+      }
+      if (hasUnresolvedMergedMatches) {
+        this.scheduleBashMonitorWakeDrainAfterIdle(ownerWorkspaceId);
+      }
+    };
+    const markDeliveredAfterAccepted = (records: readonly BashMonitorWakeRecord[]): Promise<void> =>
+      resolveWakeSnapshots(records, (record) =>
+        this.bashMonitorWakeStore.markDeliveredSnapshot(ownerWorkspaceId, record)
+      );
+    const markSupersededSnapshots = (records: readonly BashMonitorWakeRecord[]): Promise<void> =>
+      resolveWakeSnapshots(records, (record) =>
+        this.bashMonitorWakeStore.markSupersededSnapshot(ownerWorkspaceId, record)
+      );
+
+    // Delivery gate: the authoritative "don't re-report shown output" check. emitMonitorMatch's
+    // shownThroughOffset comparison is only a point-in-time fast path -- it can lose a race with a
+    // concurrent task_await that advances the shown-frontier just after the wake is emitted (a
+    // process printing its final line then exiting triggers an immediate exit flush that bypasses
+    // the cooldown). Here, at the moment each wake would become a transcript message, re-check its
+    // matched offset against the settled shown-frontier and drop any match already shown. Records
+    // without matchedThroughOffset (legacy on-disk) and managers without the query (partial test
+    // stubs) fail open -- the wake delivers, matching the pre-gate behavior. The record's createdAt
+    // pins the check to the instance that produced the match: process IDs are display-name-derived
+    // and reclaimed across restarts, so a fresh process that reused the ID started after createdAt,
+    // getSettledShownThroughOffset returns undefined, and the dead instance's wake still delivers.
+    const canQueryShownFrontier =
+      typeof this.backgroundProcessManager.getSettledShownThroughOffset === "function";
+    const deliverable: BashMonitorWakeRecord[] = [];
+    const supersededByShown: BashMonitorWakeRecord[] = [];
+    for (const record of pending) {
+      if (canQueryShownFrontier && record.kind === "match" && record.matchedThroughOffset != null) {
+        const shown = await this.backgroundProcessManager.getSettledShownThroughOffset(
+          record.processId,
+          Date.parse(record.createdAt)
+        );
+        if (shown != null && shown >= record.matchedThroughOffset) {
+          supersededByShown.push(record);
+          continue;
+        }
+      }
+      deliverable.push(record);
+    }
+    if (supersededByShown.length > 0) {
+      await markSupersededSnapshots(supersededByShown);
+    }
+    if (deliverable.length === 0) return;
+
+    const prompt = buildBashMonitorWakePrompt(deliverable);
     const retryAfterIdleIfBusy = (reason: string): void => {
       if (
         this.isBusyForMessage(ownerWorkspaceId) ||
@@ -1797,40 +2076,6 @@ export class WorkspaceService extends EventEmitter {
         reason,
       });
     };
-    const markDeliveredAfterAccepted = async (
-      records: readonly BashMonitorWakeRecord[]
-    ): Promise<void> => {
-      let hasUndeliveredMergedMatches = false;
-      for (const record of records) {
-        const delivered = await this.bashMonitorWakeStore.markDeliveredSnapshot(
-          ownerWorkspaceId,
-          record
-        );
-        if (!delivered) {
-          hasUndeliveredMergedMatches = true;
-        }
-      }
-      if (hasUndeliveredMergedMatches) {
-        this.scheduleBashMonitorWakeDrainAfterIdle(ownerWorkspaceId);
-      }
-    };
-    const markSupersededAfterCanceled = async (
-      records: readonly BashMonitorWakeRecord[]
-    ): Promise<void> => {
-      let hasNewMergedMatches = false;
-      for (const record of records) {
-        const superseded = await this.bashMonitorWakeStore.markSupersededSnapshot(
-          ownerWorkspaceId,
-          record
-        );
-        if (!superseded) {
-          hasNewMergedMatches = true;
-        }
-      }
-      if (hasNewMergedMatches) {
-        this.scheduleBashMonitorWakeDrainAfterIdle(ownerWorkspaceId);
-      }
-    };
 
     // Once the synthetic wake turn is accepted into durable chat history, the wake has
     // been delivered. If provider startup fails after acceptance, AgentSession's
@@ -1842,7 +2087,7 @@ export class WorkspaceService extends EventEmitter {
       if (delivered) return;
       delivered = true;
       try {
-        await markDeliveredAfterAccepted(pending);
+        await markDeliveredAfterAccepted(deliverable);
       } catch (error) {
         log.error("Failed to mark bash monitor wake delivered after accepted send", {
           ownerWorkspaceId,
@@ -1854,7 +2099,12 @@ export class WorkspaceService extends EventEmitter {
     const sendResult = await this.sendMessage(
       ownerWorkspaceId,
       prompt,
-      { ...sendOptions, queueDispatchMode: "tool-end" },
+      {
+        ...sendOptions,
+        queueDispatchMode: "tool-end",
+        // Compact display summaries; the transcript collapses the raw prompt.
+        muxMetadata: buildBashMonitorWakeMetadata(deliverable),
+      },
       {
         skipAutoResumeReset: true,
         synthetic: true,
@@ -1877,7 +2127,7 @@ export class WorkspaceService extends EventEmitter {
         },
         onCanceled: async (reason) => {
           if (delivered) return;
-          const cancelingKeys = pending.map((record) =>
+          const cancelingKeys = deliverable.map((record) =>
             this.bashMonitorWakeKey(ownerWorkspaceId, record.id)
           );
           for (const key of cancelingKeys) {
@@ -1888,7 +2138,7 @@ export class WorkspaceService extends EventEmitter {
             reason,
           });
           try {
-            await markSupersededAfterCanceled(pending);
+            await markSupersededSnapshots(deliverable);
           } catch (error) {
             log.error("Failed to supersede canceled bash monitor wake snapshot", {
               ownerWorkspaceId,
@@ -2341,14 +2591,38 @@ export class WorkspaceService extends EventEmitter {
     if (snapshot == null && activeRunIds.size === 0) {
       return null;
     }
-    return mergeActiveWorkflowRunCount(snapshot, activeRunIds.size);
+    return mergeActiveCount(snapshot, "activeWorkflowRunCount", activeRunIds.size);
+  }
+
+  private getActiveBashMonitorCount(workspaceId: string): number {
+    // Tests may construct WorkspaceService with a partial BackgroundProcessManager stub
+    // (same reason the constructor guards the event subscriptions).
+    if (typeof this.backgroundProcessManager.getActiveMonitorCount !== "function") {
+      return 0;
+    }
+    return this.backgroundProcessManager.getActiveMonitorCount(workspaceId);
+  }
+
+  private mergeCurrentActiveBashMonitorCount(
+    workspaceId: string,
+    snapshot: WorkspaceActivitySnapshot | null
+  ): WorkspaceActivitySnapshot | null {
+    const count = this.getActiveBashMonitorCount(workspaceId);
+    if (snapshot == null && count === 0) {
+      return snapshot;
+    }
+    return mergeActiveCount(snapshot, "activeBashMonitorCount", count);
   }
 
   private async mergeCurrentActiveWorkflowRunCount(
     workspaceId: string,
     snapshot: WorkspaceActivitySnapshot
   ): Promise<WorkspaceActivitySnapshot> {
-    return mergeActiveWorkflowRunCount(snapshot, await this.getActiveWorkflowRunCount(workspaceId));
+    return mergeActiveCount(
+      snapshot,
+      "activeWorkflowRunCount",
+      await this.getActiveWorkflowRunCount(workspaceId)
+    );
   }
 
   public async emitWorkflowRunActivity(event: {
@@ -2376,9 +2650,12 @@ export class WorkspaceService extends EventEmitter {
   ): void {
     this.emit("activity", {
       workspaceId,
-      activity: this.mergeCachedActiveWorkflowRunCount(
+      activity: this.mergeCurrentActiveBashMonitorCount(
         workspaceId,
-        this.overlayPendingGoal(workspaceId, snapshot)
+        this.mergeCachedActiveWorkflowRunCount(
+          workspaceId,
+          this.overlayPendingGoal(workspaceId, snapshot)
+        )
       ),
     });
   }
@@ -4283,7 +4560,11 @@ export class WorkspaceService extends EventEmitter {
       await this.config.removeWorkspace(workspaceId);
       this.autoTitlingWorkspaces.delete(workspaceId);
 
-      this.emit("metadata", { workspaceId, metadata: null });
+      this.emit("metadata", {
+        workspaceId,
+        metadata: null,
+        ...(parentWorkspaceId ? { removedParentWorkspaceId: parentWorkspaceId } : {}),
+      });
 
       return Ok(undefined);
     } catch (error) {
@@ -4456,7 +4737,37 @@ export class WorkspaceService extends EventEmitter {
       return Err("Workspace not found");
     }
 
-    return Ok({ normalizedWorkspaceId, config, workspaceEntry });
+    return Ok({
+      normalizedWorkspaceId,
+      projectPath: found.projectPath,
+      workspacePath: found.workspacePath,
+      config,
+      workspaceEntry,
+    });
+  }
+
+  /**
+   * Re-resolve a workspace entry from a FRESH config snapshot inside an editConfig
+   * transform. Mutating a pre-read snapshot entry and persisting that snapshot was a
+   * lost-update race: a stale full-config write racing removeWorkspace() resurrected
+   * the removed entry as a permanent sidebar ghost. All config mutations must re-find
+   * their target entry here (or equivalent) inside the serialized transform.
+   */
+  private findFreshWorkspaceEntry(
+    config: ProjectsConfig,
+    target: { projectPath: string; workspaceId: string; workspacePath: string }
+  ): Workspace | undefined {
+    const projectConfig = config.projects.get(target.projectPath);
+    return (
+      projectConfig?.workspaces.find((workspace) => workspace.id === target.workspaceId) ??
+      // Path fallback is for legacy entries that predate stable IDs only. A path match
+      // that carries a DIFFERENT id is a replacement workspace (paths are reusable after
+      // deletion) — treat the original entry as gone rather than leaking the stale
+      // settings write into the fresh workspace.
+      projectConfig?.workspaces.find(
+        (workspace) => workspace.path === target.workspacePath && !workspace.id
+      )
+    );
   }
 
   getHeartbeatSettings(workspaceId: string): WorkspaceHeartbeatSettings | null {
@@ -4492,13 +4803,30 @@ export class WorkspaceService extends EventEmitter {
         return Err(resolved.error);
       }
 
-      const { normalizedWorkspaceId, config, workspaceEntry } = resolved.data;
-      if (!workspaceEntry.heartbeat) {
+      const { normalizedWorkspaceId, projectPath, workspacePath } = resolved.data;
+      if (!resolved.data.workspaceEntry.heartbeat) {
         return Ok(undefined);
       }
 
-      delete workspaceEntry.heartbeat;
-      await this.config.saveConfig(config);
+      // Mutate inside the serialized editConfig transform, re-finding the entry from
+      // fresh config (see findFreshWorkspaceEntry). Entry gone meanwhile means the
+      // workspace was removed concurrently — unset is then trivially satisfied.
+      let removedHeartbeat = false;
+      await this.config.editConfig((freshConfig) => {
+        const entry = this.findFreshWorkspaceEntry(freshConfig, {
+          projectPath,
+          workspaceId: normalizedWorkspaceId,
+          workspacePath,
+        });
+        if (entry?.heartbeat) {
+          delete entry.heartbeat;
+          removedHeartbeat = true;
+        }
+        return freshConfig;
+      });
+      if (!removedHeartbeat) {
+        return Ok(undefined);
+      }
 
       const interactionTimestamp = Date.now();
       await this.updateRecencyTimestamp(normalizedWorkspaceId, interactionTimestamp);
@@ -4549,54 +4877,124 @@ export class WorkspaceService extends EventEmitter {
           isHeartbeatContextMode(settings.contextMode),
         "Heartbeat context mode must be a supported value when provided"
       );
+      const hasTriggerUpdate = Object.prototype.hasOwnProperty.call(settings, "trigger");
+      assert(
+        !hasTriggerUpdate || settings.trigger == null || isHeartbeatTrigger(settings.trigger),
+        "Heartbeat trigger must be a supported value when provided"
+      );
+      const hasWhenBusyUpdate = Object.prototype.hasOwnProperty.call(settings, "whenBusy");
+      assert(
+        !hasWhenBusyUpdate || settings.whenBusy == null || isHeartbeatWhenBusy(settings.whenBusy),
+        "Heartbeat whenBusy must be a supported value when provided"
+      );
 
       const resolved = this.resolveHeartbeatWorkspaceEntry(workspaceId, "setHeartbeatSettings");
       if (!resolved.success) {
         return Err(resolved.error);
       }
 
-      const { normalizedWorkspaceId, config, workspaceEntry } = resolved.data;
-      const defaultIntervalMs = this.getHeartbeatDefaultIntervalMsFromConfig(config);
-      const currentSettings = normalizeHeartbeatSettings(
-        workspaceEntry.heartbeat,
-        defaultIntervalMs
-      );
-      const nextMessage = hasMessageUpdate
-        ? sanitizeHeartbeatMessage(settings.message)
-        : currentSettings?.message;
-      // Keep the interval on disk even when disabled so re-enabling restores the user's choice.
-      const nextSettings: WorkspaceHeartbeatSettings = {
-        enabled: hasEnabledUpdate ? settings.enabled! : (currentSettings?.enabled ?? true),
-        intervalMs: hasIntervalUpdate
+      const { normalizedWorkspaceId, projectPath, workspacePath } = resolved.data;
+      const interactionTimestamp = Date.now();
+      // Merge with the FRESH entry inside the serialized editConfig transform (not the
+      // pre-read snapshot): merging against a stale entry could silently drop a concurrent
+      // heartbeat edit, and persisting the stale snapshot could resurrect concurrently
+      // removed workspaces (lost-update race). Entry gone meanwhile → Err.
+      let mergeResult: Result<{ settings: WorkspaceHeartbeatSettings; changed: boolean }, string> =
+        Err("Workspace not found");
+      await this.config.editConfig((freshConfig) => {
+        const workspaceEntry = this.findFreshWorkspaceEntry(freshConfig, {
+          projectPath,
+          workspaceId: normalizedWorkspaceId,
+          workspacePath,
+        });
+        if (!workspaceEntry) {
+          mergeResult = Err("Workspace not found");
+          return freshConfig;
+        }
+
+        const defaultIntervalMs = this.getHeartbeatDefaultIntervalMsFromConfig(freshConfig);
+        const currentSettings = normalizeHeartbeatSettings(
+          workspaceEntry.heartbeat,
+          defaultIntervalMs
+        );
+        const nextMessage = hasMessageUpdate
+          ? sanitizeHeartbeatMessage(settings.message)
+          : currentSettings?.message;
+        // trigger/whenBusy mirror the `message` pattern (not `contextMode`): a present key with
+        // null clears back to unset, an absent key preserves, and unset is never materialized
+        // into config so read-time defaulting stays intact (see resolveHeartbeatSchedulePolicy).
+        const nextTrigger = hasTriggerUpdate
+          ? (settings.trigger ?? undefined)
+          : currentSettings?.trigger;
+        const nextWhenBusy = hasWhenBusyUpdate
+          ? (settings.whenBusy ?? undefined)
+          : currentSettings?.whenBusy;
+        const nextEnabled = hasEnabledUpdate
+          ? settings.enabled!
+          : (currentSettings?.enabled ?? true);
+        const nextIntervalMs = hasIntervalUpdate
           ? settings.intervalMs!
-          : (currentSettings?.intervalMs ?? defaultIntervalMs),
-        contextMode: hasContextModeUpdate
-          ? sanitizeHeartbeatContextMode(settings.contextMode)
-          : (currentSettings?.contextMode ?? HEARTBEAT_DEFAULT_CONTEXT_MODE),
-        ...(nextMessage != null ? { message: nextMessage } : {}),
-      };
+          : (currentSettings?.intervalMs ?? defaultIntervalMs);
+        // Server-managed cadence-edit stamp: fixed-interval restart anchoring uses
+        // max(last persisted firing, scheduleUpdatedAt), so a heartbeat fired under the
+        // previous schedule cannot bypass this edit (HeartbeatService's
+        // deriveInitialIntervalNextEligibleAt). Only cadence-affecting fields count —
+        // resolved trigger, not raw, so an explicit no-op like null→"idle" does not
+        // re-anchor (mirroring ensureTrackedWorkspace's live re-anchor conditions).
+        const cadenceChanged =
+          currentSettings?.enabled !== nextEnabled ||
+          currentSettings?.intervalMs !== nextIntervalMs ||
+          resolveHeartbeatSchedulePolicy(currentSettings ?? undefined).trigger !==
+            resolveHeartbeatSchedulePolicy({ trigger: nextTrigger, whenBusy: nextWhenBusy })
+              .trigger;
+        const nextScheduleUpdatedAt = cadenceChanged
+          ? interactionTimestamp
+          : currentSettings?.scheduleUpdatedAt;
+        // Keep the interval on disk even when disabled so re-enabling restores the user's choice.
+        const nextSettings: WorkspaceHeartbeatSettings = {
+          enabled: nextEnabled,
+          intervalMs: nextIntervalMs,
+          contextMode: hasContextModeUpdate
+            ? sanitizeHeartbeatContextMode(settings.contextMode)
+            : (currentSettings?.contextMode ?? HEARTBEAT_DEFAULT_CONTEXT_MODE),
+          ...(nextMessage != null ? { message: nextMessage } : {}),
+          ...(nextTrigger != null ? { trigger: nextTrigger } : {}),
+          ...(nextWhenBusy != null ? { whenBusy: nextWhenBusy } : {}),
+          ...(nextScheduleUpdatedAt != null ? { scheduleUpdatedAt: nextScheduleUpdatedAt } : {}),
+        };
 
-      const changed =
-        workspaceEntry.heartbeat?.enabled !== nextSettings.enabled ||
-        workspaceEntry.heartbeat?.intervalMs !== nextSettings.intervalMs ||
-        workspaceEntry.heartbeat?.message !== nextSettings.message ||
-        sanitizeHeartbeatContextMode(workspaceEntry.heartbeat?.contextMode) !==
-          nextSettings.contextMode;
-      if (!changed) {
-        return Ok(nextSettings);
+        const changed =
+          workspaceEntry.heartbeat?.enabled !== nextSettings.enabled ||
+          workspaceEntry.heartbeat?.intervalMs !== nextSettings.intervalMs ||
+          workspaceEntry.heartbeat?.message !== nextSettings.message ||
+          sanitizeHeartbeatContextMode(workspaceEntry.heartbeat?.contextMode) !==
+            nextSettings.contextMode ||
+          (workspaceEntry.heartbeat?.trigger ?? undefined) !== nextSettings.trigger ||
+          (workspaceEntry.heartbeat?.whenBusy ?? undefined) !== nextSettings.whenBusy;
+        if (!changed) {
+          mergeResult = Ok({ settings: nextSettings, changed: false });
+          return freshConfig;
+        }
+
+        workspaceEntry.heartbeat = nextSettings;
+        mergeResult = Ok({ settings: nextSettings, changed: true });
+        return freshConfig;
+      });
+
+      if (!mergeResult.success) {
+        return Err(mergeResult.error);
       }
-
-      workspaceEntry.heartbeat = nextSettings;
-      await this.config.saveConfig(config);
+      if (!mergeResult.data.changed) {
+        return Ok(mergeResult.data.settings);
+      }
 
       // Changing heartbeat settings is a real user interaction. Persist that recency before
       // emitting metadata so restarts preserve the post-config-change first-fire deadline
       // instead of rebuilding from an older completed turn.
-      const interactionTimestamp = Date.now();
       await this.updateRecencyTimestamp(normalizedWorkspaceId, interactionTimestamp);
       await this.emitCurrentWorkspaceMetadata(normalizedWorkspaceId);
 
-      return Ok(nextSettings);
+      return Ok(mergeResult.data.settings);
     } catch (error) {
       const message = getErrorMessage(error);
       return Err(`Failed to set heartbeat settings: ${message}`);
@@ -4684,18 +5082,6 @@ export class WorkspaceService extends EventEmitter {
       }
 
       const { projectPath, workspacePath } = found;
-      const config = this.config.loadConfigOrDefault();
-      const projectConfig = config.projects.get(projectPath);
-      if (!projectConfig) {
-        return Err(`Project not found: ${projectPath}`);
-      }
-
-      const workspaceEntry =
-        projectConfig.workspaces.find((workspace) => workspace.id === normalizedWorkspaceId) ??
-        projectConfig.workspaces.find((workspace) => workspace.path === workspacePath);
-      if (!workspaceEntry) {
-        return Err("Workspace not found");
-      }
 
       // Drop the whole record when every field is null — keeps the
       // config.json minimal and makes "no override" the canonical state
@@ -4705,30 +5091,82 @@ export class WorkspaceService extends EventEmitter {
         override.defaultTurnCap == null &&
         override.alwaysRequireExplicitBudget == null;
 
-      const prior = workspaceEntry.goalDefaults;
-      if (allNull) {
-        if (prior == null) {
+      // No-op fast path from a snapshot read: skip the queued write entirely when the
+      // override already matches. Race-safe — equivalent to a serialized write of the
+      // identical value landing first, and skipping cannot resurrect removed entries.
+      {
+        const snapshotEntry = this.findFreshWorkspaceEntry(this.config.loadConfigOrDefault(), {
+          projectPath,
+          workspaceId: normalizedWorkspaceId,
+          workspacePath,
+        });
+        const prior = snapshotEntry?.goalDefaults;
+        if (snapshotEntry && allNull && prior == null) {
           return Ok(undefined);
         }
-        delete workspaceEntry.goalDefaults;
-      } else {
-        const next: WorkspaceGoalDefaultsOverride = {
-          defaultBudgetCents: override.defaultBudgetCents ?? null,
-          defaultTurnCap: override.defaultTurnCap ?? null,
-          alwaysRequireExplicitBudget: override.alwaysRequireExplicitBudget ?? null,
-        };
-        const unchanged =
+        if (
+          snapshotEntry &&
+          !allNull &&
           prior != null &&
-          (prior.defaultBudgetCents ?? null) === next.defaultBudgetCents &&
-          (prior.defaultTurnCap ?? null) === next.defaultTurnCap &&
-          (prior.alwaysRequireExplicitBudget ?? null) === next.alwaysRequireExplicitBudget;
-        if (unchanged) {
+          (prior.defaultBudgetCents ?? null) === (override.defaultBudgetCents ?? null) &&
+          (prior.defaultTurnCap ?? null) === (override.defaultTurnCap ?? null) &&
+          (prior.alwaysRequireExplicitBudget ?? null) ===
+            (override.alwaysRequireExplicitBudget ?? null)
+        ) {
           return Ok(undefined);
         }
-        workspaceEntry.goalDefaults = next;
       }
 
-      await this.config.saveConfig(config);
+      // Compare against the FRESH entry inside the serialized editConfig transform
+      // (see findFreshWorkspaceEntry): persisting a pre-read snapshot loses concurrent
+      // edits and can resurrect removed workspaces. Entry gone meanwhile → Err.
+      let writeResult: Result<{ changed: boolean }, string> = Err("Workspace not found");
+      await this.config.editConfig((freshConfig) => {
+        const workspaceEntry = this.findFreshWorkspaceEntry(freshConfig, {
+          projectPath,
+          workspaceId: normalizedWorkspaceId,
+          workspacePath,
+        });
+        if (!workspaceEntry) {
+          writeResult = Err("Workspace not found");
+          return freshConfig;
+        }
+
+        const prior = workspaceEntry.goalDefaults;
+        if (allNull) {
+          if (prior == null) {
+            writeResult = Ok({ changed: false });
+            return freshConfig;
+          }
+          delete workspaceEntry.goalDefaults;
+        } else {
+          const next: WorkspaceGoalDefaultsOverride = {
+            defaultBudgetCents: override.defaultBudgetCents ?? null,
+            defaultTurnCap: override.defaultTurnCap ?? null,
+            alwaysRequireExplicitBudget: override.alwaysRequireExplicitBudget ?? null,
+          };
+          const unchanged =
+            prior != null &&
+            (prior.defaultBudgetCents ?? null) === next.defaultBudgetCents &&
+            (prior.defaultTurnCap ?? null) === next.defaultTurnCap &&
+            (prior.alwaysRequireExplicitBudget ?? null) === next.alwaysRequireExplicitBudget;
+          if (unchanged) {
+            writeResult = Ok({ changed: false });
+            return freshConfig;
+          }
+          workspaceEntry.goalDefaults = next;
+        }
+
+        writeResult = Ok({ changed: true });
+        return freshConfig;
+      });
+
+      if (!writeResult.success) {
+        return Err(writeResult.error);
+      }
+      if (!writeResult.data.changed) {
+        return Ok(undefined);
+      }
       await this.emitCurrentWorkspaceMetadata(normalizedWorkspaceId);
       return Ok(undefined);
     } catch (error) {
@@ -5045,14 +5483,23 @@ export class WorkspaceService extends EventEmitter {
   }
 
   private async emitCurrentWorkspaceMetadata(workspaceId: string): Promise<void> {
+    await this.emitCurrentWorkspaceMetadataBatch([workspaceId]);
+  }
+
+  /** Emit fresh metadata for several workspaces with a single config reload. */
+  private async emitCurrentWorkspaceMetadataBatch(workspaceIds: string[]): Promise<void> {
     const allMetadata = await this.config.getAllWorkspaceMetadata();
-    const updatedMetadata = allMetadata.find((metadata) => metadata.id === workspaceId) ?? null;
-    const enrichedMetadata = this.enrichMaybeFrontendMetadata(updatedMetadata);
-    const session = this.sessions.get(workspaceId);
-    if (session) {
-      session.emitMetadata(enrichedMetadata);
-    } else {
-      this.emit("metadata", { workspaceId, metadata: enrichedMetadata });
+    const metadataById = new Map(allMetadata.map((metadata) => [metadata.id, metadata]));
+    for (const workspaceId of workspaceIds) {
+      const enrichedMetadata = this.enrichMaybeFrontendMetadata(
+        metadataById.get(workspaceId) ?? null
+      );
+      const session = this.sessions.get(workspaceId);
+      if (session) {
+        session.emitMetadata(enrichedMetadata);
+      } else {
+        this.emit("metadata", { workspaceId, metadata: enrichedMetadata });
+      }
     }
   }
 
@@ -5236,6 +5683,28 @@ export class WorkspaceService extends EventEmitter {
       emitChatEvent: (wsId, message) => {
         this.sessions.get(wsId)?.emitChatEvent(message);
       },
+      // /btw bypasses StreamManager, so record its spend explicitly or it
+      // never reaches session-usage.json / cost displays.
+      recordUsage: async (modelString, usage, providerMetadata) => {
+        const recorded = await this.sessionUsageService?.recordHeadlessUsage(
+          workspaceId,
+          modelString,
+          usage,
+          providerMetadata
+        );
+        // The renderer's session-usage cache only updates from stream-end
+        // usage metadata (absent for /btw) or delta events, so emit a delta —
+        // otherwise an open Costs tab shows stale totals until reload.
+        if (recorded) {
+          this.sessions.get(workspaceId)?.emitChatEvent({
+            type: "session-usage-delta",
+            workspaceId,
+            sourceWorkspaceId: workspaceId,
+            byModelDelta: { [recorded.model]: recorded.usage },
+            timestamp: Date.now(),
+          });
+        }
+      },
     });
     if (!result.success) {
       return {
@@ -5243,6 +5712,11 @@ export class WorkspaceService extends EventEmitter {
         error: result.error.raw ?? `Side question failed: ${result.error.type}`,
       };
     }
+    // The persisted answer row now carries metadata.usage, but incremental
+    // analytics ingest is normally driven by StreamManager stream-end (which
+    // /btw bypasses). Request an ingest pass so the spend reaches dashboard
+    // totals without waiting for the next real stream or an app restart.
+    this.emit("analyticsIngest", { workspaceId });
     return { success: true, modelUsed: result.data.modelUsed };
   }
 
@@ -5367,6 +5841,177 @@ export class WorkspaceService extends EventEmitter {
       return Err(result.error);
     }
     return Ok(undefined);
+  }
+
+  /**
+   * Pin or unpin a chat (root workspace) so it floats to the top of its project
+   * in the sidebar. Pin order is stable: pinnedAt ascending, new pins append at
+   * the bottom of the pinned block. Recency is intentionally untouched, so
+   * unpinning drops the chat back to its natural recency position.
+   */
+  async setPinned(workspaceId: string, pinned: boolean): Promise<Result<void>> {
+    try {
+      const workspace = this.config.findWorkspace(workspaceId);
+      if (!workspace) {
+        return Err("Workspace not found");
+      }
+      const { projectPath, workspacePath } = workspace;
+
+      let updated = false;
+      let validationError: string | undefined;
+      await this.config.editConfig((config) => {
+        const projectConfig = config.projects.get(projectPath);
+        if (!projectConfig) {
+          validationError = "Workspace not found";
+          return config;
+        }
+
+        const workspaceEntry =
+          projectConfig.workspaces.find((entry) => entry.id === workspaceId) ??
+          projectConfig.workspaces.find((entry) => entry.path === workspacePath);
+        if (!workspaceEntry) {
+          validationError = "Workspace not found";
+          return config;
+        }
+
+        // Only root chats are pinnable; sub-agents follow their pinned parent.
+        if (workspaceEntry.parentWorkspaceId) {
+          validationError = "Sub-agent chats cannot be pinned";
+          return config;
+        }
+
+        if (pinned) {
+          if (isWorkspaceArchived(workspaceEntry.archivedAt, workspaceEntry.unarchivedAt)) {
+            validationError = "Archived chats cannot be pinned";
+            return config;
+          }
+          // Idempotent: a concurrent double-pin from another client must not move the row.
+          if (workspaceEntry.pinnedAt) {
+            return config;
+          }
+          // Server-generated monotonic timestamp: strictly greater than every existing
+          // pin in the project so rapid pins always append deterministically, even if
+          // the wall clock is skewed or several pins land within the same millisecond.
+          let pinnedAtMs = Date.now();
+          for (const entry of projectConfig.workspaces) {
+            if (!entry.pinnedAt) continue;
+            const existingMs = new Date(entry.pinnedAt).getTime();
+            if (Number.isFinite(existingMs) && existingMs >= pinnedAtMs) {
+              pinnedAtMs = existingMs + 1;
+            }
+          }
+          workspaceEntry.pinnedAt = new Date(pinnedAtMs).toISOString();
+          updated = true;
+        } else if (workspaceEntry.pinnedAt) {
+          delete workspaceEntry.pinnedAt;
+          updated = true;
+        }
+
+        return config;
+      });
+
+      if (validationError) {
+        return Err(validationError);
+      }
+
+      if (updated) {
+        await this.emitCurrentWorkspaceMetadata(workspaceId);
+      }
+
+      return Ok(undefined);
+    } catch (error) {
+      return Err(`Failed to update pin state: ${getErrorMessage(error)}`);
+    }
+  }
+
+  /**
+   * Reorder the pinned block of one project bucket. `workspaceIds` is the full
+   * desired pinned order for that bucket as the client sees it. Defensive
+   * contract: unknown/unpinned ids are dropped, currently-pinned ids omitted
+   * from the input keep their relative order and are appended, so concurrent
+   * pin/unpin from other clients is absorbed instead of erroring.
+   *
+   * Persistence model: pinnedAt is an ordering key, so reordering re-deals the
+   * existing pool of pinnedAt timestamps onto the new order (see
+   * reassignPinnedTimestamps). Reusing the pool keeps max(pinnedAt) stable,
+   * preserving setPinned's append-at-bottom invariant across reorders.
+   */
+  async reorderPinned(workspaceIds: string[]): Promise<Result<void>> {
+    try {
+      // Derive the config bucket from the first resolvable id so clients never
+      // need internal bucket keys (e.g. the multi-project bucket). Nothing
+      // resolvable means the client acted on stale state: a benign no-op.
+      // Const (not narrowed let) so the editConfig closure sees type string.
+      const projectPath = workspaceIds
+        .map((id) => this.config.findWorkspace(id)?.projectPath)
+        .find((path) => path !== undefined);
+      if (projectPath === undefined) {
+        return Ok(undefined);
+      }
+
+      const changedIds: string[] = [];
+      await this.config.editConfig((config) => {
+        const projectConfig = config.projects.get(projectPath);
+        if (!projectConfig) {
+          return config;
+        }
+
+        // Current pinned roots of the bucket, in effective pin order.
+        const pinnedEntries: Array<{ id: string; pinnedAt: string }> = [];
+        for (const entry of projectConfig.workspaces) {
+          if (!entry.id || !entry.pinnedAt) continue;
+          if (!isWorkspacePinned(entry)) continue;
+          pinnedEntries.push({ id: entry.id, pinnedAt: entry.pinnedAt });
+        }
+        if (pinnedEntries.length < 2) {
+          return config;
+        }
+        pinnedEntries.sort(comparePinnedOrder);
+        const currentOrder = pinnedEntries.map((entry) => entry.id);
+        const currentSet = new Set(currentOrder);
+
+        // Desired order: dedupe the input, keep only currently-pinned ids,
+        // then append omitted pins in their current relative order.
+        const seen = new Set<string>();
+        const desiredOrder: string[] = [];
+        for (const id of workspaceIds) {
+          if (seen.has(id)) continue;
+          seen.add(id);
+          if (currentSet.has(id)) {
+            desiredOrder.push(id);
+          }
+        }
+        for (const id of currentOrder) {
+          if (!seen.has(id)) {
+            desiredOrder.push(id);
+          }
+        }
+        if (desiredOrder.every((id, index) => id === currentOrder[index])) {
+          return config;
+        }
+
+        const currentPinnedAtById = new Map(
+          pinnedEntries.map((entry) => [entry.id, entry.pinnedAt])
+        );
+        const changes = reassignPinnedTimestamps(desiredOrder, currentPinnedAtById);
+        for (const entry of projectConfig.workspaces) {
+          if (!entry.id) continue;
+          const nextPinnedAt = changes.get(entry.id);
+          if (nextPinnedAt !== undefined) {
+            entry.pinnedAt = nextPinnedAt;
+            changedIds.push(entry.id);
+          }
+        }
+        return config;
+      });
+
+      if (changedIds.length > 0) {
+        await this.emitCurrentWorkspaceMetadataBatch(changedIds);
+      }
+      return Ok(undefined);
+    } catch (error) {
+      return Err(`Failed to reorder pinned chats: ${getErrorMessage(error)}`);
+    }
   }
 
   /**
@@ -5642,6 +6287,8 @@ export class WorkspaceService extends EventEmitter {
           if (workspaceEntry) {
             // Just set archivedAt - archived state is derived from archivedAt > unarchivedAt.
             workspaceEntry.archivedAt = new Date().toISOString();
+            // Archiving clears the pin; unarchive does not restore it.
+            delete workspaceEntry.pinnedAt;
             if (capturedWorktreeSnapshot) {
               workspaceEntry.worktreeArchiveSnapshot = capturedWorktreeSnapshot;
             } else {
@@ -6373,19 +7020,6 @@ export class WorkspaceService extends EventEmitter {
 
     const { projectPath, workspacePath } = found;
 
-    const config = this.config.loadConfigOrDefault();
-    const projectConfig = config.projects.get(projectPath);
-    if (!projectConfig) {
-      return Err(`Project not found: ${projectPath}`);
-    }
-
-    const workspaceEntry = projectConfig.workspaces.find((w) => w.id === workspaceId);
-    const workspaceEntryWithFallback =
-      workspaceEntry ?? projectConfig.workspaces.find((w) => w.path === workspacePath);
-    if (!workspaceEntryWithFallback) {
-      return Err("Workspace not found");
-    }
-
     const normalizedAgentId = normalizeAgentId(agentId, "");
     if (!normalizedAgentId) {
       return Err("Agent ID is required");
@@ -6395,29 +7029,77 @@ export class WorkspaceService extends EventEmitter {
     // settings bucket. Persist whatever agent ID the caller chose so legacy Ask
     // settings can fade out naturally instead of being mixed into Auto.
 
-    const prev = workspaceEntryWithFallback.aiSettingsByAgent?.[normalizedAgentId];
-    const aiSettingsChanged =
-      aiSettings != null &&
-      (prev?.model !== aiSettings.model || prev?.thinkingLevel !== aiSettings.thinkingLevel);
-    const selectedAgentChanged =
-      options?.persistSelectedAgentId === true &&
-      workspaceEntryWithFallback.agentId !== normalizedAgentId;
-    if (!aiSettingsChanged && !selectedAgentChanged) {
+    // Hot path: this runs on every message send, so skip the queued write when a
+    // snapshot read already shows no change. Skipping is race-safe — it is equivalent
+    // to a serialized write of the identical value landing first, and not writing can
+    // never resurrect concurrently removed entries.
+    {
+      const snapshotEntry = this.findFreshWorkspaceEntry(this.config.loadConfigOrDefault(), {
+        projectPath,
+        workspaceId,
+        workspacePath,
+      });
+      if (!snapshotEntry) {
+        return Err("Workspace not found");
+      }
+      const prev = snapshotEntry.aiSettingsByAgent?.[normalizedAgentId];
+      const aiSettingsChanged =
+        aiSettings != null &&
+        (prev?.model !== aiSettings.model || prev?.thinkingLevel !== aiSettings.thinkingLevel);
+      const selectedAgentChanged =
+        options?.persistSelectedAgentId === true && snapshotEntry.agentId !== normalizedAgentId;
+      if (!aiSettingsChanged && !selectedAgentChanged) {
+        return Ok(false);
+      }
+    }
+
+    // Compare/merge against the FRESH entry inside the serialized editConfig transform
+    // (see findFreshWorkspaceEntry): persisting a pre-read snapshot loses concurrent
+    // edits and can resurrect removed workspaces. Entry gone meanwhile → Err.
+    let writeResult: Result<boolean, string> = Err("Workspace not found");
+    await this.config.editConfig((freshConfig) => {
+      const workspaceEntry = this.findFreshWorkspaceEntry(freshConfig, {
+        projectPath,
+        workspaceId,
+        workspacePath,
+      });
+      if (!workspaceEntry) {
+        writeResult = Err("Workspace not found");
+        return freshConfig;
+      }
+
+      const prev = workspaceEntry.aiSettingsByAgent?.[normalizedAgentId];
+      const aiSettingsChanged =
+        aiSettings != null &&
+        (prev?.model !== aiSettings.model || prev?.thinkingLevel !== aiSettings.thinkingLevel);
+      const selectedAgentChanged =
+        options?.persistSelectedAgentId === true && workspaceEntry.agentId !== normalizedAgentId;
+      if (!aiSettingsChanged && !selectedAgentChanged) {
+        writeResult = Ok(false);
+        return freshConfig;
+      }
+
+      if (aiSettings != null) {
+        workspaceEntry.aiSettingsByAgent = {
+          ...(workspaceEntry.aiSettingsByAgent ?? {}),
+          [normalizedAgentId]: aiSettings,
+        };
+      }
+
+      if (options?.persistSelectedAgentId === true) {
+        workspaceEntry.agentId = normalizedAgentId;
+      }
+
+      writeResult = Ok(true);
+      return freshConfig;
+    });
+
+    if (!writeResult.success) {
+      return Err(writeResult.error);
+    }
+    if (!writeResult.data) {
       return Ok(false);
     }
-
-    if (aiSettings != null) {
-      workspaceEntryWithFallback.aiSettingsByAgent = {
-        ...(workspaceEntryWithFallback.aiSettingsByAgent ?? {}),
-        [normalizedAgentId]: aiSettings,
-      };
-    }
-
-    if (options?.persistSelectedAgentId === true) {
-      workspaceEntryWithFallback.agentId = normalizedAgentId;
-    }
-
-    await this.config.saveConfig(config);
 
     if (options?.emitMetadata !== false) {
       const allMetadata = await this.config.getAllWorkspaceMetadata();
@@ -7105,6 +7787,16 @@ export class WorkspaceService extends EventEmitter {
       startStreamInBackground?: boolean;
       /** When true, reject instead of queueing if the workspace is busy. */
       requireIdle?: boolean;
+      /** Coalescing for queued sends: drop the message when the same key is already queued. */
+      queueDedupeKey?: string;
+      /**
+       * For queued sends: quietly drop the message (success) when other messages are already
+       * queued at enqueue time. Scheduled heartbeats use this so a user send racing the awaits
+       * in this method keeps queue ownership — MessageQueue dispatches with the latest queued
+       * options, so merging a heartbeat in would run the user's queued turn with the
+       * heartbeat's model/agent.
+       */
+      yieldToQueuedMessages?: boolean;
     }
   ): Promise<Result<void, SendMessageError>> {
     log.debug("sendMessage handler: Received", {
@@ -7242,7 +7934,14 @@ export class WorkspaceService extends EventEmitter {
           });
         }
 
-        const pendingAskUserQuestion = askUserQuestionManager.getLatestPending(workspaceId);
+        // A pending interactive question is only moot when the user actually responds in
+        // chat. Backend-initiated synthetic sends (scheduled heartbeats, task wakes) are
+        // not user responses — canceling would destroy a user-facing prompt and record a
+        // misleading cancel reason, so synthetic sends queue behind the question instead.
+        const pendingAskUserQuestion =
+          internal?.synthetic === true
+            ? null
+            : askUserQuestionManager.getLatestPending(workspaceId);
         if (pendingAskUserQuestion) {
           try {
             askUserQuestionManager.cancel(
@@ -7259,6 +7958,31 @@ export class WorkspaceService extends EventEmitter {
           }
         }
 
+        // The reverse of yieldToQueuedMessages below: a pending scheduled heartbeat must
+        // never absorb real input. MessageQueue batches later texts under the first entry's
+        // muxMetadata, so a message queued behind a heartbeat would dispatch tagged (and
+        // displayed) as a heartbeat. New input supersedes the check-in instead — the
+        // heartbeat is periodic and its next slot will fire anyway.
+        if (
+          internal?.queueDedupeKey !== HEARTBEAT_QUEUE_DEDUPE_KEY &&
+          session.dropQueuedMessageWithOnlyDedupeKey(HEARTBEAT_QUEUE_DEDUPE_KEY)
+        ) {
+          log.info("sendMessage: dropped pending queued heartbeat superseded by new input", {
+            workspaceId,
+          });
+        }
+
+        // Re-check queue emptiness at the enqueue point: the caller's decision may be stale
+        // by now (the pricing/settings awaits above yield the event loop, so a user send can
+        // queue first). Everything from here to queueMessage is synchronous, so this check
+        // cannot go stale again.
+        if (internal?.yieldToQueuedMessages === true && session.hasQueuedMessages()) {
+          log.info("sendMessage: yielded to messages queued during send preparation", {
+            workspaceId,
+          });
+          return Ok(undefined);
+        }
+
         // Background any foreground task waits so the queued message can dispatch promptly.
         // This must happen after queueMessage succeeds — if enqueue fails (throws),
         // we must not cancel foreground waits. Use the queue's effective dispatch mode
@@ -7266,10 +7990,20 @@ export class WorkspaceService extends EventEmitter {
         const effectiveQueueDispatchMode = session.queueMessage(message, normalizedOptions, {
           synthetic: internal?.synthetic,
           agentInitiated: internal?.agentInitiated,
+          dedupeKey: internal?.queueDedupeKey,
           onCanceled: internal?.onCanceled,
           onAccepted: internal?.onAccepted,
           onAcceptedPreStreamFailure: internal?.onAcceptedPreStreamFailure,
         });
+
+        // A dedupe-keyed send that raced an already-pending duplicate is a quiet success:
+        // the pending queue entry already covers it (coalescing), so don't double-queue.
+        if (effectiveQueueDispatchMode == null && internal?.queueDedupeKey != null) {
+          log.info("sendMessage: dropped duplicate queued message for dedupe key", {
+            workspaceId,
+            queueDedupeKey: internal.queueDedupeKey,
+          });
+        }
 
         if (effectiveQueueDispatchMode != null && !internal?.skipAutoResumeReset) {
           this.taskService?.resetAutoResumeCount?.(workspaceId);
@@ -8306,6 +9040,9 @@ export class WorkspaceService extends EventEmitter {
       for (const workspaceId of this.activeWorkflowRunIdsByWorkspace.keys()) {
         workspaceIds.add(workspaceId);
       }
+      for (const workspaceId of this.bashMonitorSeenWorkspaces) {
+        workspaceIds.add(workspaceId);
+      }
       try {
         for (const metadata of await this.config.getAllWorkspaceMetadata()) {
           workspaceIds.add(metadata.id);
@@ -8320,10 +9057,28 @@ export class WorkspaceService extends EventEmitter {
           async (workspaceId): Promise<readonly [string, WorkspaceActivitySnapshot] | null> => {
             const snapshot = snapshots.get(workspaceId) ?? null;
             const hadWorkflowActivityCache = this.activeWorkflowRunIdsByWorkspace.has(workspaceId);
+            // Bash-monitor counterpart of the workflow tombstone: a monitor that stopped
+            // while the renderer was disconnected (or whose stop emit failed) must still
+            // surface a zero-count entry here, otherwise the renderer's last-known
+            // "watching" state survives reconnect. The seen-set is used instead of the
+            // dedupe map because dedupe entries are dropped around in-flight/failed emits.
+            const hadBashMonitorActivityCache = this.bashMonitorSeenWorkspaces.has(workspaceId);
             const activeWorkflowRunCount = await this.getActiveWorkflowRunCount(workspaceId);
-            // Keep a zero-count tombstone for workspaces whose workflow-only activity
-            // was cleared while a frontend activity subscription was disconnected.
-            if (snapshot == null && activeWorkflowRunCount === 0 && !hadWorkflowActivityCache) {
+            const activeBashMonitorCount = this.getActiveBashMonitorCount(workspaceId);
+            if (activeBashMonitorCount > 0) {
+              // A list-delivered non-zero count is a renderer-visible observation too:
+              // remember it so the eventual stop always yields a tombstone entry.
+              this.bashMonitorSeenWorkspaces.add(workspaceId);
+            }
+            // Keep a zero-count tombstone for workspaces whose workflow- or monitor-only
+            // activity was cleared while a frontend activity subscription was disconnected.
+            if (
+              snapshot == null &&
+              activeWorkflowRunCount === 0 &&
+              !hadWorkflowActivityCache &&
+              activeBashMonitorCount === 0 &&
+              !hadBashMonitorActivityCache
+            ) {
               return null;
             }
             return [
@@ -8334,9 +9089,14 @@ export class WorkspaceService extends EventEmitter {
               // still-pre-stream persisted goal. Without this, a reconnect/reload
               // during a mid-stream goal set would seed the UI with the stale
               // goal until the next live emit or goal read.
-              mergeActiveWorkflowRunCount(
-                this.overlayPendingGoal(workspaceId, snapshot),
-                activeWorkflowRunCount
+              mergeActiveCount(
+                mergeActiveCount(
+                  this.overlayPendingGoal(workspaceId, snapshot),
+                  "activeWorkflowRunCount",
+                  activeWorkflowRunCount
+                ),
+                "activeBashMonitorCount",
+                activeBashMonitorCount
               ),
             ] as const;
           }
@@ -9035,26 +9795,43 @@ export class WorkspaceService extends EventEmitter {
         ? workspaceEntry?.aiSettingsByAgent?.[WORKSPACE_DEFAULTS.agentId]
         : undefined;
 
-    const candidates: Array<string | undefined> = [
-      selectedAgentSettings?.model,
-      workspaceEntry?.aiSettings?.model,
-      config.agentAiDefaults?.[agentId]?.modelString,
-      execAgentSettings?.model,
+    // Each candidate pairs the model with the thinking level persisted alongside
+    // it. Dropping the thinking level here caused goal continuations to stream
+    // with an implicit "off" (aiService defaults undefined -> off), which both
+    // ignored the user's UI selection and sent `thinking: { type: "disabled" }`
+    // to Anthropic models that reject disabled thinking (e.g. Fable/Mythos).
+    const candidates: Array<{ model?: string; thinkingLevel?: ThinkingLevel }> = [
+      { model: selectedAgentSettings?.model, thinkingLevel: selectedAgentSettings?.thinkingLevel },
+      {
+        model: workspaceEntry?.aiSettings?.model,
+        thinkingLevel: workspaceEntry?.aiSettings?.thinkingLevel,
+      },
+      {
+        model: config.agentAiDefaults?.[agentId]?.modelString,
+        thinkingLevel: config.agentAiDefaults?.[agentId]?.thinkingLevel,
+      },
+      { model: execAgentSettings?.model, thinkingLevel: execAgentSettings?.thinkingLevel },
       agentId !== WORKSPACE_DEFAULTS.agentId
-        ? config.agentAiDefaults?.[WORKSPACE_DEFAULTS.agentId]?.modelString
-        : undefined,
-      DEFAULT_MODEL,
+        ? {
+            model: config.agentAiDefaults?.[WORKSPACE_DEFAULTS.agentId]?.modelString,
+            thinkingLevel: config.agentAiDefaults?.[WORKSPACE_DEFAULTS.agentId]?.thinkingLevel,
+          }
+        : {},
+      { model: DEFAULT_MODEL },
     ];
 
-    for (const raw of candidates) {
+    for (const candidate of candidates) {
+      const raw = candidate.model;
       if (typeof raw !== "string" || raw.trim().length === 0) {
         continue;
       }
       const normalized = normalizeToCanonical(raw.trim());
       if (isValidModelFormat(normalized)) {
+        const thinkingLevel = coerceThinkingLevel(candidate.thinkingLevel);
         return {
           model: normalized,
           agentId,
+          ...(thinkingLevel != null ? { thinkingLevel } : {}),
         };
       }
     }
@@ -9307,15 +10084,42 @@ export class WorkspaceService extends EventEmitter {
 
     const heartbeatRequest = await this.buildHeartbeatRequest(workspaceId);
     const session = this.getOrCreateSession(workspaceId);
-    if (session.isBusy()) {
-      throw new Error(
-        "Failed to execute heartbeat: Workspace is busy; idle-only send was skipped."
-      );
-    }
-    if (session.hasQueuedMessages()) {
-      throw new Error(
-        "Failed to execute heartbeat: Workspace has queued user input; idle-only send was skipped."
-      );
+    if (heartbeatRequest.schedulePolicy.whenBusy === "skip") {
+      // Idle-only delivery (default): a busy workspace misses this slot entirely.
+      if (session.isBusy()) {
+        throw new Error(
+          "Failed to execute heartbeat: Workspace is busy; idle-only send was skipped."
+        );
+      }
+      if (session.hasQueuedMessages()) {
+        throw new Error(
+          "Failed to execute heartbeat: Workspace has queued user input; idle-only send was skipped."
+        );
+      }
+    } else {
+      // Queue modes deliver through the message queue only while a turn is actively
+      // streaming. A non-empty queue instead wins the slot outright: merging a heartbeat
+      // into queued user input would clobber that queue's send options (MessageQueue
+      // dispatches with the latest options, so the user's queued turn could run with the
+      // heartbeat's model/agent), and parking a heartbeat in an idle session's queue
+      // deadlocks descendant-task terminal wake-ups — they defer while the owner has
+      // queued messages, and an idle queue only drains at the next turn boundary, which
+      // would then never come. This also coalesces: a still-pending queued heartbeat is
+      // itself a queued message, so the next firing consumes its slot quietly here.
+      if (session.hasQueuedMessages()) {
+        log.info("Skipped heartbeat enqueue: queued messages own the next turn", {
+          workspaceId,
+          hadQueuedHeartbeat: session.hasQueuedDedupeKey(HEARTBEAT_QUEUE_DEDUPE_KEY),
+        });
+        return;
+      }
+      if (session.isBusy()) {
+        await this.queueHeartbeatMessage(workspaceId, heartbeatRequest);
+        return;
+      }
+      // Active descendant tasks alone leave the session idle — fall through to immediate
+      // dispatch: the child's terminal wake defers during the heartbeat turn and delivers
+      // right after it, so nothing is preempted and nothing deadlocks.
     }
 
     log.info("Executing heartbeat", {
@@ -9360,7 +10164,7 @@ export class WorkspaceService extends EventEmitter {
   }
 
   private async buildHeartbeatRequest(workspaceId: string): Promise<HeartbeatExecutionRequest> {
-    const { sendOptions, heartbeatMessage, contextMode } =
+    const { sendOptions, heartbeatMessage, contextMode, schedulePolicy, intervalMs } =
       await this.buildHeartbeatSendOptions(workspaceId);
 
     const activity = await this.extensionMetadata.getSnapshot(workspaceId);
@@ -9369,7 +10173,13 @@ export class WorkspaceService extends EventEmitter {
         ? Math.max(0, Date.now() - activity.recency)
         : HEARTBEAT_DEFAULT_INTERVAL_MS;
     const idleDuration = this.formatIdleDuration(idleMs);
-    const heartbeatLead = `[Heartbeat] This workspace has been idle for approximately ${idleDuration}.`;
+    // Fixed-interval heartbeats are wall-clock scheduled, so "idle for approximately X"
+    // would be wrong (the workspace may not have been idle at all). Only the lead varies by
+    // trigger; the custom `message` override still replaces only the body, never the lead.
+    const heartbeatLead =
+      schedulePolicy.trigger === "interval"
+        ? `[Scheduled heartbeat] This is a scheduled check-in that fires every ${formatHeartbeatInterval(intervalMs)}.`
+        : `[Heartbeat] This workspace has been idle for approximately ${idleDuration}.`;
     const heartbeatBody = heartbeatMessage ?? HEARTBEAT_DEFAULT_MESSAGE_BODY;
     const heartbeatPrompt = `${heartbeatLead} ${heartbeatBody}`;
 
@@ -9383,10 +10193,14 @@ export class WorkspaceService extends EventEmitter {
       source: "heartbeat",
       requestedModel: sendOptions.model,
       displayStatus: { emoji: "💓", message: "Heartbeat check..." },
+      // The slot's fire time. Queue-mode deliveries persist the history row after the
+      // busy turn ends, so restart anchoring reads this instead of the row timestamp.
+      firedAt: Date.now(),
     };
 
     return {
       contextMode,
+      schedulePolicy,
       sendOptions,
       heartbeatPrompt,
       muxMetadata,
@@ -9401,25 +10215,101 @@ export class WorkspaceService extends EventEmitter {
     };
   }
 
-  private async dispatchHeartbeatMessage(
+  /**
+   * Deliver a heartbeat that fired while a turn was actively streaming through the message
+   * queue. Only used for whenBusy queue modes ("tool-end" / "turn-end"); the caller has
+   * already ruled out queued messages (a non-empty queue wins the slot instead).
+   */
+  private async queueHeartbeatMessage(
     workspaceId: string,
     heartbeatRequest: HeartbeatExecutionRequest
   ): Promise<void> {
+    const whenBusy = heartbeatRequest.schedulePolicy.whenBusy;
+    assert(whenBusy !== "skip", "queueHeartbeatMessage requires a queue whenBusy mode");
+
+    // The awaiting_interactive_input eligibility gate only sees committed history, but a
+    // mid-stream ask_user_question lives in partial.json until the turn commits — so the
+    // delivery path must re-check the live manager. A scheduled check-in must never disturb
+    // a user-facing prompt; consume the slot quietly instead (like the coalescing skip).
+    if (askUserQuestionManager.getLatestPending(workspaceId) != null) {
+      log.info("Skipped heartbeat enqueue: an interactive question is pending", {
+        workspaceId,
+      });
+      return;
+    }
+
+    // compact/reset boundaries cannot be applied mid-turn, so a busy firing downgrades to a
+    // plain queued message for this slot. Idle firings keep honoring contextMode.
+    if (heartbeatRequest.contextMode !== "normal") {
+      log.info("Busy heartbeat delivery downgrades contextMode to normal for this firing", {
+        workspaceId,
+        contextMode: heartbeatRequest.contextMode,
+      });
+    }
+
+    log.info("Queueing heartbeat for busy workspace", {
+      workspaceId,
+      queueDispatchMode: whenBusy,
+    });
+
     const sendResult = await this.sendMessage(
       workspaceId,
       heartbeatRequest.heartbeatPrompt,
       {
         ...heartbeatRequest.sendOptions,
         muxMetadata: heartbeatRequest.muxMetadata,
+        queueDispatchMode: whenBusy,
       },
       {
         // Heartbeats run in background; avoid mutating auto-resume counters.
         skipAutoResumeReset: true,
         // Backend-initiated maintenance turn: do not treat as explicit user re-engagement.
         synthetic: true,
-        // If the workspace became active after eligibility checks, skip instead of queueing
-        // stale maintenance work for later.
-        requireIdle: true,
+        // If the stream ends between the caller's isBusy check and this send, the message
+        // dispatches immediately — the workspace is idle then, so that is the right outcome.
+        // The dedupe key guards the opposite race: a heartbeat queued mid-flight coalesces
+        // instead of double-queueing.
+        queueDedupeKey: HEARTBEAT_QUEUE_DEDUPE_KEY,
+        // And if a user send queued during this method's awaits, it owns the slot — the
+        // caller's queue-emptiness check is re-verified at the enqueue point.
+        yieldToQueuedMessages: true,
+      }
+    );
+
+    if (!sendResult.success) {
+      throw new Error(
+        `Failed to execute heartbeat: ${this.formatSendMessageError(sendResult.error)}`
+      );
+    }
+  }
+
+  private async dispatchHeartbeatMessage(
+    workspaceId: string,
+    heartbeatRequest: HeartbeatExecutionRequest
+  ): Promise<void> {
+    const whenBusy = heartbeatRequest.schedulePolicy.whenBusy;
+    const sendResult = await this.sendMessage(
+      workspaceId,
+      heartbeatRequest.heartbeatPrompt,
+      {
+        ...heartbeatRequest.sendOptions,
+        muxMetadata: heartbeatRequest.muxMetadata,
+        // Queue whenBusy modes tolerate a busy race between the idle check and this send:
+        // the heartbeat queues at the requested boundary instead of being dropped.
+        ...(whenBusy !== "skip" ? { queueDispatchMode: whenBusy } : {}),
+      },
+      {
+        // Heartbeats run in background; avoid mutating auto-resume counters.
+        skipAutoResumeReset: true,
+        // Backend-initiated maintenance turn: do not treat as explicit user re-engagement.
+        synthetic: true,
+        // whenBusy "skip": if the workspace became active after eligibility checks, skip
+        // instead of queueing stale maintenance work for later. Queue modes instead queue on
+        // that race, deduped against an already-pending heartbeat and yielding to any user
+        // input that queued first (queued messages own the slot).
+        ...(whenBusy === "skip"
+          ? { requireIdle: true }
+          : { queueDedupeKey: HEARTBEAT_QUEUE_DEDUPE_KEY, yieldToQueuedMessages: true }),
       }
     );
 
@@ -9485,6 +10375,8 @@ export class WorkspaceService extends EventEmitter {
     sendOptions: SendMessageOptions;
     heartbeatMessage: string | undefined;
     contextMode: HeartbeatContextMode;
+    schedulePolicy: HeartbeatSchedulePolicy;
+    intervalMs: number;
   }> {
     const config = this.config.loadConfigOrDefault();
     const workspaceMatch = this.config.findWorkspace(workspaceId);
@@ -9584,6 +10476,11 @@ export class WorkspaceService extends EventEmitter {
         sanitizeHeartbeatMessage(workspaceEntry?.heartbeat?.message) ??
         sanitizeHeartbeatMessage(config.heartbeatDefaultPrompt),
       contextMode: sanitizeHeartbeatContextMode(workspaceEntry?.heartbeat?.contextMode),
+      schedulePolicy: resolveHeartbeatSchedulePolicy(workspaceEntry?.heartbeat),
+      intervalMs: sanitizeHeartbeatIntervalMs(
+        workspaceEntry?.heartbeat?.intervalMs,
+        this.getHeartbeatDefaultIntervalMsFromConfig(config)
+      ),
     };
   }
 

@@ -1,6 +1,7 @@
 {
   "name": "mux",
-  "version": "0.27.0",
+  "version": "0.27.1",
+  "desktopName": "mux.desktop",
   "description": "mux - coder multiplexer",
   "author": "Coder",
   "main": "dist/cli/index.js",
@@ -30,7 +31,6 @@
     "fmt:check": "make fmt-check",
     "test": "make test",
     "test:watch": "make test-watch",
-    "test:mobile": "make test-mobile",
     "test:coverage": "make test-coverage",
     "test:integration": "make test-integration",
     "test:e2e": "make test-e2e",

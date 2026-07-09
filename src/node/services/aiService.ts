@@ -129,7 +129,11 @@ import { DEFAULT_GOAL_DEFAULTS, normalizeGoalDefaults } from "@/constants/goals"
 import { mergeGoalDefaults } from "@/common/utils/goals/resolveGoalSetIntent";
 import { MULTI_PROJECT_CONFIG_KEY } from "@/common/constants/multiProject";
 import { THINKING_LEVEL_OFF, type ThinkingLevel } from "@/common/types/thinking";
-import { enforceThinkingPolicy, resolveMinimumThinkingLevel } from "@/common/utils/thinking/policy";
+import {
+  enforceThinkingPolicy,
+  resolveEffectiveThinkingLevel,
+  resolveMinimumThinkingLevel,
+} from "@/common/utils/thinking/policy";
 
 import type {
   ErrorEvent,
@@ -1297,7 +1301,15 @@ export class AIService extends EventEmitter {
 
       // Mode (plan|exec|compact) is derived from the selected agent definition.
       const effectiveMuxProviderOptions: MuxProviderOptions = muxProviderOptions ?? {};
-      const effectiveThinkingLevel: ThinkingLevel = thinkingLevel ?? THINKING_LEVEL_OFF;
+      // Clamp away levels the provider rejects (Mythos-class Anthropic cannot
+      // disable thinking) so provider options, replay transforms, and metadata
+      // all agree with the provider's actual thinking behavior. Providers config
+      // is passed so aliases mapped to Mythos models get the same treatment.
+      const effectiveThinkingLevel: ThinkingLevel = resolveEffectiveThinkingLevel(
+        modelString,
+        thinkingLevel,
+        this.providerService.getConfig()
+      );
       const activeContextMessagesBeforeModelResolution =
         sliceMessagesForProviderFromLatestContextBoundary(messages);
       const openAIResponsesCompactionReplays = collectOpenAIResponsesCompactionReplays(
@@ -3251,6 +3263,15 @@ export class AIService extends EventEmitter {
       return undefined;
     }
     return this.streamManager.getStreamInfo(workspaceId);
+  }
+
+  /**
+   * Resolve the pricing/tokenization metadata model for a model string
+   * (mappedToModel aliases for custom providers). Used by non-stream
+   * consumers like /btw so their persisted rows price like normal chat rows.
+   */
+  resolveMetadataModel(modelString: string): string {
+    return this.streamManager.resolveMetadataModel(modelString);
   }
 
   /**

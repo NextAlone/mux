@@ -16,6 +16,7 @@ import { useWorkspaceStoreRaw, type WorkspaceStore } from "@/browser/stores/Work
 import {
   EXPANDED_PROJECTS_KEY,
   MOBILE_LEFT_SIDEBAR_SCROLL_TOP_KEY,
+  SIDEBAR_AGE_GROUPING_KEY,
   getDraftScopeId,
   getInputAttachmentsKey,
   getInputKey,
@@ -58,12 +59,20 @@ import {
   getTierKey,
   getSectionExpandedKey,
   getSectionTierKey,
+  orderMultiProjectSectionRows,
   resolveEffectiveSectionId,
   isRunningOrStartingTaskStatus,
   computeRowMetaForVisibleNodes,
   type AgentRowRenderMeta,
   type SidebarVisibleRowNode,
 } from "@/browser/utils/ui/workspaceFiltering";
+import {
+  computePinnedDropOrder,
+  computePinnedMoveOrderForWorkspace,
+  locatePinnedBlock,
+  type PinnedDropEdge,
+  type PinnedMoveDirection,
+} from "@/browser/utils/ui/pinnedReorder";
 import { Tooltip, TooltipTrigger, TooltipContent } from "../Tooltip/Tooltip";
 import { SidebarCollapseButton } from "../SidebarCollapseButton/SidebarCollapseButton";
 import { ConfirmationModal } from "../ConfirmationModal/ConfirmationModal";
@@ -124,6 +133,7 @@ import { ScrollArea } from "../ScrollArea/ScrollArea";
 import { getProjectDisplayName, getSubProjectsForParent } from "@/common/utils/subProjects";
 import { getErrorMessage } from "@/common/utils/errors";
 import { isMultiProject } from "@/common/utils/multiProject";
+import { isWorkspacePinnable, isWorkspacePinned } from "@/common/utils/pin";
 import { MULTI_PROJECT_SIDEBAR_SECTION_ID } from "@/common/constants/multiProject";
 import { getProjectWorkspaceCounts } from "@/common/utils/projectRemoval";
 import { useExperimentValue } from "@/browser/hooks/useExperiments";
@@ -136,6 +146,17 @@ interface SectionConfig {
   name: string;
   color?: string;
 }
+
+/**
+ * Pinned rows drag-reorder only within their visual block. Regular rows group
+ * by project + section (NUL separator: cannot appear in paths); multi-project
+ * rows share one flat section, so they get a single sentinel group regardless
+ * of each row's primary projectPath.
+ */
+function getPinnedReorderGroup(projectPath: string, sectionId: string | undefined): string {
+  return `${projectPath}\u0000${sectionId ?? ""}`;
+}
+const MULTI_PROJECT_PINNED_REORDER_GROUP = "\u0000multi-project";
 
 // Re-export WorkspaceSelection for backwards compatibility
 export type { WorkspaceSelection } from "../AgentListItem/AgentListItem";
@@ -167,7 +188,10 @@ function getWorkspaceAttentionSignal(
     const isWorking =
       (sidebarState.canInterrupt ||
         sidebarState.isStarting ||
-        sidebarState.activeWorkflowRunCount > 0) &&
+        sidebarState.activeWorkflowRunCount > 0 ||
+        // An armed background bash monitor keeps the workspace "working" so collapsed
+        // project/parent rows don't look idle while it waits to be woken.
+        sidebarState.activeBashMonitorCount > 0) &&
       !sidebarState.awaitingUserQuestion;
     return {
       isWorking,
@@ -707,6 +731,8 @@ const ProjectSidebarInner: React.FC<ProjectSidebarProps> = ({
     archiveWorkspace: onArchiveWorkspace,
     removeWorkspace,
     updateWorkspaceTitle: onUpdateTitle,
+    setWorkspacePinned,
+    reorderPinnedWorkspaces,
     refreshWorkspaceMetadata,
     pendingNewWorkspaceProject,
     pendingNewWorkspaceDraftId,
@@ -859,6 +885,12 @@ const ProjectSidebarInner: React.FC<ProjectSidebarProps> = ({
   const [expandedOldWorkspaces, setExpandedOldWorkspaces] = usePersistedState<
     Record<string, boolean>
   >("expandedOldWorkspaces", {});
+
+  // Whether workspaces are grouped under collapsible "Older than X days" tiers.
+  // Toggled from Settings → General; listener keeps the sidebar live-updated.
+  const [ageGroupingEnabled] = usePersistedState<boolean>(SIDEBAR_AGE_GROUPING_KEY, true, {
+    listener: true,
+  });
 
   // Track which sections are expanded
   const [expandedSections, setExpandedSections] = usePersistedState<Record<string, boolean>>(
@@ -1678,7 +1710,11 @@ const ProjectSidebarInner: React.FC<ProjectSidebarProps> = ({
     singleProjectWorkspacesByProject.set(projectPath, singleProjectWorkspaces);
   }
 
-  const multiProjectWorkspaces = Array.from(multiProjectWorkspacesById.values());
+  // Re-sort across primary-project buckets so pinned rows form one correctly
+  // ordered block (cross-primary pinned reorders would otherwise snap back).
+  const multiProjectWorkspaces = orderMultiProjectSectionRows(
+    Array.from(multiProjectWorkspacesById.values())
+  );
   // Multi-project rows should share the same completed-subagent chevron behavior as
   // regular workspace rows, so reuse the same visibility + metadata calculations.
   const multiProjectDepthByWorkspaceId = computeWorkspaceDepthMap(multiProjectWorkspaces);
@@ -1701,6 +1737,45 @@ const ProjectSidebarInner: React.FC<ProjectSidebarProps> = ({
       setProjectOrder(next);
     },
     [projectOrder, userProjects, setProjectOrder]
+  );
+
+  // Pinned-chat reordering, shared by row drag-drop and the move keybinds.
+  // locatePinnedBlock mirrors renderer partitioning (sections, multi-project
+  // list), so moves stay within the row's visual pinned block while the
+  // request carries the bucket's full pinned order.
+  const handlePinnedReorderDrop = useCallback(
+    (draggedId: string, targetId: string, edge: PinnedDropEdge) => {
+      const targetMeta = workspaceStore.getWorkspaceMetadata(targetId);
+      if (!targetMeta) return;
+      const block = locatePinnedBlock(targetMeta, sortedWorkspacesByProject, userProjects);
+      if (!block) return;
+      const order = computePinnedDropOrder(block, draggedId, targetId, edge);
+      if (order) void reorderPinnedWorkspaces(order);
+    },
+    [workspaceStore, sortedWorkspacesByProject, userProjects, reorderPinnedWorkspaces]
+  );
+
+  /**
+   * Move the selected pinned chat within its visual block. Returns whether the
+   * shortcut applies to this workspace: true for pinned rows (even edge
+   * no-ops, so the key is still consumed deterministically), false for
+   * unpinned/sub-agent selections so the keydown handler leaves the event
+   * untouched for other handlers instead of swallowing it globally.
+   */
+  const movePinnedWorkspace = useCallback(
+    (workspaceId: string, direction: PinnedMoveDirection): boolean => {
+      const meta = workspaceStore.getWorkspaceMetadata(workspaceId);
+      if (!meta || !isWorkspacePinned(meta)) return false;
+      const order = computePinnedMoveOrderForWorkspace(
+        meta,
+        direction,
+        sortedWorkspacesByProject,
+        userProjects
+      );
+      if (order) void reorderPinnedWorkspaces(order);
+      return true;
+    },
+    [workspaceStore, sortedWorkspacesByProject, userProjects, reorderPinnedWorkspaces]
   );
 
   const hasProjectMenuTarget = projectMenuTargetPath !== null;
@@ -1733,6 +1808,26 @@ const ProjectSidebarInner: React.FC<ProjectSidebarProps> = ({
       } else if (matchesKeybind(e, KEYBINDS.ARCHIVE_WORKSPACE) && selectedWorkspace) {
         e.preventDefault();
         void handleArchiveWorkspace(selectedWorkspace.workspaceId);
+      } else if (matchesKeybind(e, KEYBINDS.PIN_WORKSPACE) && selectedWorkspace) {
+        e.preventDefault();
+        // Only root chats are pinnable; a selected sub-agent row is a no-op.
+        // Look up by id in the store rather than indexing sortedWorkspacesByProject
+        // by projectPath: multi-project workspaces are bucketed under the internal
+        // multi-project config key, not their primary project path.
+        const meta = workspaceStore.getWorkspaceMetadata(selectedWorkspace.workspaceId);
+        if (meta && isWorkspacePinnable(meta)) {
+          void setWorkspacePinned(selectedWorkspace.workspaceId, !isWorkspacePinned(meta));
+        }
+      } else if (matchesKeybind(e, KEYBINDS.MOVE_PINNED_UP) && selectedWorkspace) {
+        // Consume the shortcut only when it applies (selected row is pinned);
+        // otherwise let the event fall through to other handlers.
+        if (movePinnedWorkspace(selectedWorkspace.workspaceId, "up")) {
+          e.preventDefault();
+        }
+      } else if (matchesKeybind(e, KEYBINDS.MOVE_PINNED_DOWN) && selectedWorkspace) {
+        if (movePinnedWorkspace(selectedWorkspace.workspaceId, "down")) {
+          e.preventDefault();
+        }
       }
     };
 
@@ -1743,8 +1838,11 @@ const ProjectSidebarInner: React.FC<ProjectSidebarProps> = ({
     selectedWorkspace,
     handleAddWorkspace,
     handleArchiveWorkspace,
+    setWorkspacePinned,
+    movePinnedWorkspace,
     sortedWorkspacesByProject,
     userProjects,
+    workspaceStore,
   ]);
 
   return (
@@ -1854,6 +1952,8 @@ const ProjectSidebarInner: React.FC<ProjectSidebarProps> = ({
                                 multiProjectDepthByWorkspaceId[metadata.id] ??
                                 0
                               }
+                              pinnedReorderGroup={MULTI_PROJECT_PINNED_REORDER_GROUP}
+                              onPinnedReorderDrop={handlePinnedReorderDrop}
                               rowRenderMeta={rowRenderMeta}
                               delegatedActivity={delegatedActivityByWorkspaceId.get(metadata.id)}
                               completedChildrenExpanded={expandedCompletedParentIds.has(
@@ -2228,6 +2328,11 @@ const ProjectSidebarInner: React.FC<ProjectSidebarProps> = ({
                                       0
                                     }
                                     sectionId={sectionId}
+                                    pinnedReorderGroup={getPinnedReorderGroup(
+                                      projectPath,
+                                      sectionId
+                                    )}
+                                    onPinnedReorderDrop={handlePinnedReorderDrop}
                                     rowRenderMeta={rowRenderMeta}
                                     subAgentConnectorLayout={subAgentConnectorLayout}
                                     taskGroupHeaderTitle={taskGroupHeaderTitle}
@@ -2447,8 +2552,17 @@ const ProjectSidebarInner: React.FC<ProjectSidebarProps> = ({
                                 sectionId?: string,
                                 allRowsForTaskGroupCoalescing: FrontendWorkspaceMetadata[] = workspaces
                               ): React.ReactNode => {
-                                const { recent: topVisibleRows, buckets } =
-                                  partitionWorkspacesByAge(workspaces, workspaceRecency);
+                                // With age grouping disabled, keep every workspace in the
+                                // recent path (flat recency-sorted list); full-length empty
+                                // buckets preserve tier-index assumptions below.
+                                const { recent: topVisibleRows, buckets } = ageGroupingEnabled
+                                  ? partitionWorkspacesByAge(workspaces, workspaceRecency)
+                                  : {
+                                      recent: workspaces,
+                                      buckets: AGE_THRESHOLDS_DAYS.map(
+                                        (): FrontendWorkspaceMetadata[] => []
+                                      ),
+                                    };
 
                                 const expandedTierVisibleIds = new Set<string>();
                                 const markExpandedTierRowsVisible = (tierIndex: number): void => {

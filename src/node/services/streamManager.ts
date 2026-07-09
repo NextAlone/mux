@@ -41,7 +41,7 @@ import {
   stripNoisyErrorPrefix,
   type StreamErrorPayload,
 } from "@/node/services/utils/sendMessageError";
-import type { HistoryService } from "./historyService";
+import { hasCommitWorthyParts, type HistoryService } from "./historyService";
 import { addUsage, accumulateProviderMetadata } from "@/common/utils/tokens/usageHelpers";
 import { linkAbortSignal } from "@/node/utils/abort";
 import { AsyncMutex } from "@/node/utils/concurrency/asyncMutex";
@@ -59,6 +59,7 @@ import {
 import type { SessionUsageService } from "./sessionUsageService";
 import { createDisplayUsage } from "@/common/utils/tokens/displayUsage";
 import { extractToolMediaAsUserMessagesFromModelMessages } from "@/node/utils/messages/extractToolMediaAsUserMessagesFromModelMessages";
+import { stripEncryptedContent } from "@/node/utils/messages/stripEncryptedContent";
 import { stripWorkflowRunRecordsFromModelMessages } from "@/node/utils/messages/stripWorkflowRunRecordsFromModelMessages";
 import { normalizeToCanonical } from "@/common/utils/ai/models";
 import { MUX_GATEWAY_SESSION_EXPIRED_MESSAGE } from "@/common/constants/muxGatewayOAuth";
@@ -355,46 +356,6 @@ enum StreamState {
   STOPPING = "stopping",
   COMPLETED = "completed", // Stream finished successfully (before cleanup)
   ERROR = "error",
-}
-
-/**
- * Strip encryptedContent from web search results to reduce token usage.
- * The encrypted page content can be massive (4000+ chars per result) and isn't
- * needed for model context. Keep URL, title, and pageAge for reference.
- */
-function stripEncryptedContentFromArray(output: unknown[]): unknown[] {
-  return output.map((item: unknown) => {
-    if (item && typeof item === "object" && "encryptedContent" in item) {
-      // Remove encryptedContent but keep other fields
-      const { encryptedContent, ...rest } = item as Record<string, unknown>;
-      return rest;
-    }
-
-    return item;
-  });
-}
-
-export function stripEncryptedContent(output: unknown): unknown {
-  if (Array.isArray(output)) {
-    return stripEncryptedContentFromArray(output);
-  }
-
-  // Handle SDK json output shape: { type: "json", value: unknown[] }
-  if (
-    typeof output === "object" &&
-    output !== null &&
-    "type" in output &&
-    output.type === "json" &&
-    "value" in output &&
-    Array.isArray(output.value)
-  ) {
-    return {
-      ...output,
-      value: stripEncryptedContentFromArray(output.value),
-    };
-  }
-
-  return output;
 }
 
 const MAX_ORPHAN_TOOL_RESULT_WARNINGS_PER_STREAM = 3;
@@ -703,7 +664,9 @@ export class StreamManager extends EventEmitter {
     }
     return log.withFields(fields);
   }
-  private resolveMetadataModel(modelString: string): string {
+  // Public: AIService.resolveMetadataModel delegates here so non-stream
+  // consumers (/btw answer rows) can stamp the same mappedToModel resolution.
+  resolveMetadataModel(modelString: string): string {
     try {
       return resolveModelForMetadata(modelString, this.getProvidersConfig());
     } catch (error) {
@@ -1053,6 +1016,14 @@ export class StreamManager extends EventEmitter {
       (streamInfo.didRetryPreviousResponseIdAtStep || streamInfo.didRetryAfterEmptyOutput) &&
       hasTokenUsage(cumulativeUsage)
     ) {
+      return cumulativeUsage;
+    }
+
+    // streamResult.totalUsage is read with a short timeout (getStreamMetadata) and can
+    // resolve to undefined under slow SDK settlement even though the provider billed the
+    // turn. Fall back to the live per-step accumulation so completed streams never
+    // persist an unpriced assistant message (analytics prices rows from metadata.usage).
+    if (!hasTokenUsage(totalUsage) && hasTokenUsage(cumulativeUsage)) {
       return cumulativeUsage;
     }
 
@@ -1414,6 +1385,64 @@ export class StreamManager extends EventEmitter {
       streamInfo
     );
 
+    // Stamp the aborted turn's usage onto the partial message BEFORE emitting
+    // stream-abort (whose handler commits the partial to chat.jsonl). Analytics
+    // prices history rows from metadata.usage, so without this every
+    // interrupted turn — user Esc, queued tool-end preemption, monitor wakes —
+    // would ingest as $0 even though the provider billed all completed steps.
+    if (!abandonPartial && (usage !== undefined || streamInfo.toolModelUsages.length > 0)) {
+      try {
+        await this.awaitPendingPartialWrite(streamInfo);
+        const partialMessage = this.buildPartialAssistantMessage(streamInfo, {
+          metadata: {
+            ...(usage !== undefined ? { usage: cloneUsage(usage) } : {}),
+            ...(providerMetadata !== undefined ? { providerMetadata } : {}),
+            ...(contextUsage !== undefined ? { contextUsage } : {}),
+            ...(contextProviderMetadata !== undefined ? { contextProviderMetadata } : {}),
+            duration,
+            ...(streamInfo.toolModelUsages.length > 0
+              ? { toolModelUsages: streamInfo.toolModelUsages.map(clonePersistedToolModelUsage) }
+              : {}),
+          },
+        });
+        await this.historyService.writePartial(workspaceId as string, partialMessage);
+
+        // Tool-only aborts (Esc while a tool is still running): commitPartial
+        // refuses to commit partials whose only parts are input-available tool
+        // calls, so the usage stamped above would die with the deleted
+        // partial. Route that spend through the headless-usage sidecar
+        // instead. Same predicate commitPartial applies, so exactly one of
+        // {chat row, sidecar row} carries this turn's usage.
+        if (!hasCommitWorthyParts(partialMessage.parts)) {
+          await this.recordDroppedPartialUsageInSidecar(
+            workspaceId,
+            streamInfo,
+            usage,
+            providerMetadata,
+            "aborted_stream"
+          );
+        }
+      } catch (error) {
+        log.error("Failed to persist aborted-stream usage on partial message", { error });
+      }
+    } else if (abandonPartial && (usage !== undefined || streamInfo.toolModelUsages.length > 0)) {
+      // Abandoned aborts (edit/discard of the streaming turn): the partial is
+      // deliberately dropped and its content never reaches chat.jsonl, but
+      // the provider still billed every completed step. The sidecar is the
+      // only route to the events table for this spend.
+      try {
+        await this.recordDroppedPartialUsageInSidecar(
+          workspaceId,
+          streamInfo,
+          usage,
+          providerMetadata,
+          "aborted_stream"
+        );
+      } catch (error) {
+        log.error("Failed to record abandoned-abort usage in headless sidecar", { error });
+      }
+    }
+
     // Emit abort event with usage if available
     this.emitStreamAbort(
       workspaceId,
@@ -1426,6 +1455,42 @@ export class StreamManager extends EventEmitter {
 
     // Clean up immediately
     this.workspaceStreams.delete(workspaceId);
+  }
+
+  /**
+   * Route a dropped partial's billed usage to the headless-usage sidecar:
+   * the parent stream's cumulative usage plus every tool-internal model call
+   * (toolModelUsages). Used by the abort and error paths when the partial
+   * fails commitPartial's durability predicate — metadata stamped on such a
+   * partial dies with it, so the sidecar is the only route to the events
+   * table. skipSessionLedger everywhere: parent usage was recorded via
+   * recordSessionUsage and tool usage at report time (AIService).
+   */
+  private async recordDroppedPartialUsageInSidecar(
+    workspaceId: WorkspaceId,
+    streamInfo: Pick<WorkspaceStreamInfo, "model" | "toolModelUsages">,
+    usage: LanguageModelV2Usage | undefined,
+    providerMetadata: Record<string, unknown> | undefined,
+    analyticsSource: "aborted_stream" | "errored_stream"
+  ): Promise<void> {
+    if (usage !== undefined) {
+      await this.sessionUsageService?.recordHeadlessUsage(
+        workspaceId as string,
+        streamInfo.model,
+        cloneUsage(usage),
+        providerMetadata,
+        { analyticsSource, skipSessionLedger: true }
+      );
+    }
+    for (const toolUsage of streamInfo.toolModelUsages) {
+      await this.sessionUsageService?.recordHeadlessUsage(
+        workspaceId as string,
+        toolUsage.model,
+        cloneUsage(toolUsage.usage),
+        toolUsage.providerMetadata,
+        { analyticsSource, skipSessionLedger: true }
+      );
+    }
   }
 
   private async recordSessionUsage(
@@ -3333,21 +3398,55 @@ export class StreamManager extends EventEmitter {
     const terminalRefusalUsage = streamInfo.terminalRefusalUsage;
     const terminalRefusalProviderMetadata = streamInfo.terminalRefusalProviderMetadata;
 
+    // Errored turns still billed every completed step. Capture the
+    // live-tracked cumulative usage for the sidecar below and mirror it into
+    // session-usage.json — the error path previously skipped both, ingesting
+    // failed turns as $0. Refusal errors are excluded entirely: the refusal
+    // paths already attributed the refusing attempt's tokens (terminal
+    // refusals via terminalRefusalUsage, fallback hops — including the FINAL
+    // hop on chain exhaustion — via recordRefusedAttemptUsage into
+    // toolModelUsages + the ledger), so re-recording the cumulative counters
+    // here would double-count the last refusing attempt.
+    let cumulativeErrorUsage: LanguageModelV2Usage | undefined;
+    let cumulativeErrorProviderMetadata: Record<string, unknown> | undefined;
+    if (payload.errorType !== "model_refusal" && hasTokenUsage(streamInfo.cumulativeUsage)) {
+      cumulativeErrorUsage = cloneUsage(streamInfo.cumulativeUsage);
+      await this.backfillReasoningTokensFromParts(streamInfo, cumulativeErrorUsage);
+      cumulativeErrorProviderMetadata = markProviderMetadataCostsIncluded(
+        streamInfo.cumulativeProviderMetadata
+          ? { ...streamInfo.cumulativeProviderMetadata }
+          : undefined,
+        streamInfo.initialMetadata?.costsIncluded
+      );
+      await this.recordSessionUsage(
+        workspaceId,
+        streamInfo.model,
+        cumulativeErrorUsage,
+        cumulativeErrorProviderMetadata,
+        "Failed to record session usage for errored stream",
+        "warn",
+        streamInfo
+      );
+    }
+    const errorUsage = terminalRefusalUsage ?? cumulativeErrorUsage;
+    const errorProviderMetadata =
+      terminalRefusalProviderMetadata ?? cumulativeErrorProviderMetadata;
+
     const errorPartialMessage = this.buildPartialAssistantMessage(streamInfo, {
       metadata: {
         error: payload.error,
         errorType: payload.errorType,
         ...(refusalFinishReason !== undefined ? { finishReason: refusalFinishReason } : {}),
-        ...(terminalRefusalUsage !== undefined ? { usage: terminalRefusalUsage } : {}),
-        ...(terminalRefusalProviderMetadata !== undefined
-          ? { providerMetadata: terminalRefusalProviderMetadata }
-          : {}),
-        // Keep tool-side / refused-fallback usage rows durable on the error
-        // partial: a fallback chain that ends in a terminal refusal must not
-        // drop the refused attempts' tokens from persisted metadata.
-        ...(streamInfo.toolModelUsages.length > 0
-          ? { toolModelUsages: streamInfo.toolModelUsages.map(clonePersistedToolModelUsage) }
-          : {}),
+        ...(errorProviderMetadata !== undefined ? { providerMetadata: errorProviderMetadata } : {}),
+        // INVARIANT: usage / toolModelUsages are deliberately NOT stamped on
+        // the error partial. Errored turns are sidecar-canonical: unlike
+        // aborts, nothing commits the partial at error time (AIService
+        // forwards "error" without commitPartial), so usage stamped here
+        // would strand in partial.json until an unrelated send — or die
+        // entirely when a retry overwrites the partial. The sidecar rows
+        // below are ingested immediately by the error listener, and the
+        // eventually committed row carries no usage, so exactly one source
+        // ever reaches the events table.
       },
     });
 
@@ -3358,6 +3457,18 @@ export class StreamManager extends EventEmitter {
 
     // Write error state to disk - await to ensure consistent state before any resume.
     await this.historyService.writePartial(workspaceId as string, errorPartialMessage);
+
+    try {
+      await this.recordDroppedPartialUsageInSidecar(
+        workspaceId,
+        streamInfo,
+        errorUsage,
+        errorProviderMetadata,
+        "errored_stream"
+      );
+    } catch (error) {
+      log.error("Failed to record errored-stream usage in headless sidecar", { error });
+    }
 
     // Emit error event.
     this.emit("error", createErrorEvent(workspaceId as string, payload));

@@ -17,6 +17,7 @@ import type { MuxProviderOptions } from "@/common/types/providerOptions";
 import type { ThinkingLevel } from "@/common/types/thinking";
 import {
   getAnthropicEffort,
+  anthropicRejectsDisabledThinking,
   anthropicSupportsNativeXhigh,
   ANTHROPIC_THINKING_BUDGETS,
   GEMINI_THINKING_BUDGETS,
@@ -308,9 +309,15 @@ export function buildProviderOptions(
       const budgetTokens = ANTHROPIC_THINKING_BUDGETS[effectiveThinking];
       // Opus 4.6+ / Sonnet 4.6 / Sonnet 5: adaptive thinking when on, disabled when off
       // Opus 4.5: enabled thinking with budgetTokens ceiling (only when not "off")
+      // Mythos-class (Fable/Mythos) rejects `{ type: "disabled" }`. The thinking policy
+      // excludes "off" for them and AIService clamps the effective level via
+      // resolveEffectiveThinkingLevel, so "off" should not reach here — but if a stray
+      // path does, omit `thinking` (API defaults to adaptive) rather than hard-erroring.
       const thinking: AnthropicProviderOptions["thinking"] = usesAdaptiveThinking
         ? effectiveThinking === "off"
-          ? { type: "disabled" }
+          ? anthropicRejectsDisabledThinking(capabilityModel)
+            ? undefined
+            : { type: "disabled" }
           : { type: "adaptive" }
         : budgetTokens > 0
           ? { type: "enabled", budgetTokens }

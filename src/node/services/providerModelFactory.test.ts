@@ -57,11 +57,11 @@ async function saveRoutePriority(
   routePriority: string[],
   overrides: Record<string, unknown> = {}
 ): Promise<void> {
-  await config.saveConfig({
+  await config.editConfig(() => ({
     ...config.loadConfigOrDefault(),
     ...overrides,
     routePriority,
-  });
+  }));
 }
 
 type ResolveAndCreateModelResult = Awaited<
@@ -162,7 +162,9 @@ function parseTestJson(value: string): unknown {
   try {
     return JSON.parse(value) as unknown;
   } catch (error) {
-    throw new Error(`Invalid JSON in test fixture: ${error instanceof Error ? error.message : String(error)}`);
+    throw new Error(
+      `Invalid JSON in test fixture: ${error instanceof Error ? error.message : String(error)}`
+    );
   }
 }
 

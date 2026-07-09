@@ -62,6 +62,7 @@ import {
 } from "@/browser/utils/rightSidebarLayout";
 import { normalizeAgentAiDefaults } from "@/common/types/agentAiDefaults";
 import { isWorkspaceArchived } from "@/common/utils/archive";
+import { reassignPinnedTimestamps } from "@/common/utils/pin";
 import { shouldApplyWorkspaceAiSettingsFromBackend } from "@/browser/utils/workspaceAiSettingsSync";
 import { isAbortError } from "@/browser/utils/isAbortError";
 import { findAdjacentWorkspaceId } from "@/browser/utils/ui/workspaceDomNav";
@@ -446,6 +447,13 @@ export interface WorkspaceContext extends WorkspaceMetadataContextValue {
   updateWorkspaceTitle: (
     workspaceId: string,
     newTitle: string
+  ) => Promise<{ success: boolean; error?: string }>;
+  setWorkspacePinned: (
+    workspaceId: string,
+    pinned: boolean
+  ) => Promise<{ success: boolean; error?: string }>;
+  reorderPinnedWorkspaces: (
+    workspaceIds: string[]
   ) => Promise<{ success: boolean; error?: string }>;
   preflightArchiveWorkspace: (
     workspaceId: string
@@ -1452,6 +1460,144 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
     [api]
   );
 
+  /**
+   * Pin or unpin a chat. Applies an optimistic pinnedAt locally so the row
+   * moves on click, even over slow connections; the workspace metadata
+   * subscription round-trip then reconciles all clients with the server's
+   * authoritative monotonic timestamp (and reverts on failure).
+   */
+  const setWorkspacePinned = useCallback(
+    async (workspaceId: string, pinned: boolean): Promise<{ success: boolean; error?: string }> => {
+      if (!api) return { success: false, error: "API not connected" };
+
+      let previousPinnedAt: string | undefined;
+      let applied = false;
+      setWorkspaceMetadata((prev) => {
+        const meta = prev.get(workspaceId);
+        if (!meta || Boolean(meta.pinnedAt) === pinned) return prev;
+        previousPinnedAt = meta.pinnedAt;
+        applied = true;
+        // Mirror the server's append-only ordering: strictly greater than every
+        // existing pin in the same project so rapid pins stay in click order.
+        let optimisticPinnedAt: string | undefined;
+        if (pinned) {
+          let pinnedAtMs = Date.now();
+          for (const other of prev.values()) {
+            if (other.projectPath !== meta.projectPath || !other.pinnedAt) continue;
+            const otherMs = new Date(other.pinnedAt).getTime();
+            if (Number.isFinite(otherMs) && otherMs >= pinnedAtMs) pinnedAtMs = otherMs + 1;
+          }
+          optimisticPinnedAt = new Date(pinnedAtMs).toISOString();
+        }
+        const next = new Map(prev);
+        next.set(workspaceId, { ...meta, pinnedAt: optimisticPinnedAt });
+        return next;
+      });
+      const revert = () => {
+        if (!applied) return;
+        setWorkspaceMetadata((prev) => {
+          const meta = prev.get(workspaceId);
+          if (!meta) return prev;
+          const next = new Map(prev);
+          next.set(workspaceId, { ...meta, pinnedAt: previousPinnedAt });
+          return next;
+        });
+      };
+
+      try {
+        const result = await api.workspace.setPinned({ workspaceId, pinned });
+        if (result.success) {
+          return { success: true };
+        }
+        revert();
+        console.error("Failed to update workspace pin state:", result.error);
+        return { success: false, error: result.error };
+      } catch (error) {
+        revert();
+        const errorMessage = getErrorMessage(error);
+        console.error("Failed to update workspace pin state:", errorMessage);
+        return { success: false, error: errorMessage };
+      }
+    },
+    [api, setWorkspaceMetadata]
+  );
+
+  /**
+   * Reorder pinned chats within one project bucket. `workspaceIds` is the full
+   * desired pinned order for that bucket. Optimistically re-deals the existing
+   * pinnedAt pool locally (same algorithm as the server) so rows move on drop;
+   * the metadata subscription round-trip then reconciles all clients with the
+   * server's authoritative values (and we revert on failure).
+   */
+  const reorderPinnedWorkspaces = useCallback(
+    async (workspaceIds: string[]): Promise<{ success: boolean; error?: string }> => {
+      if (!api) return { success: false, error: "API not connected" };
+
+      let previousPinnedAtById: Map<string, string> | undefined;
+      let optimisticPinnedAtById: Map<string, string> | undefined;
+      setWorkspaceMetadata((prev) => {
+        const currentPinnedAtById = new Map<string, string>();
+        for (const id of workspaceIds) {
+          const meta = prev.get(id);
+          if (meta?.pinnedAt) currentPinnedAtById.set(id, meta.pinnedAt);
+        }
+        const orderedIds = workspaceIds.filter((id) => currentPinnedAtById.has(id));
+        const changes = reassignPinnedTimestamps(orderedIds, currentPinnedAtById);
+        if (changes.size === 0) return prev;
+
+        const snapshot = new Map<string, string>();
+        const applied = new Map<string, string>();
+        const next = new Map(prev);
+        for (const [id, pinnedAt] of changes) {
+          const meta = prev.get(id);
+          const previousPinnedAt = currentPinnedAtById.get(id);
+          if (!meta || previousPinnedAt === undefined) continue;
+          snapshot.set(id, previousPinnedAt);
+          applied.set(id, pinnedAt);
+          next.set(id, { ...meta, pinnedAt });
+        }
+        previousPinnedAtById = snapshot;
+        optimisticPinnedAtById = applied;
+        return next;
+      });
+      const revert = () => {
+        const snapshot = previousPinnedAtById;
+        const applied = optimisticPinnedAtById;
+        if (!snapshot || !applied) return;
+        setWorkspaceMetadata((prev) => {
+          let changed = false;
+          const next = new Map(prev);
+          for (const [id, pinnedAt] of snapshot) {
+            const meta = prev.get(id);
+            // Unawaited reorders can interleave; only roll back entries this
+            // request still owns (current value == our optimistic value).
+            // Otherwise a stale failure would clobber a newer reorder's state.
+            if (!meta || meta.pinnedAt !== applied.get(id)) continue;
+            next.set(id, { ...meta, pinnedAt });
+            changed = true;
+          }
+          return changed ? next : prev;
+        });
+      };
+
+      try {
+        const result = await api.workspace.reorderPinned({ workspaceIds });
+        if (result.success) {
+          return { success: true };
+        }
+        revert();
+        console.error("Failed to reorder pinned chats:", result.error);
+        return { success: false, error: result.error };
+      } catch (error) {
+        revert();
+        const errorMessage = getErrorMessage(error);
+        console.error("Failed to reorder pinned chats:", errorMessage);
+        return { success: false, error: errorMessage };
+      }
+    },
+    [api, setWorkspaceMetadata]
+  );
+
   const preflightArchiveWorkspace = useCallback(
     async (
       workspaceId: string
@@ -1840,6 +1986,8 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
       createWorkspace,
       removeWorkspace,
       updateWorkspaceTitle,
+      setWorkspacePinned,
+      reorderPinnedWorkspaces,
       preflightArchiveWorkspace,
       archiveWorkspace,
       unarchiveWorkspace,
@@ -1864,6 +2012,8 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
       createWorkspace,
       removeWorkspace,
       updateWorkspaceTitle,
+      setWorkspacePinned,
+      reorderPinnedWorkspaces,
       preflightArchiveWorkspace,
       archiveWorkspace,
       unarchiveWorkspace,
@@ -1922,6 +2072,17 @@ export function useWorkspaceActions(): Omit<
     throw new Error("useWorkspaceActions must be used within WorkspaceProvider");
   }
   return context;
+}
+
+/**
+ * Like useWorkspaceActions, but returns undefined outside WorkspaceProvider.
+ * For components (e.g. AgentListItem) that are also rendered in Storybook or
+ * tests without the full provider tree.
+ */
+export function useWorkspaceActionsOptional():
+  | Omit<WorkspaceContext, "workspaceMetadata" | "loading" | "loaded" | "loadError">
+  | undefined {
+  return useContext(WorkspaceActionsContext) ?? undefined;
 }
 
 /**

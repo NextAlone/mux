@@ -213,6 +213,10 @@ export const WorkspaceConfigSchema = z.object({
     description:
       "ISO 8601 timestamp when workspace was last unarchived. Used for recency calculation to bump restored workspaces to top.",
   }),
+  pinnedAt: z.string().optional().meta({
+    description:
+      "ISO 8601 pin ordering key (not a reliable 'when pinned' record: reorderPinned re-deals existing values). Pinned workspaces sort to the top of their project in pinnedAt order (ascending). Cleared on archive.",
+  }),
   worktreeArchiveSnapshot: WorktreeArchiveSnapshotSchema.optional().meta({
     description:
       "Durable restore metadata captured before archive-time checkout deletion. Present only while an archived snapshot is awaiting restore.",

@@ -2,6 +2,7 @@ import { describe, expect, test, mock, beforeEach, afterEach, spyOn, type Mock }
 import { WorkspaceService, generateForkBranchName, generateForkTitle } from "./workspaceService";
 import type { IdleCompactionOutcome } from "./idleCompactionService";
 import type { AgentSession } from "./agentSession";
+import { askUserQuestionManager } from "./askUserQuestionManager";
 import { WorkspaceLifecycleHooks } from "./workspaceLifecycleHooks";
 import { EventEmitter } from "events";
 import * as fsPromises from "fs/promises";
@@ -29,6 +30,8 @@ import type {
 } from "@/common/types/workspace";
 import type { TaskService } from "./taskService";
 import type { BackgroundProcessManager } from "./backgroundProcessManager";
+import { BashMonitorRegistryStore } from "./bashMonitorRegistryStore";
+import { BashMonitorWakeStore } from "./bashMonitorWakeStore";
 import type { TerminalService } from "@/node/services/terminalService";
 import type { DesktopSessionManager } from "@/node/services/desktop/DesktopSessionManager";
 import type { WorktreeArchiveSnapshot } from "@/common/schemas/project";
@@ -260,7 +263,17 @@ describe("WorkspaceService bash monitor wakes", () => {
       expect(sendSpy.mock.calls[0][0]).toBe(workspaceId);
       expect(sendSpy.mock.calls[0][1]).toContain("A background bash monitor matched output.");
       expect(sendSpy.mock.calls[0][1]).toContain("FAILED one");
-      expect(sendSpy.mock.calls[0][2]).toMatchObject({ queueDispatchMode: "tool-end" });
+      expect(sendSpy.mock.calls[0][2]).toMatchObject({
+        queueDispatchMode: "tool-end",
+        // Compact display metadata drives the collapsed transcript card;
+        // displayName falls back to processId when the payload omits it.
+        muxMetadata: {
+          type: "bash-monitor-wake",
+          records: [
+            { kind: "match", displayName: "proc-1", filter: "FAILED", filterExclude: false },
+          ],
+        },
+      });
       expect(sendSpy.mock.calls[0][3]).toMatchObject({
         synthetic: true,
         agentInitiated: true,
@@ -273,6 +286,633 @@ describe("WorkspaceService bash monitor wakes", () => {
         }
       ).bashMonitorWakeStore;
       await waitForCondition(async () => (await wakeStore.listPending(workspaceId)).length === 0);
+    } finally {
+      await cleanup();
+    }
+  });
+
+  test("converts stale armed-monitor registry records into monitor-lost wakes at startup", async () => {
+    const { config, cleanup } = await createTestHistoryService();
+    try {
+      const workspaceId = "bash-monitor-restart-owner";
+      const projectPath = path.join(config.rootDir, "project");
+      await config.addWorkspace(projectPath, {
+        id: workspaceId,
+        name: workspaceId,
+        projectName: "project",
+        projectPath,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        runtimeConfig: { type: "local" },
+      });
+
+      // Seed a stale registry record on disk before the service boots — as if a previous
+      // Mux run armed a monitor and was then shut down/killed.
+      const registryStore = new BashMonitorRegistryStore(config);
+      await registryStore.upsert({
+        processId: "proc-stale",
+        taskId: "bash:proc-stale",
+        workspaceId,
+        displayName: "Tick Loop",
+        filter: "NEVER_MATCHES",
+        filterExclude: false,
+        script: "while true; do echo tick; sleep 5; done",
+        createdAt: "2026-01-01T00:00:00.000Z",
+      });
+
+      const backgroundProcessManager = Object.assign(new EventEmitter(), {
+        cleanup: mock(() => Promise.resolve()),
+      }) as unknown as BackgroundProcessManager & EventEmitter;
+      const workspaceService = createWorkspaceServiceForTest({
+        config,
+        backgroundProcessManager,
+        aiService: createMockAIService({ isStreaming: mock(() => false) }),
+      });
+      const sendSpy = spyOn(workspaceService, "sendMessage").mockImplementation(
+        async (...args: Parameters<WorkspaceService["sendMessage"]>) => {
+          await args[3]?.onAccepted?.();
+          return Ok(undefined);
+        }
+      );
+
+      await waitForCondition(() => sendSpy.mock.calls.length === 1);
+      expect(sendSpy.mock.calls[0][0]).toBe(workspaceId);
+      const prompt = sendSpy.mock.calls[0][1];
+      expect(prompt).toContain("bash:proc-stale (no longer awaitable — process was terminated)");
+      expect(prompt).toContain("> while true; do echo tick; sleep 5; done");
+      expect(prompt).not.toContain("task_await(");
+      expect(sendSpy.mock.calls[0][3]).toMatchObject({ synthetic: true, agentInitiated: true });
+
+      // Registry record consumed; wake delivered (nothing left pending).
+      expect(await registryStore.listAll(workspaceId)).toHaveLength(0);
+      const wakeStore = (
+        workspaceService as unknown as {
+          bashMonitorWakeStore: { listPending: (id: string) => Promise<unknown[]> };
+        }
+      ).bashMonitorWakeStore;
+      await waitForCondition(async () => (await wakeStore.listPending(workspaceId)).length === 0);
+    } finally {
+      await cleanup();
+    }
+  });
+
+  test("startup recovery merges a stale registry record with a pending match wake", async () => {
+    const { config, cleanup } = await createTestHistoryService();
+    try {
+      const workspaceId = "bash-monitor-restart-merge-owner";
+      const projectPath = path.join(config.rootDir, "project");
+      await config.addWorkspace(projectPath, {
+        id: workspaceId,
+        name: workspaceId,
+        projectName: "project",
+        projectPath,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        runtimeConfig: { type: "local" },
+      });
+
+      // A match wake was persisted but never delivered before shutdown…
+      const seedWakeStore = new BashMonitorWakeStore(config);
+      await seedWakeStore.enqueueOrMergePending({
+        processId: "proc-stale",
+        taskId: "bash:proc-stale",
+        workspaceId,
+        filter: "FAILED",
+        filterExclude: false,
+        lines: ["FAILED before shutdown"],
+        totalMatches: 1,
+        timestamp: Date.now(),
+        matchedThroughOffset: 0,
+      });
+      // …and the monitor was still armed.
+      const registryStore = new BashMonitorRegistryStore(config);
+      await registryStore.upsert({
+        processId: "proc-stale",
+        taskId: "bash:proc-stale",
+        workspaceId,
+        filter: "FAILED",
+        filterExclude: false,
+        script: "run-tests --watch",
+        createdAt: "2026-01-01T00:00:00.000Z",
+      });
+
+      // The seeded match wake's updatedAt must be strictly before the service's boot
+      // timestamp (ms precision), or recovery's live-record guard would skip the upgrade.
+      await new Promise((resolve) => setTimeout(resolve, 5));
+
+      const backgroundProcessManager = Object.assign(new EventEmitter(), {
+        cleanup: mock(() => Promise.resolve()),
+      }) as unknown as BackgroundProcessManager & EventEmitter;
+      const workspaceService = createWorkspaceServiceForTest({
+        config,
+        backgroundProcessManager,
+        aiService: createMockAIService({ isStreaming: mock(() => false) }),
+      });
+      const sendSpy = spyOn(workspaceService, "sendMessage").mockImplementation(
+        async (...args: Parameters<WorkspaceService["sendMessage"]>) => {
+          await args[3]?.onAccepted?.();
+          return Ok(undefined);
+        }
+      );
+
+      // One message carries both the undelivered output and the termination notice.
+      await waitForCondition(() => sendSpy.mock.calls.length === 1);
+      const prompt = sendSpy.mock.calls[0][1];
+      expect(prompt).toContain("FAILED before shutdown");
+      expect(prompt).toContain("bash:proc-stale (no longer awaitable — process was terminated)");
+      expect(prompt).toContain("> run-tests --watch");
+      expect(await registryStore.listAll(workspaceId)).toHaveLength(0);
+    } finally {
+      await cleanup();
+    }
+  });
+
+  test("startup recovery skips registry records armed after service construction", async () => {
+    const { config, cleanup } = await createTestHistoryService();
+    try {
+      const workspaceId = "bash-monitor-live-registry-owner";
+      const projectPath = path.join(config.rootDir, "project");
+      await config.addWorkspace(projectPath, {
+        id: workspaceId,
+        name: workspaceId,
+        projectName: "project",
+        projectPath,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        runtimeConfig: { type: "local" },
+      });
+
+      // Record stamped in the future = armed by the live manager, not a stale leftover.
+      const registryStore = new BashMonitorRegistryStore(config);
+      await registryStore.upsert({
+        processId: "proc-live",
+        taskId: "bash:proc-live",
+        workspaceId,
+        filter: "READY",
+        filterExclude: false,
+        script: "echo hi",
+        createdAt: new Date(Date.now() + 60_000).toISOString(),
+      });
+
+      const backgroundProcessManager = Object.assign(new EventEmitter(), {
+        cleanup: mock(() => Promise.resolve()),
+      }) as unknown as BackgroundProcessManager & EventEmitter;
+      const workspaceService = createWorkspaceServiceForTest({
+        config,
+        backgroundProcessManager,
+        aiService: createMockAIService({ isStreaming: mock(() => false) }),
+      });
+      const sendSpy = spyOn(workspaceService, "sendMessage").mockImplementation(() =>
+        Promise.resolve(Ok(undefined))
+      );
+
+      // Give recovery a chance to run, then confirm it left the record alone.
+      await waitForCondition(async () => (await registryStore.listAll(workspaceId)).length === 1);
+      await drainPendingDispatches();
+      expect(sendSpy).not.toHaveBeenCalled();
+      expect(await registryStore.listAll(workspaceId)).toHaveLength(1);
+    } finally {
+      await cleanup();
+    }
+  });
+
+  test("re-arming a processId supersedes its pending monitor-lost wake", async () => {
+    const { config, cleanup } = await createTestHistoryService();
+    try {
+      const workspaceId = "bash-monitor-rearm-owner";
+      const backgroundProcessManager = Object.assign(new EventEmitter(), {
+        cleanup: mock(() => Promise.resolve()),
+      }) as unknown as BackgroundProcessManager & EventEmitter;
+      // Workspace intentionally absent from config: startup recovery finds nothing, and
+      // no drain can race the assertion below (drains for unknown workspaces supersede,
+      // but none is scheduled because the wake is seeded after construction).
+      createWorkspaceServiceForTest({
+        config,
+        backgroundProcessManager,
+        aiService: createMockAIService({ isStreaming: mock(() => false) }),
+      });
+
+      const wakeStore = new BashMonitorWakeStore(config);
+      await wakeStore.enqueueMonitorLost(
+        {
+          processId: "proc-1",
+          taskId: "bash:proc-1",
+          ownerWorkspaceId: workspaceId,
+          filter: "ERROR",
+          filterExclude: false,
+          script: "echo hi",
+        },
+        Date.now() + 60_000 // treat everything as stale so the seed record is written
+      );
+
+      // Relaunching the same display_name after restart reuses the processId; the stale
+      // "no longer awaitable" notice must not be delivered for the now-live task.
+      backgroundProcessManager.emit("monitor:armed", workspaceId, {
+        processId: "proc-1",
+        taskId: "bash:proc-1",
+        workspaceId,
+        filter: "ERROR",
+        filterExclude: false,
+        script: "echo hi",
+        createdAt: new Date().toISOString(),
+      });
+
+      await waitForCondition(
+        async () => (await wakeStore.get(workspaceId, "proc-1"))?.status === "superseded"
+      );
+    } finally {
+      await cleanup();
+    }
+  });
+
+  test("maintains the armed-monitor registry from manager events", async () => {
+    const { config, cleanup } = await createTestHistoryService();
+    try {
+      const workspaceId = "bash-monitor-registry-events-owner";
+      const backgroundProcessManager = Object.assign(new EventEmitter(), {
+        cleanup: mock(() => Promise.resolve()),
+      }) as unknown as BackgroundProcessManager & EventEmitter;
+      createWorkspaceServiceForTest({
+        config,
+        backgroundProcessManager,
+        aiService: createMockAIService({ isStreaming: mock(() => false) }),
+      });
+
+      const registryStore = new BashMonitorRegistryStore(config);
+      backgroundProcessManager.emit("monitor:armed", workspaceId, {
+        processId: "proc-1",
+        taskId: "bash:proc-1",
+        workspaceId,
+        filter: "ERROR",
+        filterExclude: false,
+        script: "echo hi",
+        createdAt: new Date().toISOString(),
+      });
+      await waitForCondition(async () => (await registryStore.listAll(workspaceId)).length === 1);
+
+      backgroundProcessManager.emit("monitor:stopped", workspaceId, { processId: "proc-1" });
+      await waitForCondition(async () => (await registryStore.listAll(workspaceId)).length === 0);
+    } finally {
+      await cleanup();
+    }
+  });
+
+  test("re-emits workspace activity when the armed monitor count changes", async () => {
+    const { config, cleanup } = await createTestHistoryService();
+    try {
+      const workspaceId = "bash-monitor-activity";
+      let activeMonitorCount = 1;
+      const backgroundProcessManager = Object.assign(new EventEmitter(), {
+        cleanup: mock(() => Promise.resolve()),
+        getActiveMonitorCount: mock(() => activeMonitorCount),
+      }) as unknown as BackgroundProcessManager & EventEmitter;
+      const getSnapshot = mock(() => Promise.resolve(null));
+      const extensionMetadata = {
+        ...mockExtensionMetadataService,
+        getSnapshot,
+      } as unknown as ExtensionMetadataService;
+      const workspaceService = createWorkspaceServiceForTest({
+        config,
+        backgroundProcessManager,
+        extensionMetadata,
+        aiService: createMockAIService({ isStreaming: mock(() => false) }),
+      });
+
+      const events: Array<{
+        workspaceId: string;
+        activity: WorkspaceActivitySnapshot | null;
+      }> = [];
+      workspaceService.on("activity", (event) => events.push(event));
+
+      backgroundProcessManager.emit("change", workspaceId);
+      await waitForCondition(() => events.length === 1);
+      expect(events[0].workspaceId).toBe(workspaceId);
+      expect(events[0].activity?.activeBashMonitorCount).toBe(1);
+      expect(getSnapshot).toHaveBeenCalledTimes(1);
+
+      // Same count after the previous emit settled: deduped synchronously,
+      // so no extra snapshot read or emit.
+      backgroundProcessManager.emit("change", workspaceId);
+      expect(getSnapshot).toHaveBeenCalledTimes(1);
+
+      activeMonitorCount = 0;
+      backgroundProcessManager.emit("change", workspaceId);
+
+      await waitForCondition(() => events.length === 2);
+      // Monitor stopped with no other persisted activity: the snapshot clears entirely.
+      expect(events[1].activity).toBeNull();
+    } finally {
+      await cleanup();
+    }
+  });
+
+  test("retries the monitor-count activity emit after a failed snapshot read", async () => {
+    const { config, cleanup } = await createTestHistoryService();
+    try {
+      const workspaceId = "bash-monitor-activity-retry";
+      const backgroundProcessManager = Object.assign(new EventEmitter(), {
+        cleanup: mock(() => Promise.resolve()),
+        getActiveMonitorCount: mock(() => 1),
+      }) as unknown as BackgroundProcessManager & EventEmitter;
+      const getSnapshot = mock(
+        (): Promise<WorkspaceActivitySnapshot | null> =>
+          Promise.reject(new Error("transient read failure"))
+      );
+      const extensionMetadata = {
+        ...mockExtensionMetadataService,
+        getSnapshot,
+      } as unknown as ExtensionMetadataService;
+      const workspaceService = createWorkspaceServiceForTest({
+        config,
+        backgroundProcessManager,
+        extensionMetadata,
+        aiService: createMockAIService({ isStreaming: mock(() => false) }),
+      });
+
+      const events: Array<{
+        workspaceId: string;
+        activity: WorkspaceActivitySnapshot | null;
+      }> = [];
+      workspaceService.on("activity", (event) => events.push(event));
+
+      backgroundProcessManager.emit("change", workspaceId);
+      await waitForCondition(() => getSnapshot.mock.calls.length === 1);
+      expect(events.length).toBe(0);
+
+      // The failed emit must not be recorded as delivered: the next change event
+      // with the same count retries instead of being deduped.
+      getSnapshot.mockImplementation(() => Promise.resolve(null));
+      backgroundProcessManager.emit("change", workspaceId);
+
+      await waitForCondition(() => events.length === 1);
+      expect(events[0].activity?.activeBashMonitorCount).toBe(1);
+    } finally {
+      await cleanup();
+    }
+  });
+
+  test("emits the zero-count clear even when the armed emit never succeeded", async () => {
+    const { config, cleanup } = await createTestHistoryService();
+    try {
+      const workspaceId = "bash-monitor-clear-after-failure";
+      let activeMonitorCount = 1;
+      const backgroundProcessManager = Object.assign(new EventEmitter(), {
+        cleanup: mock(() => Promise.resolve()),
+        getActiveMonitorCount: mock(() => activeMonitorCount),
+      }) as unknown as BackgroundProcessManager & EventEmitter;
+      const getSnapshot = mock(
+        (): Promise<WorkspaceActivitySnapshot | null> =>
+          Promise.reject(new Error("transient read failure"))
+      );
+      const extensionMetadata = {
+        ...mockExtensionMetadataService,
+        getSnapshot,
+      } as unknown as ExtensionMetadataService;
+      const workspaceService = createWorkspaceServiceForTest({
+        config,
+        backgroundProcessManager,
+        extensionMetadata,
+        aiService: createMockAIService({ isStreaming: mock(() => false) }),
+      });
+
+      const events: Array<{
+        workspaceId: string;
+        activity: WorkspaceActivitySnapshot | null;
+      }> = [];
+      workspaceService.on("activity", (event) => events.push(event));
+
+      // Armed emit fails; renderers may still have bootstrapped count=1 via getActivityList.
+      backgroundProcessManager.emit("change", workspaceId);
+      await waitForCondition(() => getSnapshot.mock.calls.length === 1);
+      expect(events.length).toBe(0);
+
+      // Monitor stops: the unknown->0 transition must emit the clear rather than
+      // treating the missing cache entry as an already-emitted zero.
+      getSnapshot.mockImplementation(() => Promise.resolve(null));
+      activeMonitorCount = 0;
+      backgroundProcessManager.emit("change", workspaceId);
+
+      await waitForCondition(() => events.length === 1);
+      expect(events[0].workspaceId).toBe(workspaceId);
+      expect(events[0].activity).toBeNull();
+    } finally {
+      await cleanup();
+    }
+  });
+
+  test("does not dedupe a clear against a zero recorded before a failed armed emit", async () => {
+    const { config, cleanup } = await createTestHistoryService();
+    try {
+      const workspaceId = "bash-monitor-stale-zero";
+      let activeMonitorCount = 0;
+      const backgroundProcessManager = Object.assign(new EventEmitter(), {
+        cleanup: mock(() => Promise.resolve()),
+        getActiveMonitorCount: mock(() => activeMonitorCount),
+      }) as unknown as BackgroundProcessManager & EventEmitter;
+      const getSnapshot = mock(
+        (): Promise<WorkspaceActivitySnapshot | null> => Promise.resolve(null)
+      );
+      const extensionMetadata = {
+        ...mockExtensionMetadataService,
+        getSnapshot,
+      } as unknown as ExtensionMetadataService;
+      const workspaceService = createWorkspaceServiceForTest({
+        config,
+        backgroundProcessManager,
+        extensionMetadata,
+        aiService: createMockAIService({ isStreaming: mock(() => false) }),
+      });
+
+      const events: Array<{
+        workspaceId: string;
+        activity: WorkspaceActivitySnapshot | null;
+      }> = [];
+      workspaceService.on("activity", (event) => events.push(event));
+
+      // Monitorless churn records 0 as successfully emitted.
+      backgroundProcessManager.emit("change", workspaceId);
+      await waitForCondition(() => events.length === 1);
+
+      // Armed transition fails to emit; renderers may still observe count=1 via
+      // workspace.activity.list(). The stale recorded 0 must not survive.
+      getSnapshot.mockImplementation(() => Promise.reject(new Error("transient read failure")));
+      activeMonitorCount = 1;
+      backgroundProcessManager.emit("change", workspaceId);
+      await waitForCondition(() => getSnapshot.mock.calls.length === 2);
+      expect(events.length).toBe(1);
+
+      // Stop: 0 equals the pre-failure recorded 0, but the clear must still emit.
+      getSnapshot.mockImplementation(() => Promise.resolve(null));
+      activeMonitorCount = 0;
+      backgroundProcessManager.emit("change", workspaceId);
+
+      await waitForCondition(() => events.length === 2);
+      expect(events[1].workspaceId).toBe(workspaceId);
+      expect(events[1].activity).toBeNull();
+    } finally {
+      await cleanup();
+    }
+  });
+
+  test("emits the clear when a stop races a still-pending armed emit", async () => {
+    const { config, cleanup } = await createTestHistoryService();
+    try {
+      const workspaceId = "bash-monitor-pending-race";
+      let activeMonitorCount = 0;
+      const backgroundProcessManager = Object.assign(new EventEmitter(), {
+        cleanup: mock(() => Promise.resolve()),
+        getActiveMonitorCount: mock(() => activeMonitorCount),
+      }) as unknown as BackgroundProcessManager & EventEmitter;
+      const getSnapshot = mock(
+        (): Promise<WorkspaceActivitySnapshot | null> => Promise.resolve(null)
+      );
+      const extensionMetadata = {
+        ...mockExtensionMetadataService,
+        getSnapshot,
+      } as unknown as ExtensionMetadataService;
+      const workspaceService = createWorkspaceServiceForTest({
+        config,
+        backgroundProcessManager,
+        extensionMetadata,
+        aiService: createMockAIService({ isStreaming: mock(() => false) }),
+      });
+
+      const events: Array<{
+        workspaceId: string;
+        activity: WorkspaceActivitySnapshot | null;
+      }> = [];
+      workspaceService.on("activity", (event) => events.push(event));
+
+      // Record 0 as the last successfully emitted count.
+      backgroundProcessManager.emit("change", workspaceId);
+      await waitForCondition(() => events.length === 1);
+
+      // Armed emit hangs: its snapshot read stays pending while the stop arrives.
+      let rejectArmedSnapshot: ((error: Error) => void) | undefined;
+      getSnapshot.mockImplementation(
+        () =>
+          new Promise<WorkspaceActivitySnapshot | null>((_resolve, reject) => {
+            rejectArmedSnapshot = reject;
+          })
+      );
+      activeMonitorCount = 1;
+      backgroundProcessManager.emit("change", workspaceId);
+      await waitForCondition(() => rejectArmedSnapshot !== undefined);
+
+      // Stop while the armed emit is in flight: the pre-emit delete means this 0 must
+      // not dedupe against the previously recorded 0 — the clear still goes out.
+      getSnapshot.mockImplementation(() => Promise.resolve(null));
+      activeMonitorCount = 0;
+      backgroundProcessManager.emit("change", workspaceId);
+
+      await waitForCondition(() => events.length === 2);
+      expect(events[1].activity).toBeNull();
+
+      // The armed emit failing afterwards must not corrupt the recorded state: the
+      // successfully emitted 0 stays recorded, and a later re-arm still emits.
+      rejectArmedSnapshot?.(new Error("slow read failed"));
+      await drainPendingDispatches();
+      activeMonitorCount = 1;
+      backgroundProcessManager.emit("change", workspaceId);
+      await waitForCondition(() => events.length === 3);
+      expect(events[2].activity?.activeBashMonitorCount).toBe(1);
+    } finally {
+      await cleanup();
+    }
+  });
+
+  test("keeps the zero-count tombstone in getActivityList after a failed clear emit", async () => {
+    const { config, cleanup } = await createTestHistoryService();
+    try {
+      const workspaceId = "bash-monitor-tombstone-failed-clear";
+      let activeMonitorCount = 1;
+      const backgroundProcessManager = Object.assign(new EventEmitter(), {
+        cleanup: mock(() => Promise.resolve()),
+        getActiveMonitorCount: mock(() => activeMonitorCount),
+      }) as unknown as BackgroundProcessManager & EventEmitter;
+      const getSnapshot = mock(
+        (): Promise<WorkspaceActivitySnapshot | null> => Promise.resolve(null)
+      );
+      const extensionMetadata = {
+        ...mockExtensionMetadataService,
+        getSnapshot,
+        getAllSnapshots: mock(() => Promise.resolve(new Map<string, WorkspaceActivitySnapshot>())),
+      } as unknown as ExtensionMetadataService;
+      const workspaceService = createWorkspaceServiceForTest({
+        config,
+        backgroundProcessManager,
+        extensionMetadata,
+        aiService: createMockAIService({ isStreaming: mock(() => false) }),
+      });
+
+      const events: Array<{
+        workspaceId: string;
+        activity: WorkspaceActivitySnapshot | null;
+      }> = [];
+      workspaceService.on("activity", (event) => events.push(event));
+
+      // Armed emit succeeds: renderers now show "watching".
+      backgroundProcessManager.emit("change", workspaceId);
+      await waitForCondition(() => events.length === 1);
+      expect(events[0].activity?.activeBashMonitorCount).toBe(1);
+
+      // Stop transition fails to emit (snapshot read rejects).
+      getSnapshot.mockImplementation(() => Promise.reject(new Error("transient read failure")));
+      activeMonitorCount = 0;
+      backgroundProcessManager.emit("change", workspaceId);
+      await waitForCondition(() => getSnapshot.mock.calls.length === 2);
+      expect(events.length).toBe(1);
+
+      // Reconnect bootstrap must still return the zero-count tombstone even though the
+      // clear emit failed, so the renderer's stale "watching" snapshot gets replaced.
+      const activityList = await workspaceService.getActivityList();
+      const entry = activityList[workspaceId];
+      expect(entry).toBeDefined();
+      expect(entry.activeBashMonitorCount).toBeUndefined();
+    } finally {
+      await cleanup();
+    }
+  });
+
+  test("keeps a zero-count tombstone in getActivityList after a monitor stops", async () => {
+    const { config, cleanup } = await createTestHistoryService();
+    try {
+      const workspaceId = "bash-monitor-tombstone";
+      let activeMonitorCount = 1;
+      const backgroundProcessManager = Object.assign(new EventEmitter(), {
+        cleanup: mock(() => Promise.resolve()),
+        getActiveMonitorCount: mock(() => activeMonitorCount),
+      }) as unknown as BackgroundProcessManager & EventEmitter;
+      const extensionMetadata = {
+        ...mockExtensionMetadataService,
+        getSnapshot: mock(() => Promise.resolve(null)),
+        getAllSnapshots: mock(() => Promise.resolve(new Map<string, WorkspaceActivitySnapshot>())),
+      } as unknown as ExtensionMetadataService;
+      const workspaceService = createWorkspaceServiceForTest({
+        config,
+        backgroundProcessManager,
+        extensionMetadata,
+        aiService: createMockAIService({ isStreaming: mock(() => false) }),
+      });
+
+      const events: Array<{
+        workspaceId: string;
+        activity: WorkspaceActivitySnapshot | null;
+      }> = [];
+      workspaceService.on("activity", (event) => events.push(event));
+
+      backgroundProcessManager.emit("change", workspaceId);
+      await waitForCondition(() => events.length === 1);
+      expect(events[0].activity?.activeBashMonitorCount).toBe(1);
+
+      // Renderer disconnected: the monitor stops and the clear emit lands nowhere.
+      activeMonitorCount = 0;
+      backgroundProcessManager.emit("change", workspaceId);
+      await waitForCondition(() => events.length === 2);
+
+      // Reconnect bootstrap: the list must include a zero-count tombstone so the
+      // renderer's last-known "watching" snapshot gets replaced rather than preserved.
+      const activityList = await workspaceService.getActivityList();
+      const entry = activityList[workspaceId];
+      expect(entry).toBeDefined();
+      expect(entry.activeBashMonitorCount).toBeUndefined();
     } finally {
       await cleanup();
     }
@@ -1121,6 +1761,318 @@ describe("WorkspaceService bash monitor wakes", () => {
 
       await drainPendingDispatches();
       expect(waitForIdleSpy).not.toHaveBeenCalled();
+    } finally {
+      await cleanup();
+    }
+  });
+  test("supersedes a monitor wake whose matched output was already shown by a concurrent read", async () => {
+    const { config, cleanup } = await createTestHistoryService();
+    try {
+      const workspaceId = "bash-monitor-shown-owner";
+      const projectPath = path.join(config.rootDir, "project");
+      await config.addWorkspace(projectPath, {
+        id: workspaceId,
+        name: workspaceId,
+        projectName: "project",
+        projectPath,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        runtimeConfig: { type: "local" },
+      });
+
+      // The screenshot bug: a task_await already delivered "ALL DONE exit=0" inline, advancing the
+      // settled shown-frontier to (or past) where the match ends. The drain must drop the wake
+      // rather than re-report the same line. This fails without the drain gate (emit-time
+      // suppression alone loses the race with the exit-flush).
+      const getSettledShownThroughOffset = mock(() => Promise.resolve(100));
+      const backgroundProcessManager = Object.assign(new EventEmitter(), {
+        cleanup: mock(() => Promise.resolve()),
+        getSettledShownThroughOffset,
+      }) as unknown as BackgroundProcessManager & EventEmitter;
+      const workspaceService = createWorkspaceServiceForTest({
+        config,
+        backgroundProcessManager,
+        aiService: createMockAIService({ isStreaming: mock(() => false) }),
+      });
+      const sendSpy = spyOn(workspaceService, "sendMessage").mockImplementation(
+        async (...args: Parameters<WorkspaceService["sendMessage"]>) => {
+          await args[3]?.onAccepted?.();
+          return Ok(undefined);
+        }
+      );
+
+      backgroundProcessManager.emit("monitor:match", workspaceId, {
+        processId: "proc-1",
+        taskId: "bash:proc-1",
+        workspaceId,
+        filter: "ALL DONE|FAIL",
+        filterExclude: false,
+        lines: ["ALL DONE exit=0"],
+        totalMatches: 1,
+        timestamp: Date.now(),
+        matchedThroughOffset: 100,
+      });
+
+      const wakeStore = (
+        workspaceService as unknown as {
+          bashMonitorWakeStore: { listPending: (id: string) => Promise<unknown[]> };
+        }
+      ).bashMonitorWakeStore;
+      // Positive signal that the drain reached the gate (without the gate this is never called, so
+      // this wait times out and the test fails -- proving the assertion below is not vacuous).
+      await waitForCondition(() => getSettledShownThroughOffset.mock.calls.length >= 1);
+      // The gate supersedes the record (no longer pending) without ever building a wake message.
+      await waitForCondition(async () => (await wakeStore.listPending(workspaceId)).length === 0);
+      expect(sendSpy).not.toHaveBeenCalled();
+    } finally {
+      await cleanup();
+    }
+  });
+
+  test("delivers a monitor wake when the matched output has not yet been shown", async () => {
+    const { config, cleanup } = await createTestHistoryService();
+    try {
+      const workspaceId = "bash-monitor-unshown-owner";
+      const projectPath = path.join(config.rootDir, "project");
+      await config.addWorkspace(projectPath, {
+        id: workspaceId,
+        name: workspaceId,
+        projectName: "project",
+        projectPath,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        runtimeConfig: { type: "local" },
+      });
+
+      // Shown-frontier sits behind the match: the agent has not seen this output, so deliver.
+      const backgroundProcessManager = Object.assign(new EventEmitter(), {
+        cleanup: mock(() => Promise.resolve()),
+        getSettledShownThroughOffset: mock(() => Promise.resolve(40)),
+      }) as unknown as BackgroundProcessManager & EventEmitter;
+      const workspaceService = createWorkspaceServiceForTest({
+        config,
+        backgroundProcessManager,
+        aiService: createMockAIService({ isStreaming: mock(() => false) }),
+      });
+      const sendSpy = spyOn(workspaceService, "sendMessage").mockImplementation(
+        async (...args: Parameters<WorkspaceService["sendMessage"]>) => {
+          await args[3]?.onAccepted?.();
+          return Ok(undefined);
+        }
+      );
+
+      backgroundProcessManager.emit("monitor:match", workspaceId, {
+        processId: "proc-1",
+        taskId: "bash:proc-1",
+        workspaceId,
+        filter: "FAILED",
+        filterExclude: false,
+        lines: ["FAILED one"],
+        totalMatches: 1,
+        timestamp: Date.now(),
+        matchedThroughOffset: 100,
+      });
+
+      await waitForCondition(() => sendSpy.mock.calls.length === 1);
+      expect(sendSpy.mock.calls[0][1]).toContain("FAILED one");
+    } finally {
+      await cleanup();
+    }
+  });
+
+  test("delivers the wake when the manager cannot report a shown-frontier (fail open)", async () => {
+    const { config, cleanup } = await createTestHistoryService();
+    try {
+      const workspaceId = "bash-monitor-failopen-owner";
+      const projectPath = path.join(config.rootDir, "project");
+      await config.addWorkspace(projectPath, {
+        id: workspaceId,
+        name: workspaceId,
+        projectName: "project",
+        projectPath,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        runtimeConfig: { type: "local" },
+      });
+
+      // Partial manager stub without getSettledShownThroughOffset (older manager / narrow stub).
+      // Even with a matchedThroughOffset present, the gate must fail open and deliver rather than
+      // silently drop the wake.
+      const backgroundProcessManager = Object.assign(new EventEmitter(), {
+        cleanup: mock(() => Promise.resolve()),
+      }) as unknown as BackgroundProcessManager & EventEmitter;
+      const workspaceService = createWorkspaceServiceForTest({
+        config,
+        backgroundProcessManager,
+        aiService: createMockAIService({ isStreaming: mock(() => false) }),
+      });
+      const sendSpy = spyOn(workspaceService, "sendMessage").mockImplementation(
+        async (...args: Parameters<WorkspaceService["sendMessage"]>) => {
+          await args[3]?.onAccepted?.();
+          return Ok(undefined);
+        }
+      );
+
+      backgroundProcessManager.emit("monitor:match", workspaceId, {
+        processId: "proc-1",
+        taskId: "bash:proc-1",
+        workspaceId,
+        filter: "FAILED",
+        filterExclude: false,
+        lines: ["FAILED one"],
+        totalMatches: 1,
+        timestamp: Date.now(),
+        matchedThroughOffset: 100,
+      });
+
+      await waitForCondition(() => sendSpy.mock.calls.length === 1);
+      expect(sendSpy.mock.calls[0][1]).toContain("FAILED one");
+    } finally {
+      await cleanup();
+    }
+  });
+
+  test("supersedes only the shown records in a mixed pending batch", async () => {
+    const { config, cleanup } = await createTestHistoryService();
+    try {
+      const workspaceId = "bash-monitor-mixed-owner";
+      const projectPath = path.join(config.rootDir, "project");
+      await config.addWorkspace(projectPath, {
+        id: workspaceId,
+        name: workspaceId,
+        projectName: "project",
+        projectPath,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        runtimeConfig: { type: "local" },
+      });
+
+      // Two undelivered match wakes for different processes: one already shown to the agent, one not.
+      // Seed them on disk before the service boots so its startup recovery drains both in one pass.
+      const seedWakeStore = new BashMonitorWakeStore(config);
+      await seedWakeStore.enqueueOrMergePending({
+        processId: "proc-shown",
+        taskId: "bash:proc-shown",
+        workspaceId,
+        filter: "DONE",
+        filterExclude: false,
+        lines: ["SHOWN-ALREADY done"],
+        totalMatches: 1,
+        timestamp: Date.now(),
+        matchedThroughOffset: 50,
+      });
+      await seedWakeStore.enqueueOrMergePending({
+        processId: "proc-unshown",
+        taskId: "bash:proc-unshown",
+        workspaceId,
+        filter: "DONE",
+        filterExclude: false,
+        lines: ["UNSHOWN done"],
+        totalMatches: 1,
+        timestamp: Date.now(),
+        matchedThroughOffset: 100,
+      });
+
+      const backgroundProcessManager = Object.assign(new EventEmitter(), {
+        cleanup: mock(() => Promise.resolve()),
+        // proc-shown: frontier past its match (superseded). proc-unshown: frontier behind (delivered).
+        getSettledShownThroughOffset: mock((processId: string) =>
+          Promise.resolve(processId === "proc-shown" ? 100 : 10)
+        ),
+      }) as unknown as BackgroundProcessManager & EventEmitter;
+      const workspaceService = createWorkspaceServiceForTest({
+        config,
+        backgroundProcessManager,
+        aiService: createMockAIService({ isStreaming: mock(() => false) }),
+      });
+      const sendSpy = spyOn(workspaceService, "sendMessage").mockImplementation(
+        async (...args: Parameters<WorkspaceService["sendMessage"]>) => {
+          await args[3]?.onAccepted?.();
+          return Ok(undefined);
+        }
+      );
+
+      // Startup recovery schedules a single drain for the owner's pending records.
+      await waitForCondition(() => sendSpy.mock.calls.length === 1);
+      const prompt = sendSpy.mock.calls[0][1];
+      expect(prompt).toContain("UNSHOWN done");
+      expect(prompt).not.toContain("SHOWN-ALREADY done");
+      // Only the unshown record survives into the delivered batch.
+      expect(sendSpy.mock.calls[0][2]).toMatchObject({
+        muxMetadata: {
+          type: "bash-monitor-wake",
+          records: [{ kind: "match", displayName: "proc-unshown", filter: "DONE" }],
+        },
+      });
+
+      const wakeStore = (
+        workspaceService as unknown as {
+          bashMonitorWakeStore: { listPending: (id: string) => Promise<unknown[]> };
+        }
+      ).bashMonitorWakeStore;
+      // proc-shown superseded, proc-unshown delivered -> nothing left pending.
+      await waitForCondition(async () => (await wakeStore.listPending(workspaceId)).length === 0);
+    } finally {
+      await cleanup();
+    }
+  });
+
+  test("delivers a stale-instance wake even after a reused process ID was read past the match", async () => {
+    const { config, cleanup } = await createTestHistoryService();
+    try {
+      const workspaceId = "bash-monitor-reused-id-owner";
+      const projectPath = path.join(config.rootDir, "project");
+      await config.addWorkspace(projectPath, {
+        id: workspaceId,
+        name: workspaceId,
+        projectName: "project",
+        projectPath,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        runtimeConfig: { type: "local" },
+      });
+
+      // A wake from a dead instance is still pending. Its process ID was reclaimed by a newer live
+      // instance that has since been read past the match. The gate binds its shown-frontier query
+      // to the record's createdAt (the origin instance started before it), so the manager reports
+      // it cannot vouch (undefined) for a live process that started later -- the wake fails open and
+      // delivers rather than being superseded against the unrelated instance's frontier.
+      const getSettledShownThroughOffset = mock((_processId: string, _originNotAfterMs?: number) =>
+        Promise.resolve<number | undefined>(undefined)
+      );
+      const backgroundProcessManager = Object.assign(new EventEmitter(), {
+        cleanup: mock(() => Promise.resolve()),
+        getSettledShownThroughOffset,
+      }) as unknown as BackgroundProcessManager & EventEmitter;
+      const workspaceService = createWorkspaceServiceForTest({
+        config,
+        backgroundProcessManager,
+        aiService: createMockAIService({ isStreaming: mock(() => false) }),
+      });
+      const sendSpy = spyOn(workspaceService, "sendMessage").mockImplementation(
+        async (...args: Parameters<WorkspaceService["sendMessage"]>) => {
+          await args[3]?.onAccepted?.();
+          return Ok(undefined);
+        }
+      );
+
+      const beforeEnqueue = Date.now();
+      backgroundProcessManager.emit("monitor:match", workspaceId, {
+        processId: "proc-reused",
+        taskId: "bash:proc-reused",
+        workspaceId,
+        filter: "FAILED",
+        filterExclude: false,
+        lines: ["FAILED stale"],
+        totalMatches: 1,
+        timestamp: Date.now(),
+        matchedThroughOffset: 100,
+      });
+
+      await waitForCondition(() => sendSpy.mock.calls.length === 1);
+      const afterDelivery = Date.now();
+      expect(sendSpy.mock.calls[0][1]).toContain("FAILED stale");
+      // The gate binds the query to the record's createdAt (a wall-clock ms stamped at enqueue),
+      // not a persisted instance token -- so the forwarded origin bound falls in the enqueue window.
+      const forwardedOrigin = getSettledShownThroughOffset.mock.calls[0][1];
+      expect(typeof forwardedOrigin).toBe("number");
+      expect(forwardedOrigin).toBeGreaterThanOrEqual(beforeEnqueue);
+      expect(forwardedOrigin).toBeLessThanOrEqual(afterDelivery);
     } finally {
       await cleanup();
     }
@@ -3007,6 +3959,8 @@ describe("WorkspaceService sendMessage status clearing", () => {
   let cleanupHistory: () => Promise<void>;
   let fakeSession: {
     isBusy: ReturnType<typeof mock>;
+    hasQueuedMessages: ReturnType<typeof mock>;
+    dropQueuedMessageWithOnlyDedupeKey: ReturnType<typeof mock>;
     queueMessage: ReturnType<typeof mock>;
     sendMessage: ReturnType<typeof mock>;
     resumeStream: ReturnType<typeof mock>;
@@ -3077,6 +4031,8 @@ describe("WorkspaceService sendMessage status clearing", () => {
 
     fakeSession = {
       isBusy: mock(() => true),
+      hasQueuedMessages: mock(() => false),
+      dropQueuedMessageWithOnlyDedupeKey: mock(() => false),
       queueMessage: mock(() => "tool-end" as const),
       sendMessage: mock(() => Promise.resolve(Ok(undefined))),
       resumeStream: mock(() => Promise.resolve(Ok({ started: true }))),
@@ -3361,6 +4317,143 @@ describe("WorkspaceService sendMessage status clearing", () => {
     expect(result.success).toBe(true);
     expect(fakeSession.queueMessage).toHaveBeenCalled();
     expect(resetAutoResumeCount).not.toHaveBeenCalled();
+  });
+
+  test("synthetic queued sends leave a pending interactive question intact", async () => {
+    fakeSession.isBusy.mockReturnValue(true);
+
+    const questionPromise = askUserQuestionManager.registerPending("test-workspace", "tool-q1", [
+      {
+        question: "Proceed?",
+        header: "Next",
+        options: [
+          { label: "Yes", description: "Continue" },
+          { label: "No", description: "Stop" },
+        ],
+        multiSelect: false,
+      },
+    ]);
+    // Attach handler before cleanup cancel so Bun does not flag an unhandled rejection.
+    const settled = questionPromise.catch((error: unknown) => error);
+
+    try {
+      const result = await workspaceService.sendMessage(
+        "test-workspace",
+        "[Heartbeat] scheduled check-in",
+        { model: "openai:gpt-4o-mini", agentId: "exec", queueDispatchMode: "turn-end" },
+        { synthetic: true, skipAutoResumeReset: true }
+      );
+
+      expect(result.success).toBe(true);
+      expect(fakeSession.queueMessage).toHaveBeenCalled();
+      // A backend-initiated maintenance send is not a user response: the prompt survives.
+      expect(askUserQuestionManager.getLatestPending("test-workspace")?.toolCallId).toBe("tool-q1");
+    } finally {
+      askUserQuestionManager.cancel("test-workspace", "tool-q1", "test cleanup");
+      await settled;
+    }
+  });
+
+  // The heartbeat caller's queue-emptiness check happens before sendMessage's internal
+  // awaits (pricing gate, settings persistence), so a user send can queue in that window.
+  // yieldToQueuedMessages re-checks at the enqueue point: queued messages own the slot.
+  test("yieldToQueuedMessages drops the send when messages queued during preparation", async () => {
+    fakeSession.isBusy.mockReturnValue(true);
+    fakeSession.hasQueuedMessages.mockReturnValue(true);
+
+    const result = await workspaceService.sendMessage(
+      "test-workspace",
+      "[Heartbeat] scheduled check-in",
+      { model: "openai:gpt-4o-mini", agentId: "exec", queueDispatchMode: "turn-end" },
+      { synthetic: true, skipAutoResumeReset: true, yieldToQueuedMessages: true }
+    );
+
+    // Quiet success: the slot is consumed, but nothing is enqueued over the user's message.
+    expect(result.success).toBe(true);
+    expect(fakeSession.queueMessage).not.toHaveBeenCalled();
+  });
+
+  // The reverse race: a heartbeat queued first must not absorb a later real message —
+  // MessageQueue batches texts under the first entry's muxMetadata, so input queued behind
+  // a heartbeat would dispatch tagged as a heartbeat. New input supersedes the heartbeat.
+  test("queued sends supersede a pending queued heartbeat before enqueueing", async () => {
+    fakeSession.isBusy.mockReturnValue(true);
+    fakeSession.dropQueuedMessageWithOnlyDedupeKey.mockReturnValue(true);
+
+    const result = await workspaceService.sendMessage("test-workspace", "real user input", {
+      model: "openai:gpt-4o-mini",
+      agentId: "exec",
+    });
+
+    expect(result.success).toBe(true);
+    expect(fakeSession.dropQueuedMessageWithOnlyDedupeKey).toHaveBeenCalledWith(
+      "heartbeat-request"
+    );
+    // The user message still queues normally after the heartbeat is dropped.
+    expect(fakeSession.queueMessage).toHaveBeenCalled();
+  });
+
+  test("a queued heartbeat send does not supersede itself", async () => {
+    fakeSession.isBusy.mockReturnValue(true);
+
+    const result = await workspaceService.sendMessage(
+      "test-workspace",
+      "[Heartbeat] scheduled check-in",
+      { model: "openai:gpt-4o-mini", agentId: "exec", queueDispatchMode: "turn-end" },
+      {
+        synthetic: true,
+        skipAutoResumeReset: true,
+        queueDedupeKey: "heartbeat-request",
+        yieldToQueuedMessages: true,
+      }
+    );
+
+    expect(result.success).toBe(true);
+    expect(fakeSession.dropQueuedMessageWithOnlyDedupeKey).not.toHaveBeenCalled();
+  });
+
+  test("yieldToQueuedMessages still queues into an empty queue", async () => {
+    fakeSession.isBusy.mockReturnValue(true);
+    fakeSession.hasQueuedMessages.mockReturnValue(false);
+
+    const result = await workspaceService.sendMessage(
+      "test-workspace",
+      "[Heartbeat] scheduled check-in",
+      { model: "openai:gpt-4o-mini", agentId: "exec", queueDispatchMode: "turn-end" },
+      { synthetic: true, skipAutoResumeReset: true, yieldToQueuedMessages: true }
+    );
+
+    expect(result.success).toBe(true);
+    expect(fakeSession.queueMessage).toHaveBeenCalled();
+  });
+
+  test("non-synthetic queued sends cancel a pending interactive question", async () => {
+    fakeSession.isBusy.mockReturnValue(true);
+
+    const questionPromise = askUserQuestionManager.registerPending("test-workspace", "tool-q1", [
+      {
+        question: "Proceed?",
+        header: "Next",
+        options: [
+          { label: "Yes", description: "Continue" },
+          { label: "No", description: "Stop" },
+        ],
+        multiSelect: false,
+      },
+    ]);
+    // Attach handler before the send cancels the question, avoiding an unhandled rejection.
+    const settled = questionPromise.catch((error: unknown) => error);
+
+    const result = await workspaceService.sendMessage("test-workspace", "hello", {
+      model: "openai:gpt-4o-mini",
+      agentId: "exec",
+    });
+
+    expect(result.success).toBe(true);
+    expect(fakeSession.queueMessage).toHaveBeenCalled();
+    // A real user message supersedes the question: it is canceled before queueing.
+    expect(askUserQuestionManager.getLatestPending("test-workspace")).toBeNull();
+    expect(await settled).toBeInstanceOf(Error);
   });
 
   test("backgrounds foreground task waits when queuing a tool-end message", async () => {
@@ -6910,6 +8003,397 @@ describe("WorkspaceService metadata listeners", () => {
     } finally {
       readTodosSpy.mockRestore();
     }
+  });
+});
+
+describe("WorkspaceService setPinned", () => {
+  const projectPath = "/tmp/project";
+  const rootId = "ws-root";
+  const otherRootId = "ws-other";
+  const childId = "ws-child";
+  const archivedId = "ws-archived";
+
+  let workspaceService: WorkspaceService;
+  let configState: ProjectsConfig;
+  let historyService: HistoryService;
+  let cleanupHistory: () => Promise<void>;
+  let emittedMetadata: Array<{ workspaceId: string; metadata: FrontendWorkspaceMetadata | null }>;
+
+  const getEntry = (id: string) =>
+    configState.projects.get(projectPath)?.workspaces.find((w) => w.id === id);
+
+  beforeEach(async () => {
+    configState = {
+      projects: new Map([
+        [
+          projectPath,
+          {
+            workspaces: [
+              { path: `${projectPath}/${rootId}`, id: rootId },
+              { path: `${projectPath}/${otherRootId}`, id: otherRootId },
+              {
+                path: `${projectPath}/${childId}`,
+                id: childId,
+                parentWorkspaceId: rootId,
+              },
+              {
+                path: `${projectPath}/${archivedId}`,
+                id: archivedId,
+                archivedAt: "2026-01-01T00:00:00.000Z",
+              },
+            ],
+          },
+        ],
+      ]),
+    };
+
+    ({ historyService, cleanup: cleanupHistory } = await createTestHistoryService());
+
+    const mockConfig: Partial<Config> = {
+      srcDir: "/tmp/src",
+      getSessionDir: mock(() => "/tmp/test/sessions"),
+      findWorkspace: mock((id: string) => {
+        const entry = getEntry(id);
+        if (!entry) return null;
+        return {
+          projectPath,
+          workspacePath: entry.path,
+          parentWorkspaceId: entry.parentWorkspaceId,
+        };
+      }),
+      editConfig: mock((fn: (config: ProjectsConfig) => ProjectsConfig) => {
+        configState = fn(configState);
+        return Promise.resolve();
+      }),
+      // Project config entries back into metadata so emitted events carry pin state.
+      getAllWorkspaceMetadata: mock(() =>
+        Promise.resolve(
+          (configState.projects.get(projectPath)?.workspaces ?? [])
+            .filter((w): w is typeof w & { id: string } => w.id != null)
+            .map(
+              (w): FrontendWorkspaceMetadata => ({
+                id: w.id,
+                name: w.id,
+                projectName: "proj",
+                projectPath,
+                namedWorkspacePath: w.path,
+                runtimeConfig: { type: "local", srcBaseDir: "/tmp" },
+                parentWorkspaceId: w.parentWorkspaceId,
+                archivedAt: w.archivedAt,
+                unarchivedAt: w.unarchivedAt,
+                pinnedAt: w.pinnedAt,
+              })
+            )
+        )
+      ),
+      loadConfigOrDefault: mock(() => configState),
+    };
+
+    workspaceService = createWorkspaceServiceForTest({
+      config: mockConfig,
+      historyService,
+    });
+
+    emittedMetadata = [];
+    workspaceService.on("metadata", (payload) => {
+      emittedMetadata.push(payload as (typeof emittedMetadata)[number]);
+    });
+  });
+
+  afterEach(async () => {
+    await cleanupHistory();
+  });
+
+  test("pin persists pinnedAt and emits metadata; unpin clears it and emits", async () => {
+    const pinResult = await workspaceService.setPinned(rootId, true);
+    expect(pinResult.success).toBe(true);
+
+    const pinnedAt = getEntry(rootId)?.pinnedAt;
+    expect(pinnedAt).toBeDefined();
+    expect(emittedMetadata).toHaveLength(1);
+    expect(emittedMetadata[0].workspaceId).toBe(rootId);
+    expect(emittedMetadata[0].metadata?.pinnedAt).toBe(pinnedAt);
+
+    const unpinResult = await workspaceService.setPinned(rootId, false);
+    expect(unpinResult.success).toBe(true);
+    expect(getEntry(rootId)?.pinnedAt).toBeUndefined();
+    expect(emittedMetadata).toHaveLength(2);
+    expect(emittedMetadata[1].metadata?.pinnedAt).toBeUndefined();
+  });
+
+  test("pin-when-pinned and unpin-when-unpinned are no-ops without event churn", async () => {
+    const first = await workspaceService.setPinned(rootId, true);
+    expect(first.success).toBe(true);
+    const firstPinnedAt = getEntry(rootId)?.pinnedAt;
+    expect(emittedMetadata).toHaveLength(1);
+
+    // Concurrent double-pin from another client must not move the row.
+    const again = await workspaceService.setPinned(rootId, true);
+    expect(again.success).toBe(true);
+    expect(getEntry(rootId)?.pinnedAt).toBe(firstPinnedAt);
+    expect(emittedMetadata).toHaveLength(1);
+
+    // Unpinning a chat that is not pinned is also a quiet no-op.
+    const noopUnpin = await workspaceService.setPinned(otherRootId, false);
+    expect(noopUnpin.success).toBe(true);
+    expect(emittedMetadata).toHaveLength(1);
+  });
+
+  test("rejects pinning sub-agent and archived workspaces", async () => {
+    const subAgentResult = await workspaceService.setPinned(childId, true);
+    expect(subAgentResult.success).toBe(false);
+    expect(getEntry(childId)?.pinnedAt).toBeUndefined();
+
+    const archivedResult = await workspaceService.setPinned(archivedId, true);
+    expect(archivedResult.success).toBe(false);
+    expect(getEntry(archivedId)?.pinnedAt).toBeUndefined();
+
+    expect(emittedMetadata).toHaveLength(0);
+  });
+
+  test("pinning after an existing pin yields a strictly greater pinnedAt", async () => {
+    expect((await workspaceService.setPinned(otherRootId, true)).success).toBe(true);
+    expect((await workspaceService.setPinned(rootId, true)).success).toBe(true);
+
+    const firstMs = Date.parse(getEntry(otherRootId)?.pinnedAt ?? "");
+    const secondMs = Date.parse(getEntry(rootId)?.pinnedAt ?? "");
+    expect(secondMs).toBeGreaterThan(firstMs);
+  });
+
+  test("appends after an existing future pinnedAt (clock skew)", async () => {
+    const future = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    getEntry(otherRootId)!.pinnedAt = future;
+
+    expect((await workspaceService.setPinned(rootId, true)).success).toBe(true);
+    expect(Date.parse(getEntry(rootId)?.pinnedAt ?? "")).toBeGreaterThan(Date.parse(future));
+  });
+
+  test("archive clears pinnedAt and unarchive does not restore it", async () => {
+    expect((await workspaceService.setPinned(rootId, true)).success).toBe(true);
+    expect(getEntry(rootId)?.pinnedAt).toBeDefined();
+
+    const archiveResult = await workspaceService.archive(rootId);
+    expect(archiveResult.success).toBe(true);
+    expect(getEntry(rootId)?.pinnedAt).toBeUndefined();
+
+    const unarchiveResult = await workspaceService.unarchive(rootId);
+    expect(unarchiveResult.success).toBe(true);
+    expect(getEntry(rootId)?.pinnedAt).toBeUndefined();
+
+    // Re-pinning after unarchive works (pin state starts fresh).
+    expect((await workspaceService.setPinned(rootId, true)).success).toBe(true);
+    expect(getEntry(rootId)?.pinnedAt).toBeDefined();
+  });
+});
+
+describe("WorkspaceService reorderPinned", () => {
+  const projectPath = "/tmp/project";
+  const idA = "ws-a";
+  const idB = "ws-b";
+  const idC = "ws-c";
+  const unpinnedId = "ws-unpinned";
+  const childId = "ws-child";
+  const archivedId = "ws-archived";
+
+  let workspaceService: WorkspaceService;
+  let configState: ProjectsConfig;
+  let historyService: HistoryService;
+  let cleanupHistory: () => Promise<void>;
+  let emittedMetadata: Array<{ workspaceId: string; metadata: FrontendWorkspaceMetadata | null }>;
+
+  const getEntry = (id: string) =>
+    configState.projects.get(projectPath)?.workspaces.find((w) => w.id === id);
+
+  /** Pinned ids in effective order (pinnedAt asc), as the sidebar sorts them. */
+  const pinnedOrder = () =>
+    (configState.projects.get(projectPath)?.workspaces ?? [])
+      .filter((w) => w.id && w.pinnedAt && !w.parentWorkspaceId && !w.archivedAt)
+      .sort((a, b) => Date.parse(a.pinnedAt ?? "") - Date.parse(b.pinnedAt ?? ""))
+      .map((w) => w.id);
+
+  beforeEach(async () => {
+    configState = {
+      projects: new Map([
+        [
+          projectPath,
+          {
+            workspaces: [
+              // Pinned block in order A, B, C (pinnedAt ascending).
+              {
+                path: `${projectPath}/${idA}`,
+                id: idA,
+                pinnedAt: "2026-01-01T00:00:00.000Z",
+              },
+              {
+                path: `${projectPath}/${idB}`,
+                id: idB,
+                pinnedAt: "2026-01-01T00:00:10.000Z",
+              },
+              {
+                path: `${projectPath}/${idC}`,
+                id: idC,
+                pinnedAt: "2026-01-01T00:00:20.000Z",
+              },
+              { path: `${projectPath}/${unpinnedId}`, id: unpinnedId },
+              {
+                path: `${projectPath}/${childId}`,
+                id: childId,
+                parentWorkspaceId: idA,
+              },
+              {
+                path: `${projectPath}/${archivedId}`,
+                id: archivedId,
+                archivedAt: "2026-01-01T00:00:00.000Z",
+              },
+            ],
+          },
+        ],
+      ]),
+    };
+
+    ({ historyService, cleanup: cleanupHistory } = await createTestHistoryService());
+
+    const mockConfig: Partial<Config> = {
+      srcDir: "/tmp/src",
+      getSessionDir: mock(() => "/tmp/test/sessions"),
+      findWorkspace: mock((id: string) => {
+        const entry = getEntry(id);
+        if (!entry) return null;
+        return {
+          projectPath,
+          workspacePath: entry.path,
+          parentWorkspaceId: entry.parentWorkspaceId,
+        };
+      }),
+      editConfig: mock((fn: (config: ProjectsConfig) => ProjectsConfig) => {
+        configState = fn(configState);
+        return Promise.resolve();
+      }),
+      getAllWorkspaceMetadata: mock(() =>
+        Promise.resolve(
+          (configState.projects.get(projectPath)?.workspaces ?? [])
+            .filter((w): w is typeof w & { id: string } => w.id != null)
+            .map(
+              (w): FrontendWorkspaceMetadata => ({
+                id: w.id,
+                name: w.id,
+                projectName: "proj",
+                projectPath,
+                namedWorkspacePath: w.path,
+                runtimeConfig: { type: "local", srcBaseDir: "/tmp" },
+                parentWorkspaceId: w.parentWorkspaceId,
+                archivedAt: w.archivedAt,
+                unarchivedAt: w.unarchivedAt,
+                pinnedAt: w.pinnedAt,
+              })
+            )
+        )
+      ),
+      loadConfigOrDefault: mock(() => configState),
+    };
+
+    workspaceService = createWorkspaceServiceForTest({
+      config: mockConfig,
+      historyService,
+    });
+
+    emittedMetadata = [];
+    workspaceService.on("metadata", (payload) => {
+      emittedMetadata.push(payload as (typeof emittedMetadata)[number]);
+    });
+  });
+
+  afterEach(async () => {
+    await cleanupHistory();
+  });
+
+  test("persists the new order and emits metadata only for displaced rows", async () => {
+    // Move C to the front: every rank shifts, so all three rows change.
+    const result = await workspaceService.reorderPinned([idC, idA, idB]);
+    expect(result.success).toBe(true);
+    expect(pinnedOrder()).toEqual([idC, idA, idB]);
+    expect(emittedMetadata.map((e) => e.workspaceId).sort()).toEqual([idA, idB, idC].sort());
+    // Emitted metadata carries the rewritten pinnedAt values.
+    for (const event of emittedMetadata) {
+      expect(event.metadata?.pinnedAt).toBe(getEntry(event.workspaceId)?.pinnedAt);
+    }
+  });
+
+  test("swapping only a suffix leaves preceding pins untouched", async () => {
+    const pinnedAtA = getEntry(idA)?.pinnedAt;
+    const result = await workspaceService.reorderPinned([idA, idC, idB]);
+    expect(result.success).toBe(true);
+    expect(pinnedOrder()).toEqual([idA, idC, idB]);
+    // A kept its rank, so its timestamp is untouched and no event is emitted for it.
+    expect(getEntry(idA)?.pinnedAt).toBe(pinnedAtA);
+    expect(emittedMetadata.map((e) => e.workspaceId).sort()).toEqual([idB, idC].sort());
+  });
+
+  test("no-op order emits nothing and rewrites nothing", async () => {
+    const before = [getEntry(idA)?.pinnedAt, getEntry(idB)?.pinnedAt, getEntry(idC)?.pinnedAt];
+    const result = await workspaceService.reorderPinned([idA, idB, idC]);
+    expect(result.success).toBe(true);
+    expect([getEntry(idA)?.pinnedAt, getEntry(idB)?.pinnedAt, getEntry(idC)?.pinnedAt]).toEqual(
+      before
+    );
+    expect(emittedMetadata).toHaveLength(0);
+  });
+
+  test("drops stale/unpinned/duplicate ids and appends omitted pins in current order", async () => {
+    // Client sends duplicates, an unpinned id, a sub-agent, an archived chat,
+    // and a ghost id, and omits B and C entirely.
+    const result = await workspaceService.reorderPinned([
+      idC,
+      idC,
+      unpinnedId,
+      childId,
+      archivedId,
+      "ws-ghost",
+    ]);
+    expect(result.success).toBe(true);
+    // C first, then omitted pins A, B keep their relative order.
+    expect(pinnedOrder()).toEqual([idC, idA, idB]);
+    // Ineligible ids never gain pinnedAt.
+    expect(getEntry(unpinnedId)?.pinnedAt).toBeUndefined();
+    expect(getEntry(childId)?.pinnedAt).toBeUndefined();
+    expect(getEntry(archivedId)?.pinnedAt).toBeUndefined();
+  });
+
+  test("reorder preserves the timestamp pool so setPinned still appends at the bottom", async () => {
+    const maxBefore = Math.max(
+      ...[idA, idB, idC].map((id) => Date.parse(getEntry(id)?.pinnedAt ?? ""))
+    );
+    expect((await workspaceService.reorderPinned([idC, idB, idA])).success).toBe(true);
+    const maxAfter = Math.max(
+      ...[idA, idB, idC].map((id) => Date.parse(getEntry(id)?.pinnedAt ?? ""))
+    );
+    // Re-dealing the pool must not inflate the max timestamp.
+    expect(maxAfter).toBe(maxBefore);
+
+    expect((await workspaceService.setPinned(unpinnedId, true)).success).toBe(true);
+    expect(pinnedOrder()).toEqual([idC, idB, idA, unpinnedId]);
+  });
+
+  test("returns Ok no-op when no id resolves to a workspace", async () => {
+    const result = await workspaceService.reorderPinned(["ws-ghost-1", "ws-ghost-2"]);
+    expect(result.success).toBe(true);
+    expect(pinnedOrder()).toEqual([idA, idB, idC]);
+    expect(emittedMetadata).toHaveLength(0);
+  });
+
+  test("identical pinnedAt values (client races) still reorder deterministically", async () => {
+    const same = "2026-01-01T00:00:00.000Z";
+    getEntry(idA)!.pinnedAt = same;
+    getEntry(idB)!.pinnedAt = same;
+    getEntry(idC)!.pinnedAt = same;
+
+    const result = await workspaceService.reorderPinned([idB, idC, idA]);
+    expect(result.success).toBe(true);
+    expect(pinnedOrder()).toEqual([idB, idC, idA]);
+    // Strictly monotonic after the re-deal.
+    const values = [idB, idC, idA].map((id) => Date.parse(getEntry(id)?.pinnedAt ?? ""));
+    expect(values[0]).toBeLessThan(values[1]);
+    expect(values[1]).toBeLessThan(values[2]);
   });
 });
 
@@ -10618,6 +12102,43 @@ describe("WorkspaceService.getGoalContinuationRuntimeState", () => {
       expect(result).toEqual({
         model: "anthropic:claude-sonnet-4-6",
         agentId: "review",
+        thinkingLevel: "off",
+      });
+    });
+
+    test("carries the persisted thinking level with the winning model candidate", async () => {
+      const projectPath = "/tmp/proj";
+      const workspaceId = "ws-thinking";
+      const projects = new Map([
+        [
+          projectPath,
+          {
+            workspaces: [
+              {
+                id: workspaceId,
+                path: "/tmp/proj/ws",
+                aiSettingsByAgent: {
+                  exec: { model: "anthropic:claude-fable-5", thinkingLevel: "medium" as const },
+                },
+              },
+            ],
+          },
+        ],
+      ]);
+      const service = await makeServiceWithConfig({
+        findWorkspace: mock(() => ({ projectPath, workspacePath: "/tmp/proj/ws" })),
+        loadConfigOrDefault: mock(() => ({ projects })),
+      });
+
+      const result = service.getGoalContinuationKickoffSendOptions(workspaceId);
+
+      // Regression: continuations previously dropped the persisted thinking
+      // level, streaming with an implicit "off" that Fable/Mythos-class
+      // Anthropic models reject ("thinking.type.disabled" unsupported).
+      expect(result).toEqual({
+        model: "anthropic:claude-fable-5",
+        agentId: "exec",
+        thinkingLevel: "medium",
       });
     });
 
@@ -10652,6 +12173,7 @@ describe("WorkspaceService.getGoalContinuationRuntimeState", () => {
       expect(result).toEqual({
         model: "openai:gpt-4o",
         agentId: "exec",
+        thinkingLevel: "off",
       });
     });
 

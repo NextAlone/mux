@@ -40,7 +40,7 @@ async function saveRoutePriority(
   routePriority: string[],
   overrides: Record<string, unknown> = {}
 ): Promise<void> {
-  await config.saveConfig({ ...config.loadConfigOrDefault(), ...overrides, routePriority });
+  await config.editConfig(() => ({ ...config.loadConfigOrDefault(), ...overrides, routePriority }));
 }
 
 function saveMuxGatewayConfig(config: Config): void {
@@ -928,10 +928,10 @@ describe("ProviderService custom provider mutations", () => {
           baseUrl: LOCAL_VLLM_BASE_URL,
         },
       });
-      await config.saveConfig({
+      await config.editConfig(() => ({
         ...config.loadConfigOrDefault(),
         defaultModel: "openai:gpt-4.1",
-      });
+      }));
 
       const result = await service.removeCustomProvider("openai");
 
@@ -999,10 +999,10 @@ describe("ProviderService custom provider mutations", () => {
       config.saveProvidersConfig({
         "local-vllm": localVllmConfig(),
       });
-      await config.saveConfig({
+      await config.editConfig(() => ({
         ...config.loadConfigOrDefault(),
         defaultModel: "local-vllm:qwen3-coder",
-      });
+      }));
       const saveProvidersConfigSpy = spyOn(config, "saveProvidersConfig");
       saveProvidersConfigSpy.mockImplementationOnce(() => {
         throw new Error("disk is read-only");
@@ -1025,10 +1025,10 @@ describe("ProviderService custom provider mutations", () => {
       config.saveProvidersConfig({
         "local-vllm": localVllmConfig(),
       });
-      await config.saveConfig({
+      await config.editConfig(() => ({
         ...config.loadConfigOrDefault(),
         defaultModel: "local-vllm:qwen3-coder",
-      });
+      }));
       let configChangedCount = 0;
       const unsubscribe = service.onConfigChanged(() => {
         configChangedCount += 1;

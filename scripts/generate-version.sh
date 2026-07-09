@@ -13,7 +13,11 @@ trap 'rm -f "$TMP_FILE"' EXIT
 
 export JJ_CONFIG_TOML=${JJ_CONFIG_TOML:-$'ui.paginate="never"\nui.color="never"'}
 
-GIT_COMMIT=$(jj log -r @- --no-graph -T 'commit_id.short()' 2>/dev/null || jj log -r @ --no-graph -T 'commit_id.short()' 2>/dev/null || echo "unknown")
+# MUX_GIT_COMMIT overrides the commit stamp (e.g. Nix builds where .git is
+# unavailable in the sandbox but the revision is known to the flake).
+# Namespaced deliberately: plain GIT_COMMIT is exported ambiently by some CI
+# systems (Jenkins) and could pair a stale commit with HEAD's describe.
+GIT_COMMIT="${MUX_GIT_COMMIT:-$(jj log -r @- --no-graph -T 'commit_id.short()' 2>/dev/null || jj log -r @ --no-graph -T 'commit_id.short()' 2>/dev/null || git rev-parse --short HEAD 2>/dev/null || echo "unknown")}"
 TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
 if [ -n "${RELEASE_TAG:-}" ]; then
