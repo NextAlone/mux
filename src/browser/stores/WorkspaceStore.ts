@@ -1025,7 +1025,15 @@ export class WorkspaceStore {
         (data.reviews?.length ?? 0) > 0;
       const queuedMessage: QueuedMessage | null = hasContent
         ? {
-            id: `queued-${workspaceId}`,
+            // Change identity whenever the visible queue projection changes so
+            // per-card actions (notably Send now) reset after a partial FIFO drain.
+            id: `queued-${workspaceId}-${JSON.stringify([
+              data.displayText,
+              data.fileParts?.map((part) => [part.mediaType, part.filename, part.url.length]) ?? [],
+              data.reviews?.map((review) => [review.filePath, review.lineRange]) ?? [],
+              data.queueDispatchMode,
+              data.hasCompactionRequest,
+            ])}`,
             content: data.displayText,
             fileParts: data.fileParts,
             reviews: data.reviews,
@@ -1036,7 +1044,7 @@ export class WorkspaceStore {
 
       // Mirror the queue signal onto active streams so response notifications follow
       // user-visible terminal turns instead of every intermediate handoff.
-      aggregator.setActiveQueuedFollowUp(queuedMessage !== null);
+      aggregator.setActiveQueuedFollowUp(data.hasQueuedMessages ?? queuedMessage !== null);
       this.assertChatTransientState(workspaceId).queuedMessage = queuedMessage;
       this.states.bump(workspaceId);
     },
@@ -1050,6 +1058,9 @@ export class WorkspaceStore {
           mode: "replace",
           fileParts: data.fileParts,
           reviews: data.reviews,
+          // Restore events can arrive for a background workspace; never let them
+          // overwrite the composer currently mounted for another workspace.
+          workspaceId: data.workspaceId,
         })
       );
     },

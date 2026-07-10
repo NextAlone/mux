@@ -372,6 +372,7 @@ function createWorkspaceServiceMocks(
     sendMessage: ReturnType<typeof mock>;
     resumeStream: ReturnType<typeof mock>;
     clearQueue: ReturnType<typeof mock>;
+    removeQueuedWorkspaceTurn: ReturnType<typeof mock>;
     hasQueuedWorkspaceTurn: ReturnType<typeof mock>;
     hasQueuedMessages: ReturnType<typeof mock>;
     isBusyForMessage: ReturnType<typeof mock>;
@@ -396,6 +397,7 @@ function createWorkspaceServiceMocks(
   sendMessage: ReturnType<typeof mock>;
   resumeStream: ReturnType<typeof mock>;
   clearQueue: ReturnType<typeof mock>;
+  removeQueuedWorkspaceTurn: ReturnType<typeof mock>;
   hasQueuedWorkspaceTurn: ReturnType<typeof mock>;
   hasQueuedMessages: ReturnType<typeof mock>;
   isBusyForMessage: ReturnType<typeof mock>;
@@ -421,6 +423,8 @@ function createWorkspaceServiceMocks(
     overrides?.resumeStream ??
     mock((): Promise<Result<{ started: boolean }>> => Promise.resolve(Ok({ started: true })));
   const clearQueue = overrides?.clearQueue ?? mock((): Result<void> => Ok(undefined));
+  const removeQueuedWorkspaceTurn =
+    overrides?.removeQueuedWorkspaceTurn ?? mock((): Result<boolean> => Ok(true));
   const hasQueuedWorkspaceTurn = overrides?.hasQueuedWorkspaceTurn ?? mock(() => false);
   const hasQueuedMessages = overrides?.hasQueuedMessages ?? mock(() => false);
   const isBusyForMessage = overrides?.isBusyForMessage ?? mock(() => false);
@@ -463,6 +467,7 @@ function createWorkspaceServiceMocks(
       sendMessage,
       resumeStream,
       clearQueue,
+      removeQueuedWorkspaceTurn,
       isBusyForMessage,
       hasQueuedWorkspaceTurn,
       hasQueuedMessages,
@@ -485,6 +490,7 @@ function createWorkspaceServiceMocks(
     sendMessage,
     resumeStream,
     clearQueue,
+    removeQueuedWorkspaceTurn,
     hasQueuedWorkspaceTurn,
     hasQueuedMessages,
     isBusyForMessage,
@@ -1566,9 +1572,11 @@ describe("TaskService", () => {
 
     const interrupted = await taskService.interruptWorkspaceTurn(parentId, "wst_secondhandle");
     expect(interrupted.success).toBe(true);
-    expect(workspaceMocks.clearQueue).toHaveBeenCalledWith("childworkspace", {
-      cancelReason: "Workspace turn interrupted",
-    });
+    expect(workspaceMocks.removeQueuedWorkspaceTurn).toHaveBeenCalledWith(
+      "childworkspace",
+      "wst_secondhandle",
+      { cancelReason: "Workspace turn interrupted" }
+    );
     const sendInternal = secondSend[3] as { onAccepted: () => Promise<void> };
     let acceptedAfterInterruptError: unknown;
     try {

@@ -26,7 +26,6 @@ import type {
   StreamErrorMessage,
 } from "@/common/orpc/types";
 import { WORKSPACE_DEFAULTS } from "@/constants/workspaceDefaults";
-import { HEARTBEAT_QUEUE_DEDUPE_KEY } from "@/constants/heartbeat";
 import {
   GOAL_BUDGET_LIMIT_KIND,
   GOAL_CONTINUATION_KIND,
@@ -2204,12 +2203,13 @@ export class AgentSession {
         message: {
           type: "queued-message-changed",
           workspaceId: this.workspaceId,
-          queuedMessages: this.messageQueue.getMessages(),
-          displayText: this.messageQueue.getDisplayText(),
-          fileParts: this.messageQueue.getFileParts(),
-          reviews: this.messageQueue.getReviews(),
-          queueDispatchMode: this.messageQueue.getQueueDispatchMode(),
-          hasCompactionRequest: this.messageQueue.hasCompactionRequest(),
+          hasQueuedMessages: !this.messageQueue.isEmpty(),
+          queuedMessages: this.messageQueue.getVisibleMessages(),
+          displayText: this.messageQueue.getVisibleDisplayText(),
+          fileParts: this.messageQueue.getVisibleFileParts(),
+          reviews: this.messageQueue.getVisibleReviews(),
+          queueDispatchMode: this.messageQueue.getVisibleQueueDispatchMode(),
+          hasCompactionRequest: this.messageQueue.hasVisibleCompactionRequest(),
         },
       });
 
@@ -5121,11 +5121,13 @@ export class AgentSession {
 
   clearQueue(cancelReason = "Queued message cleared before dispatch."): void {
     this.assertNotDisposed("clearQueue");
-    const callbacks = this.messageQueue.getClearCallbacks();
+    const callbackSets = this.messageQueue.getClearCallbacks();
     this.messageQueue.clear();
     this.emitQueuedMessageChanged();
     this.backgroundProcessManager.setMessageQueued(this.workspaceId, false);
-    this.notifyQueuedMessageCleared(callbacks, cancelReason);
+    for (const callbacks of callbackSets) {
+      this.notifyQueuedMessageCleared(callbacks, cancelReason);
+    }
   }
 
   private notifyQueuedMessageCleared(
@@ -5153,6 +5155,27 @@ export class AgentSession {
   hasQueuedWorkspaceTurn(handleId: string): boolean {
     assert(handleId.length > 0, "hasQueuedWorkspaceTurn requires handleId");
     return this.messageQueue.hasWorkspaceTurn(handleId);
+  }
+
+  /**
+   * Remove only the queued workspace-turn entry for this handle, keeping any
+   * unrelated queued messages (interrupting a queued turn must not drop user
+   * input queued before/behind it). Returns true when an entry was removed.
+   */
+  removeQueuedWorkspaceTurn(handleId: string, cancelReason: string): boolean {
+    this.assertNotDisposed("removeQueuedWorkspaceTurn");
+    assert(handleId.length > 0, "removeQueuedWorkspaceTurn requires handleId");
+    const callbacks = this.messageQueue.removeWorkspaceTurn(handleId);
+    if (callbacks == null) {
+      return false;
+    }
+    this.emitQueuedMessageChanged();
+    this.backgroundProcessManager.setMessageQueued(
+      this.workspaceId,
+      !this.messageQueue.isEmpty() && this.messageQueue.getQueueDispatchMode() === "tool-end"
+    );
+    this.notifyQueuedMessageCleared(callbacks, cancelReason);
+    return true;
   }
 
   hasQueuedMessages(dispatchMode?: "tool-end" | "turn-end"): boolean {
@@ -5239,32 +5262,34 @@ export class AgentSession {
   }
 
   /**
-   * Restore queued messages to input box.
-   * Called by IPC handler on user-initiated interrupt.
+   * Restore queued user input to the composer after a user-initiated interrupt.
+   * Fully synthetic background work is canceled with the queue but never surfaced
+   * as editable text, so monitor wakes cannot replace or pollute the user's draft.
    */
   restoreQueueToInput(): void {
     this.assertNotDisposed("restoreQueueToInput");
-    // Restore-to-input exists to give the user their own words back (interrupt / edit).
-    // A queued scheduled heartbeat is backend-initiated maintenance, not user input —
-    // surfacing it as editable composer text would be confusing, so discard it instead
-    // (the check-in is periodic; its next slot fires anyway). It can only ever be the
-    // queue's sole content: it is enqueued exclusively into an empty queue, and any
-    // later user message supersedes it before queueing.
-    if (this.dropQueuedMessageWithOnlyDedupeKey(HEARTBEAT_QUEUE_DEDUPE_KEY)) {
+    if (this.messageQueue.isEmpty()) {
       return;
     }
-    if (!this.messageQueue.isEmpty()) {
-      const displayText = this.messageQueue.getDisplayText();
-      const fileParts = this.messageQueue.getFileParts();
-      const reviews = this.messageQueue.getReviews();
-      this.clearQueue();
 
+    const queuedMessages = this.messageQueue.getVisibleMessages();
+    const displayText = this.messageQueue.getVisibleDisplayText();
+    const fileParts = this.messageQueue.getVisibleFileParts();
+    const reviews = this.messageQueue.getVisibleReviews();
+    const hasVisibleContent =
+      queuedMessages.length > 0 || fileParts.length > 0 || (reviews?.length ?? 0) > 0;
+
+    // Clear everything: synthetic wake callbacks need cancellation so their durable
+    // records do not retry after the user explicitly interrupted the workspace.
+    this.clearQueue();
+
+    if (hasVisibleContent) {
       this.emitChatEvent({
         type: "restore-to-input",
         workspaceId: this.workspaceId,
         text: displayText,
-        fileParts: fileParts,
-        reviews: reviews,
+        fileParts,
+        reviews,
       });
     }
   }
@@ -5273,13 +5298,27 @@ export class AgentSession {
     this.emitChatEvent({
       type: "queued-message-changed",
       workspaceId: this.workspaceId,
-      queuedMessages: this.messageQueue.getMessages(),
-      displayText: this.messageQueue.getDisplayText(),
-      fileParts: this.messageQueue.getFileParts(),
-      reviews: this.messageQueue.getReviews(),
-      queueDispatchMode: this.messageQueue.getQueueDispatchMode(),
-      hasCompactionRequest: this.messageQueue.hasCompactionRequest(),
+      hasQueuedMessages: !this.messageQueue.isEmpty(),
+      queuedMessages: this.messageQueue.getVisibleMessages(),
+      displayText: this.messageQueue.getVisibleDisplayText(),
+      fileParts: this.messageQueue.getVisibleFileParts(),
+      reviews: this.messageQueue.getVisibleReviews(),
+      queueDispatchMode: this.messageQueue.getVisibleQueueDispatchMode(),
+      hasCompactionRequest: this.messageQueue.hasVisibleCompactionRequest(),
     });
+  }
+
+  /**
+   * Dispatch the next user-authored queued entry immediately. Hidden synthetic
+   * entries remain queued behind it and resume through the normal drain lifecycle.
+   */
+  sendNextUserQueuedMessage(): boolean {
+    this.assertNotDisposed("sendNextUserQueuedMessage");
+    if (!this.messageQueue.prioritizeNextUserEntry()) {
+      return false;
+    }
+    this.sendQueuedMessages();
+    return true;
   }
 
   /**
@@ -5299,9 +5338,20 @@ export class AgentSession {
     this.backgroundProcessManager.setMessageQueued(this.workspaceId, false);
 
     if (!this.messageQueue.isEmpty()) {
-      const { message, options, internal } = this.messageQueue.produceMessage();
-      this.messageQueue.clear();
+      // Entries dispatch one at a time (FIFO): special sends (compaction, agent
+      // skills, workspace-turn follow-ups) own their turn, and anything queued
+      // behind them dispatches on a later drain instead of batching into them.
+      const { message, options, internal } = this.messageQueue.dequeueNext();
       this.emitQueuedMessageChanged();
+
+      // Re-arm dispatch signals for the remaining entries so the stream we are
+      // about to start drains them at its next tool end (or stream end).
+      if (!this.messageQueue.isEmpty()) {
+        this.backgroundProcessManager.setMessageQueued(
+          this.workspaceId,
+          this.messageQueue.getQueueDispatchMode() === "tool-end"
+        );
+      }
 
       // Set PREPARING synchronously before the async sendMessage to prevent
       // incoming messages from bypassing the queue during the await gap.
@@ -5316,12 +5366,17 @@ export class AgentSession {
             if (this.turnPhase === TurnPhase.PREPARING) {
               this.setTurnPhase(TurnPhase.IDLE);
             }
+            // No stream started, so no stream-end drain will fire for the
+            // remaining entries — try the next one now (each attempt pops an
+            // entry, so this terminates).
+            this.sendQueuedMessages();
           }
         })
         .catch(() => {
           if (this.turnPhase === TurnPhase.PREPARING) {
             this.setTurnPhase(TurnPhase.IDLE);
           }
+          this.sendQueuedMessages();
         });
     }
   }

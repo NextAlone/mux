@@ -1947,6 +1947,28 @@ export class WorkspaceService extends EventEmitter {
     return `${ownerWorkspaceId}:${wakeId}`;
   }
 
+  /**
+   * A queued monitor wake has the same semantics as the user's "send after step":
+   * foreground bashes keep running, but detach into background tracking before the
+   * current stream is soft-stopped. Otherwise the stream abort can kill the process
+   * and discard work that the monitor wake was meant to observe.
+   */
+  private backgroundForegroundBashesForMonitorWake(ownerWorkspaceId: string): void {
+    for (const toolCallId of this.backgroundProcessManager.getForegroundToolCallIds(
+      ownerWorkspaceId
+    )) {
+      const result = this.backgroundProcessManager.sendToBackground(toolCallId);
+      if (!result.success) {
+        // The bash may have completed between the snapshot and the request.
+        log.debug("Failed to background foreground bash for monitor wake", {
+          ownerWorkspaceId,
+          toolCallId,
+          error: result.error,
+        });
+      }
+    }
+  }
+
   private async drainBashMonitorWakes(ownerWorkspaceId: string): Promise<void> {
     const pending = (await this.bashMonitorWakeStore.listPending(ownerWorkspaceId)).filter(
       (record) =>
@@ -2151,6 +2173,10 @@ export class WorkspaceService extends EventEmitter {
         retryAfterIdleIfBusy("sendMessage rejected");
       }
       return;
+    }
+
+    if (ownerHasAiServiceStream) {
+      this.backgroundForegroundBashesForMonitorWake(ownerWorkspaceId);
     }
 
     if (accepted) {
@@ -8334,8 +8360,9 @@ export class WorkspaceService extends EventEmitter {
         // `sendQueuedMessages()` routes through AgentSession directly, so explicitly
         // clear hard-interrupt suppression first (it won't flow through sendMessage()).
         this.taskService?.resetAutoResumeCount(workspaceId);
-        // Send queued messages immediately instead of restoring to input
-        session.sendQueuedMessages();
+        // The card represents only user-authored queue content. Prioritize that
+        // entry over hidden synthetic/background work before dispatching.
+        session.sendNextUserQueuedMessage();
       } else {
         // Restore queued messages to input box for user-initiated interrupts
         session.restoreQueueToInput();
@@ -8565,6 +8592,28 @@ export class WorkspaceService extends EventEmitter {
 
   hasQueuedWorkspaceTurn(workspaceId: string, handleId: string): boolean {
     return this.sessions.get(workspaceId.trim())?.hasQueuedWorkspaceTurn(handleId) ?? false;
+  }
+
+  /**
+   * Remove only the queued workspace-turn entry for this handle (targeted cancel);
+   * unrelated queued messages stay pending. Returns whether an entry was removed.
+   */
+  removeQueuedWorkspaceTurn(
+    workspaceId: string,
+    handleId: string,
+    options: { cancelReason: string }
+  ): Result<boolean> {
+    try {
+      const session = this.sessions.get(workspaceId.trim());
+      if (session == null) {
+        return Ok(false);
+      }
+      return Ok(session.removeQueuedWorkspaceTurn(handleId, options.cancelReason));
+    } catch (error) {
+      const errorMessage = getErrorMessage(error);
+      log.error("Unexpected error in removeQueuedWorkspaceTurn handler:", error);
+      return Err(`Failed to remove queued workspace turn: ${errorMessage}`);
+    }
   }
 
   hasQueuedMessages(workspaceId: string, dispatchMode?: "tool-end" | "turn-end"): boolean {

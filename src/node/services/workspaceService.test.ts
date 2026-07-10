@@ -993,8 +993,12 @@ describe("WorkspaceService bash monitor wakes", () => {
         runtimeConfig: { type: "local" },
       });
 
+      const getForegroundToolCallIds = mock(() => ["tool-call-1"]);
+      const sendToBackground = mock(() => ({ success: true as const }));
       const backgroundProcessManager = Object.assign(new EventEmitter(), {
         cleanup: mock(() => Promise.resolve()),
+        getForegroundToolCallIds,
+        sendToBackground,
       }) as unknown as BackgroundProcessManager & EventEmitter;
       const workspaceService = createWorkspaceServiceForTest({
         config,
@@ -1026,9 +1030,11 @@ describe("WorkspaceService bash monitor wakes", () => {
         timestamp: Date.now(),
       });
 
-      await waitForCondition(() => sendSpy.mock.calls.length === 1);
+      await waitForCondition(() => sendToBackground.mock.calls.length === 1);
       expect(sendSpy.mock.calls[0][2]).toMatchObject({ queueDispatchMode: "tool-end" });
       expect(sendSpy.mock.calls[0][3]?.requireIdle).toBeUndefined();
+      expect(getForegroundToolCallIds).toHaveBeenCalledWith(workspaceId);
+      expect(sendToBackground).toHaveBeenCalledWith("tool-call-1");
       expect(waitForIdleSpy).not.toHaveBeenCalled();
     } finally {
       await cleanup();
@@ -11768,12 +11774,12 @@ describe("WorkspaceService interruptStream", () => {
       terminateAllDescendantAgentTasks,
     } as unknown as TaskService);
 
-    const sendQueuedMessages = mock(() => undefined);
+    const sendNextUserQueuedMessage = mock(() => true);
     const restoreQueueToInput = mock(() => undefined);
     const interruptStream = mock(() => Promise.resolve(Ok(undefined)));
     const fakeSession = {
       interruptStream,
-      sendQueuedMessages,
+      sendNextUserQueuedMessage,
       restoreQueueToInput,
     };
     const getOrCreateSessionSpy = spyOn(workspaceService, "getOrCreateSession").mockReturnValue(
@@ -11789,7 +11795,7 @@ describe("WorkspaceService interruptStream", () => {
       expect(markParentWorkspaceInterrupted).toHaveBeenCalledWith(workspaceId);
       expect(terminateAllDescendantAgentTasks).toHaveBeenCalledWith(workspaceId);
       expect(resetAutoResumeCount).toHaveBeenCalledTimes(2);
-      expect(sendQueuedMessages).toHaveBeenCalledTimes(1);
+      expect(sendNextUserQueuedMessage).toHaveBeenCalledTimes(1);
       expect(restoreQueueToInput).not.toHaveBeenCalled();
     } finally {
       getOrCreateSessionSpy.mockRestore();

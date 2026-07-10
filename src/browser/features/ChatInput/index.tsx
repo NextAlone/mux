@@ -1756,7 +1756,15 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
         mode?: "append" | "replace";
         fileParts?: FilePart[];
         reviews?: ReviewNoteDataForDisplay[];
+        workspaceId?: string;
       }>;
+
+      if (
+        customEvent.detail.workspaceId != null &&
+        workspaceIdForComposerClear !== customEvent.detail.workspaceId
+      ) {
+        return;
+      }
 
       const { text, mode = "append", fileParts, reviews } = customEvent.detail;
       const restoredIdPrefix = `restored-${Date.now()}`;
@@ -1796,7 +1804,15 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
     window.addEventListener(CUSTOM_EVENTS.UPDATE_CHAT_INPUT, handler as EventListener);
     return () =>
       window.removeEventListener(CUSTOM_EVENTS.UPDATE_CHAT_INPUT, handler as EventListener);
-  }, [appendText, restoreText, restoreDraft, applyDraftFromPending, getDraft, editingMessageForUi]);
+  }, [
+    appendText,
+    restoreText,
+    restoreDraft,
+    applyDraftFromPending,
+    getDraft,
+    editingMessageForUi,
+    workspaceIdForComposerClear,
+  ]);
 
   useEffect(() => {
     const handler = (event: CustomEvent<{ workspaceId: string }>) => {
