@@ -5,6 +5,7 @@ export type ProviderModelEntriesConfig = Record<
   string,
   { models?: readonly unknown[] } | undefined
 >;
+export type ProviderModelsConfig = ProviderModelEntriesConfig;
 
 interface ParsedProviderModelId {
   provider: string;

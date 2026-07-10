@@ -14,8 +14,8 @@ import {
 } from "@/common/constants/providers";
 import {
   CODEX_ENDPOINT,
-  isCodexOauthAllowedModelId,
-  isCodexOauthRequiredModelId,
+  isCodexOauthAllowedModel,
+  isCodexOauthRequiredModel,
 } from "@/common/constants/codexOAuth";
 import { parseCodexOauthAuth } from "@/node/utils/codexOauthAuth";
 import type { Config, ProviderConfig, ProvidersConfig } from "@/node/config";
@@ -1414,8 +1414,8 @@ export class ProviderModelFactory {
       if (providerName === "openai") {
         const fullModelId = `${providerName}:${modelId}`;
 
-        const codexOauthAllowed = isCodexOauthAllowedModelId(fullModelId);
-        const codexOauthRequired = isCodexOauthRequiredModelId(fullModelId);
+        const codexOauthAllowed = isCodexOauthAllowedModel(fullModelId, providersConfig);
+        const codexOauthRequired = isCodexOauthRequiredModel(fullModelId, providersConfig);
 
         const storedCodexOauth = parseCodexOauthAuth(
           (providerConfig as { codexOauth?: unknown }).codexOauth
@@ -2372,16 +2372,14 @@ export class ProviderModelFactory {
       return "openai-api-key";
     }
 
-    const providerConfig = (this.config.loadProvidersConfig()?.openai ?? {}) as Record<
-      string,
-      unknown
-    >;
+    const providersConfig = this.config.loadProvidersConfig() ?? {};
+    const providerConfig = (providersConfig.openai ?? {}) as Record<string, unknown>;
     const storedCodexOauth = parseCodexOauthAuth(providerConfig.codexOauth);
     const creds = resolveProviderCredentials("openai", providerConfig);
     const codexOauthDefaultAuth =
       providerConfig.codexOauthDefaultAuth === "apiKey" ? "apiKey" : "oauth";
-    const codexOauthAllowed = isCodexOauthAllowedModelId(canonicalModelString);
-    const codexOauthRequired = isCodexOauthRequiredModelId(canonicalModelString);
+    const codexOauthAllowed = isCodexOauthAllowedModel(canonicalModelString, providersConfig);
+    const codexOauthRequired = isCodexOauthRequiredModel(canonicalModelString, providersConfig);
     const shouldRouteThroughCodexOauth =
       codexOauthAllowed &&
       storedCodexOauth != null &&
