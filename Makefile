@@ -70,7 +70,7 @@ include fmt.mk
 .PHONY: build-renderer version build-icons build-static build-docker-runtime verify-docker-runtime-artifacts
 .PHONY: lint lint-fix typecheck static-check static-check-full
 .PHONY: test test-unit test-integration test-watch test-coverage test-e2e test-e2e-perf smoke-test
-.PHONY: dist dist-mac dist-win dist-linux install-mac-arm64 check-appimage-icons check-mac-attach-file-runtime
+.PHONY: dist dist-mac dist-win dist-linux install-mac-arm64 install-mac-arm64-fast dist-mac-arm64-dir check-appimage-icons check-mac-attach-file-runtime
 .PHONY: vscode-ext vscode-ext-install
 .PHONY: docs-server check-docs-links
 .PHONY: storybook storybook-run storybook-build test-storybook chromatic
@@ -475,8 +475,21 @@ dist-mac-arm64: build ## Build macOS arm64 distributable only
 	@echo "Building macOS arm64..."
 	@bun x electron-builder --mac --arm64 --publish never
 
+# Skip dmg/zip/blockmap — only emit the unpacked .app under release/mac-arm64/.
+# Use for local UI verification; full install-mac-arm64 still builds DMG for release checks.
+dist-mac-arm64-dir: build ## Build macOS arm64 .app only (no dmg/zip)
+	@echo "Building macOS arm64 app directory (no dmg/zip)..."
+	@bun x electron-builder --mac --arm64 --dir --publish never
+	@echo "✅ App ready at release/mac-arm64/mux.app"
+
 install-mac-arm64: dist-mac-arm64 ## Build and install macOS arm64 app to /Applications
 	@echo "Installing mux.app to /Applications..."
+	@rm -rf /Applications/mux.app
+	@cp -R release/mac-arm64/mux.app /Applications/
+	@echo "Installed mux.app to /Applications"
+
+install-mac-arm64-fast: dist-mac-arm64-dir ## Fast local install: arm64 .app only (skip dmg/zip)
+	@echo "Installing mux.app to /Applications (fast path)..."
 	@rm -rf /Applications/mux.app
 	@cp -R release/mac-arm64/mux.app /Applications/
 	@echo "Installed mux.app to /Applications"
