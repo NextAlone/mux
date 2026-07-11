@@ -4,9 +4,10 @@ import type { ToolExecutionOptions } from "ai";
 import { createTestToolConfig } from "./testHelpers";
 import { createMcpRestartTool } from "./mcp_restart";
 
-const toolCallOptions: ToolExecutionOptions = {
+const toolCallOptions: ToolExecutionOptions<undefined> = {
   toolCallId: "test-call-id",
   messages: [],
+  context: undefined,
 };
 
 interface McpRestartResult {

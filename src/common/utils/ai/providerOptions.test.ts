@@ -516,7 +516,7 @@ describe("buildProviderOptions - OpenAI", () => {
     result: ReturnType<typeof buildProviderOptions>
   ): OpenAIResponsesProviderOptions | undefined => {
     if ("openai" in result) {
-      return result.openai;
+      return result.openai as OpenAIResponsesProviderOptions;
     }
     return undefined;
   };

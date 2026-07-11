@@ -6,9 +6,10 @@ import { createImageGenerateTool } from "./image_generate";
 import type { CodexImageReference } from "@/node/services/codexImageGenerationService";
 import { createTestToolConfig, TestTempDir } from "./testHelpers";
 
-const mockToolCallOptions: ToolExecutionOptions = {
+const mockToolCallOptions: ToolExecutionOptions<undefined> = {
   toolCallId: "test-call-id",
   messages: [],
+  context: undefined,
 };
 
 describe("image_generate tool", () => {
