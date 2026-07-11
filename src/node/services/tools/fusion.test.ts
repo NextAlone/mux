@@ -61,6 +61,6 @@ describe("Fusion one-shot overrides", () => {
       { model: "openai:gpt-5.4", thinking: "medium" },
       { model: "google:gemini-3.1-pro-preview", thinking: "low" },
     ]);
-    expect(result.judge).toEqual({ model: "openai:gpt-5.5", thinking: "high" });
+    expect(result.judge).toEqual({ model: "openai:gpt-5.6-sol", thinking: "high" });
   });
 });

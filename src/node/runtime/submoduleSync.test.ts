@@ -1,4 +1,3 @@
-import { execFileSync } from "node:child_process";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -7,27 +6,6 @@ import { describe, expect, it } from "bun:test";
 
 import type { InitLogger, Runtime } from "./Runtime";
 import { syncLocalGitSubmodules, syncRuntimeGitSubmodules } from "./submoduleSync";
-
-function git(cwd: string, args: string[]): void {
-  execFileSync("git", args, { cwd, stdio: "ignore" });
-}
-
-async function initGitRepo(repoPath: string, files: Record<string, string>): Promise<void> {
-  await fs.mkdir(repoPath, { recursive: true });
-  git(repoPath, ["init", "-b", "main"]);
-  git(repoPath, ["config", "user.email", "test@example.com"]);
-  git(repoPath, ["config", "user.name", "test"]);
-  git(repoPath, ["config", "commit.gpgsign", "false"]);
-
-  for (const [relativePath, content] of Object.entries(files)) {
-    const absolutePath = path.join(repoPath, relativePath);
-    await fs.mkdir(path.dirname(absolutePath), { recursive: true });
-    await fs.writeFile(absolutePath, content, "utf-8");
-  }
-
-  git(repoPath, ["add", "."]);
-  git(repoPath, ["commit", "-m", "init"]);
-}
 
 function createInitLogger() {
   const steps: string[] = [];
@@ -39,15 +17,6 @@ function createInitLogger() {
   };
 
   return { logger, steps };
-}
-
-async function pathExists(filePath: string): Promise<boolean> {
-  try {
-    await fs.access(filePath);
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 function createExecStream(result: { stdout?: string; stderr?: string; exitCode: number }) {
@@ -99,51 +68,24 @@ class RecordingRuntime {
 }
 
 describe("syncLocalGitSubmodules", () => {
-  it("materializes submodule-backed files in worktree workspaces", async () => {
+  it("rejects local submodules until jj-native materialization exists", async () => {
     const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "mux-submodule-sync-"));
 
     try {
-      const submoduleRepo = path.join(tempRoot, "kalshi-docs-src");
-      const projectRepo = path.join(tempRoot, "project");
       const workspacePath = path.join(tempRoot, "worktrees", "feature-submodule");
-
-      await initGitRepo(submoduleRepo, {
-        "SKILL.md": "---\nname: kalshi-docs\ndescription: Kalshi docs\n---\n\nUse the docs\n",
-      });
-      await initGitRepo(projectRepo, { "README.md": "hello\n" });
-
-      git(projectRepo, ["config", "protocol.file.allow", "always"]);
-      execFileSync(
-        "git",
-        [
-          "-c",
-          "protocol.file.allow=always",
-          "submodule",
-          "add",
-          submoduleRepo,
-          ".mux/skills/kalshi-docs",
-        ],
-        { cwd: projectRepo, stdio: "ignore" }
-      );
-      git(projectRepo, ["commit", "-m", "add submodule skill"]);
-
-      await fs.mkdir(path.dirname(workspacePath), { recursive: true });
-      git(projectRepo, ["worktree", "add", "-b", "feature-submodule", workspacePath, "main"]);
-
-      const skillFilePath = path.join(workspacePath, ".mux", "skills", "kalshi-docs", "SKILL.md");
-      expect(await pathExists(skillFilePath)).toBe(false);
+      await fs.mkdir(workspacePath, { recursive: true });
+      await fs.writeFile(path.join(workspacePath, ".gitmodules"), '[submodule "docs"]\n', "utf-8");
 
       const { logger, steps } = createInitLogger();
-      await syncLocalGitSubmodules({
-        workspacePath,
-        initLogger: logger,
-        env: { GIT_ALLOW_PROTOCOL: "file" },
-        trusted: true,
-      });
+      let errorMessage = "";
+      try {
+        await syncLocalGitSubmodules({ workspacePath, initLogger: logger });
+      } catch (error) {
+        errorMessage = error instanceof Error ? error.message : String(error);
+      }
 
-      expect(await pathExists(skillFilePath)).toBe(true);
-      expect(await fs.readFile(skillFilePath, "utf-8")).toContain("Kalshi docs");
-      expect(steps).toEqual(["Initializing git submodules...", "Git submodules ready"]);
+      expect(errorMessage).toContain("jj-native submodule materialization is not implemented");
+      expect(steps).toEqual(["Submodules detected"]);
     } finally {
       await fs.rm(tempRoot, { recursive: true, force: true });
     }
@@ -175,38 +117,27 @@ describe("syncLocalGitSubmodules", () => {
 });
 
 describe("syncRuntimeGitSubmodules", () => {
-  it("runs sync and update when .gitmodules exists on the runtime", async () => {
+  it("rejects remote submodules until jj-native materialization exists", async () => {
     const runtime = new RecordingRuntime([
       { stdout: "present", exitCode: 0 },
-      { exitCode: 0 },
-      { exitCode: 0 },
     ]) as unknown as Runtime & RecordingRuntime;
     const { logger, steps } = createInitLogger();
 
-    await syncRuntimeGitSubmodules({
-      runtime,
-      workspacePath: "/remote/workspace",
-      initLogger: logger,
-      env: { GH_TOKEN: "token" },
-      trusted: false,
-    });
+    let errorMessage = "";
+    try {
+      await syncRuntimeGitSubmodules({
+        runtime,
+        workspacePath: "/remote/workspace",
+        initLogger: logger,
+      });
+    } catch (error) {
+      errorMessage = error instanceof Error ? error.message : String(error);
+    }
 
+    expect(errorMessage).toContain("jj-native submodule materialization is not implemented");
     expect(runtime.calls[0]?.command).toContain("if [ -f .gitmodules ]");
-    expect(runtime.calls.slice(1).map((call) => call.command)).toEqual([
-      "git submodule sync --recursive",
-      "git submodule update --init --recursive",
-    ]);
-    expect(runtime.calls.map((call) => call.cwd)).toEqual([
-      "/remote/workspace",
-      "/remote/workspace",
-      "/remote/workspace",
-    ]);
-    expect(runtime.calls[0]?.env).toMatchObject({
-      GH_TOKEN: "token",
-      GIT_TERMINAL_PROMPT: "0",
-      GIT_CONFIG_KEY_0: "core.hooksPath",
-    });
-    expect(steps).toEqual(["Initializing git submodules...", "Git submodules ready"]);
+    expect(runtime.calls).toHaveLength(1);
+    expect(steps).toEqual(["Submodules detected"]);
   });
 
   it("skips runtime sync when .gitmodules is absent", async () => {

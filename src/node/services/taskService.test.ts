@@ -13,7 +13,7 @@ import {
 import { HistoryService } from "@/node/services/historyService";
 import * as subagentGitPatchArtifacts from "@/node/services/subagentGitPatchArtifacts";
 import {
-  getSubagentGitPatchMboxPath,
+  getSubagentGitPatchDiffPath,
   readSubagentGitPatchArtifact,
 } from "@/node/services/subagentGitPatchArtifacts";
 import {
@@ -24,7 +24,10 @@ import {
   readSubagentFailureArtifact,
   upsertSubagentFailureArtifact,
 } from "@/node/services/subagentFailureArtifacts";
-import { resolveWorkspaceModelFallbackChain } from "@/node/services/taskUtils";
+import {
+  resolveWorkspaceModelFallbackChain,
+  tryReadJjCurrentChangeId,
+} from "@/node/services/taskUtils";
 import { ExtensionMetadataService } from "@/node/services/ExtensionMetadataService";
 import { SessionUsageService } from "@/node/services/sessionUsageService";
 import { WorkspaceGoalService } from "@/node/services/workspaceGoalService";
@@ -36,8 +39,10 @@ import { WorkflowRunStore } from "@/node/services/workflows/WorkflowRunStore";
 import { log } from "@/node/services/log";
 import { recordAgentWorkflowRunReference } from "@/node/services/agentWorkflowRunReferences";
 import type { WorkspaceForkParams } from "@/node/runtime/Runtime";
+import { LocalRuntime } from "@/node/runtime/LocalRuntime";
 import { WorktreeRuntime } from "@/node/runtime/WorktreeRuntime";
 import { MultiProjectRuntime } from "@/node/runtime/multiProjectRuntime";
+import { initJjGitRepository } from "@/node/vcs/jj";
 import { ContainerManager } from "@/node/multiProject/containerManager";
 import { createRuntime } from "@/node/runtime/runtimeFactory";
 import * as runtimeFactory from "@/node/runtime/runtimeFactory";
@@ -73,6 +78,18 @@ function initGitRepo(projectPath: string): void {
   execSync("bash -lc 'echo \"hello\" > README.md'", { cwd: projectPath, stdio: "ignore" });
   execSync("git add README.md", { cwd: projectPath, stdio: "ignore" });
   execSync('git commit -m "init"', { cwd: projectPath, stdio: "ignore" });
+}
+
+async function createJjTaskChange(projectPath: string): Promise<string> {
+  initGitRepo(projectPath);
+  await initJjGitRepository(projectPath);
+
+  const baseChangeId = await tryReadJjCurrentChangeId(new LocalRuntime(projectPath), projectPath);
+  assert(baseChangeId, "Expected initial JJ change");
+
+  // Task patch artifacts compare JJ changes; external Git commits require a separate import.
+  execSync("jj --no-pager --color never new", { cwd: projectPath, stdio: "ignore" });
+  return baseChangeId;
 }
 
 async function collectFullHistory(service: HistoryService, workspaceId: string) {
@@ -185,6 +202,7 @@ async function createTestProject(
   await fsPromises.mkdir(projectPath, { recursive: true });
   if (options?.initGit ?? true) {
     initGitRepo(projectPath);
+    await initJjGitRepository(projectPath);
   }
   return projectPath;
 }
@@ -12985,7 +13003,7 @@ describe("TaskService", () => {
     ).toHaveLength(1);
   });
 
-  test("agent_report uses legacy exec agentType for git format-patch eligibility", async () => {
+  test("agent_report uses legacy exec agentType for task-change diff eligibility", async () => {
     const config = await createTestConfig(rootDir);
 
     const projectPath = path.join(rootDir, "repo");
@@ -12997,15 +13015,8 @@ describe("TaskService", () => {
     await fsPromises.mkdir(parentPath, { recursive: true });
     await fsPromises.mkdir(childPath, { recursive: true });
 
-    initGitRepo(childPath);
-    const baseCommitSha = execSync("git rev-parse HEAD", {
-      cwd: childPath,
-      encoding: "utf-8",
-    }).trim();
-
-    execSync("bash -lc 'echo \"world\" >> README.md'", { cwd: childPath, stdio: "ignore" });
-    execSync("git add README.md", { cwd: childPath, stdio: "ignore" });
-    execSync('git commit -m "child change"', { cwd: childPath, stdio: "ignore" });
+    const baseChangeId = await createJjTaskChange(childPath);
+    await fsPromises.appendFile(path.join(childPath, "README.md"), "world\n");
 
     await saveWorkspaces(
       config,
@@ -13026,7 +13037,7 @@ describe("TaskService", () => {
           agentId: "explore",
           taskStatus: "running",
           runtimeConfig: { type: "local" },
-          taskBaseCommitSha: baseCommitSha,
+          taskBaseCommitSha: baseChangeId,
         },
       ],
       testTaskSettings()
@@ -13081,7 +13092,7 @@ describe("TaskService", () => {
     expect(writeChildPartial.success).toBe(true);
 
     const parentSessionDir = config.getSessionDir(parentId);
-    const patchPath = getSubagentGitPatchMboxPath(parentSessionDir, childId, "repo");
+    const patchPath = getSubagentGitPatchDiffPath(parentSessionDir, childId, "repo");
 
     const waiter = taskService.waitForAgentReport(childId, {
       timeoutMs: 10_000,
@@ -13146,7 +13157,7 @@ describe("TaskService", () => {
     expect(findWorkspaceInConfig(config, childId)).toBeUndefined();
   }, 20_000);
 
-  test("agent_report generates mixed per-project git format-patch artifacts for multi-project exec tasks before cleanup", async () => {
+  test("agent_report generates mixed per-project task-change diff artifacts for multi-project exec tasks before cleanup", async () => {
     const config = await createTestConfig(rootDir);
 
     const primaryProjectPath = path.join(rootDir, "project-a");
@@ -13162,25 +13173,15 @@ describe("TaskService", () => {
     await fsPromises.mkdir(secondaryProjectPath, { recursive: true });
 
     initGitRepo(primaryProjectPath);
-    initGitRepo(secondaryProjectPath);
-    const primaryBaseCommitSha = execSync("git rev-parse HEAD", {
-      cwd: primaryProjectPath,
-      encoding: "utf-8",
-    }).trim();
-    const secondaryBaseCommitSha = execSync("git rev-parse HEAD", {
-      cwd: secondaryProjectPath,
-      encoding: "utf-8",
-    }).trim();
+    await initJjGitRepository(primaryProjectPath);
+    const primaryBaseChangeId = await tryReadJjCurrentChangeId(
+      new LocalRuntime(primaryProjectPath),
+      primaryProjectPath
+    );
+    assert(primaryBaseChangeId, "Expected initial JJ change for primary project");
 
-    execSync("bash -lc 'echo \"secondary\" >> README.md'", {
-      cwd: secondaryProjectPath,
-      stdio: "ignore",
-    });
-    execSync("git add README.md", { cwd: secondaryProjectPath, stdio: "ignore" });
-    execSync('git commit -m "secondary change"', {
-      cwd: secondaryProjectPath,
-      stdio: "ignore",
-    });
+    const secondaryBaseChangeId = await createJjTaskChange(secondaryProjectPath);
+    await fsPromises.appendFile(path.join(secondaryProjectPath, "README.md"), "secondary\n");
 
     await saveWorkspaces(
       config,
@@ -13201,10 +13202,10 @@ describe("TaskService", () => {
           agentId: "exec",
           taskStatus: "running",
           runtimeConfig: { type: "local" },
-          taskBaseCommitSha: primaryBaseCommitSha,
+          taskBaseCommitSha: primaryBaseChangeId,
           taskBaseCommitShaByProjectPath: {
-            [primaryProjectPath]: primaryBaseCommitSha,
-            [secondaryProjectPath]: secondaryBaseCommitSha,
+            [primaryProjectPath]: primaryBaseChangeId,
+            [secondaryProjectPath]: secondaryBaseChangeId,
           },
           projects: [
             { projectPath: primaryProjectPath, projectName: "project-a" },
@@ -13262,7 +13263,7 @@ describe("TaskService", () => {
     expect((await partialService.writePartial(childId, childPartial)).success).toBe(true);
 
     const parentSessionDir = config.getSessionDir(parentId);
-    const secondaryPatchPath = getSubagentGitPatchMboxPath(parentSessionDir, childId, "project-b");
+    const secondaryPatchPath = getSubagentGitPatchDiffPath(parentSessionDir, childId, "project-b");
 
     const waiter = taskService.waitForAgentReport(childId, {
       timeoutMs: 10_000,
@@ -13300,17 +13301,20 @@ describe("TaskService", () => {
         projectName: "project-a",
         status: "skipped",
         commitCount: 0,
+        baseChangeId: primaryBaseChangeId,
       }),
       expect.objectContaining({
         projectPath: secondaryProjectPath,
         projectName: "project-b",
         status: "ready",
         commitCount: 1,
+        baseChangeId: secondaryBaseChangeId,
+        diffPath: secondaryPatchPath,
       }),
     ]);
     await fsPromises.stat(secondaryPatchPath);
   }, 20_000);
-  test("agent_report generates git format-patch artifact for exec-derived custom tasks before cleanup", async () => {
+  test("agent_report generates task-change diff artifact for exec-derived custom tasks before cleanup", async () => {
     const config = await createTestConfig(rootDir);
 
     const projectPath = path.join(rootDir, "repo");
@@ -13331,15 +13335,8 @@ describe("TaskService", () => {
       "utf-8"
     );
 
-    initGitRepo(childPath);
-    const baseCommitSha = execSync("git rev-parse HEAD", {
-      cwd: childPath,
-      encoding: "utf-8",
-    }).trim();
-
-    execSync("bash -lc 'echo \\\"world\\\" >> README.md'", { cwd: childPath, stdio: "ignore" });
-    execSync("git add README.md", { cwd: childPath, stdio: "ignore" });
-    execSync('git commit -m "child change"', { cwd: childPath, stdio: "ignore" });
+    const baseChangeId = await createJjTaskChange(childPath);
+    await fsPromises.appendFile(path.join(childPath, "README.md"), "world\n");
 
     await saveWorkspaces(
       config,
@@ -13360,7 +13357,7 @@ describe("TaskService", () => {
           agentId: "test-file",
           taskStatus: "running",
           runtimeConfig: { type: "local" },
-          taskBaseCommitSha: baseCommitSha,
+          taskBaseCommitSha: baseChangeId,
         },
       ],
       testTaskSettings()
@@ -13415,7 +13412,7 @@ describe("TaskService", () => {
     expect(writeChildPartial.success).toBe(true);
 
     const parentSessionDir = config.getSessionDir(parentId);
-    const patchPath = getSubagentGitPatchMboxPath(parentSessionDir, childId, "repo");
+    const patchPath = getSubagentGitPatchDiffPath(parentSessionDir, childId, "repo");
 
     const waiter = taskService.waitForAgentReport(childId, {
       timeoutMs: 10_000,

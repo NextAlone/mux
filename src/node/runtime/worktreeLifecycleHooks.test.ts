@@ -6,26 +6,8 @@ import * as path from "node:path";
 import { Ok } from "@/common/types/result";
 import type { FrontendWorkspaceMetadata } from "@/common/types/workspace";
 import { log } from "@/node/services/log";
-import * as disposableExec from "@/node/utils/disposableExec";
-import { GIT_NO_HOOKS_ENV } from "@/node/utils/gitNoHooksEnv";
+import * as managedWorktree from "@/node/worktree/removeManagedGitWorktree";
 import { createWorktreeArchiveHook } from "./worktreeLifecycleHooks";
-
-// eslint-disable-next-line @typescript-eslint/no-empty-function
-const noop = () => {};
-
-function createMockExecResult(
-  result: Promise<{ stdout: string; stderr: string }>
-): ReturnType<typeof disposableExec.execFileAsync> {
-  void result.catch(noop);
-  return {
-    result,
-    get promise() {
-      return result;
-    },
-    child: {},
-    [Symbol.dispose]: noop,
-  } as unknown as ReturnType<typeof disposableExec.execFileAsync>;
-}
 
 function createWorkspaceMetadata(
   overrides?: Partial<FrontendWorkspaceMetadata>
@@ -97,7 +79,7 @@ describe("createWorktreeArchiveHook", () => {
     expect(await pathExists(managedPath)).toBe(true);
   });
 
-  it("deletes the managed worktree with git worktree remove when cleanup is enabled", async () => {
+  it("delegates managed workspace cleanup when deletion is enabled", async () => {
     const srcBaseDir = await createTempRoot();
     const workspaceMetadata = createWorkspaceMetadata({
       runtimeConfig: { type: "worktree", srcBaseDir },
@@ -105,27 +87,9 @@ describe("createWorktreeArchiveHook", () => {
     const managedPath = getManagedPath(workspaceMetadata);
     await mkdir(managedPath, { recursive: true });
 
-    const execFileAsyncSpy = spyOn(disposableExec, "execFileAsync").mockImplementation(
-      (file, args, options) => {
-        if (
-          file === "git" &&
-          args[0] === "-C" &&
-          args[1] === workspaceMetadata.projectPath &&
-          args[2] === "worktree" &&
-          args[3] === "remove" &&
-          args[4] === "--force" &&
-          args[5] === managedPath
-        ) {
-          expect(options).toEqual({ env: GIT_NO_HOOKS_ENV });
-          return createMockExecResult(
-            rm(managedPath, { recursive: true, force: true }).then(() => ({
-              stdout: "",
-              stderr: "",
-            }))
-          );
-        }
-
-        throw new Error(`Unexpected git command: ${file} ${args.join(" ")}`);
+    const removeSpy = spyOn(managedWorktree, "removeManagedGitWorktree").mockImplementation(
+      async (_projectPath, workspacePath) => {
+        await rm(workspacePath, { recursive: true, force: true });
       }
     );
 
@@ -136,11 +100,7 @@ describe("createWorktreeArchiveHook", () => {
     const result = await hook({ workspaceId: workspaceMetadata.id, workspaceMetadata });
 
     expect(result).toEqual(Ok(undefined));
-    expect(execFileAsyncSpy).toHaveBeenCalledWith(
-      "git",
-      ["-C", workspaceMetadata.projectPath, "worktree", "remove", "--force", managedPath],
-      { env: GIT_NO_HOOKS_ENV }
-    );
+    expect(removeSpy).toHaveBeenCalledWith(workspaceMetadata.projectPath, managedPath);
     expect(await pathExists(managedPath)).toBe(false);
   });
 
@@ -166,7 +126,7 @@ describe("createWorktreeArchiveHook", () => {
     expect(result).toEqual(Ok(undefined));
     expect(await pathExists(managedPath)).toBe(true);
     expect(debugSpy).toHaveBeenCalledWith(
-      "Skipping snapshot worktree cleanup for multi-project archive",
+      "Skipping snapshot checkout cleanup for multi-project archive",
       { workspaceId: workspaceMetadata.id }
     );
   });
@@ -190,62 +150,16 @@ describe("createWorktreeArchiveHook", () => {
     expect(await pathExists(untouchedPath)).toBe(true);
   });
 
-  it("returns Ok and prunes stale metadata when the managed worktree directory is already missing", async () => {
-    const srcBaseDir = await createTempRoot();
-    const workspaceMetadata = createWorkspaceMetadata({
-      runtimeConfig: { type: "worktree", srcBaseDir },
-    });
-    const debugSpy = spyOn(log, "debug").mockImplementation(() => undefined);
-    const execFileAsyncSpy = spyOn(disposableExec, "execFileAsync").mockImplementation(
-      (file, args, options) => {
-        expect(file).toBe("git");
-        expect(args).toEqual(["-C", workspaceMetadata.projectPath, "worktree", "prune"]);
-        expect(options).toEqual({ env: GIT_NO_HOOKS_ENV });
-        return createMockExecResult(Promise.resolve({ stdout: "", stderr: "" }));
-      }
-    );
-
-    const hook = createWorktreeArchiveHook({
-      getWorktreeArchiveBehavior: () => "delete",
-    });
-
-    const result = await hook({ workspaceId: workspaceMetadata.id, workspaceMetadata });
-
-    expect(result).toEqual(Ok(undefined));
-    expect(execFileAsyncSpy).toHaveBeenCalledWith(
-      "git",
-      ["-C", workspaceMetadata.projectPath, "worktree", "prune"],
-      { env: GIT_NO_HOOKS_ENV }
-    );
-    expect(debugSpy).not.toHaveBeenCalled();
-  });
-
-  it("prunes stale metadata when git reports the worktree is already gone", async () => {
+  it("forgets a missing managed workspace when deletion is enabled", async () => {
     const srcBaseDir = await createTempRoot();
     const workspaceMetadata = createWorkspaceMetadata({
       runtimeConfig: { type: "worktree", srcBaseDir },
     });
     const managedPath = getManagedPath(workspaceMetadata);
-    await mkdir(managedPath, { recursive: true });
-
-    const execFileAsyncSpy = spyOn(disposableExec, "execFileAsync").mockImplementation(
-      (file, args, options) => {
-        expect(file).toBe("git");
-        expect(options).toEqual({ env: GIT_NO_HOOKS_ENV });
-
-        if (args[3] === "remove") {
-          return createMockExecResult(
-            rm(managedPath, { recursive: true, force: true }).then(() => {
-              throw new Error("fatal: '/missing' does not exist");
-            })
-          );
-        }
-
-        expect(args).toEqual(["-C", workspaceMetadata.projectPath, "worktree", "prune"]);
-        return createMockExecResult(Promise.resolve({ stdout: "", stderr: "" }));
-      }
+    const removeSpy = spyOn(managedWorktree, "removeManagedGitWorktree").mockResolvedValue(
+      undefined
     );
-    const debugSpy = spyOn(log, "debug").mockImplementation(() => undefined);
+
     const hook = createWorktreeArchiveHook({
       getWorktreeArchiveBehavior: () => "delete",
     });
@@ -253,40 +167,17 @@ describe("createWorktreeArchiveHook", () => {
     const result = await hook({ workspaceId: workspaceMetadata.id, workspaceMetadata });
 
     expect(result).toEqual(Ok(undefined));
-    expect(execFileAsyncSpy).toHaveBeenCalledTimes(2);
-    expect(debugSpy).not.toHaveBeenCalled();
+    expect(removeSpy).toHaveBeenCalledWith(workspaceMetadata.projectPath, managedPath);
   });
 
-  it("falls back to recursive removal when git reports a missing worktree but the managed path still exists", async () => {
+  it("keeps archiving non-blocking when managed workspace cleanup fails", async () => {
     const srcBaseDir = await createTempRoot();
     const workspaceMetadata = createWorkspaceMetadata({
       runtimeConfig: { type: "worktree", srcBaseDir },
     });
     const managedPath = getManagedPath(workspaceMetadata);
-    const removeError = new Error("fatal: '/missing' does not exist");
-    await mkdir(managedPath, { recursive: true });
-
-    const execFileAsyncSpy = spyOn(disposableExec, "execFileAsync").mockImplementation(
-      (file, args, options) => {
-        expect(file).toBe("git");
-        expect(options).toEqual({ env: GIT_NO_HOOKS_ENV });
-
-        if (args[3] === "remove") {
-          expect(args).toEqual([
-            "-C",
-            workspaceMetadata.projectPath,
-            "worktree",
-            "remove",
-            "--force",
-            managedPath,
-          ]);
-          return createMockExecResult(Promise.reject(removeError));
-        }
-
-        expect(args).toEqual(["-C", workspaceMetadata.projectPath, "worktree", "prune"]);
-        return createMockExecResult(Promise.resolve({ stdout: "", stderr: "" }));
-      }
-    );
+    const cleanupError = new Error("cleanup failed");
+    spyOn(managedWorktree, "removeManagedGitWorktree").mockRejectedValue(cleanupError);
     const debugSpy = spyOn(log, "debug").mockImplementation(() => undefined);
     const hook = createWorktreeArchiveHook({
       getWorktreeArchiveBehavior: () => "delete",
@@ -295,51 +186,9 @@ describe("createWorktreeArchiveHook", () => {
     const result = await hook({ workspaceId: workspaceMetadata.id, workspaceMetadata });
 
     expect(result).toEqual(Ok(undefined));
-    expect(execFileAsyncSpy).toHaveBeenCalledTimes(2);
-    expect(debugSpy).not.toHaveBeenCalled();
-    expect(await pathExists(managedPath)).toBe(false);
-  });
-
-  it("falls back to recursive removal when git worktree remove fails and still returns Ok", async () => {
-    const srcBaseDir = await createTempRoot();
-    const workspaceMetadata = createWorkspaceMetadata({
-      runtimeConfig: { type: "worktree", srcBaseDir },
+    expect(debugSpy).toHaveBeenCalledWith("Failed to delete managed checkout during archive", {
+      managedPath,
+      error: cleanupError,
     });
-    const managedPath = getManagedPath(workspaceMetadata);
-    const removeError = new Error("git worktree remove failed");
-    await mkdir(managedPath, { recursive: true });
-
-    const execFileAsyncSpy = spyOn(disposableExec, "execFileAsync").mockImplementation(
-      (file, args, options) => {
-        expect(file).toBe("git");
-        expect(options).toEqual({ env: GIT_NO_HOOKS_ENV });
-
-        if (args[3] === "remove") {
-          expect(args).toEqual([
-            "-C",
-            workspaceMetadata.projectPath,
-            "worktree",
-            "remove",
-            "--force",
-            managedPath,
-          ]);
-          return createMockExecResult(Promise.reject(removeError));
-        }
-
-        expect(args).toEqual(["-C", workspaceMetadata.projectPath, "worktree", "prune"]);
-        return createMockExecResult(Promise.resolve({ stdout: "", stderr: "" }));
-      }
-    );
-    const debugSpy = spyOn(log, "debug").mockImplementation(() => undefined);
-    const hook = createWorktreeArchiveHook({
-      getWorktreeArchiveBehavior: () => "delete",
-    });
-
-    const result = await hook({ workspaceId: workspaceMetadata.id, workspaceMetadata });
-
-    expect(result).toEqual(Ok(undefined));
-    expect(execFileAsyncSpy).toHaveBeenCalledTimes(2);
-    expect(debugSpy).not.toHaveBeenCalled();
-    expect(await pathExists(managedPath)).toBe(false);
   });
 });

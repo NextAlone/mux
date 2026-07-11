@@ -29,7 +29,7 @@ export const UntrackedStatus: React.FC<UntrackedStatusProps> = ({
   useEffect(() => {
     let cancelled = false;
 
-    const loadUntracked = async () => {
+    const loadUntracked = () => {
       // Prevent concurrent loads
       if (loadingRef.current) return;
       loadingRef.current = true;
@@ -54,7 +54,7 @@ export const UntrackedStatus: React.FC<UntrackedStatusProps> = ({
     };
   }, [workspaceId, workspacePath, refreshTrigger]);
 
-  const handleTrackAll = async () => {
+  const handleTrackAll = () => {
     if (untrackedFiles.length === 0 || isTracking) return;
 
     setIsTracking(true);

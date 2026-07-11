@@ -404,9 +404,9 @@ describe("WorkspaceService executeBash runtime selection", () => {
       harness.dispose();
     }
   });
-  test("keeps multi-project git command mode on the primary repo checkout even when the persisted workspace path points at that checkout", async () => {
-    const workspaceId = "ws-multi-git";
-    const workspaceName = "feature-multi-git";
+  test("keeps multi-project jj command mode on the primary repo checkout even when the persisted workspace path points at that checkout", async () => {
+    const workspaceId = "ws-multi-jj";
+    const workspaceName = "feature-multi-jj";
     const harness = createExecuteBashHarness({
       historyService,
       workspaceId,
@@ -414,9 +414,8 @@ describe("WorkspaceService executeBash runtime selection", () => {
       trustedProjects: [["/tmp/project-a", true]],
     });
     try {
-      const result = await harness.workspaceService.executeBash(workspaceId, "", undefined, "git", [
+      const result = await harness.workspaceService.executeBash(workspaceId, "", undefined, "jj", [
         "status",
-        "--short",
       ]);
       expect(result.success).toBe(true);
       expect(harness.waitForInitMock).toHaveBeenCalledWith(workspaceId);
@@ -429,9 +428,9 @@ describe("WorkspaceService executeBash runtime selection", () => {
       harness.dispose();
     }
   });
-  test("uses the primary project runtime workspace path for _multi git command mode", async () => {
-    const workspaceId = "ws-multi-git-container";
-    const workspaceName = "feature-multi-git-container";
+  test("uses the primary project runtime workspace path for _multi jj command mode", async () => {
+    const workspaceId = "ws-multi-jj-container";
+    const workspaceName = "feature-multi-jj-container";
     const harness = createExecuteBashHarness({
       historyService,
       workspaceId,
@@ -439,9 +438,8 @@ describe("WorkspaceService executeBash runtime selection", () => {
       trustedProjects: [["/tmp/project-a", true]],
     });
     try {
-      const result = await harness.workspaceService.executeBash(workspaceId, "", undefined, "git", [
+      const result = await harness.workspaceService.executeBash(workspaceId, "", undefined, "jj", [
         "status",
-        "--short",
         "--repo-mode=_multi",
       ]);
       expect(result.success).toBe(true);
@@ -682,6 +680,9 @@ describe("WorkspaceService multi-project lifecycle", () => {
         rootDir,
         srcDir,
         generateStableId: mock(() => workspaceId),
+        resolveWorkspaceCheckoutRuntimeConfig: mock(() =>
+          Ok({ type: "worktree" as const, srcBaseDir: srcDir })
+        ),
         loadConfigOrDefault: mock(() => configState),
         editConfig: mock((fn: (config: ProjectsConfig) => ProjectsConfig) => {
           fn(configState);
@@ -852,6 +853,9 @@ describe("WorkspaceService multi-project lifecycle", () => {
         rootDir,
         srcDir,
         generateStableId: mock(() => workspaceId),
+        resolveWorkspaceCheckoutRuntimeConfig: mock(() =>
+          Ok({ type: "worktree" as const, srcBaseDir: srcDir })
+        ),
         loadConfigOrDefault: mock(() => configState),
         editConfig: mock((fn: (config: ProjectsConfig) => ProjectsConfig) => {
           fn(configState);
@@ -1027,6 +1031,9 @@ describe("WorkspaceService multi-project lifecycle", () => {
         rootDir,
         srcDir,
         generateStableId: mock(() => workspaceId),
+        resolveWorkspaceCheckoutRuntimeConfig: mock(() =>
+          Ok({ type: "worktree" as const, srcBaseDir: srcDir })
+        ),
         loadConfigOrDefault: mock(() => configState),
         getEffectiveSecrets: mock(() => []),
         getSessionDir: mock((workspace: string) => path.join(rootDir, "sessions", workspace)),
@@ -1149,6 +1156,9 @@ describe("WorkspaceService multi-project lifecycle", () => {
         rootDir,
         srcDir,
         generateStableId: mock(() => workspaceId),
+        resolveWorkspaceCheckoutRuntimeConfig: mock(() =>
+          Ok({ type: "worktree" as const, srcBaseDir: srcDir })
+        ),
         loadConfigOrDefault: mock(() => configState),
         editConfig: mock((fn: (config: ProjectsConfig) => ProjectsConfig) => {
           fn(configState);
@@ -1365,7 +1375,7 @@ describe("WorkspaceService multi-project lifecycle", () => {
           return;
         }
         expect(result.error).toContain(
-          "Multi-project workspaces currently require local or worktree runtime, got: docker"
+          "Multi-project workspaces currently require local or JJ Workspace runtime, got: docker"
         );
         expect(createRuntimeSpy).not.toHaveBeenCalled();
       } finally {

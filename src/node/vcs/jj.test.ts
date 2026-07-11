@@ -77,37 +77,27 @@ describe("jj bookmark helpers", () => {
   });
 
   test("detects a jj repository via jj root", async () => {
-    execFileAsyncSpy = spyOn(disposableExec, "execFileAsync").mockImplementation((file, args) => {
-      expect(file).toBe("jj");
-      expect(args).toEqual([
-        "--no-pager",
-        "--color",
-        "never",
-        "--repository",
-        "/repo",
-        "--ignore-working-copy",
-        "root",
-      ]);
-      return createMockExecResult(Promise.resolve({ stdout: "/repo\n", stderr: "" }));
-    });
+    execFileAsyncSpy = spyOn(disposableExec, "execFileAsync").mockImplementation(
+      (file, args, options) => {
+        expect(file).toBe("jj");
+        expect(args).toEqual(["--no-pager", "--color", "never", "--ignore-working-copy", "root"]);
+        expect(options).toEqual({ cwd: "/repo" });
+        return createMockExecResult(Promise.resolve({ stdout: "/repo\n", stderr: "" }));
+      }
+    );
 
     expect(await isInsideJjRepository("/repo")).toBe(true);
   });
 
   test("returns the normalized jj root path", async () => {
-    execFileAsyncSpy = spyOn(disposableExec, "execFileAsync").mockImplementation((file, args) => {
-      expect(file).toBe("jj");
-      expect(args).toEqual([
-        "--no-pager",
-        "--color",
-        "never",
-        "--repository",
-        "/repo/subdir",
-        "--ignore-working-copy",
-        "root",
-      ]);
-      return createMockExecResult(Promise.resolve({ stdout: "/repo\n", stderr: "" }));
-    });
+    execFileAsyncSpy = spyOn(disposableExec, "execFileAsync").mockImplementation(
+      (file, args, options) => {
+        expect(file).toBe("jj");
+        expect(args).toEqual(["--no-pager", "--color", "never", "--ignore-working-copy", "root"]);
+        expect(options).toEqual({ cwd: "/repo/subdir" });
+        return createMockExecResult(Promise.resolve({ stdout: "/repo\n", stderr: "" }));
+      }
+    );
 
     expect(await getJjRoot("/repo/subdir")).toBe("/repo");
   });

@@ -80,13 +80,11 @@ async function listBookmarksForRevision(projectPath: string, revision?: string):
 
 export async function isInsideJjRepository(projectPath: string): Promise<boolean> {
   try {
-    using proc = disposableExec.execFileAsync("jj", [
-      ...JJ_MACHINE_ARGS,
-      "--repository",
-      projectPath,
-      "--ignore-working-copy",
-      "root",
-    ]);
+    using proc = disposableExec.execFileAsync(
+      "jj",
+      [...JJ_MACHINE_ARGS, "--ignore-working-copy", "root"],
+      { cwd: projectPath }
+    );
     await proc.result;
     return true;
   } catch {
@@ -96,13 +94,11 @@ export async function isInsideJjRepository(projectPath: string): Promise<boolean
 
 export async function getJjRoot(projectPath: string): Promise<string | null> {
   try {
-    using proc = disposableExec.execFileAsync("jj", [
-      ...JJ_MACHINE_ARGS,
-      "--repository",
-      projectPath,
-      "--ignore-working-copy",
-      "root",
-    ]);
+    using proc = disposableExec.execFileAsync(
+      "jj",
+      [...JJ_MACHINE_ARGS, "--ignore-working-copy", "root"],
+      { cwd: projectPath }
+    );
     const { stdout } = await proc.result;
     return stdout.trim() || null;
   } catch {
@@ -111,15 +107,11 @@ export async function getJjRoot(projectPath: string): Promise<string | null> {
 }
 
 export async function listJjFiles(projectPath: string): Promise<string[]> {
-  using proc = disposableExec.execFileAsync("jj", [
-    ...JJ_MACHINE_ARGS,
-    "--repository",
-    projectPath,
-    "file",
-    "list",
-    "--template",
-    JJ_FILE_PATH_TEMPLATE,
-  ]);
+  using proc = disposableExec.execFileAsync(
+    "jj",
+    [...JJ_MACHINE_ARGS, "file", "list", "--template", JJ_FILE_PATH_TEMPLATE],
+    { cwd: projectPath }
+  );
   const { stdout } = await proc.result;
   return parseJjFileListOutput(stdout);
 }

@@ -156,26 +156,14 @@ describe("workspace checkout orchestration", () => {
     syncSpy.mockRestore();
   });
 
-  it("materializes submodules as part of SSH checkout prep before init hooks are skipped", async () => {
+  it("runs the submodule compatibility check during SSH checkout prep", async () => {
     const config = { host: "example.com", srcBaseDir: "/remote/src" };
     const runtime = new SSHRuntime(config, createSSHTransport(config, false));
     const initLogger = createInitLogger();
     const syncSpy = spyOn(submoduleSync, "syncRuntimeGitSubmodules").mockResolvedValue(undefined);
     const execSpy = spyOn(runtime, "exec").mockImplementation((command) => {
-      if (command.includes("test -d") && command.includes("/remote/workspace")) {
-        return Promise.resolve(createExecStream({ exitCode: 0 }));
-      }
-
-      if (command.includes("rev-parse --is-inside-work-tree")) {
-        return Promise.resolve(createExecStream({ stdout: "true\n", exitCode: 0 }));
-      }
-
-      if (command.includes("git fetch origin") && command.includes("refs/remotes/origin/main")) {
-        return Promise.resolve(createExecStream({ exitCode: 0 }));
-      }
-
-      if (command.includes("git merge-base --is-ancestor")) {
-        return Promise.resolve(createExecStream({ exitCode: 1 }));
+      if (command.includes("jj --no-pager --color never root")) {
+        return Promise.resolve(createExecStream({ stdout: "jj\n", exitCode: 0 }));
       }
 
       return Promise.reject(new Error(`Unexpected SSH command: ${command}`));

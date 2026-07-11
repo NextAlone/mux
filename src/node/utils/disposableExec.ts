@@ -261,6 +261,8 @@ export function execAsync(command: string, options?: ExecAsyncOptions): Disposab
  * Options for execFileAsync.
  */
 export interface ExecFileAsyncOptions {
+  /** Working directory for the child process. */
+  cwd?: string;
   /** Extra environment variables for the child process. */
   env?: Record<string, string | undefined>;
   /** Optional callback for each stderr data chunk from the process. */
@@ -305,6 +307,7 @@ export function execFileAsync(
 
   const child = spawn(file, args, {
     stdio: ["ignore", "pipe", "pipe"],
+    cwd: options?.cwd,
     env: options?.env ? { ...process.env, ...options.env } : undefined,
   });
   let timeoutHandle: ReturnType<typeof setTimeout> | undefined;

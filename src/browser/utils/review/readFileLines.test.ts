@@ -46,7 +46,7 @@ describe("readFileLines", () => {
     });
   });
 
-  test("uses repo-relative paths for git-ref reads in secondary repos", async () => {
+  test("uses repo-relative paths for jj revision reads in secondary repos", async () => {
     const executeBash = mock(() =>
       Promise.resolve({
         success: true,
@@ -77,7 +77,8 @@ describe("readFileLines", () => {
     expect(lines).toEqual(["first", "second"]);
     expect(executeBash).toHaveBeenNthCalledWith(1, {
       workspaceId: "workspace-1",
-      script: "git show \"HEAD:src/example.ts\" 2>/dev/null | sed -n '1,2p'",
+      script:
+        "jj --no-pager --color never file show --revision 'HEAD' -- 'src/example.ts' 2>/dev/null | sed -n '1,2p'",
       options: {
         timeout_secs: 3,
         cwdMode: "repo-root",

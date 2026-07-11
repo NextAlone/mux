@@ -30,7 +30,7 @@ function formatGitmodulesProbeError(error: unknown): Error {
   return new Error(`Failed to probe .gitmodules before submodule sync: ${getErrorMessage(error)}`);
 }
 
-async function runSubmoduleMaterialization(args: RuntimeSubmoduleSyncArgs): Promise<void> {
+function runSubmoduleMaterialization(args: RuntimeSubmoduleSyncArgs): never {
   args.initLogger.logStep("Submodules detected");
   throw formatSubmoduleSyncError(
     "jj-native submodule materialization is not implemented without invoking Git. Materialize submodules before creating this runtime, or use a non-submodule repository until jj-native submodule support is added."
@@ -97,5 +97,5 @@ export async function syncRuntimeGitSubmodules(args: RuntimeSubmoduleSyncArgs): 
     return;
   }
 
-  await runSubmoduleMaterialization(args);
+  runSubmoduleMaterialization(args);
 }

@@ -4,6 +4,7 @@ import * as os from "os";
 import * as path from "path";
 import * as fs from "fs/promises";
 
+import { initJjGitRepository } from "@/node/vcs/jj";
 import { WorktreeRuntime } from "./WorktreeRuntime";
 
 describe("WorktreeRuntime workspacePath override", () => {
@@ -45,12 +46,13 @@ describe("WorktreeRuntime workspacePath override", () => {
     expect(runtime.getWorkspacePath(projectPath, "feature")).toBe(path.join(srcBaseDir, "feature"));
   });
 
-  it("reports ready when the shared checkout is a git repo even though the derived path is absent", async () => {
+  it("reports ready when the shared checkout is a jj repo even though the derived path is absent", async () => {
     const srcBaseDir = path.join(rootDir, "src");
     const projectPath = path.join(rootDir, "repo");
     const sharedPath = path.join(rootDir, "parent-checkout");
     await fs.mkdir(sharedPath, { recursive: true });
     execSync("git init -b main", { cwd: sharedPath, stdio: "ignore" });
+    await initJjGitRepository(sharedPath);
 
     // Name-derived path (<srcBaseDir>/<project>/agent_explore_child) was never created.
     const runtime = new WorktreeRuntime(srcBaseDir, {
@@ -87,6 +89,7 @@ describe("WorktreeRuntime workspacePath override", () => {
     execSync('git config user.name "test"', { cwd: projectPath, stdio: "ignore" });
     execSync("git config commit.gpgsign false", { cwd: projectPath, stdio: "ignore" });
     execSync("git commit --allow-empty -m init", { cwd: projectPath, stdio: "ignore" });
+    await initJjGitRepository(projectPath);
 
     const nullLogger = {
       logStep: () => undefined,

@@ -270,7 +270,7 @@ describe("SSHRuntime authoritative sync contract", () => {
     const initialDigest = await privateApi.computeSnapshotDigest(repoPath);
     const initialManifest = await privateApi.resolveLocalSyncRefManifest(repoPath);
 
-    execSync(`git -C "${repoPath}" tag v1.0.0`, { stdio: "pipe" });
+    execSync(`git -c tag.gpgSign=false -C "${repoPath}" tag v1.0.0`, { stdio: "pipe" });
 
     expect(await privateApi.computeSnapshotDigest(repoPath)).toBe(initialDigest);
     expect(await privateApi.resolveLocalSyncRefManifest(repoPath)).toBe(initialManifest);

@@ -133,52 +133,54 @@ async function runTrust(options: TrustCLIOptions): Promise<number> {
   const jjRoot = await findJjRoot(projectDir);
   const mainRepoDir = jjRoot == null ? null : await findMainRepoDir(jjRoot);
   const trustDir = mainRepoDir ?? projectDir;
+  const persistenceError =
+    `Failed to persist trust change for ${trustDir}. ` +
+    `Check that ${realConfig.rootDir} is a writable directory.`;
 
   // Compare and verify against the checkout's *effective* trust (direct entry or
   // main-repo fallback), not just the canonical entry: that is what workflow
   // discovery and hooks actually consult.
   const wasTrusted = await resolveProjectTrusted(realConfig, projectDir);
   if (wasTrusted !== trusted) {
-    await realConfig.editConfig((config) => {
-      const setEntryTrusted = (dir: string, createIfMissing: boolean) => {
-        let project = config.projects.get(dir);
-        if (!project) {
-          if (!createIfMissing) {
-            return;
+    try {
+      await realConfig.editConfig((config) => {
+        const setEntryTrusted = (dir: string, createIfMissing: boolean) => {
+          let project = config.projects.get(dir);
+          if (!project) {
+            if (!createIfMissing) {
+              return;
+            }
+            // Mirror the desktop setTrust handler (projects.setTrust in
+            // src/node/orpc/router.ts): create a minimal project entry when the project
+            // was never added to mux, so headless CLI use works without the desktop app
+            // or server.
+            project = { workspaces: [] };
+            config.projects.set(dir, project);
           }
-          // Mirror the desktop setTrust handler (projects.setTrust in
-          // src/node/orpc/router.ts): create a minimal project entry when the project
-          // was never added to mux, so headless CLI use works without the desktop app
-          // or server.
-          project = { workspaces: [] };
-          config.projects.set(dir, project);
-        }
-        project.trusted = trusted;
-      };
-      setEntryTrusted(trustDir, true);
-      if (!trusted) {
-        // Revocation must also clear direct entries for the checkout paths themselves
-        // (e.g. a workspace added as its own project, or an older/manual config entry);
-        // resolveProjectTrusted's direct lookup would otherwise keep this checkout
-        // trusted after we report revocation. Skip entry creation: absence already
-        // means untrusted.
-        for (const dir of new Set([projectDir, jjRoot ?? projectDir])) {
-          if (dir !== trustDir) {
-            setEntryTrusted(dir, false);
+          project.trusted = trusted;
+        };
+        setEntryTrusted(trustDir, true);
+        if (!trusted) {
+          // Revocation must also clear direct entries for the checkout paths themselves
+          // (e.g. a workspace added as its own project, or an older/manual config entry);
+          // resolveProjectTrusted's direct lookup would otherwise keep this checkout
+          // trusted after we report revocation. Skip entry creation: absence already
+          // means untrusted.
+          for (const dir of new Set([projectDir, jjRoot ?? projectDir])) {
+            if (dir !== trustDir) {
+              setEntryTrusted(dir, false);
+            }
           }
         }
-      }
-      return config;
-    });
-    // Config.saveConfig swallows write failures (self-healing keeps the desktop app
-    // alive on bad disks), so editConfig resolves even when nothing was persisted.
-    // A headless trust command must not report success in that case: re-read from
-    // disk and fail loudly instead of letting automation proceed with a wrong
-    // assumption about the project's trust state.
+        return config;
+      });
+    } catch {
+      throw new Error(persistenceError);
+    }
+    // A headless trust command must not report success when a future config
+    // backend resolves without writing. Re-read before reporting success.
     if ((await resolveProjectTrusted(realConfig, projectDir)) !== trusted) {
-      throw new Error(
-        `Failed to persist trust change for ${trustDir}. Check that ${realConfig.rootDir} is a writable directory.`
-      );
+      throw new Error(persistenceError);
     }
   }
 

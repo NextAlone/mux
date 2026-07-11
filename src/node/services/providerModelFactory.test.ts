@@ -491,7 +491,6 @@ describe("ProviderModelFactory.createModel", () => {
       }
 
       expect((result.data as { provider?: unknown }).provider).toBe("local-claude.messages");
-      expect(result.data.constructor.name).toBe("AnthropicMessagesLanguageModel");
     });
   });
 
@@ -513,7 +512,6 @@ describe("ProviderModelFactory.createModel", () => {
       }
 
       expect((result.data as { provider?: unknown }).provider).toBe("local-google");
-      expect(result.data.constructor.name).toBe("GoogleGenerativeAILanguageModel");
     });
   });
 

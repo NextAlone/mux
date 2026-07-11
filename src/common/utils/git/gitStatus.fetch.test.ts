@@ -3,6 +3,7 @@ import * as path from "path";
 import * as os from "os";
 import { execSync } from "child_process";
 
+import { initJjGitRepository } from "@/node/vcs/jj";
 import { GIT_FETCH_SCRIPT } from "./gitStatus";
 
 describe("GIT_FETCH_SCRIPT", () => {
@@ -51,6 +52,7 @@ describe("GIT_FETCH_SCRIPT", () => {
       expect(localBefore).not.toBe(featureSha);
 
       // Run the optimized fetch script (should update origin/main)
+      await initJjGitRepository(workspaceDir);
       run(GIT_FETCH_SCRIPT, workspaceDir);
 
       const localAfter = run("git rev-parse origin/main", workspaceDir);

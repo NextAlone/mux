@@ -31,6 +31,10 @@ describe("stageWorkspaceAttachment", () => {
   test("writes zip bytes under the staged attachment directory and keeps git clean", async () => {
     const repo = await makeTempDir("mux-stage-attachment-");
     execFileSync("git", ["init", "-b", "main"], { cwd: repo, stdio: "ignore" });
+    execFileSync("jj", ["--no-pager", "--color", "never", "git", "init", "--colocate", "."], {
+      cwd: repo,
+      stdio: "ignore",
+    });
     const runtime = new LocalRuntime(repo);
     const bytes = new Uint8Array([0x50, 0x4b, 0x03, 0x04, 1, 2, 3]);
 
@@ -117,6 +121,12 @@ describe("stageWorkspaceAttachment", () => {
     const targetRepo = await makeTempDir("mux-stage-attachment-copy-target-");
     execFileSync("git", ["init", "-b", "main"], { cwd: sourceRepo, stdio: "ignore" });
     execFileSync("git", ["init", "-b", "main"], { cwd: targetRepo, stdio: "ignore" });
+    for (const repo of [sourceRepo, targetRepo]) {
+      execFileSync("jj", ["--no-pager", "--color", "never", "git", "init", "--colocate", "."], {
+        cwd: repo,
+        stdio: "ignore",
+      });
+    }
     const sourceRuntime = new LocalRuntime(sourceRepo);
     const targetRuntime = new LocalRuntime(targetRepo);
     const bytes = Buffer.from("forked zip bytes");

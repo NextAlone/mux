@@ -27,6 +27,7 @@ import { isPathInsideDir } from "@/node/utils/pathUtils";
 const SNAPSHOT_VERSION = 1;
 const SNAPSHOT_DIR_NAME = "archive-state";
 const SNAPSHOT_METADATA_FILE_NAME = "metadata.json";
+// eslint-disable-next-line @typescript-eslint/no-inferrable-types -- Keep legacy code type-checkable until JJ-native snapshots exist.
 const ENABLE_LEGACY_GIT_ARCHIVE_SNAPSHOT: boolean = false;
 const JJ_ARCHIVE_SNAPSHOT_UNSUPPORTED =
   "Archive snapshots are not yet supported for jj-native JJ Workspace runtimes.";

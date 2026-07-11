@@ -35,7 +35,7 @@ else
       GIT_DESCRIBE="${GIT_DESCRIBE}-dirty"
       echo "⚠️  Jj working copy has changes; version will be stamped with '-dirty'."
       echo "Tracked dirty files:"
-      echo "$DIRTY_FILES" | sed 's/^/  - /'
+      echo "  - ${DIRTY_FILES//$'\n'/$'\n  - '}"
     fi
   fi
 

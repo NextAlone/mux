@@ -48,13 +48,15 @@ export const StreamingBarrierView: React.FC<StreamingBarrierViewProps> = (props)
       <div className="flex flex-1 items-center gap-2">
         <BaseBarrier text={props.statusText} color="var(--color-assistant-border)" animate />
         {props.hintElement}
-{/* Render the stats slot for streaming-bound phases so the row geometry is
+        {/* Render the stats slot for streaming-bound phases so the row geometry is
             identical across the starting -> streaming transition; only its visibility
             toggles. Previously this slot mounted exactly when streaming began,
             reflowing the row (layout flash). Reserving it (with placeholder values)
             keeps the layout stable. */}
         {props.reserveStatsSlot !== false && (
-          <TooltipIfPresent tooltip={props.tokenCount === undefined ? undefined : LIVE_RATE_TOOLTIP}>
+          <TooltipIfPresent
+            tooltip={props.tokenCount === undefined ? undefined : LIVE_RATE_TOOLTIP}
+          >
             <span
               data-testid="streaming-barrier-stats"
               aria-hidden={props.tokenCount === undefined}

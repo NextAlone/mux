@@ -128,7 +128,9 @@ export function RuntimeBadge({
   const badgeUi = RUNTIME_BADGE_UI[info.type];
   const styles = isWorking ? badgeUi.badge.workingClass : badgeUi.badge.idleClass;
   const Icon = badgeUi.Icon;
-  const displayLabel = labelOverride?.trim() || info.shortLabel;
+  const normalizedLabelOverride = labelOverride?.trim();
+  const displayLabel =
+    normalizedLabelOverride === "" ? info.shortLabel : (normalizedLabelOverride ?? info.shortLabel);
 
   return (
     <Tooltip>

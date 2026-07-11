@@ -9,6 +9,7 @@ import { Ok } from "@/common/types/result";
 import type { SshPromptRequest } from "@/common/orpc/schemas/ssh";
 import { SshPromptService } from "@/node/services/sshPromptService";
 import { MULTI_PROJECT_CONFIG_KEY } from "@/common/constants/multiProject";
+import { initJjGitRepository } from "@/node/vcs/jj";
 import { ProjectService, type CloneEvent } from "./projectService";
 
 async function createLocalGitRepository(rootDir: string, repoName: string): Promise<string> {
@@ -67,6 +68,21 @@ exit 1
     "utf-8"
   );
   await fs.chmod(fakeGitPath, 0o755);
+  await writeFakeJjCloneBridge(path.join(path.dirname(fakeGitPath), "jj"));
+}
+
+async function writeFakeJjCloneBridge(fakeJjPath: string): Promise<void> {
+  await fs.writeFile(
+    fakeJjPath,
+    `#!/bin/sh
+if [ "$1" = "--no-pager" ] && [ "$2" = "--color" ] && [ "$3" = "never" ] && [ "$4" = "git" ] && [ "$5" = "clone" ] && [ "$6" = "--colocate" ]; then
+  exec git clone --progress -- "$7" "$8"
+fi
+exit 1
+`,
+    "utf-8"
+  );
+  await fs.chmod(fakeJjPath, 0o755);
 }
 
 async function cloneWithFakeGit(
@@ -533,6 +549,7 @@ exit 1
         "utf-8"
       );
       await fs.chmod(fakeGitPath, 0o755);
+      await writeFakeJjCloneBridge(path.join(path.dirname(fakeGitPath), "jj"));
 
       process.env.PATH = `${fakeBinDir}${path.delimiter}${originalPath}`;
 
@@ -628,6 +645,7 @@ exit 1
         "utf-8"
       );
       await fs.chmod(fakeGitPath, 0o755);
+      await writeFakeJjCloneBridge(path.join(fakeBinDir, "jj"));
 
       process.env.PATH = `${fakeBinDir}${path.delimiter}${originalPath}`;
 
@@ -700,6 +718,7 @@ exit 1
         "utf-8"
       );
       await fs.chmod(fakeGitPath, 0o755);
+      await writeFakeJjCloneBridge(path.join(fakeBinDir, "jj"));
 
       process.env.PATH = `${fakeBinDir}${path.delimiter}${originalPath}`;
 
@@ -765,6 +784,7 @@ exit 1
         "utf-8"
       );
       await fs.chmod(fakeGitPath, 0o755);
+      await writeFakeJjCloneBridge(path.join(fakeBinDir, "jj"));
 
       process.env.PATH = `${fakeBinDir}${path.delimiter}${originalPath}`;
       process.env.CONCURRENT_DEST_PATH = expectedProjectPath;
@@ -861,6 +881,7 @@ exit 1
         "utf-8"
       );
       await fs.chmod(fakeGitPath, 0o755);
+      await writeFakeJjCloneBridge(path.join(path.dirname(fakeGitPath), "jj"));
     }
 
     async function cloneAndCaptureAskpassEnv(options: {
@@ -950,6 +971,7 @@ exit 1
         "utf-8"
       );
       await fs.chmod(fakeGitPath, 0o755);
+      await writeFakeJjCloneBridge(path.join(fakeBinDir, "jj"));
 
       const sshPromptService = new SshPromptService(5000);
       const release = sshPromptService.registerInteractiveResponder();
@@ -1042,6 +1064,7 @@ exit 1
         "utf-8"
       );
       await fs.chmod(fakeGitPath, 0o755);
+      await writeFakeJjCloneBridge(path.join(fakeBinDir, "jj"));
 
       const sshPromptService = new SshPromptService(5000);
       const release = sshPromptService.registerInteractiveResponder();
@@ -1122,6 +1145,7 @@ exit 1
         "utf-8"
       );
       await fs.chmod(fakeGitPath, 0o755);
+      await writeFakeJjCloneBridge(path.join(fakeBinDir, "jj"));
 
       const sshPromptService = new SshPromptService(5000);
       const release = sshPromptService.registerInteractiveResponder();
@@ -1203,6 +1227,7 @@ exit 1
         "utf-8"
       );
       await fs.chmod(fakeGitPath, 0o755);
+      await writeFakeJjCloneBridge(path.join(fakeBinDir, "jj"));
 
       const sshPromptService = new SshPromptService(50);
       const release = sshPromptService.registerInteractiveResponder();
@@ -1265,6 +1290,7 @@ exit 1
         "utf-8"
       );
       await fs.chmod(fakeGitPath, 0o755);
+      await writeFakeJjCloneBridge(path.join(fakeBinDir, "jj"));
 
       const sshPromptService = new SshPromptService(5000);
       const release = sshPromptService.registerInteractiveResponder();
@@ -1338,6 +1364,7 @@ exit 1
         "utf-8"
       );
       await fs.chmod(fakeGitPath, 0o755);
+      await writeFakeJjCloneBridge(path.join(fakeBinDir, "jj"));
 
       const sshPromptService = new SshPromptService(5000);
       const release = sshPromptService.registerInteractiveResponder();
@@ -1411,6 +1438,7 @@ exit 1
         "utf-8"
       );
       await fs.chmod(fakeGitPath, 0o755);
+      await writeFakeJjCloneBridge(path.join(fakeBinDir, "jj"));
 
       process.env.PATH = `${fakeBinDir}${path.delimiter}${originalPath}`;
 
@@ -1473,6 +1501,7 @@ exit 1
         "utf-8"
       );
       await fs.chmod(fakeGitPath, 0o755);
+      await writeFakeJjCloneBridge(path.join(fakeBinDir, "jj"));
 
       const sshPromptService = new SshPromptService(5000);
       const release = sshPromptService.registerInteractiveResponder();
@@ -1553,6 +1582,7 @@ exit 1
         "utf-8"
       );
       await fs.chmod(fakeGitPath, 0o755);
+      await writeFakeJjCloneBridge(path.join(fakeBinDir, "jj"));
 
       const sshPromptService = new SshPromptService(5000);
       const release = sshPromptService.registerInteractiveResponder();
@@ -1727,15 +1757,24 @@ exit 1
   });
 
   describe("getFileCompletions", () => {
-    it("works for subdirectories inside a parent git repository", async () => {
+    it("works for subdirectories inside a parent JJ repository", async () => {
       const repoPath = await createLocalGitRepository(tempDir, "repo-with-sub-project");
       const subProjectPath = path.join(repoPath, "packages", "api");
       await fs.mkdir(subProjectPath, { recursive: true });
       await fs.writeFile(path.join(subProjectPath, "service.ts"), "export {};\n", "utf-8");
-
+      execSync("git add packages/api/service.ts", { cwd: repoPath, stdio: "ignore" });
+      execSync('git -c user.name="test" -c user.email="test@test" commit -m "add service"', {
+        cwd: repoPath,
+        stdio: "ignore",
+      });
+      await initJjGitRepository(repoPath);
+      execSync("jj --no-pager --color never file track packages/api/service.ts", {
+        cwd: repoPath,
+        stdio: "ignore",
+      });
       const result = await service.getFileCompletions(subProjectPath, "service");
 
-      expect(result.paths).toContain("service.ts");
+      expect(result.paths).toContain("packages/api/service.ts");
     });
   });
 

@@ -280,6 +280,8 @@ async function expectWebSocketOriginCase(input: {
       const ws = new WebSocket(server.wsUrl, {
         headers: resolveOriginHeaders(input.headers, server),
       });
+      // Bun 1.3.13 can emit a second delayed error after a rejected handshake.
+      ws.on("error", () => undefined);
 
       try {
         if (input.accepted) {

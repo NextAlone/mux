@@ -247,6 +247,10 @@ async function waitForMessage(ws: WebSocket): Promise<string> {
 describe("BrowserBridgeServer", () => {
   test("bridges raw WebSocket messages in both directions for a valid token", async () => {
     const upstreamHarness = await listenUpstreamServer();
+    let resolveBridgeReady!: () => void;
+    const bridgeReady = new Promise<void>((resolve) => {
+      resolveBridgeReady = resolve;
+    });
     const bridgeServer = createBridgeServer({
       getSessionConnection: mock((workspaceId: string, sessionName: string) =>
         Promise.resolve(
@@ -255,6 +259,10 @@ describe("BrowserBridgeServer", () => {
             : null
         )
       ),
+      subscribe: () => {
+        resolveBridgeReady();
+        return () => undefined;
+      },
       validate: mock((token: string) =>
         token === VALID_TOKEN
           ? {
@@ -272,14 +280,17 @@ describe("BrowserBridgeServer", () => {
     try {
       await waitForWebSocketOpen(ws);
       const upstreamSocket = await upstreamHarness.connectionPromise;
+      await bridgeReady;
 
+      const upstreamMessage = waitForMessage(upstreamSocket);
       ws.send('{"type":"input_keyboard","eventType":"keyDown","key":"a"}');
-      expect(await waitForMessage(upstreamSocket)).toBe(
+      expect(await upstreamMessage).toBe(
         '{"type":"input_keyboard","eventType":"keyDown","key":"a"}'
       );
 
+      const clientMessage = waitForMessage(ws);
       upstreamSocket.send('{"type":"frame","data":"abc"}');
-      expect(await waitForMessage(ws)).toBe('{"type":"frame","data":"abc"}');
+      expect(await clientMessage).toBe('{"type":"frame","data":"abc"}');
     } finally {
       ws.terminate();
       await upgradeHarness.close();

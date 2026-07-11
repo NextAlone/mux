@@ -72,7 +72,7 @@ describe("AgentSession change detection", () => {
 
       expect(attachments).toHaveLength(1);
       expect(attachments[0].type).toBe("edited_text_file");
-      expect(attachments[0].filename).toBe(testFile);
+      expect(attachments[0].filename).toBe(await realpath(testFile));
       expect(attachments[0].snippet).toContain("Do something better");
       expect(attachments[0].snippet).toContain("Step 2");
       expect(attachments[0].snippet).toContain("New step");
@@ -153,9 +153,9 @@ describe("AgentSession change detection", () => {
 
       expect(attachments).toHaveLength(2);
       const filenames = attachments.map((a) => a.filename);
-      expect(filenames).toContain(file1);
-      expect(filenames).toContain(file2);
-      expect(filenames).not.toContain(file3);
+      expect(filenames).toContain(await realpath(file1));
+      expect(filenames).toContain(await realpath(file2));
+      expect(filenames).not.toContain(await realpath(file3));
     });
 
     it("should ignore mtime change when content identical (touch scenario)", async () => {

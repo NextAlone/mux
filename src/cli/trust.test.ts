@@ -122,8 +122,7 @@ describe("mux trust CLI", () => {
     const repo = path.join(tmp.path, "repo");
     await fs.mkdir(repo, { recursive: true });
     // MUX_ROOT pointing at a regular file makes config.json unwritable;
-    // Config.saveConfig swallows the write error, so only the post-write
-    // verification can surface the failure.
+    // the CLI must surface this persistence failure.
     const muxRootFile = path.join(tmp.path, "mux-root-file");
     await fs.writeFile(muxRootFile, "not a directory\n", "utf-8");
 

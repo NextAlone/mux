@@ -13,7 +13,7 @@ describe("local compaction orchestrator", () => {
         fallbackLocalStrategies: ["pi-local", "mux-current"],
         remotePolicy: "off",
       }),
-      attemptStrategy: async (strategy) => {
+      attemptStrategy: (strategy) => {
         attempts.push(strategy);
         if (strategy === "hybrid-local") {
           return {
@@ -43,7 +43,7 @@ describe("local compaction orchestrator", () => {
         fallbackLocalStrategies: ["pi-local", "mux-current"],
         remotePolicy: "off",
       }),
-      attemptStrategy: async (strategy) => {
+      attemptStrategy: (strategy) => {
         attempts.push(strategy);
         return {
           type: "failed",

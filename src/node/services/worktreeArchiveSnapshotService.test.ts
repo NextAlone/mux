@@ -161,7 +161,69 @@ async function writeWorkspaceBranchMap(
   );
 }
 
-describe("WorktreeArchiveSnapshotService", () => {
+const JJ_ARCHIVE_SNAPSHOT_UNSUPPORTED =
+  "Archive snapshots are not yet supported for jj-native JJ Workspace runtimes.";
+
+describe("WorktreeArchiveSnapshotService gate", () => {
+  test("reports unsupported without creating archive state", async () => {
+    const fixture = await createFixture();
+    try {
+      const args = {
+        workspaceId: fixture.workspaceId,
+        workspaceMetadata: fixture.metadata,
+      };
+
+      expect(await fixture.service.preflightSnapshotForArchive(args)).toEqual(
+        Err(JJ_ARCHIVE_SNAPSHOT_UNSUPPORTED)
+      );
+      expect(await fixture.service.getUnsupportedUntrackedPaths(args)).toEqual(
+        Err(JJ_ARCHIVE_SNAPSHOT_UNSUPPORTED)
+      );
+      expect(await fixture.service.captureSnapshotForArchive(args)).toEqual(
+        Err(JJ_ARCHIVE_SNAPSHOT_UNSUPPORTED)
+      );
+
+      await fixture.config.editConfig((cfg) => {
+        const workspace = cfg.projects.get(fixture.projectPath)?.workspaces[0];
+        if (!workspace) {
+          throw new Error("Missing workspace entry");
+        }
+        workspace.worktreeArchiveSnapshot = {
+          version: 1,
+          capturedAt: "2026-01-01T00:00:00.000Z",
+          stateDirPath: "archive-state",
+          projects: [
+            {
+              projectPath: fixture.projectPath,
+              projectName: fixture.metadata.projectName,
+              storageKey: "project",
+              branchName: fixture.workspaceName,
+              trunkBranch: "main",
+              baseSha: fixture.baseSha,
+              headSha: fixture.baseSha,
+            },
+          ],
+        };
+        return cfg;
+      });
+      expect(await fixture.service.restoreSnapshotAfterUnarchive(args)).toEqual(
+        Err(JJ_ARCHIVE_SNAPSHOT_UNSUPPORTED)
+      );
+
+      expect(
+        await pathExists(
+          path.join(fixture.config.getSessionDir(fixture.workspaceId), "archive-state")
+        )
+      ).toBe(false);
+    } finally {
+      await fs.rm(fixture.muxRoot, { recursive: true, force: true });
+    }
+  });
+});
+
+// Legacy Git snapshots remain as regression coverage for a future implementation.
+// JJ-native archive snapshots are currently gated off by the production service.
+describe.skip("WorktreeArchiveSnapshotService legacy Git snapshots", () => {
   let fixture: TestFixture;
 
   beforeEach(async () => {

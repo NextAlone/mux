@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { installDom } from "../../../../tests/ui/dom";
 import { APIProvider } from "@/browser/contexts/API";
+import { PolicyProvider } from "@/browser/contexts/PolicyContext";
 import {
   CommandRegistryProvider,
   useCommandRegistry,
@@ -36,9 +37,11 @@ function RegisterAction(props: { action: CommandAction }) {
 function renderPalette(action: CommandAction) {
   return render(
     <APIProvider client={createMockORPCClient()}>
-      <CommandRegistryProvider>
-        <PaletteHarness action={action} />
-      </CommandRegistryProvider>
+      <PolicyProvider>
+        <CommandRegistryProvider>
+          <PaletteHarness action={action} />
+        </CommandRegistryProvider>
+      </PolicyProvider>
     </APIProvider>
   );
 }

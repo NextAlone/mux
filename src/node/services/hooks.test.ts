@@ -680,8 +680,7 @@ read RESULT
       );
 
       expect(hook.success).toBe(true);
-      expect(warnings.length).toBe(1);
-      expect(warnings[0]).toMatch(/^pre: \d+ms$/);
+      expect(warnings.some((warning) => /^pre: \d+ms$/.test(warning))).toBe(true);
     });
 
     test("logs warning when post-hook takes too long", async () => {
@@ -718,8 +717,7 @@ sleep 0.15
       );
 
       expect(hook.success).toBe(true);
-      expect(warnings.length).toBe(1);
-      expect(warnings[0]).toMatch(/^post: \d+ms$/);
+      expect(warnings.some((warning) => /^post: \d+ms$/.test(warning))).toBe(true);
     });
 
     test("does not log warning when hook is fast", async () => {

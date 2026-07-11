@@ -26,6 +26,20 @@ describe("buildGitDiffCommand", () => {
     expect(command).not.toContain("origin/main");
   });
 
+  test("always compares the base revision with the working copy", () => {
+    const withUncommitted = buildGitDiffCommand("main", true, "", "diff");
+    const withoutUncommitted = buildGitDiffCommand("main", false, "", "diff");
+
+    expect(withUncommitted).toBe("jj --no-pager --color never diff --from 'main' --to @ --git");
+    expect(withoutUncommitted).toBe(withUncommitted);
+  });
+
+  test("maps --staged to the parent revision", () => {
+    expect(buildGitDiffCommand("--staged", true, "", "diff")).toBe(
+      "jj --no-pager --color never diff --from '@-' --to @ --git"
+    );
+  });
+
   test("shell-quotes diffBase to prevent command injection", () => {
     const command = buildGitDiffCommand("main;touch /tmp/pwned", false, "", "diff");
 

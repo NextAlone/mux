@@ -125,6 +125,8 @@ async function connectToStream(port: number): Promise<WebSocket> {
       }
       settled = true;
       cleanup();
+      // ws can emit another error while close() settles a failed CONNECTING socket.
+      upstream.on("error", () => undefined);
       closeWebSocket(upstream);
       reject(error);
     };

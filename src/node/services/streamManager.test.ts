@@ -587,7 +587,8 @@ describe("StreamManager - Anthropic cache TTL overrides", () => {
       }),
     };
 
-    const request = buildRequestConfig(
+    const request = buildRequestConfig.call(
+      streamManager,
       model,
       modelString,
       messages,
@@ -898,7 +899,7 @@ describe("StreamManager - sequential tool execution", () => {
     }
 
     return {
-      buildRequestConfig,
+      buildRequestConfig: (...args) => buildRequestConfig.call(streamManager, ...args),
       createStreamResult: (request, abortController) =>
         createStreamResultMethod.call(streamManager, request, abortController),
     };
@@ -1045,7 +1046,7 @@ describe("StreamManager - call settings overrides", () => {
     }
 
     return {
-      buildRequestConfig,
+      buildRequestConfig: (...args) => buildRequestConfig.call(streamManager, ...args),
       createStreamResult: (request, abortController) =>
         createStreamResultMethod.call(streamManager, request, abortController),
     };
@@ -4169,6 +4170,8 @@ describe("StreamManager - previousResponseId recovery", () => {
       runtime,
       cumulativeUsage: { inputTokens: 1, outputTokens: 2, totalTokens: 3 },
       cumulativeProviderMetadata: { openai: {} },
+      activeReasoningProviderOptions: new Map(),
+      latestReasoningProviderOptions: undefined,
     };
 
     (streamManager as unknown as { createStreamResult: () => unknown }).createStreamResult =
@@ -5003,7 +5006,7 @@ describe("StreamManager - tool search activeTools scoping", () => {
     }
 
     return {
-      buildRequestConfig,
+      buildRequestConfig: (...args) => buildRequestConfig.call(streamManager, ...args),
       createStreamResult: (request, abortController) =>
         createStreamResultMethod.call(streamManager, request, abortController),
     };

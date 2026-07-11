@@ -555,63 +555,51 @@ describe("agent_skill_list", () => {
       });
     });
 
-    it("uses runtime mux home and lists ~/.agents/skills in project-runtime mode", async () => {
+    it("uses runtime mux home in project-runtime mode", async () => {
       using tempDir = new TestTempDir("test-agent-skill-list-split-root-runtime-mux-home");
-      using legacyHome = new TestTempDir("test-agent-skill-list-split-root-legacy-home");
 
       const runtimeGlobalSkill = "runtime-mux-home-global-skill";
-      const legacyGlobalSkill = "legacy-tilde-global-skill";
       const remoteWorkspaceRoot = "/var/workspace";
 
-      await withHomeDir(legacyHome.path, async () => {
-        await withMuxRoot(legacyHome.path, async () => {
-          await writeGlobalSkill(path.join(tempDir.path, "mux"), runtimeGlobalSkill, {
-            description: "from runtime mux home",
-          });
-          await writeSkill(path.join(legacyHome.path, ".agents", "skills"), legacyGlobalSkill, {
-            description: "from legacy tilde root",
-          });
-
-          const remoteRuntime = new RemotePathMappedRuntime(tempDir.path, "/var", {
-            muxHome: "/var/mux",
-            resolveToRemotePath: false,
-          });
-
-          const config = createTestToolConfig(tempDir.path, {
-            workspaceId: "regular-workspace",
-            runtime: remoteRuntime,
-            muxScope: {
-              type: "project",
-              muxHome: legacyHome.path,
-              projectRoot: tempDir.path,
-              projectStorageAuthority: "runtime",
-            },
-          });
-
-          const tool = createAgentSkillListTool({
-            ...config,
-            cwd: remoteWorkspaceRoot,
-          });
-
-          const result = (await tool.execute!(
-            { includeUnadvertised: true },
-            mockToolCallOptions
-          )) as AgentSkillListToolResult;
-
-          expect(result.success).toBe(true);
-          if (result.success) {
-            expect(
-              result.skills.some(
-                (skill) => skill.name === runtimeGlobalSkill && skill.scope === "global"
-              )
-            ).toBe(true);
-            expect(getSkill(result.skills, legacyGlobalSkill)).toMatchObject({
-              name: legacyGlobalSkill,
-              description: "from legacy tilde root",
-              scope: "global",
-            });
-          }
+      await withMuxRoot(tempDir.path, async () => {
+        await writeGlobalSkill(path.join(tempDir.path, "mux"), runtimeGlobalSkill, {
+          description: "from runtime mux home",
         });
+
+        const remoteRuntime = new RemotePathMappedRuntime(tempDir.path, "/var", {
+          muxHome: "/var/mux",
+          resolveToRemotePath: false,
+        });
+
+        const config = createTestToolConfig(tempDir.path, {
+          workspaceId: "regular-workspace",
+          runtime: remoteRuntime,
+          muxScope: {
+            type: "project",
+            muxHome: tempDir.path,
+            projectRoot: tempDir.path,
+            projectStorageAuthority: "runtime",
+          },
+        });
+
+        const tool = createAgentSkillListTool({
+          ...config,
+          cwd: remoteWorkspaceRoot,
+        });
+
+        const result = (await tool.execute!(
+          { includeUnadvertised: true },
+          mockToolCallOptions
+        )) as AgentSkillListToolResult;
+
+        expect(result.success).toBe(true);
+        if (result.success) {
+          expect(
+            result.skills.some(
+              (skill) => skill.name === runtimeGlobalSkill && skill.scope === "global"
+            )
+          ).toBe(true);
+        }
       });
     });
 
