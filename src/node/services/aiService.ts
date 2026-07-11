@@ -158,7 +158,11 @@ import {
 import type { PTCEventWithParent } from "@/node/services/tools/code_execution";
 import { MockAiStreamPlayer } from "./mock/mockAiStreamPlayer";
 import { DEVTOOLS_RUN_METADATA_ID_HEADER } from "./devToolsHeaderCapture";
-import { ProviderModelFactory, modelCostsIncluded } from "./providerModelFactory";
+import {
+  ProviderModelFactory,
+  modelCostsIncluded,
+  usesCodexResponsesLite,
+} from "./providerModelFactory";
 import { prepareMessagesForProvider } from "./messagePipeline";
 import {
   collectOpenAIResponsesCompactionReplays,
@@ -1345,6 +1349,9 @@ export class AIService extends EventEmitter {
       const latestOpenAIResponsesRemoteCompaction = getLatestOpenAIResponsesRemoteCompaction(
         activeContextMessagesBeforeModelResolution
       );
+      const codexGpt56CompatExperimentEnabled =
+        experiments?.codexGpt56Compat ??
+        this.experimentsService?.isExperimentEnabled(EXPERIMENT_IDS.CODEX_GPT56_COMPAT) === true;
 
       // Resolve model string (xAI variant mapping + gateway routing) and create the model.
       const resolveAndCreateModelStartedAt = Date.now();
@@ -1356,6 +1363,7 @@ export class AIService extends EventEmitter {
           agentInitiated,
           workspaceId,
           openAIResponsesCompactionReplays,
+          codexGpt56Compat: codexGpt56CompatExperimentEnabled,
         }
       );
       recordStartupPhaseTiming("resolveAndCreateModelMs", resolveAndCreateModelStartedAt);
@@ -1365,10 +1373,17 @@ export class AIService extends EventEmitter {
       const {
         effectiveModelString,
         canonicalModelString,
+        canonicalModelId,
         canonicalProviderName,
         routedThroughGateway,
         routeProvider,
+        openAIResponsesCompactionRoute,
       } = modelResult.data;
+      const codeModeOnlyEnabled =
+        codexGpt56CompatExperimentEnabled &&
+        openAIResponsesCompactionRoute === "codex-oauth" &&
+        effectiveMuxProviderOptions.openai?.wireFormat !== "chatCompletions" &&
+        usesCodexResponsesLite(canonicalModelId);
       if (latestOpenAIResponsesRemoteCompaction && canonicalProviderName !== "openai") {
         return Err({
           type: "unknown",
@@ -2469,6 +2484,7 @@ export class AIService extends EventEmitter {
         extraTools: this.extraTools,
         effectiveToolPolicy,
         experiments,
+        codeModeOnly: codeModeOnlyEnabled ? { workspaceId } : undefined,
         emitNestedToolEvent: emitNestedPtcToolEvent,
       });
       recordStartupPhaseTiming(
@@ -2485,6 +2501,7 @@ export class AIService extends EventEmitter {
       // presence-sniffing the record would misfire on an MCP tool named
       // code_execution (see prepareToolSearch).
       const ptcEnabled =
+        codeModeOnlyEnabled ||
         experiments?.programmaticToolCalling === true ||
         experiments?.programmaticToolCallingExclusive === true;
       if (toolSearchRuntime) {
@@ -2967,12 +2984,22 @@ export class AIService extends EventEmitter {
                     agentInitiated,
                     workspaceId,
                     openAIResponsesCompactionReplays,
+                    codexGpt56Compat: codexGpt56CompatExperimentEnabled,
                   }
                 );
                 if (!nextModelResult.success) {
                   return Err(formatSendMessageError(nextModelResult.error).message);
                 }
                 const next = nextModelResult.data;
+                const nextCodeModeOnlyEnabled =
+                  codexGpt56CompatExperimentEnabled &&
+                  next.openAIResponsesCompactionRoute === "codex-oauth" &&
+                  effectiveMuxProviderOptions.openai?.wireFormat !== "chatCompletions" &&
+                  usesCodexResponsesLite(next.canonicalModelId);
+                const nextPtcEnabled =
+                  nextCodeModeOnlyEnabled ||
+                  experiments?.programmaticToolCalling === true ||
+                  experiments?.programmaticToolCallingExclusive === true;
                 if (
                   latestOpenAIResponsesRemoteCompaction &&
                   next.canonicalProviderName !== "openai"
@@ -3012,6 +3039,7 @@ export class AIService extends EventEmitter {
                     extraTools: this.extraTools,
                     effectiveToolPolicy,
                     experiments,
+                    codeModeOnly: nextCodeModeOnlyEnabled ? { workspaceId } : undefined,
                     emitNestedToolEvent: emitNestedPtcToolEvent,
                   });
                   // Tool search: keep the per-stream state consistent with the
@@ -3024,7 +3052,7 @@ export class AIService extends EventEmitter {
                         tools: nextTools,
                         mcpToolNames: Object.keys(mcpTools ?? {}),
                         toolPolicy: effectiveToolPolicy,
-                        ptcEnabled,
+                        ptcEnabled: nextPtcEnabled,
                       }).tools;
                     } else if (!(mcpTools && "tool_search" in mcpTools)) {
                       // The primary-path gate deactivated deferral (e.g. every

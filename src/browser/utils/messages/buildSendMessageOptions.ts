@@ -6,6 +6,7 @@ import { normalizeSelectedModel } from "@/common/utils/ai/models";
 export interface ExperimentValues {
   programmaticToolCalling: boolean | undefined;
   programmaticToolCallingExclusive: boolean | undefined;
+  codexGpt56Compat: boolean | undefined;
   advisorTool: boolean | undefined;
   execSubagentHardRestart: boolean | undefined;
   dynamicWorkflows: boolean | undefined;

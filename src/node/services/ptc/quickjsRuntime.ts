@@ -156,6 +156,13 @@ export class QuickJSRuntime implements IJSRuntime {
     handle.dispose();
   }
 
+  registerValue(name: string, value: unknown): void {
+    this.assertNotDisposed("registerValue");
+    const handle = this.marshal(value);
+    this.ctx.setProp(this.ctx.global, name, handle);
+    handle.dispose();
+  }
+
   registerObject(
     name: string,
     obj: Record<string, (...args: unknown[]) => Promise<unknown>>
@@ -281,10 +288,9 @@ export class QuickJSRuntime implements IJSRuntime {
       this.abortController?.abort();
     }, timeoutMs);
 
-    // Wrap code in function to allow return statements.
-    // With asyncify, async host functions appear synchronous to QuickJS,
-    // so we don't need an async IIFE. Using evalCodeAsync handles the suspension.
-    const wrappedCode = `(function() { ${code} })()`;
+    // Code Mode emits raw JavaScript and may use top-level await. Keep return
+    // support for the existing PTC tool while evaluating it as an async cell.
+    const wrappedCode = `(async function() { ${code} })()`;
 
     try {
       const evalResult = await this.ctx.evalCodeAsync(wrappedCode);

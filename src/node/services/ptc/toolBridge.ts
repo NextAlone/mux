@@ -26,10 +26,12 @@ const EXCLUDED_TOOLS = new Set([
 export class ToolBridge {
   private readonly bridgeableTools: Map<string, Tool>;
   private readonly nonBridgeableTools: Map<string, Tool>;
+  private readonly directModelTools: Map<string, Tool>;
 
   constructor(tools: Record<string, Tool>) {
     this.bridgeableTools = new Map();
     this.nonBridgeableTools = new Map();
+    this.directModelTools = new Map();
 
     for (const [name, tool] of Object.entries(tools)) {
       // code_execution is the tool that uses the bridge, not a candidate for bridging
@@ -40,6 +42,9 @@ export class ToolBridge {
         this.bridgeableTools.set(name, tool);
       } else {
         this.nonBridgeableTools.set(name, tool);
+        if (EXCLUDED_TOOLS.has(name)) {
+          this.directModelTools.set(name, tool);
+        }
       }
     }
   }
@@ -66,6 +71,11 @@ export class ToolBridge {
     return Object.fromEntries(this.nonBridgeableTools.entries());
   }
 
+  /** Direct-only UI/control tools retained beside exec/wait in Code Mode Only. */
+  getDirectModelTools(): Record<string, Tool> {
+    return Object.fromEntries(this.directModelTools.entries());
+  }
+
   /**
    * Register all bridgeable tools on the runtime under `mux` namespace.
    *
@@ -76,7 +86,7 @@ export class ToolBridge {
    * This ensures nested tool calls are cancelled when the sandbox times out,
    * not just when the parent stream is cancelled.
    */
-  register(runtime: IJSRuntime): void {
+  register(runtime: IJSRuntime, namespace = "mux"): void {
     const muxObj: Record<string, (...args: unknown[]) => Promise<unknown>> = {};
 
     for (const [name, tool] of this.bridgeableTools) {
@@ -110,7 +120,7 @@ export class ToolBridge {
       };
     }
 
-    runtime.registerObject("mux", muxObj);
+    runtime.registerObject(namespace, muxObj);
   }
 
   private hasExecute(tool: Tool): tool is Tool & { execute: NonNullable<Tool["execute"]> } {

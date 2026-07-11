@@ -709,6 +709,7 @@ export const ToolPolicySchema = z.array(ToolPolicyFilterSchema).meta({
 export const ExperimentsSchema = z.object({
   programmaticToolCalling: z.boolean().optional(),
   programmaticToolCallingExclusive: z.boolean().optional(),
+  codexGpt56Compat: z.boolean().optional(),
   advisorTool: z.boolean().optional(),
   dynamicWorkflows: z.boolean().optional(),
   execSubagentHardRestart: z.boolean().optional(),

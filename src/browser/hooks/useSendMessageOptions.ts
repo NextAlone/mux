@@ -59,6 +59,7 @@ export function useSendMessageOptions(workspaceId: string): SendMessageOptionsWi
   const programmaticToolCallingExclusive = useExperimentOverrideValue(
     EXPERIMENT_IDS.PROGRAMMATIC_TOOL_CALLING_EXCLUSIVE
   );
+  const codexGpt56Compat = useExperimentOverrideValue(EXPERIMENT_IDS.CODEX_GPT56_COMPAT);
   const advisorTool = useExperimentOverrideValue(EXPERIMENT_IDS.ADVISOR_TOOL);
   const execSubagentHardRestart = useExperimentOverrideValue(
     EXPERIMENT_IDS.EXEC_SUBAGENT_HARD_RESTART
@@ -86,6 +87,7 @@ export function useSendMessageOptions(workspaceId: string): SendMessageOptionsWi
     experiments: {
       programmaticToolCalling,
       programmaticToolCallingExclusive,
+      codexGpt56Compat,
       advisorTool,
       execSubagentHardRestart,
       dynamicWorkflows,

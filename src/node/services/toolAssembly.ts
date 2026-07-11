@@ -17,6 +17,7 @@ import type {
   PTCEventWithParent,
   createCodeExecutionTool as CreateCodeExecutionToolFn,
 } from "@/node/services/tools/code_execution";
+import type { createCodeModeTools as CreateCodeModeToolsFn } from "@/node/services/tools/code_mode";
 import type { QuickJSRuntimeFactory } from "@/node/services/ptc/quickjsRuntime";
 import type { ToolBridge } from "@/node/services/ptc/toolBridge";
 import { log } from "./log";
@@ -36,6 +37,7 @@ import { getRuntimeTypeForTelemetry, roundToBase2 } from "@/common/telemetry/uti
 // Dynamic imports are justified: PTC pulls in ~10MB of dependencies that would slow startup.
 interface PTCModules {
   createCodeExecutionTool: typeof CreateCodeExecutionToolFn;
+  createCodeModeTools: typeof CreateCodeModeToolsFn;
   QuickJSRuntimeFactory: typeof QuickJSRuntimeFactory;
   ToolBridge: typeof ToolBridge;
   runtimeFactory: QuickJSRuntimeFactory | null;
@@ -47,8 +49,9 @@ async function getPTCModules(): Promise<PTCModules> {
 
   /* eslint-disable no-restricted-syntax -- Dynamic imports required here to avoid loading
      ~10MB of typescript/prettier/quickjs at startup (causes CI failures) */
-  const [codeExecution, quickjs, toolBridge] = await Promise.all([
+  const [codeExecution, codeMode, quickjs, toolBridge] = await Promise.all([
     import("@/node/services/tools/code_execution"),
+    import("@/node/services/tools/code_mode"),
     import("@/node/services/ptc/quickjsRuntime"),
     import("@/node/services/ptc/toolBridge"),
   ]);
@@ -56,6 +59,7 @@ async function getPTCModules(): Promise<PTCModules> {
 
   ptcModules = {
     createCodeExecutionTool: codeExecution.createCodeExecutionTool,
+    createCodeModeTools: codeMode.createCodeModeTools,
     QuickJSRuntimeFactory: quickjs.QuickJSRuntimeFactory,
     ToolBridge: toolBridge.ToolBridge,
     runtimeFactory: null,
@@ -80,6 +84,8 @@ export interface ApplyToolPolicyAndExperimentsOptions {
     programmaticToolCalling?: boolean;
     programmaticToolCallingExclusive?: boolean;
   };
+  /** Codex GPT-5.6 requires the freeform exec/wait Code Mode surface. */
+  codeModeOnly?: { workspaceId: string };
   /** Callback to forward nested PTC tool events to the stream. */
   emitNestedToolEvent: (event: PTCEventWithParent) => void;
 }
@@ -90,7 +96,9 @@ export interface ApplyToolPolicyAndExperimentsOptions {
  * Steps:
  * 1. Merge extra tools (CLI tools bypass policy — injected by runtime, not user)
  * 2. Apply tool policy (agent → caller → system workspace deny/enable rules)
- * 3. If PTC experiment is enabled, lazy-load PTC and create code_execution tool:
+ * 3. Build the selected sandbox tool surface:
+ *    - Code Mode Only: replace bridgeable/provider tools with freeform exec/wait
+ *    - PTC experiment: lazily create code_execution
  *    - Supplement mode: adds code_execution alongside existing tools
  *    - Exclusive mode: replaces bridgeable tools with code_execution only
  *
@@ -99,7 +107,14 @@ export interface ApplyToolPolicyAndExperimentsOptions {
 export async function applyToolPolicyAndExperiments(
   opts: ApplyToolPolicyAndExperimentsOptions
 ): Promise<Record<string, Tool>> {
-  const { allTools, extraTools, effectiveToolPolicy, experiments, emitNestedToolEvent } = opts;
+  const {
+    allTools,
+    extraTools,
+    effectiveToolPolicy,
+    experiments,
+    codeModeOnly,
+    emitNestedToolEvent,
+  } = opts;
 
   // Merge in extra tools (e.g., CLI-specific tools like set_exit_code).
   // These bypass policy filtering since they're injected by the runtime, not user config.
@@ -112,7 +127,28 @@ export async function applyToolPolicyAndExperiments(
 
   // Handle PTC experiments — add or replace tools with code_execution
   let toolsForModel = policyFilteredTools;
-  if (experiments?.programmaticToolCalling || experiments?.programmaticToolCallingExclusive) {
+  if (codeModeOnly) {
+    try {
+      const ptc = await getPTCModules();
+      const toolBridge = new ptc.ToolBridge(policyFilteredTools);
+      ptc.runtimeFactory ??= new ptc.QuickJSRuntimeFactory();
+      const codeModeTools = ptc.createCodeModeTools({
+        workspaceId: codeModeOnly.workspaceId,
+        runtimeFactory: ptc.runtimeFactory,
+        toolBridge,
+        emitNestedEvent: emitNestedToolEvent,
+      });
+      toolsForModel = { ...toolBridge.getDirectModelTools(), ...codeModeTools };
+    } catch (error) {
+      // Code Mode is a wire requirement for these models: expose the failure
+      // instead of silently sending an incompatible direct-tool request.
+      log.error("Failed to create Codex Code Mode tools", { error });
+      throw error;
+    }
+  } else if (
+    experiments?.programmaticToolCalling ||
+    experiments?.programmaticToolCallingExclusive
+  ) {
     try {
       // Lazy-load PTC modules only when experiments are enabled
       const ptc = await getPTCModules();

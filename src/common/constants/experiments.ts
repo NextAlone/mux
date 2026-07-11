@@ -8,6 +8,7 @@
 export const EXPERIMENT_IDS = {
   PROGRAMMATIC_TOOL_CALLING: "programmatic-tool-calling",
   PROGRAMMATIC_TOOL_CALLING_EXCLUSIVE: "programmatic-tool-calling-exclusive",
+  CODEX_GPT56_COMPAT: "codex-gpt56-compat",
   CONFIGURABLE_BIND_URL: "configurable-bind-url",
   EXEC_SUBAGENT_HARD_RESTART: "exec-subagent-hard-restart",
   MUX_GOVERNOR: "mux-governor",
@@ -65,6 +66,14 @@ export const EXPERIMENTS: Record<ExperimentId, ExperimentDefinition> = {
     id: EXPERIMENT_IDS.PROGRAMMATIC_TOOL_CALLING_EXCLUSIVE,
     name: "PTC Exclusive Mode",
     description: "Replace all tools with code_execution (forces PTC usage)",
+    enabledByDefault: false,
+    userOverridable: true,
+    showInSettings: true,
+  },
+  [EXPERIMENT_IDS.CODEX_GPT56_COMPAT]: {
+    id: EXPERIMENT_IDS.CODEX_GPT56_COMPAT,
+    name: "Codex GPT-5.6 compatibility",
+    description: "Enable Responses Lite and Code Mode for GPT-5.6 over Codex OAuth",
     enabledByDefault: false,
     userOverridable: true,
     showInSettings: true,

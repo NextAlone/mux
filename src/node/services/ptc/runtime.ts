@@ -35,6 +35,9 @@ export interface IJSRuntime extends Disposable {
    */
   registerFunction(name: string, fn: (...args: unknown[]) => Promise<unknown>): void;
 
+  /** Register a JSON-like global value in the sandbox. */
+  registerValue?(name: string, value: unknown): void;
+
   /**
    * Register an object with methods (for namespaced tools like mux.bash).
    * Each method on the object becomes callable from the sandbox.

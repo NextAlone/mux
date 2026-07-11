@@ -5,7 +5,11 @@ import * as os from "os";
 import * as path from "path";
 import { Config } from "@/node/config";
 import { KNOWN_MODELS } from "@/common/constants/knownModels";
-import { CODEX_ENDPOINT } from "@/common/constants/codexOAuth";
+import {
+  CODEX_ENDPOINT,
+  CODEX_RESPONSES_LITE_HEADER,
+  CODEX_TURN_STATE_HEADER,
+} from "@/common/constants/codexOAuth";
 import { PROVIDER_REGISTRY } from "@/common/constants/providers";
 import { resolveProviderOptionsNamespaceKey } from "@/common/utils/ai/providerOptions";
 import { Ok } from "@/common/types/result";
@@ -20,6 +24,7 @@ import {
   resolveAIProviderHeaderSource,
   resolveOpenAIWebSocketResponsesUrl,
   wrapFetchWithAnthropicCacheControl,
+  usesCodexResponsesLite,
 } from "./providerModelFactory";
 import { MUX_ANTHROPIC_EFFORT_OVERRIDE_HEADER } from "@/common/utils/ai/providerOptions";
 import { hasLanguageModelCleanup } from "./languageModelCleanup";
@@ -184,6 +189,76 @@ describe("resolveOpenAIWebSocketResponsesUrl", () => {
 });
 
 describe("normalizeCodexResponsesBody", () => {
+  it("rewrites an opted-in GPT-5.6 request as Responses Lite", () => {
+    const normalized = parseTestJson(
+      normalizeCodexResponsesBody(
+        JSON.stringify({
+          model: "gpt-5.6-sol",
+          instructions: "Follow project rules.",
+          tools: [{ type: "custom", name: "exec" }],
+          input: [{ role: "user", content: "Ship the fix." }],
+          parallel_tool_calls: true,
+          reasoning: { effort: "high" },
+        }),
+        { responsesLite: true }
+      )
+    ) as Record<string, unknown>;
+
+    expect(normalized.tools).toBeUndefined();
+    expect(normalized.instructions).toBeUndefined();
+    expect(normalized.parallel_tool_calls).toBe(false);
+    expect(normalized.reasoning).toEqual({ effort: "high", context: "all_turns" });
+    expect(normalized.input).toEqual([
+      {
+        type: "additional_tools",
+        role: "developer",
+        tools: [{ type: "custom", name: "exec" }],
+      },
+      {
+        type: "message",
+        role: "developer",
+        content: [{ type: "input_text", text: "Follow project rules." }],
+      },
+      { role: "user", content: "Ship the fix." },
+    ]);
+  });
+
+  it("normalizes image parts for Responses Lite", () => {
+    const normalized = parseTestJson(
+      normalizeCodexResponsesBody(
+        JSON.stringify({
+          model: "gpt-5.6-terra",
+          input: [
+            {
+              role: "user",
+              content: [
+                { type: "input_image", image_url: "data:image/png;base64,AAAA", detail: "high" },
+                { type: "input_image", image_url: "https://example.com/private.png" },
+              ],
+            },
+          ],
+        }),
+        { responsesLite: true }
+      )
+    ) as { input: Array<{ content?: unknown[] }> };
+
+    expect(normalized.input[1]?.content).toEqual([
+      { type: "input_image", image_url: "data:image/png;base64,AAAA" },
+      { type: "input_text", text: "[remote image omitted: https://example.com/private.png]" },
+    ]);
+  });
+
+  it("limits Responses Lite model matching to upstream GPT-5.6 tiers", () => {
+    expect(["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"].every(usesCodexResponsesLite)).toBe(
+      true
+    );
+    expect(
+      ["gpt-5.6", "openai:gpt-5.6-sol", "gpt-5.6-sol-mini", "gpt-5.6-sol-2026-07-09"].some(
+        usesCodexResponsesLite
+      )
+    ).toBe(false);
+  });
+
   it("enforces Codex-compatible fields, strips truncation, and lifts system prompts into instructions", () => {
     const normalized = parseTestJson(
       normalizeCodexResponsesBody(
@@ -756,6 +831,7 @@ describe("ProviderModelFactory GitHub Copilot", () => {
                 "Content-Type": "application/json",
                 "x-codex-primary-used-percent": "75",
                 "x-codex-primary-window-minutes": "300",
+                [CODEX_TURN_STATE_HEADER]: "turn-state-1",
               },
             }
           )
@@ -843,6 +919,44 @@ describe("ProviderModelFactory GitHub Copilot", () => {
         expect(headers.get("chatgpt-account-id")).toBe("test-account-id");
         expect(headers.get("content-type")).toBe("application/json");
         expect(recordedUsagePercent.value).toBe("75");
+
+        const compatResult = await factory.createModel("openai:gpt-5.6-sol", undefined, {
+          codexGpt56Compat: true,
+        });
+        expect(compatResult.success).toBe(true);
+        if (!capturedFetch) throw new Error("Expected GPT-5.6 fetch wrapper to be captured");
+
+        requests.length = 0;
+        const liteBody = JSON.stringify({
+          model: "gpt-5.6-sol",
+          instructions: "Use Code Mode.",
+          tools: [{ type: "custom", name: "exec" }],
+          input: [{ role: "user", content: "Run it." }],
+        });
+        await capturedFetch("https://api.openai.com/v1/responses", {
+          method: "POST",
+          body: liteBody,
+        });
+        await capturedFetch("https://api.openai.com/v1/responses", {
+          method: "POST",
+          body: liteBody,
+        });
+
+        expect(requests).toHaveLength(2);
+        const firstCompatHeaders = new Headers(requests[0]?.init?.headers);
+        const secondCompatHeaders = new Headers(requests[1]?.init?.headers);
+        expect(firstCompatHeaders.get(CODEX_RESPONSES_LITE_HEADER)).toBe("true");
+        expect(firstCompatHeaders.get(CODEX_TURN_STATE_HEADER)).toBeNull();
+        expect(secondCompatHeaders.get(CODEX_TURN_STATE_HEADER)).toBe("turn-state-1");
+        const normalizedLiteBody = JSON.parse(requests[0]?.init?.body as string) as Record<
+          string,
+          unknown
+        >;
+        expect(normalizedLiteBody).toMatchObject({
+          parallel_tool_calls: false,
+          reasoning: { context: "all_turns" },
+        });
+        expect(normalizedLiteBody.instructions).toBeUndefined();
       } finally {
         PROVIDER_REGISTRY.openai = originalOpenAIRegistry;
       }

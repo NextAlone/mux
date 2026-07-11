@@ -57,6 +57,13 @@ describe("QuickJSRuntime", () => {
       expect(result.result).toEqual({ ok: true });
     });
 
+    it("supports Code Mode top-level await", async () => {
+      runtime.registerFunction("answer", () => Promise.resolve(42));
+      const result = await runtime.eval("return await answer();");
+      expect(result.success).toBe(true);
+      expect(result.result).toBe(42);
+    });
+
     it("handles syntax errors", async () => {
       const result = await runtime.eval("return {{{;");
       expect(result.success).toBe(false);

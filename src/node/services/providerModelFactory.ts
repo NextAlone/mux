@@ -14,6 +14,8 @@ import {
 } from "@/common/constants/providers";
 import {
   CODEX_ENDPOINT,
+  CODEX_RESPONSES_LITE_HEADER,
+  CODEX_TURN_STATE_HEADER,
   isCodexOauthAllowedModel,
   isCodexOauthRequiredModel,
 } from "@/common/constants/codexOAuth";
@@ -650,6 +652,7 @@ interface ProviderModelFactoryCreateOptions {
   routeContext?: RouteContext;
   openAIResponsesCompactionReplays?: Record<string, OpenAIResponsesRemoteCompactionState>;
   openAIResponsesCompactCapture?: (response: CompactedResponse) => void;
+  codexGpt56Compat?: boolean;
 }
 
 function getOpenAIResponsesCompactionReplayRoute(
@@ -870,9 +873,81 @@ function extractTextContent(content: unknown): string {
   return "";
 }
 
+/** GPT-5.6 tiers whose Codex model metadata requires Responses Lite + Code Mode. */
+export function usesCodexResponsesLite(modelId: string | undefined): boolean {
+  return typeof modelId === "string" && /^gpt-5\.6-(?:sol|terra|luna)$/.test(modelId);
+}
+
+function normalizeResponsesLiteImages(input: unknown[]): unknown[] {
+  return input.map((item) => {
+    if (!isRecord(item) || !Array.isArray(item.content)) return item;
+    const content = item.content as unknown[];
+    return {
+      ...item,
+      content: content.map((part) => {
+        if (!isRecord(part) || part.type !== "input_image") return part;
+        const imageUrl = part.image_url;
+        // The Codex backend only accepts inline data/file images here. Avoid
+        // turning a remote URL into a backend-side fetch with different trust semantics.
+        if (typeof imageUrl === "string" && /^https?:\/\//i.test(imageUrl)) {
+          return { type: "input_text", text: `[remote image omitted: ${imageUrl}]` };
+        }
+        const normalized = { ...part };
+        delete normalized.detail;
+        return normalized;
+      }),
+    };
+  });
+}
+
+function applyCodexResponsesLite(json: Record<string, unknown>): void {
+  const tools = Array.isArray(json.tools) ? json.tools : [];
+  delete json.tools;
+
+  const instructionParts: string[] = [];
+  if (typeof json.instructions === "string" && json.instructions.trim()) {
+    instructionParts.push(json.instructions.trim());
+  }
+
+  const keptInput: unknown[] = [];
+  if (Array.isArray(json.input)) {
+    for (const item of json.input) {
+      if (!isRecord(item)) {
+        keptInput.push(item);
+        continue;
+      }
+      if (item.type === "additional_tools") continue;
+      if (item.role === "system" || item.role === "developer") {
+        const text = extractTextContent(item.content);
+        if (text) instructionParts.push(text);
+        continue;
+      }
+      keptInput.push(item);
+    }
+  }
+
+  const prefix: unknown[] = [{ type: "additional_tools", role: "developer", tools }];
+  const instructions = instructionParts.join("\n\n").trim();
+  if (instructions) {
+    prefix.push({
+      type: "message",
+      role: "developer",
+      content: [{ type: "input_text", text: instructions }],
+    });
+  }
+
+  json.input = [...prefix, ...normalizeResponsesLiteImages(keptInput)];
+  delete json.instructions;
+  json.parallel_tool_calls = false;
+  json.reasoning = {
+    ...(isRecord(json.reasoning) ? json.reasoning : {}),
+    context: "all_turns",
+  };
+}
+
 export function normalizeCodexResponsesBody(
   body: string,
-  options?: { serviceTier?: ServiceTier }
+  options?: { serviceTier?: ServiceTier; responsesLite?: boolean }
 ): string {
   let json: Record<string, unknown>;
   try {
@@ -916,6 +991,11 @@ export function normalizeCodexResponsesBody(
     json.input = (json.input as Array<Record<string, unknown>>).filter(
       (item) => !(item && typeof item === "object" && item.type === "item_reference")
     );
+  }
+
+  if (options?.responsesLite === true) {
+    applyCodexResponsesLite(json);
+    return JSON.stringify(json);
   }
 
   const existingInstructions =
@@ -1467,6 +1547,13 @@ export class ProviderModelFactory {
 
           return codexOauthDefaultAuth === "oauth";
         })();
+        const codexGpt56CompatEnabled =
+          opts?.codexGpt56Compat === true &&
+          shouldRouteThroughCodexOauth &&
+          usesCodexResponsesLite(modelId);
+        // This fetch wrapper is created per stream turn. Preserve state across
+        // tool-continuation requests, then naturally reset on the next model creation.
+        let codexTurnState: string | undefined;
 
         const openAIResponsesCompactionRoute: OpenAIResponsesCompactionRoute =
           shouldRouteThroughCodexOauth ? "codex-oauth" : "openai-api-key";
@@ -1659,6 +1746,7 @@ export class ProviderModelFactory {
                     headers,
                     body: normalizeCodexResponsesBody(body, {
                       serviceTier: muxProviderOptions?.openai?.serviceTier,
+                      responsesLite: codexGpt56CompatEnabled,
                     }),
                   };
                 } catch {
@@ -1685,6 +1773,10 @@ export class ProviderModelFactory {
                 if (authResult.data.accountId) {
                   headers.set("ChatGPT-Account-Id", authResult.data.accountId);
                 }
+                if (codexGpt56CompatEnabled) {
+                  headers.set(CODEX_RESPONSES_LITE_HEADER, "true");
+                  if (codexTurnState) headers.set(CODEX_TURN_STATE_HEADER, codexTurnState);
+                }
 
                 nextInput = CODEX_ENDPOINT;
                 nextInit = { ...(nextInit ?? {}), headers };
@@ -1697,6 +1789,9 @@ export class ProviderModelFactory {
                 nextInput === CODEX_ENDPOINT
               ) {
                 codexOauthService?.recordUsageHeaders(response.headers);
+                if (codexGpt56CompatEnabled) {
+                  codexTurnState = response.headers.get(CODEX_TURN_STATE_HEADER) ?? codexTurnState;
+                }
               }
               return response;
             } catch (error) {
