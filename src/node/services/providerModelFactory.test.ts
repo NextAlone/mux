@@ -241,7 +241,6 @@ describe("normalizeCodexResponsesBody", () => {
     expect(normalized.truncation).toBeUndefined();
     expect(normalized.store).toBe(false);
   });
-
   it("injects priority for Codex fast mode after SDK provider option validation", () => {
     const normalized = parseTestJson(
       normalizeCodexResponsesBody(
@@ -286,6 +285,34 @@ describe("normalizeCodexResponsesBody", () => {
 
     expect(normalized.service_tier).toBeUndefined();
     expect(normalized.store).toBe(false);
+  });
+
+  it("strips reasoning.mode while preserving effort/summary (Codex backend must never see it)", () => {
+    const normalized = JSON.parse(
+      normalizeCodexResponsesBody(
+        JSON.stringify({
+          model: "gpt-5.6-sol",
+          input: [{ role: "user", content: "Hello" }],
+          reasoning: { effort: "high", summary: "auto", mode: "pro" },
+        })
+      )
+    ) as { reasoning?: Record<string, unknown> };
+
+    expect(normalized.reasoning).toEqual({ effort: "high", summary: "auto" });
+  });
+
+  it("drops the reasoning object entirely when mode was its only key", () => {
+    const normalized = JSON.parse(
+      normalizeCodexResponsesBody(
+        JSON.stringify({
+          model: "gpt-5.6-sol",
+          input: [{ role: "user", content: "Hello" }],
+          reasoning: { mode: "pro" },
+        })
+      )
+    ) as { reasoning?: unknown };
+
+    expect(normalized.reasoning).toBeUndefined();
   });
 });
 
@@ -359,7 +386,7 @@ describe("ProviderModelFactory.createModel", () => {
       }
 
       expect((listedModel.data as { provider?: unknown }).provider).toBe("local-vllm.chat");
-      expect(listedModel.data.constructor.name).toBe("OpenAICompatibleChatLanguageModel");
+      expect(listedModel.data.constructor.name).toMatch(/OpenAICompatibleChatLanguageModel$/);
 
       const unlistedModel = await factory.createModel("local-vllm:any-other-id");
       expect(unlistedModel.success).toBe(true);
@@ -611,7 +638,7 @@ describe("ProviderModelFactory GitHub Copilot", () => {
         expect((result.data.model as { provider?: unknown }).provider).toBe("github-copilot.chat");
         expect(result.data.routeProvider).toBe("github-copilot");
         expect(result.data.effectiveModelString).toBe("github-copilot:gpt-5.5");
-        expect(result.data.model.constructor.name).toBe("OpenAIChatLanguageModel");
+        expect(result.data.model.constructor.name).toMatch(/OpenAIChatLanguageModel$/);
       } finally {
         PROVIDER_REGISTRY.openai = originalOpenAIRegistry;
       }
@@ -1469,7 +1496,7 @@ describe("ProviderModelFactory GitHub Copilot", () => {
         return;
       }
 
-      expect(result.data.constructor.name).toBe("OpenAIChatLanguageModel");
+      expect(result.data.constructor.name).toMatch(/OpenAIChatLanguageModel$/);
     });
   });
 
@@ -1484,7 +1511,7 @@ describe("ProviderModelFactory GitHub Copilot", () => {
         return;
       }
 
-      expect(result.data.constructor.name).toBe("OpenAIChatLanguageModel");
+      expect(result.data.constructor.name).toMatch(/OpenAIChatLanguageModel$/);
     });
   });
 
@@ -1499,7 +1526,7 @@ describe("ProviderModelFactory GitHub Copilot", () => {
         return;
       }
 
-      expect(result.data.constructor.name).toBe("OpenAIChatLanguageModel");
+      expect(result.data.constructor.name).toMatch(/OpenAIChatLanguageModel$/);
     });
   });
 });

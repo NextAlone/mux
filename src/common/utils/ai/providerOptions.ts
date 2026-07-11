@@ -11,29 +11,41 @@ import type { GoogleGenerativeAIProviderOptions } from "@ai-sdk/google";
 import type { OpenAIResponsesProviderOptions } from "@ai-sdk/openai";
 import type { JSONValue } from "@ai-sdk/provider";
 import type { XaiProviderOptions } from "@ai-sdk/xai";
-import { PROVIDER_DEFINITIONS, type ProviderName } from "@/common/constants/providers";
+import type { ProviderName } from "@/common/constants/providers";
 import type { ProvidersConfigMap } from "@/common/orpc/types";
 import type { MuxProviderOptions } from "@/common/types/providerOptions";
-import type { ThinkingLevel } from "@/common/types/thinking";
+import type { OpenAIReasoningMode, ThinkingLevel } from "@/common/types/thinking";
 import {
   getAnthropicEffort,
   anthropicRejectsDisabledThinking,
   anthropicSupportsNativeXhigh,
   ANTHROPIC_THINKING_BUDGETS,
   GEMINI_THINKING_BUDGETS,
-  OPENAI_REASONING_EFFORT,
+  getOpenAIReasoningEffort,
+  openaiSupportsProMode,
   OPENROUTER_REASONING_EFFORT,
 } from "@/common/types/thinking";
 import { isGeminiFlashThinkingLevelModelName } from "@/common/utils/thinking/policy";
+import { openaiExplicitPromptCachingAvailable } from "@/common/utils/ai/cacheStrategy";
 import { resolveModelForMetadata } from "@/common/utils/providers/modelEntries";
 import { log } from "@/node/services/log";
 import type { MuxMessage } from "@/common/types/message";
-import { normalizeToCanonical, supports1MContext } from "./models";
+import {
+  normalizeToCanonical,
+  resolveProviderOptionsNamespaceKey,
+  supports1MContext,
+} from "./models";
 import {
   hasAnthropicClaudeCapabilities,
   resolveAnthropicCapabilityModel,
   usesAnthropicMessagesWireFormat,
 } from "./anthropicCapabilities";
+
+// Re-export for existing consumers (aiService, providerModelFactory, tests):
+// the implementations moved to browser-safe modules because this module
+// imports node-only logging.
+export { resolveProviderOptionsNamespaceKey } from "./models";
+export { openaiProModeAvailable } from "./proMode";
 
 /**
  * Request header used to override Anthropic's `output_config.effort` at the
@@ -82,24 +94,6 @@ const OPENAI_REASONING_SUMMARY_UNSUPPORTED_MODELS = new Set<string>([
 
 function supportsOpenAIReasoningSummary(modelName: string): boolean {
   return !OPENAI_REASONING_SUMMARY_UNSUPPORTED_MODELS.has(modelName);
-}
-
-export function resolveProviderOptionsNamespaceKey(
-  canonicalProviderName: string,
-  routeProvider?: ProviderName
-): string {
-  const routeDefinition = routeProvider ? PROVIDER_DEFINITIONS[routeProvider] : undefined;
-  if (
-    !routeProvider ||
-    routeProvider === canonicalProviderName ||
-    (routeDefinition != null &&
-      "passthrough" in routeDefinition &&
-      routeDefinition.passthrough === true)
-  ) {
-    return canonicalProviderName;
-  }
-
-  return routeProvider;
 }
 
 function resolveAnthropic1MCapabilityModel(
@@ -220,6 +214,7 @@ export function preserveAnthropic1MContextForFollowUp(
  * @param providersConfig - Optional providers config for mapped model capability detection
  * @param routeProvider - Optional route provider (gateway/direct) for SDK format selection
  * @param promptCacheScope - Optional stable project-scoped cache routing key
+ * @param reasoningMode - Optional OpenAI Responses reasoning mode
  * @returns Provider options object for AI SDK
  */
 export function buildProviderOptions(
@@ -232,7 +227,8 @@ export function buildProviderOptions(
   openaiTruncationMode?: OpenAIResponsesProviderOptions["truncation"],
   providersConfig?: ProvidersConfigMap | null,
   routeProvider?: ProviderName,
-  promptCacheScope?: string
+  promptCacheScope?: string,
+  reasoningMode?: OpenAIReasoningMode
 ): ProviderOptions {
   // Caller is responsible for enforcing thinking policy before calling this function.
   // agentSession.ts is the canonical enforcement point.
@@ -369,7 +365,13 @@ export function buildProviderOptions(
 
   // Build OpenAI-specific options
   if (formatProvider === "openai") {
-    const reasoningEffort = OPENAI_REASONING_EFFORT[effectiveThinking];
+    // Model-aware: the GPT-5.6 family maps ThinkingLevel "max" to the native
+    // "max" effort; other OpenAI models keep the max -> "xhigh" downgrade. Use
+    // capabilityModel so mapped aliases (mappedToModel) inherit their target's
+    // native effort. @ai-sdk/openai 4.0.11 accepts native max on both Responses
+    // and Chat Completions, so both wire formats now preserve the selected level.
+    // GPT-5.6 "off" remains explicit "none" because omission defaults to medium.
+    const reasoningEffort = getOpenAIReasoningEffort(effectiveThinking, capabilityModel);
 
     // Mux always sends the latest conversation history explicitly. OpenAI's
     // previous_response_id is an alternative state-management path, not an additive one.
@@ -390,6 +392,12 @@ export function buildProviderOptions(
     const wireFormat = muxProviderOptions?.openai?.wireFormat ?? "responses";
     const store = muxProviderOptions?.openai?.store;
     const isResponses = wireFormat === "responses";
+    const routeIsDirect = routeProvider == null || routeProvider === origin;
+    const shouldUseProMode =
+      isResponses &&
+      routeIsDirect &&
+      reasoningMode === "pro" &&
+      openaiSupportsProMode(capabilityModel);
     const truncationMode = openaiTruncationMode ?? "disabled";
     const shouldSendReasoningSummary = supportsOpenAIReasoningSummary(capModelName);
 
@@ -399,6 +407,7 @@ export function buildProviderOptions(
       thinkingLevel: effectiveThinking,
       historyMessages: messages?.length ?? 0,
       promptCacheKey,
+      reasoningMode: shouldUseProMode ? "pro" : undefined,
       truncation: truncationMode,
       wireFormat,
     });
@@ -411,17 +420,33 @@ export function buildProviderOptions(
         ...(isResponses && {
           // Default to disabled; allow auto truncation for compaction to avoid context errors
           truncation: truncationMode,
+          // Pro mode is a native Responses option in @ai-sdk/openai 4.0.11.
+          // Keep the existing direct-route capability gate because mux-gateway
+          // currently drops this provider option and Codex OAuth strips it.
+          ...(shouldUseProMode && { reasoningMode: "pro" as const }),
           // Stable prompt cache key to improve OpenAI cache hit rates
           // See: https://sdk.vercel.ai/providers/ai-sdk-providers/openai#responses-models
           ...(promptCacheKey && { promptCacheKey }),
         }),
+        // Chat Completions gets the same stable routing key only for GPT-5.6
+        // on the direct official OpenAI API (the stricter explicit-caching
+        // gate). The broader legacy Responses behavior above stays unchanged.
+        ...(!isResponses &&
+          promptCacheKey &&
+          openaiExplicitPromptCachingAvailable(
+            modelString,
+            routeProvider,
+            providersConfig ?? null
+          ) && { promptCacheKey }),
         // Conditionally add reasoning configuration
         ...(reasoningEffort && {
           reasoningEffort,
-          ...(isResponses &&
-            shouldSendReasoningSummary && {
-              reasoningSummary: "detailed", // Enable detailed reasoning summaries when the model supports it
-            }),
+          // AI SDK 7 defaults reasoningSummary to "detailed" whenever a
+          // reasoning effort is set, so models that reject the parameter must
+          // explicitly opt out with null.
+          ...(isResponses && {
+            reasoningSummary: shouldSendReasoningSummary ? ("detailed" as const) : null,
+          }),
           ...(isResponses && {
             // Include reasoning encrypted content to preserve reasoning context across conversation steps
             // Required when using reasoning models (gpt-5, o3, o4-mini) with tool calls
@@ -524,7 +549,17 @@ export function buildProviderOptions(
   }
 
   if (origin === "openai" && formatProvider !== origin) {
-    const reasoningEffort = OPENAI_REASONING_EFFORT[effectiveThinking];
+    // capabilityModel keeps mapped aliases consistent with raw ids on the same route.
+    // Copilot's Chat Completions upstream has not published native-max or
+    // explicit-none support, so degrade GPT-5.6 "max" to xhigh (the pre-5.6 top
+    // effort) and "none" back to omission instead of risking a rejection.
+    const nativeReasoningEffort = getOpenAIReasoningEffort(effectiveThinking, capabilityModel);
+    const reasoningEffort =
+      nativeReasoningEffort === "max"
+        ? "xhigh"
+        : nativeReasoningEffort === "none"
+          ? undefined
+          : nativeReasoningEffort;
     if (!reasoningEffort) {
       log.debug(
         "buildProviderOptions: OpenAI-compatible gateway (thinking off, no provider options)",

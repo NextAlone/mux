@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { AgentIdSchema } from "./agentDefinition";
-import { ThinkingLevelSchema } from "../../types/thinking";
+import { OpenAIReasoningModeSchema, ThinkingLevelSchema } from "../../types/thinking";
 import { AgentModeSchema } from "../../types/mode";
 import { ChatUsageDisplaySchema } from "./chatStats";
 import { StreamErrorTypeSchema } from "./errors";
@@ -602,6 +602,8 @@ export const GoalBudgetLimitedEventSchema = z.object({
 export const QueuedMessageChangedEventSchema = z.object({
   type: z.literal("queued-message-changed"),
   workspaceId: z.string(),
+  /** True when any entry is queued, including hidden synthetic/background entries. */
+  hasQueuedMessages: z.boolean().optional(),
   queuedMessages: z.array(z.string()),
   displayText: z.string(),
   fileParts: z.array(FilePartSchema).optional(),
@@ -726,6 +728,8 @@ export const GoalInterventionPolicySchema = z.enum(["steer", "pause"]);
 export const SendMessageOptionsSchema = z.object({
   editMessageId: z.string().optional(),
   thinkingLevel: ThinkingLevelSchema.optional(),
+  /** OpenAI reasoning mode (pro toggle); inert for models without pro-mode support. */
+  reasoningMode: OpenAIReasoningModeSchema.optional(),
   model: z.string("No model specified"),
   toolPolicy: ToolPolicySchema.optional(),
   additionalSystemInstructions: z.string().optional(),

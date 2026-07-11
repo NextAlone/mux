@@ -53,6 +53,7 @@ export interface CompactionFollowUpInput extends UserMessageContent {
 type PreservedSendOptions = Pick<
   SendMessageOptions,
   | "thinkingLevel"
+  | "reasoningMode"
   | "additionalSystemInstructions"
   | "providerOptions"
   | "experiments"
@@ -68,6 +69,7 @@ type PreservedSendOptions = Pick<
 export function pickPreservedSendOptions(options: SendMessageOptions): PreservedSendOptions {
   return {
     thinkingLevel: options.thinkingLevel,
+    reasoningMode: options.reasoningMode,
     additionalSystemInstructions: options.additionalSystemInstructions,
     providerOptions: options.providerOptions,
     experiments: options.experiments,
@@ -82,6 +84,7 @@ export type StartupRetrySendOptions = Pick<
   | "model"
   | "agentId"
   | "thinkingLevel"
+  | "reasoningMode"
   | "toolPolicy"
   | "additionalSystemInstructions"
   | "maxOutputTokens"
@@ -109,6 +112,7 @@ export function pickStartupRetrySendOptions(
     model: options.model,
     agentId: options.agentId,
     thinkingLevel: options.thinkingLevel,
+    reasoningMode: options.reasoningMode,
     toolPolicy: options.toolPolicy,
     additionalSystemInstructions: options.additionalSystemInstructions,
     maxOutputTokens: options.maxOutputTokens,

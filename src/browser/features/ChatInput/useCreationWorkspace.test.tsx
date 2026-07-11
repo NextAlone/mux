@@ -880,7 +880,7 @@ describe("useCreationWorkspace", () => {
     expect(workspaceApi.updateAgentAISettings).toHaveBeenCalledWith({
       workspaceId: TEST_WORKSPACE_ID,
       agentId: "exec",
-      aiSettings: { model: "gpt-4", thinkingLevel: "medium" },
+      aiSettings: { model: "gpt-4", thinkingLevel: "medium", reasoningMode: "standard" },
       persistSelectedAgentId: true,
     });
     expect(workspaceApi.getGoal.mock.calls.length).toBe(1);
@@ -1519,6 +1519,7 @@ function createDraftSettingsHarness(
       const settings: DraftWorkspaceSettings = {
         model: "gpt-4",
         thinkingLevel: "medium",
+        reasoningMode: "standard",
         agentId: state.agentId,
         selectedRuntime: state.selectedRuntime,
         defaultRuntimeMode: state.defaultRuntimeMode,

@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { readPersistedState, usePersistedState } from "./usePersistedState";
+import { useReasoningMode } from "./useReasoningMode";
 import { useThinkingLevel } from "./useThinkingLevel";
 import { normalizeSelectedModel } from "@/common/utils/ai/models";
 import { useProjectContext } from "@/browser/contexts/ProjectContext";
@@ -29,7 +30,7 @@ import {
   getProjectScopeId,
   GLOBAL_SCOPE_ID,
 } from "@/common/constants/storage";
-import type { ThinkingLevel } from "@/common/types/thinking";
+import type { OpenAIReasoningMode, ThinkingLevel } from "@/common/types/thinking";
 import { normalizeAgentId } from "@/common/utils/agentIds";
 import { WORKSPACE_DEFAULTS } from "@/constants/workspaceDefaults";
 import { PARENT_SOURCE_REVISION } from "@/common/constants/workspace";
@@ -42,6 +43,7 @@ export interface DraftWorkspaceSettings {
   // Model & AI settings (synced with global state)
   model: string;
   thinkingLevel: ThinkingLevel;
+  reasoningMode: OpenAIReasoningMode;
   agentId: string;
 
   // Workspace creation settings (project-specific)
@@ -228,6 +230,7 @@ export function useDraftWorkspaceSettings(
 } {
   // Global AI settings (read-only from global state)
   const [thinkingLevel] = useThinkingLevel();
+  const [reasoningMode] = useReasoningMode();
 
   const projectScopeId = getProjectScopeId(projectPath);
   const { userProjects } = useProjectContext();
@@ -610,6 +613,7 @@ export function useDraftWorkspaceSettings(
     settings: {
       model,
       thinkingLevel,
+      reasoningMode,
       agentId,
       selectedRuntime,
       defaultRuntimeMode: defaultRuntimeChoice,

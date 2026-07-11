@@ -885,6 +885,16 @@ export function normalizeCodexResponsesBody(
   // and currently rejects the `truncation` field entirely.
   delete json.truncation;
 
+  // Strip the native pro-mode field before forwarding to the stricter ChatGPT
+  // backend. Unknown nested reasoning fields risk a hard 4xx, and falling back
+  // to standard mode is safer. Preserve effort/summary.
+  if (isRecord(json.reasoning)) {
+    delete json.reasoning.mode;
+    if (Object.keys(json.reasoning).length === 0) {
+      delete json.reasoning;
+    }
+  }
+
   // Codex-compatible Responses requests must disable storage and strip unsupported params.
   json.store = false;
   // pi-codex-fast matches the official Codex fast path by sending priority.
@@ -1103,7 +1113,7 @@ export class ProviderModelFactory {
     }
 
     // DevTools middleware wrappers currently support LanguageModelV3 instances only.
-    if (typeof result.data === "string" || result.data.specificationVersion !== "v3") {
+    if (typeof result.data === "string" || result.data.specificationVersion !== "v4") {
       return result;
     }
 
@@ -1720,12 +1730,11 @@ export class ProviderModelFactory {
 
         // Lazy-load OpenAI provider to reduce startup time
         const { createOpenAI } = await PROVIDER_REGISTRY.openai();
-        const providerFetch = webSocketTransport.fetch;
         const provider = createOpenAI({
           ...configWithCreds,
           // Cast is safe: our fetch implementation is compatible with the SDK's fetch type.
           // The preconnect method is optional in our implementation but required by the SDK type.
-          fetch: providerFetch,
+          fetch: webSocketTransport.fetch,
         });
         // OpenAI reasoning state is preserved via explicit history, so no extra
         // middleware is needed beyond the provider's standard Responses handling.
@@ -1818,7 +1827,10 @@ export class ProviderModelFactory {
           ...restOptions,
           fetch: providerFetch,
         });
-        return Ok(provider(modelId));
+        // AI SDK 7 switched xai(modelId) to the Responses API by default.
+        // Pin the Chat Completions API to preserve pre-upgrade behavior
+        // (e.g. providerOptions.xai.searchParameters routing).
+        return Ok(provider.chat(modelId));
       }
 
       // Handle Ollama provider

@@ -130,7 +130,11 @@ import { getProviderModelEntryIdForProvider } from "@/common/utils/providers/mod
 import { DEFAULT_GOAL_DEFAULTS, normalizeGoalDefaults } from "@/constants/goals";
 import { mergeGoalDefaults } from "@/common/utils/goals/resolveGoalSetIntent";
 import { MULTI_PROJECT_CONFIG_KEY } from "@/common/constants/multiProject";
-import { THINKING_LEVEL_OFF, type ThinkingLevel } from "@/common/types/thinking";
+import {
+  THINKING_LEVEL_OFF,
+  type OpenAIReasoningMode,
+  type ThinkingLevel,
+} from "@/common/types/thinking";
 import {
   enforceThinkingPolicy,
   resolveEffectiveThinkingLevel,
@@ -429,6 +433,8 @@ export interface StreamMessageOptions {
   workspaceId: string;
   modelString: string;
   thinkingLevel?: ThinkingLevel;
+  /** OpenAI pro reasoning mode; delivered via provider options (inert for unsupported models). */
+  reasoningMode?: OpenAIReasoningMode;
   toolPolicy?: ToolPolicy;
   abortSignal?: AbortSignal;
   /** Live workspace scratchpad snapshot from the renderer; when present it wins over disk. */
@@ -1235,6 +1241,7 @@ export class AIService extends EventEmitter {
       workspaceId,
       modelString,
       thinkingLevel,
+      reasoningMode,
       toolPolicy,
       abortSignal,
       additionalSystemContext,
@@ -2060,7 +2067,9 @@ export class AIService extends EventEmitter {
       // providerOptions actually sent to generateText().
       const advisorReasoningLevel = enforceThinkingPolicy(
         advisorModelString,
-        cfg.advisorThinkingLevel ?? THINKING_LEVEL_OFF
+        cfg.advisorThinkingLevel ?? THINKING_LEVEL_OFF,
+        undefined,
+        this.providerService.getConfig()
       );
       const runtimeType = getRuntimeType(metadata.runtimeConfig);
       const muxEnv = getMuxEnv(metadata.projectPath, runtimeType, metadata.name, {
@@ -2171,6 +2180,9 @@ export class AIService extends EventEmitter {
                     {
                       model: modelString,
                       thinkingLevel: effectiveThinkingLevel,
+                      // Carry the turn's pro mode so the workflow-result
+                      // continuation does not silently drop back to standard.
+                      reasoningMode,
                       agentId: effectiveAgentId,
                       toolPolicy: effectiveToolPolicy,
                       additionalSystemInstructions: scratchpadAdditionalSystemInstructions,
@@ -2664,7 +2676,8 @@ export class AIService extends EventEmitter {
         truncationMode,
         this.providerService.getConfig(),
         routeProvider,
-        promptCacheScope
+        promptCacheScope,
+        reasoningMode
       );
       recordStartupPhaseTiming("buildProviderOptionsMs", buildProviderOptionsStartedAt);
 
@@ -2883,7 +2896,7 @@ export class AIService extends EventEmitter {
       const canQueueDevToolsRunMetadata =
         this.devToolsService?.enabled === true &&
         typeof modelResult.data.model !== "string" &&
-        modelResult.data.model.specificationVersion === "v3";
+        modelResult.data.model.specificationVersion === "v4";
 
       if (canQueueDevToolsRunMetadata) {
         // Correlate pending run metadata with the specific request that reaches
@@ -2940,8 +2953,10 @@ export class AIService extends EventEmitter {
                     nextModelString,
                     this.config.loadConfigOrDefault().minThinkingLevelByModel?.[
                       normalizeToCanonical(nextModelString)
-                    ]
-                  )
+                    ],
+                    this.providerService.getConfig()
+                  ),
+                  this.providerService.getConfig()
                 );
 
                 const nextModelResult = await this.providerModelFactory.resolveAndCreateModel(
@@ -3096,9 +3111,12 @@ export class AIService extends EventEmitter {
                     truncationMode,
                     this.providerService.getConfig(),
                     next.routeProvider,
-                    promptCacheScope
+                    promptCacheScope,
+                    reasoningMode
                   );
 
+                  // buildProviderOptions re-gates pro mode for each fallback model,
+                  // so the native option never leaks onto unsupported fallbacks.
                   let nextHeaders = buildRequestHeaders(
                     next.canonicalModelString,
                     effectiveMuxProviderOptions,
