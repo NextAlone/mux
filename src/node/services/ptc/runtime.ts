@@ -35,6 +35,9 @@ export interface IJSRuntime extends Disposable {
    */
   registerFunction(name: string, fn: (...args: unknown[]) => Promise<unknown>): void;
 
+  /** Register an in-memory helper that completes synchronously in the sandbox. */
+  registerSyncFunction?(name: string, fn: (...args: unknown[]) => unknown): void;
+
   /** Register a JSON-like global value in the sandbox. */
   registerValue?(name: string, value: unknown): void;
 

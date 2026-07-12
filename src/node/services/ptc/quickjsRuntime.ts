@@ -156,6 +156,22 @@ export class QuickJSRuntime implements IJSRuntime {
     handle.dispose();
   }
 
+  registerSyncFunction(name: string, fn: (...args: unknown[]) => unknown): void {
+    this.assertNotDisposed("registerSyncFunction");
+
+    const handle = this.ctx.newFunction(name, (...argHandles) => {
+      if (this.abortController?.signal.aborted) {
+        throw new Error("Execution aborted");
+      }
+
+      const args: unknown[] = argHandles.map((h) => this.ctx.dump(h) as unknown);
+      return this.marshal(fn(...args));
+    });
+
+    this.ctx.setProp(this.ctx.global, name, handle);
+    handle.dispose();
+  }
+
   registerValue(name: string, value: unknown): void {
     this.assertNotDisposed("registerValue");
     const handle = this.marshal(value);

@@ -92,39 +92,42 @@ class CodeModeSession {
     runtime.registerValue?.("ALL_TOOLS", bridge.getBridgeableToolNames());
 
     const output: unknown[] = [];
-    runtime.registerFunction("text", (value) => {
+    const registerHelper = (name: string, fn: (...args: unknown[]) => unknown) => {
+      if (runtime.registerSyncFunction) {
+        runtime.registerSyncFunction(name, fn);
+      } else {
+        runtime.registerFunction(name, (...args) => Promise.resolve(fn(...args)));
+      }
+    };
+    // Code Mode examples call these local helpers without await. Asyncify helpers
+    // leave an unobserved pending Promise behind, so keep pure in-memory helpers sync.
+    registerHelper("text", (value) => {
       output.push(value);
-      return Promise.resolve();
     });
-    runtime.registerFunction("image", (value) => {
+    registerHelper("image", (value) => {
       output.push({ type: "image", value });
-      return Promise.resolve();
     });
-    runtime.registerFunction("generatedImage", (value) => {
+    registerHelper("generatedImage", (value) => {
       output.push({ type: "generated_image", value });
-      return Promise.resolve();
     });
-    runtime.registerFunction("notify", (value) => {
+    registerHelper("notify", (value) => {
       output.push({ type: "notification", value });
-      return Promise.resolve();
     });
-    runtime.registerFunction("store", (key, value) => {
+    registerHelper("store", (key, value) => {
       if (typeof key !== "string") throw new Error("store key must be a string");
       this.store.set(key, value);
-      return Promise.resolve();
     });
-    runtime.registerFunction("load", (key) => {
+    registerHelper("load", (key) => {
       if (typeof key !== "string") throw new Error("load key must be a string");
-      return Promise.resolve(this.store.get(key));
+      return this.store.get(key);
     });
 
     let signalYield: (() => void) | undefined;
     const requestYield = new Promise<void>((resolve) => {
       signalYield = resolve;
     });
-    runtime.registerFunction("yield_control", () => {
+    registerHelper("yield_control", () => {
       signalYield?.();
-      return Promise.resolve();
     });
 
     if (emitNestedEvent) {

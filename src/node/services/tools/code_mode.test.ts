@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
-import type { Tool, ToolExecutionOptions } from "ai";
+import { tool, type Tool, type ToolExecutionOptions } from "ai";
+import { z } from "zod";
 
 import { ToolBridge } from "@/node/services/ptc/toolBridge";
 import type { IJSRuntime, IJSRuntimeFactory, RuntimeLimits } from "@/node/services/ptc/runtime";
@@ -28,6 +29,9 @@ class DeferredRuntime implements IJSRuntime {
     return this.result.promise;
   }
   registerFunction(): void {
+    return undefined;
+  }
+  registerSyncFunction(): void {
     return undefined;
   }
   registerValue(): void {
@@ -95,6 +99,26 @@ describe("createCodeModeTools", () => {
 
     expect(stored).toMatchObject({ status: "completed", result: "stored" });
     expect(loaded).toMatchObject({ status: "completed", result: 42 });
+  });
+
+  it("completes after outputting an awaited bridged tool result", async () => {
+    const tools = createCodeModeTools({
+      workspaceId: `code-mode-output-${Date.now()}`,
+      runtimeFactory: new QuickJSRuntimeFactory(),
+      toolBridge: new ToolBridge({
+        echo: tool({
+          inputSchema: z.object({}),
+          execute: () => Promise.resolve({ output: "ok" }),
+        }),
+      }),
+    });
+
+    const result = (await executable(tools.exec)(
+      "const value = await tools.echo({}); text(value.output); return value.output;",
+      toolOptions
+    )) as CodeModeResult;
+
+    expect(result).toMatchObject({ status: "completed", output: "ok", result: "ok" });
   });
 
   it("returns a yielded cell that wait can poll to completion", async () => {
