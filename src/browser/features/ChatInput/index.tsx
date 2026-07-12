@@ -1987,6 +1987,7 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
       if (inputRef.current) {
         inputRef.current.style.height = "";
       }
+      focusMessageInput();
     };
 
     window.addEventListener(CUSTOM_EVENTS.CLEAR_CHAT_COMPOSER, handler as EventListener);
@@ -1994,6 +1995,7 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
       window.removeEventListener(CUSTOM_EVENTS.CLEAR_CHAT_COMPOSER, handler as EventListener);
   }, [
     onDetachAllReviewsForComposerClear,
+    focusMessageInput,
     resetMessageHistoryNavigation,
     setAttachments,
     setInput,
@@ -2426,6 +2428,11 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
         }
         props.onMessageSent?.(dispatchMode);
       }
+    }
+
+    if (parsed.type === "clear" && result.clearInput) {
+      // Clearing ends a destructive interaction; restore the composer after its modal closes.
+      requestAnimationFrame(focusMessageInput);
     }
 
     return true;

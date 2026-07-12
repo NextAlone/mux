@@ -1191,7 +1191,11 @@ export function buildCoreSources(p: BuildSourcesParams): Array<() => CommandActi
         title: "Clear History",
         section: section.chat,
         run: async () => {
-          await p.api?.workspace.truncateHistory({ workspaceId: id, percentage: 1.0 });
+          assert(p.api, "Clear history palette action requires a connected backend");
+          await p.api.workspace.truncateHistory({ workspaceId: id, percentage: 1.0 });
+          window.dispatchEvent(
+            createCustomEvent(CUSTOM_EVENTS.CLEAR_CHAT_COMPOSER, { workspaceId: id })
+          );
         },
       });
       for (const pct of [0.75, 0.5, 0.25]) {

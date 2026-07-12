@@ -164,6 +164,7 @@ test("chat commands include separate reset context and clear history actions", a
     const truncateHistory = mock(() =>
       Promise.resolve({ success: true as const, data: undefined })
     );
+    const events = collectCommandEvents();
     const actions = getActions({
       api: workspaceApi({ resetContext, truncateHistory }),
     });
@@ -186,12 +187,17 @@ test("chat commands include separate reset context and clear history actions", a
       throw new Error("Expected clear history action");
     }
 
-    await Promise.resolve(resetAction.run());
-    expect(resetContext).toHaveBeenCalledWith({ workspaceId: "w1" });
-    expect(truncateHistory).not.toHaveBeenCalled();
+    try {
+      await Promise.resolve(resetAction.run());
+      expect(resetContext).toHaveBeenCalledWith({ workspaceId: "w1" });
+      expect(truncateHistory).not.toHaveBeenCalled();
 
-    await Promise.resolve(clearAction.run());
-    expect(truncateHistory).toHaveBeenCalledWith({ workspaceId: "w1", percentage: 1.0 });
+      await Promise.resolve(clearAction.run());
+      expect(truncateHistory).toHaveBeenCalledWith({ workspaceId: "w1", percentage: 1.0 });
+      expect(events.clearEvents).toEqual(["w1", "w1"]);
+    } finally {
+      events.dispose();
+    }
   });
 });
 
