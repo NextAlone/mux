@@ -1,4 +1,4 @@
-import { lightweightMeta } from "@/browser/stories/meta.js";
+import { CHROMATIC_DISABLED, lightweightMeta } from "@/browser/stories/meta.js";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { within } from "@storybook/test";
 import { FusionSection } from "./FusionSection.js";
@@ -8,6 +8,11 @@ const meta: Meta = {
   ...lightweightMeta,
   title: "Settings/Sections/FusionSection",
   component: FusionSection,
+  parameters: {
+    ...lightweightMeta.parameters,
+    // Keep the responsive play contract without creating a new snapshot-enabled file.
+    chromatic: CHROMATIC_DISABLED,
+  },
 };
 
 export default meta;

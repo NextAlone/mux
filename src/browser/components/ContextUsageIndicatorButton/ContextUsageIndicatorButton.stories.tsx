@@ -2,7 +2,7 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { fn, userEvent, waitFor, within } from "@storybook/test";
 import type { ComponentProps, FC } from "react";
 import { useState } from "react";
-import { lightweightMeta } from "@/browser/stories/meta.js";
+import { CHROMATIC_DISABLED, lightweightMeta } from "@/browser/stories/meta.js";
 import { TOKEN_COMPONENT_COLORS, type TokenMeterData } from "@/common/utils/tokens/tokenMeterUtils";
 import { ContextUsageIndicatorButton } from "./ContextUsageIndicatorButton.js";
 
@@ -174,6 +174,8 @@ export const ContextMeterRemoteCompactionSettings: Story = {
     idleCompaction: { hours: null, setHours: fn() },
     remoteCompaction: { enabled: true, setEnabled: fn() },
   },
+  // The interaction stays in the test runner without adding a paid visual snapshot.
+  parameters: { chromatic: CHROMATIC_DISABLED },
   render: (args) => (
     <div className="bg-background flex min-h-[260px] items-end p-6">
       <InteractiveRemoteCompactionStory {...args} />

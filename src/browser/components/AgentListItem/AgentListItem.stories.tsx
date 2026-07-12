@@ -9,6 +9,7 @@ import { DndProvider } from "react-dnd";
 import { HTML5Backend } from "react-dnd-html5-backend";
 import { TooltipProvider } from "@/browser/components/Tooltip/Tooltip";
 import { screen, waitFor, userEvent } from "@storybook/test";
+import { CHROMATIC_DISABLED } from "@/browser/stories/meta.js";
 import { createMockORPCClient } from "@/browser/stories/mocks/orpc";
 import { NOW, createWorkspace } from "@/browser/stories/mocks/workspaces";
 import { useWorkspaceStoreRaw, workspaceStore } from "@/browser/stores/WorkspaceStore";
@@ -527,6 +528,8 @@ export const WorkflowOnlyActivity: Story = {
 
 export const BashMonitorWaiting: Story = {
   args: undefined as never,
+  // The state remains covered by Storybook tests without growing the Chromatic budget.
+  parameters: { chromatic: CHROMATIC_DISABLED },
   render: renderBashMonitorWaiting,
 };
 

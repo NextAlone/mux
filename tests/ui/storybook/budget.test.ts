@@ -9,7 +9,6 @@ const MAX_SNAPSHOT_ENABLED_FILES = 79;
 // future growth should disable, consolidate, or intentionally rebalance snapshots
 // rather than silently increasing Chromatic load.
 const MAX_ESTIMATED_SNAPSHOTS = 293;
-const STORY_EXPORT_PATTERN = /^export const \w+/gm;
 const SMOKE_MODE_PATTERN = /modes:\s*CHROMATIC_SMOKE_MODES/g;
 const INLINE_MODE_OBJECT_PATTERN = /modes:\s*{/g;
 
@@ -21,12 +20,24 @@ function findColocatedStories(dirs: string[]): string[] {
   );
 }
 
-function hasMetaDisable(content: string): boolean {
-  const [metaSection = content] = content.split(/^export const \w+/m, 1);
+function hasSnapshotDisable(content: string): boolean {
   return (
-    metaSection.includes("chromatic: CHROMATIC_DISABLED") ||
-    /disableSnapshot:\s*true/.test(metaSection)
+    content.includes("chromatic: CHROMATIC_DISABLED") ||
+    /chromatic:\s*{[\s\S]*?\.\.\.CHROMATIC_DISABLED/.test(content) ||
+    /disableSnapshot:\s*true/.test(content)
   );
+}
+
+function splitStorySections(content: string): {
+  metaSection: string;
+  storySections: string[];
+} {
+  const [metaSection = content, ...storySections] = content.split(/(?=^export const \w+)/m);
+  return { metaSection, storySections };
+}
+
+function hasMetaDisable(content: string): boolean {
+  return hasSnapshotDisable(splitStorySections(content).metaSection);
 }
 
 function findClosingBrace(content: string, openingBraceIndex: number): number {
@@ -181,13 +192,18 @@ describe("Storybook snapshot budget", () => {
         continue;
       }
 
-      const storyCount = (content.match(STORY_EXPORT_PATTERN) ?? []).length;
+      const { metaSection, storySections } = splitStorySections(content);
+      // Story-level disables keep local/test-runner coverage without consuming
+      // paid Chromatic snapshots, so the budget must exclude their modes too.
+      const enabledStorySections = storySections.filter((section) => !hasSnapshotDisable(section));
+      const storyCount = enabledStorySections.length;
       if (storyCount === 0) {
         continue;
       }
 
-      const smokeStories = (content.match(SMOKE_MODE_PATTERN) ?? []).length;
-      const inlineModeExtras = estimateInlineModeExtras(content);
+      const snapshotContent = [metaSection, ...enabledStorySections].join("\n");
+      const smokeStories = (snapshotContent.match(SMOKE_MODE_PATTERN) ?? []).length;
+      const inlineModeExtras = estimateInlineModeExtras(snapshotContent);
       totalSnapshots += storyCount + smokeStories + inlineModeExtras;
     }
 
