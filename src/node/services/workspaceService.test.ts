@@ -9049,7 +9049,7 @@ describe("WorkspaceService archive snapshots", () => {
     await cleanupHistory();
   });
 
-  test("archive() persists captured snapshot metadata together with archivedAt", async () => {
+  test("archive() persists the initial snapshot before finalizing checkout deletion", async () => {
     const snapshot = {
       version: 1 as const,
       capturedAt: "2026-03-30T00:00:00.000Z",
@@ -9067,9 +9067,11 @@ describe("WorkspaceService archive snapshots", () => {
       ],
     };
     const captureSnapshotForArchive = mock(() => Promise.resolve(Ok(snapshot)));
+    const finalizeSnapshotForArchive = mock(() => Promise.resolve(Ok(undefined)));
     workspaceService.setWorktreeArchiveSnapshotService({
       preflightSnapshotForArchive: mock(() => Promise.resolve(Ok(undefined))),
       captureSnapshotForArchive,
+      finalizeSnapshotForArchive,
       restoreSnapshotAfterUnarchive: mock(() => Promise.resolve(Ok("skipped" as const))),
       getUnsupportedUntrackedPaths: mock(() => Promise.resolve(Ok([]))),
     });
@@ -9085,6 +9087,61 @@ describe("WorkspaceService archive snapshots", () => {
       workspaceMetadata,
       acknowledgedUntrackedPaths: undefined,
     });
+    expect(finalizeSnapshotForArchive).toHaveBeenCalledWith({
+      workspaceId,
+      workspaceMetadata,
+      acknowledgedUntrackedPaths: undefined,
+    });
+  });
+
+  test("archive() keeps the durable archive successful when final checkout cleanup fails", async () => {
+    const snapshot: WorktreeArchiveSnapshot = {
+      version: 2,
+      capturedAt: "2026-03-30T00:00:00.000Z",
+      projects: [
+        {
+          projectPath,
+          projectName: "proj",
+          storageKey: "proj",
+          workspaceName: "ws-archive-snapshot",
+          sourceBookmark: "main",
+          changeId: "change-id",
+          commitId: "commit-id",
+          sparsePatterns: ["."],
+        },
+      ],
+    };
+    workspaceService.setWorktreeArchiveSnapshotService({
+      preflightSnapshotForArchive: mock(() => Promise.resolve(Ok(undefined))),
+      captureSnapshotForArchive: mock(() => Promise.resolve(Ok(snapshot))),
+      finalizeSnapshotForArchive: mock(() => Promise.resolve(Err("forget failed"))),
+      restoreSnapshotAfterUnarchive: mock(() => Promise.resolve(Ok("skipped" as const))),
+      getUnsupportedUntrackedPaths: mock(() => Promise.resolve(Ok([]))),
+    });
+
+    expect(await workspaceService.archive(workspaceId)).toEqual(Ok({ kind: "archived" }));
+    expect(configState.projects.get(projectPath)?.workspaces[0]?.worktreeArchiveSnapshot).toEqual(
+      snapshot
+    );
+  });
+
+  test("archive() never snapshots or deletes an isolation-none shared checkout", async () => {
+    const workspaceEntry = configState.projects.get(projectPath)?.workspaces[0];
+    if (!workspaceEntry) throw new Error("Missing workspace fixture");
+    workspaceEntry.taskIsolation = "none";
+    const captureSnapshotForArchive = mock(() => Promise.resolve(Err("should not run")));
+    const finalizeSnapshotForArchive = mock(() => Promise.resolve(Err("should not run")));
+    workspaceService.setWorktreeArchiveSnapshotService({
+      preflightSnapshotForArchive: mock(() => Promise.resolve(Ok(undefined))),
+      captureSnapshotForArchive,
+      finalizeSnapshotForArchive,
+      restoreSnapshotAfterUnarchive: mock(() => Promise.resolve(Ok("skipped" as const))),
+      getUnsupportedUntrackedPaths: mock(() => Promise.resolve(Err("should not run"))),
+    });
+
+    expect(await workspaceService.archive(workspaceId)).toEqual(Ok({ kind: "archived" }));
+    expect(captureSnapshotForArchive).not.toHaveBeenCalled();
+    expect(finalizeSnapshotForArchive).not.toHaveBeenCalled();
   });
 
   test("archive() does not close live sessions when archive readiness checks fail", async () => {

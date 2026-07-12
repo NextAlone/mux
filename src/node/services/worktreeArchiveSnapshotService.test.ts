@@ -4,10 +4,23 @@ import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 
-import { Err } from "@/common/types/result";
+import type { WorktreeArchiveSnapshot } from "@/common/schemas/project";
+import { Err, type Result } from "@/common/types/result";
 import type { WorkspaceMetadata } from "@/common/types/workspace";
 import { Config } from "@/node/config";
 import { WorktreeArchiveSnapshotService } from "@/node/services/worktreeArchiveSnapshotService";
+import { getCurrentJjRevisionIdentity, resolveVisibleJjRevisionIdentities } from "@/node/vcs/jj";
+
+type LegacyArchiveSnapshot = Extract<WorktreeArchiveSnapshot, { version: 1 }>;
+type LegacyArchiveSnapshotService = Omit<
+  WorktreeArchiveSnapshotService,
+  "captureSnapshotForArchive"
+> & {
+  // These regression tests intentionally describe the disabled v1 implementation.
+  captureSnapshotForArchive: (
+    ...args: Parameters<WorktreeArchiveSnapshotService["captureSnapshotForArchive"]>
+  ) => Promise<Result<LegacyArchiveSnapshot, unknown>>;
+};
 
 interface TestFixture {
   muxRoot: string;
@@ -18,7 +31,7 @@ interface TestFixture {
   baseSha: string;
   metadata: WorkspaceMetadata;
   config: Config;
-  service: WorktreeArchiveSnapshotService;
+  service: LegacyArchiveSnapshotService;
 }
 
 function runGit(cwd: string, args: string[]): string {
@@ -94,7 +107,7 @@ async function createFixture(): Promise<TestFixture> {
     baseSha,
     metadata,
     config,
-    service: new WorktreeArchiveSnapshotService(config),
+    service: new WorktreeArchiveSnapshotService(config) as unknown as LegacyArchiveSnapshotService,
   };
 }
 
@@ -161,68 +174,338 @@ async function writeWorkspaceBranchMap(
   );
 }
 
-const JJ_ARCHIVE_SNAPSHOT_UNSUPPORTED =
-  "Archive snapshots are not yet supported for jj-native JJ Workspace runtimes.";
+interface JjTestFixture {
+  muxRoot: string;
+  projectPath: string;
+  workspacePath: string;
+  workspaceId: string;
+  workspaceName: string;
+  metadata: WorkspaceMetadata;
+  config: Config;
+  service: WorktreeArchiveSnapshotService;
+}
 
-describe("WorktreeArchiveSnapshotService gate", () => {
-  test("reports unsupported without creating archive state", async () => {
+function runJj(repositoryPath: string, args: string[]): string {
+  return execFileSync(
+    "jj",
+    ["--no-pager", "--color", "never", "--repository", repositoryPath, ...args],
+    { encoding: "utf-8" }
+  ).trim();
+}
+
+async function createJjFixture(): Promise<JjTestFixture> {
+  const muxRoot = await fs.mkdtemp(path.join(os.tmpdir(), "mux-jj-archive-snapshot-"));
+  const srcBaseDir = path.join(muxRoot, "src");
+  const projectPath = path.join(muxRoot, "project");
+  const workspaceName = "feature-snapshot";
+  const workspacePath = path.join(srcBaseDir, "project", workspaceName);
+  const workspaceId = "ws-snapshot";
+
+  await fs.mkdir(projectPath, { recursive: true });
+  execFileSync("jj", ["--no-pager", "--color", "never", "git", "init", "--colocate", projectPath]);
+  runJj(projectPath, ["describe", "-m", "base"]);
+  runJj(projectPath, ["new", "-m", "default working copy"]);
+  await fs.mkdir(path.dirname(workspacePath), { recursive: true });
+  runJj(projectPath, [
+    "workspace",
+    "add",
+    "--name",
+    workspaceName,
+    "--revision",
+    "@",
+    "--message",
+    workspaceName,
+    workspacePath,
+  ]);
+
+  await fs.writeFile(
+    path.join(projectPath, ".jj", "repo", "mux-workspaces.json"),
+    `${JSON.stringify({ [workspaceName]: "source-bookmark" }, null, 2)}\n`,
+    "utf8"
+  );
+
+  const config = new Config(muxRoot);
+  await config.editConfig((cfg) => {
+    cfg.projects.set(projectPath, {
+      trusted: false,
+      workspaces: [
+        {
+          path: workspacePath,
+          id: workspaceId,
+          name: workspaceName,
+          runtimeConfig: { type: "worktree", srcBaseDir },
+        },
+      ],
+    });
+    return cfg;
+  });
+
+  const metadata: WorkspaceMetadata = {
+    id: workspaceId,
+    name: workspaceName,
+    projectName: "project",
+    projectPath,
+    runtimeConfig: { type: "worktree", srcBaseDir },
+  };
+  return {
+    muxRoot,
+    projectPath,
+    workspacePath,
+    workspaceId,
+    workspaceName,
+    metadata,
+    config,
+    service: new WorktreeArchiveSnapshotService(config),
+  };
+}
+
+async function persistSnapshot(
+  fixture: JjTestFixture,
+  snapshot: WorktreeArchiveSnapshot
+): Promise<void> {
+  await fixture.config.editConfig((config) => {
+    const workspace = config.projects.get(fixture.projectPath)?.workspaces[0];
+    if (!workspace) throw new Error("Missing workspace fixture");
+    workspace.worktreeArchiveSnapshot = snapshot;
+    return config;
+  });
+}
+
+describe("WorktreeArchiveSnapshotService JJ-native snapshots", () => {
+  let fixture: JjTestFixture;
+
+  beforeEach(async () => {
+    fixture = await createJjFixture();
+  });
+
+  afterEach(async () => {
+    await fs.rm(fixture.muxRoot, { recursive: true, force: true });
+  });
+
+  test("finalizes late writes and restores the exact change with sparse patterns", async () => {
+    await fs.mkdir(path.join(fixture.workspacePath, "src"), { recursive: true });
+    await fs.mkdir(path.join(fixture.workspacePath, "docs"), { recursive: true });
+    await fs.writeFile(path.join(fixture.workspacePath, "src", "original.txt"), "original\n");
+    await fs.writeFile(path.join(fixture.workspacePath, "docs", "excluded.txt"), "excluded\n");
+    runJj(fixture.workspacePath, ["status"]);
+    runJj(fixture.workspacePath, ["sparse", "set", "--clear", "--add", "src"]);
+
+    const args = {
+      workspaceId: fixture.workspaceId,
+      workspaceMetadata: fixture.metadata,
+    };
+    const initial = await fixture.service.captureSnapshotForArchive(args);
+    expect(initial.success).toBe(true);
+    if (!initial.success || initial.data.version !== 2) return;
+    expect(initial.data.projects[0]?.sourceBookmark).toBe("source-bookmark");
+    expect(initial.data.projects[0]?.sparsePatterns).toEqual(["src"]);
+    await persistSnapshot(fixture, initial.data);
+
+    await fs.writeFile(path.join(fixture.workspacePath, "src", "late.txt"), "late\n");
+    expect(await fixture.service.finalizeSnapshotForArchive(args)).toEqual({
+      success: true,
+      data: undefined,
+    });
+    expect(await pathExists(fixture.workspacePath)).toBe(false);
+
+    const persisted = fixture.config.loadConfigOrDefault().projects.get(fixture.projectPath)
+      ?.workspaces[0]?.worktreeArchiveSnapshot;
+    expect(persisted?.version).toBe(2);
+    if (persisted?.version !== 2) return;
+    expect(persisted.projects[0]?.changeId).toBe(initial.data.projects[0]?.changeId);
+    expect(persisted.projects[0]?.commitId).not.toBe(initial.data.projects[0]?.commitId);
+
+    expect(await fixture.service.restoreSnapshotAfterUnarchive(args)).toEqual({
+      success: true,
+      data: "restored",
+    });
+    expect(await fs.readFile(path.join(fixture.workspacePath, "src", "original.txt"), "utf8")).toBe(
+      "original\n"
+    );
+    expect(await fs.readFile(path.join(fixture.workspacePath, "src", "late.txt"), "utf8")).toBe(
+      "late\n"
+    );
+    expect(await pathExists(path.join(fixture.workspacePath, "docs", "excluded.txt"))).toBe(false);
+    expect(runJj(fixture.workspacePath, ["sparse", "list"])).toBe("src");
+    expect(
+      fixture.config.loadConfigOrDefault().projects.get(fixture.projectPath)?.workspaces[0]
+        ?.worktreeArchiveSnapshot
+    ).toBeUndefined();
+  });
+
+  test("restores the unique visible successor when an archived change was rewritten", async () => {
+    await fs.writeFile(path.join(fixture.workspacePath, "tracked.txt"), "tracked\n");
+    const args = {
+      workspaceId: fixture.workspaceId,
+      workspaceMetadata: fixture.metadata,
+    };
+    const capture = await fixture.service.captureSnapshotForArchive(args);
+    expect(capture.success).toBe(true);
+    if (!capture.success || capture.data.version !== 2) return;
+    await persistSnapshot(fixture, capture.data);
+    expect(await fixture.service.finalizeSnapshotForArchive(args)).toEqual({
+      success: true,
+      data: undefined,
+    });
+
+    const projectSnapshot = capture.data.projects[0];
+    if (!projectSnapshot) throw new Error("Missing project snapshot");
+    runJj(fixture.projectPath, [
+      "describe",
+      "-m",
+      "rewritten while archived",
+      projectSnapshot.changeId,
+    ]);
+    const successors = await resolveVisibleJjRevisionIdentities(
+      fixture.projectPath,
+      projectSnapshot.changeId
+    );
+    expect(successors).toHaveLength(1);
+    expect(successors[0]?.commitId).not.toBe(projectSnapshot.commitId);
+
+    expect(await fixture.service.restoreSnapshotAfterUnarchive(args)).toEqual({
+      success: true,
+      data: "restored",
+    });
+    expect(await getCurrentJjRevisionIdentity(fixture.workspacePath)).toEqual(successors[0]);
+  });
+
+  test("forgets a stale workspace registration before recreating a missing checkout", async () => {
+    await fs.writeFile(path.join(fixture.workspacePath, "tracked.txt"), "tracked\n");
+    const args = {
+      workspaceId: fixture.workspaceId,
+      workspaceMetadata: fixture.metadata,
+    };
+    const capture = await fixture.service.captureSnapshotForArchive(args);
+    expect(capture.success).toBe(true);
+    if (!capture.success) return;
+    await persistSnapshot(fixture, capture.data);
+    await fs.rm(fixture.workspacePath, { recursive: true, force: true });
+
+    expect(await fixture.service.restoreSnapshotAfterUnarchive(args)).toEqual({
+      success: true,
+      data: "restored",
+    });
+    expect(await fs.readFile(path.join(fixture.workspacePath, "tracked.txt"), "utf8")).toBe(
+      "tracked\n"
+    );
+  });
+
+  test("does not forget a workspace name reused at another path", async () => {
+    await fs.writeFile(path.join(fixture.workspacePath, "tracked.txt"), "tracked\n");
+    const args = {
+      workspaceId: fixture.workspaceId,
+      workspaceMetadata: fixture.metadata,
+    };
+    const capture = await fixture.service.captureSnapshotForArchive(args);
+    expect(capture.success).toBe(true);
+    if (!capture.success) return;
+    await persistSnapshot(fixture, capture.data);
+    expect(await fixture.service.finalizeSnapshotForArchive(args)).toEqual({
+      success: true,
+      data: undefined,
+    });
+
+    const reusedPath = path.join(fixture.muxRoot, "reused-name");
+    runJj(fixture.projectPath, [
+      "workspace",
+      "add",
+      "--name",
+      fixture.workspaceName,
+      "--revision",
+      "@",
+      "--message",
+      "reused elsewhere",
+      reusedPath,
+    ]);
+
+    const restore = await fixture.service.restoreSnapshotAfterUnarchive(args);
+    expect(restore.success).toBe(false);
+    if (!restore.success) {
+      expect(restore.error).toContain("registered at another path");
+    }
+    expect(await pathExists(reusedPath)).toBe(true);
+    expect(await pathExists(fixture.workspacePath)).toBe(false);
+  });
+
+  test("keeps the checkout when final snapshot persistence fails", async () => {
+    await fs.writeFile(path.join(fixture.workspacePath, "tracked.txt"), "tracked\n");
+    const args = {
+      workspaceId: fixture.workspaceId,
+      workspaceMetadata: fixture.metadata,
+    };
+    const capture = await fixture.service.captureSnapshotForArchive(args);
+    expect(capture.success).toBe(true);
+    if (!capture.success) return;
+    await persistSnapshot(fixture, capture.data);
+    const editConfigSpy = spyOn(fixture.config, "editConfig").mockRejectedValueOnce(
+      new Error("persist failed")
+    );
+
+    const result = await fixture.service.finalizeSnapshotForArchive(args);
+    expect(result.success).toBe(false);
+    expect(await pathExists(fixture.workspacePath)).toBe(true);
+    editConfigSpy.mockRestore();
+  });
+
+  test("reports files excluded by JJ auto-tracking", async () => {
+    runJj(fixture.projectPath, ["config", "set", "--repo", "snapshot.auto-track", "none()"]);
+    await fs.writeFile(path.join(fixture.workspacePath, "not-tracked.txt"), "untracked\n");
+
+    expect(
+      await fixture.service.getUnsupportedUntrackedPaths({
+        workspaceId: fixture.workspaceId,
+        workspaceMetadata: fixture.metadata,
+      })
+    ).toEqual({ success: true, data: ["not-tracked.txt"] });
+  });
+
+  test("keeps legacy v1 snapshots for diagnosis but refuses automatic restore", async () => {
+    const legacySnapshot: LegacyArchiveSnapshot = {
+      version: 1,
+      capturedAt: "2026-01-01T00:00:00.000Z",
+      stateDirPath: "archive-state",
+      projects: [
+        {
+          projectPath: fixture.projectPath,
+          projectName: fixture.metadata.projectName,
+          storageKey: "project",
+          branchName: fixture.workspaceName,
+          trunkBranch: "main",
+          baseSha: "base",
+          headSha: "head",
+        },
+      ],
+    };
+    await persistSnapshot(fixture, legacySnapshot);
+
+    const result = await fixture.service.restoreSnapshotAfterUnarchive({
+      workspaceId: fixture.workspaceId,
+      workspaceMetadata: fixture.metadata,
+    });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error).toContain("Legacy Git archive snapshots");
+    }
+  });
+});
+
+describe("WorktreeArchiveSnapshotService legacy gate", () => {
+  test("does not create legacy archive state", async () => {
     const fixture = await createFixture();
     try {
       const args = {
         workspaceId: fixture.workspaceId,
         workspaceMetadata: fixture.metadata,
       };
-
-      expect(await fixture.service.preflightSnapshotForArchive(args)).toEqual(
-        Err(JJ_ARCHIVE_SNAPSHOT_UNSUPPORTED)
-      );
-      expect(await fixture.service.getUnsupportedUntrackedPaths(args)).toEqual(
-        Err(JJ_ARCHIVE_SNAPSHOT_UNSUPPORTED)
-      );
-      expect(await fixture.service.captureSnapshotForArchive(args)).toEqual(
-        Err(JJ_ARCHIVE_SNAPSHOT_UNSUPPORTED)
-      );
-
-      await fixture.config.editConfig((cfg) => {
-        const workspace = cfg.projects.get(fixture.projectPath)?.workspaces[0];
-        if (!workspace) {
-          throw new Error("Missing workspace entry");
-        }
-        workspace.worktreeArchiveSnapshot = {
-          version: 1,
-          capturedAt: "2026-01-01T00:00:00.000Z",
-          stateDirPath: "archive-state",
-          projects: [
-            {
-              projectPath: fixture.projectPath,
-              projectName: fixture.metadata.projectName,
-              storageKey: "project",
-              branchName: fixture.workspaceName,
-              trunkBranch: "main",
-              baseSha: fixture.baseSha,
-              headSha: fixture.baseSha,
-            },
-          ],
-        };
-        return cfg;
-      });
-      expect(await fixture.service.restoreSnapshotAfterUnarchive(args)).toEqual(
-        Err(JJ_ARCHIVE_SNAPSHOT_UNSUPPORTED)
-      );
-
-      expect(
-        await pathExists(
-          path.join(fixture.config.getSessionDir(fixture.workspaceId), "archive-state")
-        )
-      ).toBe(false);
+      expect((await fixture.service.captureSnapshotForArchive(args)).success).toBe(false);
     } finally {
       await fs.rm(fixture.muxRoot, { recursive: true, force: true });
     }
   });
 });
 
-// Legacy Git snapshots remain as regression coverage for a future implementation.
-// JJ-native archive snapshots are currently gated off by the production service.
+// Legacy Git snapshots remain as skipped regression documentation for the retired implementation.
 describe.skip("WorktreeArchiveSnapshotService legacy Git snapshots", () => {
   let fixture: TestFixture;
 

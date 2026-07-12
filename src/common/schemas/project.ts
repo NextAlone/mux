@@ -18,7 +18,7 @@ import { z } from "zod";
 import { RuntimeEnablementIdSchema } from "./ids";
 import { RuntimeEnablementOverridesSchema } from "./runtimeEnablement";
 
-export const WorktreeArchiveSnapshotProjectSchema = z.object({
+export const LegacyWorktreeArchiveSnapshotProjectSchema = z.object({
   projectPath: z.string().meta({
     description: "Absolute path to the project repo that this archive snapshot entry restores.",
   }),
@@ -45,7 +45,7 @@ export const WorktreeArchiveSnapshotProjectSchema = z.object({
   }),
 });
 
-export const WorktreeArchiveSnapshotSchema = z.object({
+export const LegacyWorktreeArchiveSnapshotSchema = z.object({
   version: z.literal(1).meta({ description: "Snapshot metadata schema version." }),
   capturedAt: z
     .string()
@@ -53,10 +53,51 @@ export const WorktreeArchiveSnapshotSchema = z.object({
   stateDirPath: z.string().meta({
     description: "Session-dir-relative path to the directory that stores snapshot artifacts.",
   }),
-  projects: z.array(WorktreeArchiveSnapshotProjectSchema).min(1).meta({
+  projects: z.array(LegacyWorktreeArchiveSnapshotProjectSchema).min(1).meta({
     description: "Per-project restore metadata for the archived workspace snapshot.",
   }),
 });
+
+export const JjWorktreeArchiveSnapshotProjectSchema = z.object({
+  projectPath: z.string().meta({
+    description: "Absolute path to the shared jj repository.",
+  }),
+  projectName: z.string().meta({ description: "Display name for the project repo." }),
+  storageKey: z.string().meta({
+    description: "Filesystem-safe per-project key retained for future multi-project support.",
+  }),
+  workspaceName: z.string().meta({ description: "JJ workspace name restored after unarchive." }),
+  sourceBookmark: z.string().meta({
+    description: "Mux source bookmark mapping restored with the JJ workspace.",
+  }),
+  changeId: z.string().meta({ description: "Full JJ change ID captured from the working copy." }),
+  commitId: z.string().meta({
+    description: "JJ commit ID captured for integrity and rewrite detection.",
+  }),
+  sparsePatterns: z.array(z.string()).meta({
+    description: "Workspace sparse patterns reapplied after the checkout is recreated.",
+  }),
+});
+
+export const JjWorktreeArchiveSnapshotSchema = z.object({
+  version: z.literal(2).meta({ description: "JJ-native snapshot metadata schema version." }),
+  capturedAt: z.string().meta({
+    description: "ISO 8601 timestamp when the JJ working copy was snapshotted.",
+  }),
+  projects: z.array(JjWorktreeArchiveSnapshotProjectSchema).length(1).meta({
+    description: "Single-project JJ change pointers captured before checkout deletion.",
+  }),
+});
+
+export const WorktreeArchiveSnapshotProjectSchema = z.union([
+  LegacyWorktreeArchiveSnapshotProjectSchema,
+  JjWorktreeArchiveSnapshotProjectSchema,
+]);
+
+export const WorktreeArchiveSnapshotSchema = z.discriminatedUnion("version", [
+  LegacyWorktreeArchiveSnapshotSchema,
+  JjWorktreeArchiveSnapshotSchema,
+]);
 
 // Shared with workspace metadata IPC; see src/common/orpc/schemas/workspace.ts.
 export { WorkflowTaskMetadataSchema };

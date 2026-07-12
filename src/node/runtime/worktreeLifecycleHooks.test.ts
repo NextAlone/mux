@@ -104,7 +104,7 @@ describe("createWorktreeArchiveHook", () => {
     expect(await pathExists(managedPath)).toBe(false);
   });
 
-  it("skips snapshot cleanup for multi-project workspaces so restore can rehydrate safely", async () => {
+  it("leaves snapshot cleanup to the snapshot service", async () => {
     const srcBaseDir = await createTempRoot();
     const workspaceMetadata = createWorkspaceMetadata({
       runtimeConfig: { type: "worktree", srcBaseDir },
@@ -126,7 +126,7 @@ describe("createWorktreeArchiveHook", () => {
     expect(result).toEqual(Ok(undefined));
     expect(await pathExists(managedPath)).toBe(true);
     expect(debugSpy).toHaveBeenCalledWith(
-      "Skipping snapshot checkout cleanup for multi-project archive",
+      "Skipping lifecycle checkout cleanup for snapshot archive",
       { workspaceId: workspaceMetadata.id }
     );
   });

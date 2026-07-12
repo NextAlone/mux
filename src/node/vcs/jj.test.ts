@@ -16,6 +16,8 @@ import {
   isInsideJjRepository,
   parseJjBookmarkNames,
   parseJjFileListOutput,
+  parseJjRevisionIdentities,
+  parseJjUntrackedPaths,
   renameJjWorkspace,
   resolveJjRevisionChangeId,
 } from "./jj";
@@ -56,6 +58,22 @@ describe("jj bookmark helpers", () => {
     const files = parseJjFileListOutput("src/main.ts\nREADME.md\n\nspace name.txt\n");
 
     expect(files).toEqual(["src/main.ts", "README.md", "space name.txt"]);
+  });
+
+  test("parses full change and commit identities", () => {
+    expect(parseJjRevisionIdentities("change-b commit-b\nchange-a commit-a\n")).toEqual([
+      { changeId: "change-b", commitId: "commit-b" },
+      { changeId: "change-a", commitId: "commit-a" },
+    ]);
+  });
+
+  test("parses only the JJ untracked status section", () => {
+    expect(
+      parseJjUntrackedPaths(
+        "Untracked paths:\n? z.txt\n? dir/a.txt\nWorking copy (@): abc description\n"
+      )
+    ).toEqual(["dir/a.txt", "z.txt"]);
+    expect(parseJjUntrackedPaths("The working copy has no changes.\n")).toEqual([]);
   });
 
   test("prefers a bookmark pointing at the current change when detecting the default", () => {

@@ -30,12 +30,10 @@ export function createWorktreeArchiveHook(options: {
       return Ok(undefined);
     }
 
-    if (
-      options.getWorktreeArchiveBehavior() === "snapshot" &&
-      Array.isArray(workspaceMetadata.projects) &&
-      workspaceMetadata.projects.length > 1
-    ) {
-      log.debug("Skipping snapshot checkout cleanup for multi-project archive", {
+    if (options.getWorktreeArchiveBehavior() === "snapshot") {
+      // Snapshot cleanup needs a final working-copy capture and strict forget semantics, so the
+      // snapshot service owns it instead of this generic best-effort lifecycle hook.
+      log.debug("Skipping lifecycle checkout cleanup for snapshot archive", {
         workspaceId: workspaceMetadata.id,
       });
       return Ok(undefined);

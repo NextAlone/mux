@@ -335,7 +335,8 @@ type WorktreeArchiveSnapshotLifecycleService = Pick<
   | "captureSnapshotForArchive"
   | "restoreSnapshotAfterUnarchive"
   | "getUnsupportedUntrackedPaths"
->;
+> &
+  Partial<Pick<WorktreeArchiveSnapshotService, "finalizeSnapshotForArchive">>;
 // Trim and normalize a heartbeat message for storage. Accepts `unknown` so it safely handles
 // both user input (string | undefined) and persisted config values that may have been corrupted.
 function isWorkflowInvocationMessage(message: MuxMessage, runId: string): boolean {
@@ -529,6 +530,7 @@ interface WorkspaceAgentStatus {
 }
 type WorkspaceRuntimeStatus = "running" | "stopped" | "unknown" | "unsupported";
 const POST_COMPACTION_METADATA_REFRESH_DEBOUNCE_MS = 100;
+const ACTIVE_SHARED_CHECKOUT_TASK_STATUSES = new Set(["starting", "running", "awaiting_report"]);
 
 const MULTI_PROJECT_WORKSPACES_DISABLED_ERROR = "Multi-project workspaces experiment is disabled";
 
@@ -539,6 +541,27 @@ function normalizeRepoRootProjectPath(projectPath: string | null | undefined): s
   }
 
   return stripTrailingSlashes(path.posix.normalize(normalizedPath));
+}
+
+function getSharedCheckoutPreservationReason(
+  config: ProjectsConfig,
+  workspaceId: string,
+  workspacePath: string
+): "shares-parent" | "used-by-active-task" | null {
+  if (findWorkspaceEntry(config, workspaceId)?.workspace.taskIsolation === "none") {
+    return "shares-parent";
+  }
+
+  const usedByActiveTask = Array.from(config.projects.values()).some((project) =>
+    project.workspaces.some(
+      (workspace) =>
+        workspace.id !== workspaceId &&
+        workspace.taskIsolation === "none" &&
+        workspace.path === workspacePath &&
+        ACTIVE_SHARED_CHECKOUT_TASK_STATUSES.has(workspace.taskStatus ?? "")
+    )
+  );
+  return usedByActiveTask ? "used-by-active-task" : null;
 }
 
 function normalizeArchiveUntrackedPaths(paths: readonly string[]): string[] {
@@ -2299,6 +2322,18 @@ export class WorkspaceService extends EventEmitter {
     }
 
     if (!isWorktreeRuntime(args.workspaceMetadata.runtimeConfig)) {
+      return Ok([]);
+    }
+
+    const persistedWorkspace = this.config.findWorkspace(args.workspaceId);
+    if (
+      persistedWorkspace &&
+      getSharedCheckoutPreservationReason(
+        this.config.loadConfigOrDefault(),
+        args.workspaceId,
+        persistedWorkspace.workspacePath
+      ) !== null
+    ) {
       return Ok([]);
     }
 
@@ -4263,34 +4298,17 @@ export class WorkspaceService extends EventEmitter {
 
         const persistedWorkspacePath = persistedWorkspace?.workspacePath;
 
-        // Tasks spawned with isolation: "none" share their parent workspace's checkout (their
-        // persisted path points at it). Physically deleting that directory would destroy the
-        // parent's working tree, so skip runtime deletion and only remove config/session state.
-        // Runtime deletion is keyed on the task's unique name today (a safe no-op), but guard
-        // explicitly so this stays correct if runtime deletion ever resolves the persisted path.
-        const taskSharesParentCheckout =
-          findWorkspaceEntry(configSnapshot, workspaceId)?.workspace.taskIsolation === "none";
-
-        // Inverse direction: this workspace's checkout may be shared by live isolation: "none"
-        // descendants (their persisted path points at it). Deleting it would yank the cwd out
-        // from under their started streams, so preserve the directory and only clean up this
-        // workspace's config/session state. Reported/interrupted shared tasks don't block
-        // deletion, and neither do "queued" ones: dequeue requires the parent config entry
-        // regardless of isolation, so a queued child of a removed parent fails fast at launch
-        // ("Queued task parent not found") exactly like a queued forked task — preserving its
-        // checkout would only leak the directory.
-        const activeSharedTaskStatuses = new Set(["starting", "running", "awaiting_report"]);
-        const checkoutSharedByActiveTask =
-          persistedWorkspacePath != null &&
-          Array.from(configSnapshot.projects.values()).some((project) =>
-            project.workspaces.some(
-              (ws) =>
-                ws.id !== workspaceId &&
-                ws.taskIsolation === "none" &&
-                ws.path === persistedWorkspacePath &&
-                activeSharedTaskStatuses.has(ws.taskStatus ?? "")
-            )
-          );
+        // Shared checkouts belong to another live workspace and must never be removed here.
+        const sharedCheckoutReason =
+          persistedWorkspacePath == null
+            ? null
+            : getSharedCheckoutPreservationReason(
+                configSnapshot,
+                workspaceId,
+                persistedWorkspacePath
+              );
+        const taskSharesParentCheckout = sharedCheckoutReason === "shares-parent";
+        const checkoutSharedByActiveTask = sharedCheckoutReason === "used-by-active-task";
 
         if (isMultiProject(metadata)) {
           const projects = getProjects(metadata);
@@ -6238,11 +6256,18 @@ export class WorkspaceService extends EventEmitter {
         snapshotBehaviorEnabled &&
         beforeArchiveMetadata != null &&
         isWorktreeRuntime(beforeArchiveMetadata.runtimeConfig);
+      const preservesSharedCheckout =
+        getSharedCheckoutPreservationReason(
+          this.config.loadConfigOrDefault(),
+          workspaceId,
+          workspacePath
+        ) !== null;
       const shouldSkipSnapshotCapture =
         canSnapshotManagedWorktree &&
-        beforeArchiveMetadata != null &&
-        Array.isArray(beforeArchiveMetadata.projects) &&
-        beforeArchiveMetadata.projects.length > 1;
+        (preservesSharedCheckout ||
+          (beforeArchiveMetadata != null &&
+            Array.isArray(beforeArchiveMetadata.projects) &&
+            beforeArchiveMetadata.projects.length > 1));
       const needsSnapshotCapture = canSnapshotManagedWorktree && !shouldSkipSnapshotCapture;
 
       if (needsSnapshotCapture && beforeArchiveMetadata) {
@@ -6337,6 +6362,28 @@ export class WorkspaceService extends EventEmitter {
         }
         return config;
       });
+
+      if (
+        needsSnapshotCapture &&
+        beforeArchiveMetadata &&
+        this.worktreeArchiveSnapshotService?.finalizeSnapshotForArchive
+      ) {
+        const finalizeResult = await this.worktreeArchiveSnapshotService.finalizeSnapshotForArchive(
+          {
+            workspaceId,
+            workspaceMetadata: beforeArchiveMetadata,
+            acknowledgedUntrackedPaths,
+          }
+        );
+        if (!finalizeResult.success) {
+          // archivedAt and the initial change pointer are already durable. Keep the checkout on
+          // disk when final re-snapshot/forget/delete fails so the archive remains lossless.
+          log.warn("Keeping JJ checkout after archive snapshot finalization failed", {
+            workspaceId,
+            error: finalizeResult.error,
+          });
+        }
+      }
 
       if (!needsSnapshotCapture) {
         try {

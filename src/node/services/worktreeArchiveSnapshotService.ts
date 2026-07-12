@@ -2,35 +2,35 @@ import assert from "node:assert/strict";
 import * as fsPromises from "node:fs/promises";
 import * as path from "node:path";
 
-import { Err, Ok, type Result } from "@/common/types/result";
 import type { ArchiveLossyUntrackedFilesConfirmation } from "@/common/orpc/schemas/api";
+import type { WorktreeArchiveSnapshot } from "@/common/schemas/project";
+import { Err, Ok, type Result } from "@/common/types/result";
+import { isWorktreeRuntime } from "@/common/types/runtime";
 import type { WorkspaceMetadata } from "@/common/types/workspace";
-import { getSrcBaseDir, isWorktreeRuntime } from "@/common/types/runtime";
 import { getErrorMessage } from "@/common/utils/errors";
-import type {
-  WorktreeArchiveSnapshot,
-  WorktreeArchiveSnapshotProject,
-} from "@/common/schemas/project";
 import type { Config } from "@/node/config";
-import { detectDefaultTrunkBranch } from "@/node/git";
-import { ContainerManager } from "@/node/multiProject/containerManager";
-import { isGitRepository } from "@/node/utils/pathUtils";
-import { createRuntime } from "@/node/runtime/runtimeFactory";
 import type { InitLogger } from "@/node/runtime/Runtime";
+import { createRuntime } from "@/node/runtime/runtimeFactory";
+import { log } from "@/node/services/log";
 import { coerceNonEmptyString, findWorkspaceEntry } from "@/node/services/taskUtils";
 import { getWorkspaceProjectRepos } from "@/node/services/workspaceProjectRepos";
-import { log } from "@/node/services/log";
-import { execFileAsync } from "@/node/utils/disposableExec";
-import { GIT_NO_HOOKS_ENV } from "@/node/utils/gitNoHooksEnv";
 import { isPathInsideDir } from "@/node/utils/pathUtils";
+import {
+  editJjRevision,
+  forgetJjWorkspace,
+  getCurrentJjRevisionIdentity,
+  getJjSparsePatterns,
+  getJjWorkspaceRegistration,
+  listJjSubmodulePaths,
+  listJjUntrackedPaths,
+  resolveVisibleJjRevisionIdentities,
+  setJjSparsePatterns,
+  type JjRevisionIdentity,
+} from "@/node/vcs/jj";
 
-const SNAPSHOT_VERSION = 1;
-const SNAPSHOT_DIR_NAME = "archive-state";
-const SNAPSHOT_METADATA_FILE_NAME = "metadata.json";
-// eslint-disable-next-line @typescript-eslint/no-inferrable-types -- Keep legacy code type-checkable until JJ-native snapshots exist.
-const ENABLE_LEGACY_GIT_ARCHIVE_SNAPSHOT: boolean = false;
-const JJ_ARCHIVE_SNAPSHOT_UNSUPPORTED =
-  "Archive snapshots are not yet supported for jj-native JJ Workspace runtimes.";
+const LEGACY_GIT_ARCHIVE_SNAPSHOT_UNSUPPORTED =
+  "Legacy Git archive snapshots cannot be restored by the JJ-native snapshot service.";
+const JJ_WORKSPACE_MAP_FILENAME = "mux-workspaces.json";
 const NOOP_INIT_LOGGER: InitLogger = {
   logStep: () => undefined,
   logStdout: () => undefined,
@@ -40,21 +40,22 @@ const NOOP_INIT_LOGGER: InitLogger = {
 };
 
 type CaptureSnapshotForArchiveError = string | ArchiveLossyUntrackedFilesConfirmation;
+type JjArchiveSnapshot = Extract<WorktreeArchiveSnapshot, { version: 2 }>;
+type JjArchiveSnapshotProject = JjArchiveSnapshot["projects"][number];
 
-interface CreatedRestoreWorkspace {
+interface SnapshotContext {
+  workspaceName: string;
+  workspacePath: string;
   projectPath: string;
   projectName: string;
-  workspacePath: string;
+  storageKey: string;
+  sourceBookmark: string;
 }
 
 function getPersistedWorkspaceName(workspace: { name?: string; path: string }): string | undefined {
-  const explicitName = coerceNonEmptyString(workspace.name);
-  if (explicitName) {
-    return explicitName;
-  }
-
-  const pathBasename = path.basename(workspace.path.trim());
-  return pathBasename.length > 0 ? pathBasename : undefined;
+  return (
+    coerceNonEmptyString(workspace.name) ?? coerceNonEmptyString(path.basename(workspace.path))
+  );
 }
 
 function findWorkspaceEntryByIdOrPath(
@@ -76,14 +77,7 @@ function findWorkspaceEntryByIdOrPath(
   const workspace = projectConfig?.workspaces.find(
     (entry) => entry.path === locatedWorkspace.workspacePath
   );
-  if (!workspace) {
-    return null;
-  }
-
-  return {
-    projectPath: locatedWorkspace.projectPath,
-    workspace,
-  };
+  return workspace ? { projectPath: locatedWorkspace.projectPath, workspace } : null;
 }
 
 export class WorktreeArchiveSnapshotService {
@@ -93,65 +87,18 @@ export class WorktreeArchiveSnapshotService {
     workspaceId: string;
     workspaceMetadata: WorkspaceMetadata;
   }): Promise<Result<void>> {
-    assert(
-      args.workspaceId.trim().length > 0,
-      "preflightSnapshotForArchive: workspaceId must be non-empty"
-    );
-
-    if (!isWorktreeRuntime(args.workspaceMetadata.runtimeConfig)) {
-      return Err("Archive snapshots are only supported for JJ Workspace runtimes");
+    const unsupportedPaths = await this.getUnsupportedUntrackedPaths(args);
+    if (!unsupportedPaths.success) {
+      return unsupportedPaths;
     }
-    if (!ENABLE_LEGACY_GIT_ARCHIVE_SNAPSHOT) {
-      return Err(JJ_ARCHIVE_SNAPSHOT_UNSUPPORTED);
+    if (unsupportedPaths.data.length > 0) {
+      return Err(
+        `Archive snapshot does not support untracked files: ${unsupportedPaths.data.join(", ")}`
+      );
     }
-
-    const configSnapshot = this.config.loadConfigOrDefault();
-    const workspaceEntry = findWorkspaceEntryByIdOrPath(
-      this.config,
-      configSnapshot,
-      args.workspaceId
-    );
-    if (!workspaceEntry) {
-      return Err("Workspace not found in config");
-    }
-
-    const workspaceName = getPersistedWorkspaceName(workspaceEntry.workspace);
-    if (!workspaceName) {
-      return Err("Workspace is missing its persisted source name");
-    }
-
-    const projectRepos = getWorkspaceProjectRepos({
-      workspaceId: args.workspaceId,
-      workspaceName,
-      workspacePath: workspaceEntry.workspace.path,
-      runtimeConfig: args.workspaceMetadata.runtimeConfig,
-      projectPath: args.workspaceMetadata.projectPath,
-      projectName: args.workspaceMetadata.projectName,
-      projects: workspaceEntry.workspace.projects,
-    });
-    assert(
-      projectRepos.length > 0,
-      "preflightSnapshotForArchive: expected at least one project repo"
-    );
-
-    try {
-      for (const projectRepo of projectRepos) {
-        await this.ensureNoUnsupportedUntrackedFiles(projectRepo.repoCwd);
-        await this.ensureNoDirtySubmodules(projectRepo.repoCwd);
-      }
-      return Ok(undefined);
-    } catch (error) {
-      return Err(`Failed to capture archive snapshot: ${getErrorMessage(error)}`);
-    }
+    return Ok(undefined);
   }
 
-  /**
-   * Collect all unsupported untracked file paths across every project repo in the workspace.
-   * Returns a flat sorted array of relative paths (each prefixed with the project name for
-   * multi-project workspaces). Does not throw on untracked files — callers decide the policy.
-   *
-   * Other blockers (missing workspace, wrong runtime, dirty submodules) still produce `Err()`.
-   */
   async getUnsupportedUntrackedPaths(args: {
     workspaceId: string;
     workspaceMetadata: WorkspaceMetadata;
@@ -160,63 +107,35 @@ export class WorktreeArchiveSnapshotService {
       args.workspaceId.trim().length > 0,
       "getUnsupportedUntrackedPaths: workspaceId must be non-empty"
     );
-
     if (!isWorktreeRuntime(args.workspaceMetadata.runtimeConfig)) {
       return Err("Archive snapshots are only supported for JJ Workspace runtimes");
     }
-    if (!ENABLE_LEGACY_GIT_ARCHIVE_SNAPSHOT) {
-      return Err(JJ_ARCHIVE_SNAPSHOT_UNSUPPORTED);
-    }
-
-    const configSnapshot = this.config.loadConfigOrDefault();
-    const workspaceEntry = findWorkspaceEntryByIdOrPath(
-      this.config,
-      configSnapshot,
-      args.workspaceId
-    );
-    if (!workspaceEntry) {
-      return Err("Workspace not found in config");
-    }
-
-    const workspaceName = getPersistedWorkspaceName(workspaceEntry.workspace);
-    if (!workspaceName) {
-      return Err("Workspace is missing its persisted source name");
-    }
-
-    const projectRepos = getWorkspaceProjectRepos({
-      workspaceId: args.workspaceId,
-      workspaceName,
-      workspacePath: workspaceEntry.workspace.path,
-      runtimeConfig: args.workspaceMetadata.runtimeConfig,
-      projectPath: args.workspaceMetadata.projectPath,
-      projectName: args.workspaceMetadata.projectName,
-      projects: workspaceEntry.workspace.projects,
-    });
-    assert(
-      projectRepos.length > 0,
-      "getUnsupportedUntrackedPaths: expected at least one project repo"
-    );
 
     try {
-      // Dirty submodules are still a hard blocker — check them first.
+      const { workspaceName, workspacePath, projectRepos } = this.getWorkspaceContext(args);
+      const unsupportedPaths: string[] = [];
       for (const projectRepo of projectRepos) {
-        await this.ensureNoDirtySubmodules(projectRepo.repoCwd);
-      }
-
-      const allUntrackedPaths: string[] = [];
-      for (const projectRepo of projectRepos) {
-        const paths = await this.listUnsupportedUntrackedFiles(projectRepo.repoCwd);
-        if (projectRepos.length > 1) {
-          // Prefix with project name for disambiguation in multi-project workspaces.
-          for (const p of paths) {
-            allUntrackedPaths.push(`${projectRepo.projectName}/${p}`);
-          }
+        const submodulePaths = await listJjSubmodulePaths(projectRepo.repoCwd);
+        if (submodulePaths.length > 0) {
+          throw new Error(
+            `JJ archive snapshots do not support submodules yet: ${submodulePaths.join(", ")}`
+          );
+        }
+        // `jj status` snapshots and auto-tracks ordinary additions first, then reports only paths
+        // excluded by ignore/size/auto-track policy as unsupported leftovers.
+        const paths = await listJjUntrackedPaths(projectRepo.repoCwd);
+        if (projectRepos.length === 1) {
+          unsupportedPaths.push(...paths);
         } else {
-          allUntrackedPaths.push(...paths);
+          unsupportedPaths.push(...paths.map((entry) => `${projectRepo.projectName}/${entry}`));
         }
       }
-
-      return Ok(allUntrackedPaths.sort());
+      log.debug("Checked JJ workspace archive readiness", {
+        workspaceId: args.workspaceId,
+        workspaceName,
+        workspacePath,
+      });
+      return Ok(unsupportedPaths.sort());
     } catch (error) {
       return Err(`Failed to check archive readiness: ${getErrorMessage(error)}`);
     }
@@ -225,199 +144,82 @@ export class WorktreeArchiveSnapshotService {
   async captureSnapshotForArchive(args: {
     workspaceId: string;
     workspaceMetadata: WorkspaceMetadata;
-    /**
-     * When provided, the capture re-verifies the current untracked-file set against these
-     * acknowledged paths instead of throwing unconditionally. If the sets still match,
-     * capture proceeds (lossy). If they diverge, capture fails safely.
-     * When omitted, any untracked files cause the default strict failure.
-     */
     acknowledgedUntrackedPaths?: string[];
   }): Promise<Result<WorktreeArchiveSnapshot, CaptureSnapshotForArchiveError>> {
     assert(
       args.workspaceId.trim().length > 0,
       "captureSnapshotForArchive: workspaceId must be non-empty"
     );
-
     if (!isWorktreeRuntime(args.workspaceMetadata.runtimeConfig)) {
       return Err("Archive snapshots are only supported for JJ Workspace runtimes");
     }
-    if (!ENABLE_LEGACY_GIT_ARCHIVE_SNAPSHOT) {
-      return Err(JJ_ARCHIVE_SNAPSHOT_UNSUPPORTED);
+
+    const readiness = await this.validateAcknowledgedUntrackedPaths(args);
+    if (!readiness.success) {
+      return readiness;
     }
-
-    const configSnapshot = this.config.loadConfigOrDefault();
-    const workspaceEntry = findWorkspaceEntryByIdOrPath(
-      this.config,
-      configSnapshot,
-      args.workspaceId
-    );
-    if (!workspaceEntry) {
-      return Err("Workspace not found in config");
-    }
-
-    const workspaceName = getPersistedWorkspaceName(workspaceEntry.workspace);
-    if (!workspaceName) {
-      return Err("Workspace is missing its persisted source name");
-    }
-
-    const sessionDir = this.config.getSessionDir(args.workspaceId);
-    const stateDir = path.join(sessionDir, SNAPSHOT_DIR_NAME);
-    const tempStateDir = path.join(
-      sessionDir,
-      `${SNAPSHOT_DIR_NAME}.tmp-${Date.now()}-${Math.random().toString(16).slice(2)}`
-    );
-
-    await fsPromises.mkdir(sessionDir, { recursive: true });
-    await fsPromises.rm(tempStateDir, { recursive: true, force: true });
-    await fsPromises.mkdir(tempStateDir, { recursive: true });
 
     try {
-      const projectRepos = getWorkspaceProjectRepos({
-        workspaceId: args.workspaceId,
-        workspaceName,
-        workspacePath: workspaceEntry.workspace.path,
-        runtimeConfig: args.workspaceMetadata.runtimeConfig,
-        projectPath: args.workspaceMetadata.projectPath,
-        projectName: args.workspaceMetadata.projectName,
-        projects: workspaceEntry.workspace.projects,
-      });
-      assert(
-        projectRepos.length > 0,
-        "captureSnapshotForArchive: expected at least one project repo"
-      );
-
-      const taskBaseCommitShaByProjectPath = this.buildTaskBaseCommitShaByProjectPath({
-        primaryProjectPath: args.workspaceMetadata.projectPath,
-        taskBaseCommitSha: workspaceEntry.workspace.taskBaseCommitSha,
-        taskBaseCommitShaByProjectPath: workspaceEntry.workspace.taskBaseCommitShaByProjectPath,
-      });
-
-      const projectSnapshots: WorktreeArchiveSnapshotProject[] = [];
-      for (const projectRepo of projectRepos) {
-        const currentUntracked = await this.listUnsupportedUntrackedFiles(projectRepo.repoCwd);
-        if (args.acknowledgedUntrackedPaths != null) {
-          // Re-verify untracked files at capture time to close the race window between
-          // the preflight check and actual snapshot capture. Any files created after the
-          // user reviewed the dialog are caught here.
-          // Paths the user acknowledged but that no longer exist are harmless — only
-          // new (unacknowledged) paths are dangerous.
-          const acknowledgedSet = new Set(args.acknowledgedUntrackedPaths);
-          const newPaths = currentUntracked.filter((p) => !acknowledgedSet.has(p));
-          if (newPaths.length > 0) {
-            return this.buildUntrackedConfirmationErr({
-              workspaceId: args.workspaceId,
-              workspaceMetadata: args.workspaceMetadata,
-            });
-          }
-        } else if (currentUntracked.length > 0) {
-          return this.buildUntrackedConfirmationErr({
-            workspaceId: args.workspaceId,
-            workspaceMetadata: args.workspaceMetadata,
-          });
-        }
-        await this.ensureNoDirtySubmodules(projectRepo.repoCwd);
-
-        const trunkBranch = await this.resolveTrunkBranch({
-          taskTrunkBranch: workspaceEntry.workspace.taskTrunkBranch,
-          projectPath: projectRepo.projectPath,
-        });
-        const branchName = await this.resolveSnapshotBranchName(projectRepo.repoCwd, workspaceName);
-        const headSha = await this.gitStdout(projectRepo.repoCwd, ["rev-parse", "HEAD"]);
-        const baseSha =
-          taskBaseCommitShaByProjectPath[projectRepo.projectPath] ||
-          (await this.gitStdout(projectRepo.repoCwd, ["merge-base", trunkBranch, "HEAD"]));
-
-        const commitCount = Number(
-          await this.gitStdout(projectRepo.repoCwd, [
-            "rev-list",
-            "--count",
-            `${baseSha}..${headSha}`,
-          ])
-        );
-        assert(
-          Number.isFinite(commitCount) && commitCount >= 0,
-          "captureSnapshotForArchive: invalid commit count"
-        );
-
-        let committedPatchPath: string | undefined;
-        const committedPatch =
-          commitCount > 0
-            ? await this.runGitCommand(projectRepo.repoCwd, [
-                "format-patch",
-                "--stdout",
-                "--binary",
-                `${baseSha}..${headSha}`,
-              ])
-            : "";
-        if (committedPatch.trim().length > 0) {
-          committedPatchPath = await this.writeArtifact({
-            sessionDir,
-            stateDir: tempStateDir,
-            fileName: `${projectRepo.storageKey}.series.mbox`,
-            contents: committedPatch,
-          });
-        }
-
-        const stagedPatch = await this.runGitCommand(projectRepo.repoCwd, [
-          "diff",
-          "--cached",
-          "--binary",
-        ]);
-        const stagedPatchPath =
-          stagedPatch.trim().length > 0
-            ? await this.writeArtifact({
-                sessionDir,
-                stateDir: tempStateDir,
-                fileName: `${projectRepo.storageKey}.staged.patch`,
-                contents: stagedPatch,
-              })
-            : undefined;
-
-        const unstagedPatch = await this.runGitCommand(projectRepo.repoCwd, ["diff", "--binary"]);
-        const unstagedPatchPath =
-          unstagedPatch.trim().length > 0
-            ? await this.writeArtifact({
-                sessionDir,
-                stateDir: tempStateDir,
-                fileName: `${projectRepo.storageKey}.unstaged.patch`,
-                contents: unstagedPatch,
-              })
-            : undefined;
-
-        projectSnapshots.push({
-          projectPath: projectRepo.projectPath,
-          projectName: projectRepo.projectName,
-          storageKey: projectRepo.storageKey,
-          branchName,
-          trunkBranch,
-          baseSha,
-          headSha,
-          committedPatchPath,
-          stagedPatchPath,
-          unstagedPatchPath,
-        });
-      }
-
-      const snapshot: WorktreeArchiveSnapshot = {
-        version: SNAPSHOT_VERSION,
-        capturedAt: new Date().toISOString(),
-        stateDirPath: SNAPSHOT_DIR_NAME,
-        projects: projectSnapshots,
-      };
-
-      await fsPromises.writeFile(
-        path.join(tempStateDir, SNAPSHOT_METADATA_FILE_NAME),
-        JSON.stringify(snapshot, null, 2),
-        "utf-8"
-      );
-      await fsPromises.rm(stateDir, { recursive: true, force: true });
-      await fsPromises.rename(tempStateDir, stateDir);
-
-      return Ok(snapshot);
+      const context = await this.getSingleProjectSnapshotContext(args);
+      return Ok(await this.captureJjSnapshot(context));
     } catch (error) {
-      return Err(`Failed to capture archive snapshot: ${getErrorMessage(error)}`);
-    } finally {
-      await fsPromises.rm(tempStateDir, { recursive: true, force: true });
+      return Err(`Failed to capture JJ archive snapshot: ${getErrorMessage(error)}`);
+    }
+  }
+
+  /**
+   * Re-snapshot immediately before deletion so writes that land after the initial archive capture
+   * are persisted before the checkout disappears. The final pointer is written durably before the
+   * strict workspace-forget/delete sequence begins.
+   */
+  async finalizeSnapshotForArchive(args: {
+    workspaceId: string;
+    workspaceMetadata: WorkspaceMetadata;
+    acknowledgedUntrackedPaths?: string[];
+  }): Promise<Result<void>> {
+    const finalCapture = await this.captureSnapshotForArchive(args);
+    if (!finalCapture.success) {
+      return Err(
+        typeof finalCapture.error === "string"
+          ? finalCapture.error
+          : "Checkout gained untracked files after archive confirmation; keeping it on disk."
+      );
+    }
+    if (finalCapture.data.version !== 2) {
+      return Err("Expected a JJ-native archive snapshot before checkout deletion");
+    }
+    const finalSnapshot = finalCapture.data;
+
+    try {
+      let snapshotPersisted = false;
+      await this.config.editConfig((config) => {
+        const workspaceEntry = findWorkspaceEntryByIdOrPath(this.config, config, args.workspaceId);
+        if (!workspaceEntry) {
+          throw new Error("Workspace disappeared before archive snapshot finalization");
+        }
+        const currentSnapshot = workspaceEntry.workspace.worktreeArchiveSnapshot;
+        if (currentSnapshot?.version !== 2) {
+          throw new Error("Initial archive snapshot metadata is missing");
+        }
+        if (currentSnapshot.projects[0]?.changeId !== finalSnapshot.projects[0]?.changeId) {
+          throw new Error("Archive snapshot changed concurrently before finalization");
+        }
+        workspaceEntry.workspace.worktreeArchiveSnapshot = finalSnapshot;
+        snapshotPersisted = true;
+        return config;
+      });
+      assert(snapshotPersisted, "finalizeSnapshotForArchive: final snapshot was not persisted");
+
+      const projectSnapshot = finalSnapshot.projects[0];
+      assert(projectSnapshot, "finalizeSnapshotForArchive: missing project snapshot");
+      await this.strictlyRemoveWorkspaceCheckout({
+        projectPath: projectSnapshot.projectPath,
+        workspaceName: projectSnapshot.workspaceName,
+        workspacePath: this.getPersistedWorkspacePath(args.workspaceId),
+      });
+      return Ok(undefined);
+    } catch (error) {
+      return Err(`Failed to finalize JJ archive snapshot: ${getErrorMessage(error)}`);
     }
   }
 
@@ -439,385 +241,333 @@ export class WorktreeArchiveSnapshotService {
     if (!workspaceEntry) {
       return Err("Workspace not found in config");
     }
-
     const snapshot = workspaceEntry.workspace.worktreeArchiveSnapshot;
     if (!snapshot) {
       return Ok("skipped");
     }
-
+    if (snapshot.version === 1) {
+      return Err(LEGACY_GIT_ARCHIVE_SNAPSHOT_UNSUPPORTED);
+    }
     if (!isWorktreeRuntime(args.workspaceMetadata.runtimeConfig)) {
       return Err("Archive snapshot restore is only supported for JJ Workspace runtimes");
     }
-    if (!ENABLE_LEGACY_GIT_ARCHIVE_SNAPSHOT) {
-      return Err(JJ_ARCHIVE_SNAPSHOT_UNSUPPORTED);
-    }
 
-    const persistedWorkspacePath = workspaceEntry.workspace.path;
-    const workspaceName = getPersistedWorkspaceName(workspaceEntry.workspace);
-    if (!workspaceName) {
-      return Err("Workspace is missing its persisted source name");
+    const projectSnapshot = snapshot.projects[0];
+    if (!projectSnapshot) {
+      return Err("JJ archive snapshot has no project state");
     }
-
-    const createdWorkspaces: CreatedRestoreWorkspace[] = [];
-    let containerCreated = false;
-    let restoredCheckoutReadyForWriteback = false;
+    const workspacePath = workspaceEntry.workspace.path;
+    let createdWorkspacePath: string | undefined;
+    let checkoutReady = false;
 
     try {
-      if (await this.pathExists(persistedWorkspacePath)) {
-        const existingProjectSnapshot =
-          snapshot.projects.length === 1 ? snapshot.projects[0] : undefined;
-        if (
-          existingProjectSnapshot &&
-          (await this.existingCheckoutMatchesSnapshot({
-            workspaceId: args.workspaceId,
-            workspaceName,
-            workspacePath: persistedWorkspacePath,
-            projectSnapshot: existingProjectSnapshot,
-          }))
-        ) {
-          await this.clearSnapshotState(args.workspaceId, snapshot);
-          return Ok("skipped");
+      const target = await this.resolveRestoreTarget(projectSnapshot);
+      if (await this.pathExists(workspacePath)) {
+        const current = await getCurrentJjRevisionIdentity(workspacePath);
+        if (current.changeId !== target.changeId) {
+          throw new Error(
+            "Persisted workspace path exists at a different JJ change; refusing to overwrite it."
+          );
         }
+        await this.clearSnapshotState(args.workspaceId, snapshot);
+        return Ok("skipped");
+      }
 
+      // A previous cleanup may have removed the directory without forgetting its workspace name.
+      // Only forget registrations that still point at this persisted path; a user may have reused
+      // the name for a different workspace while this one was archived.
+      const workspaceRegistration = await getJjWorkspaceRegistration({
+        projectPath: projectSnapshot.projectPath,
+        workspaceName: projectSnapshot.workspaceName,
+      });
+      if (
+        workspaceRegistration.kind === "present" &&
+        path.resolve(workspaceRegistration.root) !== path.resolve(workspacePath)
+      ) {
         throw new Error(
-          "Persisted workspace path already exists; snapshot restore will not discard saved recovery data until the checkout is reconciled manually."
+          `JJ workspace name ${projectSnapshot.workspaceName} is now registered at another path.`
         );
       }
-      for (const projectSnapshot of snapshot.projects) {
-        const restoreBranchName = await this.resolveRestoreBranchName({
+      if (workspaceRegistration.kind !== "absent") {
+        await forgetJjWorkspace({
           projectPath: projectSnapshot.projectPath,
-          workspaceName,
-          snapshotBranchName: projectSnapshot.branchName,
-          snapshotHeadSha: projectSnapshot.headSha,
+          workspaceName: projectSnapshot.workspaceName,
         });
-        const branchRefSha = await this.tryGitStdout(projectSnapshot.projectPath, [
-          "rev-parse",
-          `refs/heads/${restoreBranchName}`,
-        ]);
-        if (branchRefSha && branchRefSha !== projectSnapshot.headSha) {
-          throw new Error(
-            `Refusing to restore ${projectSnapshot.projectName}: local source ${restoreBranchName} no longer matches the archived snapshot.`
-          );
-        }
-
-        const headShaAvailable = await this.gitCommitExists(
-          projectSnapshot.projectPath,
-          projectSnapshot.headSha
-        );
-        const startPoint = branchRefSha
-          ? undefined
-          : headShaAvailable
-            ? projectSnapshot.headSha
-            : projectSnapshot.baseSha;
-
-        const trusted = configSnapshot.projects.get(projectSnapshot.projectPath)?.trusted === true;
-        const runtime = createRuntime(args.workspaceMetadata.runtimeConfig, {
-          projectPath: projectSnapshot.projectPath,
-          workspaceName,
-        });
-        const restoreResult = await runtime.createWorkspace({
-          projectPath: projectSnapshot.projectPath,
-          branchName: restoreBranchName,
-          trunkBranch: projectSnapshot.trunkBranch,
-          directoryName: workspaceName,
-          startPoint,
-          skipRemoteSync: true,
-          workspacePathOverride:
-            snapshot.projects.length === 1 ? persistedWorkspacePath : undefined,
-          initLogger: NOOP_INIT_LOGGER,
-          trusted,
-        });
-        if (!restoreResult.success || !restoreResult.workspacePath) {
-          throw new Error(
-            `Failed to recreate ${projectSnapshot.projectName}: ${
-              restoreResult.error ?? "runtime did not return a workspace path"
-            }`
-          );
-        }
-
-        createdWorkspaces.push({
-          projectPath: projectSnapshot.projectPath,
-          projectName: projectSnapshot.projectName,
-          workspacePath: restoreResult.workspacePath,
-        });
-
-        if (!headShaAvailable) {
-          const committedPatchPath = projectSnapshot.committedPatchPath
-            ? this.resolveSessionRelativePath(
-                this.config.getSessionDir(args.workspaceId),
-                projectSnapshot.committedPatchPath
-              )
-            : undefined;
-          const committedPatchAvailable =
-            committedPatchPath !== undefined && (await this.pathExists(committedPatchPath));
-          const committedHistoryWasCaptured = projectSnapshot.baseSha !== projectSnapshot.headSha;
-          if (committedHistoryWasCaptured && !committedPatchAvailable) {
-            throw new Error(
-              `Failed to restore ${projectSnapshot.projectName}: archived committed history is unavailable.`
-            );
-          }
-          if (committedPatchAvailable && committedPatchPath) {
-            await this.runGitCommand(restoreResult.workspacePath, [
-              "am",
-              "--3way",
-              committedPatchPath,
-            ]);
-          }
-        }
-
-        if (projectSnapshot.stagedPatchPath) {
-          const stagedPatchPath = this.resolveSessionRelativePath(
-            this.config.getSessionDir(args.workspaceId),
-            projectSnapshot.stagedPatchPath
-          );
-          if (!(await this.pathExists(stagedPatchPath))) {
-            throw new Error(
-              `Failed to restore ${projectSnapshot.projectName}: staged patch artifact is unavailable.`
-            );
-          }
-          await this.runGitCommand(restoreResult.workspacePath, [
-            "apply",
-            "--index",
-            "--binary",
-            stagedPatchPath,
-          ]);
-        }
-
-        if (projectSnapshot.unstagedPatchPath) {
-          const unstagedPatchPath = this.resolveSessionRelativePath(
-            this.config.getSessionDir(args.workspaceId),
-            projectSnapshot.unstagedPatchPath
-          );
-          if (!(await this.pathExists(unstagedPatchPath))) {
-            throw new Error(
-              `Failed to restore ${projectSnapshot.projectName}: unstaged patch artifact is unavailable.`
-            );
-          }
-          await this.runGitCommand(restoreResult.workspacePath, [
-            "apply",
-            "--binary",
-            unstagedPatchPath,
-          ]);
-        }
       }
 
-      if (snapshot.projects.length > 1) {
-        const srcBaseDir =
-          getSrcBaseDir(args.workspaceMetadata.runtimeConfig) ?? this.config.srcDir;
-        const containerManager = new ContainerManager(srcBaseDir);
-        await containerManager.createContainer(
-          workspaceName,
-          createdWorkspaces.map((workspace) => ({
-            projectName: workspace.projectName,
-            workspacePath: workspace.workspacePath,
-          }))
-        );
-        containerCreated = true;
+      const trusted = configSnapshot.projects.get(projectSnapshot.projectPath)?.trusted === true;
+      const runtime = createRuntime(args.workspaceMetadata.runtimeConfig, {
+        projectPath: projectSnapshot.projectPath,
+        workspaceName: projectSnapshot.workspaceName,
+        workspacePath,
+      });
+      const createResult = await runtime.createWorkspace({
+        projectPath: projectSnapshot.projectPath,
+        branchName: projectSnapshot.sourceBookmark,
+        trunkBranch: projectSnapshot.sourceBookmark,
+        directoryName: projectSnapshot.workspaceName,
+        startPoint: target.commitId,
+        skipRemoteSync: true,
+        workspacePathOverride: workspacePath,
+        initLogger: NOOP_INIT_LOGGER,
+        trusted,
+      });
+      if (!createResult.success || !createResult.workspacePath) {
+        throw new Error(createResult.error ?? "Runtime did not return a restored workspace path");
+      }
+      createdWorkspacePath = createResult.workspacePath;
+
+      await editJjRevision({ workspacePath: createdWorkspacePath, revision: target.commitId });
+      await setJjSparsePatterns({
+        workspacePath: createdWorkspacePath,
+        patterns: projectSnapshot.sparsePatterns,
+      });
+
+      const restored = await getCurrentJjRevisionIdentity(createdWorkspacePath);
+      if (restored.changeId !== target.changeId || restored.commitId !== target.commitId) {
+        throw new Error("Restored JJ workspace does not match the selected archive revision");
       }
 
-      restoredCheckoutReadyForWriteback = true;
+      checkoutReady = true;
       await this.clearSnapshotState(args.workspaceId, snapshot);
       return Ok("restored");
     } catch (error) {
-      log.debug("Failed to restore checkout archive snapshot", {
+      log.debug("Failed to restore JJ checkout archive snapshot", {
         workspaceId: args.workspaceId,
         error: getErrorMessage(error),
       });
-      if (!restoredCheckoutReadyForWriteback) {
+      if (!checkoutReady && createdWorkspacePath) {
         await this.cleanupFailedRestore({
-          workspaceName,
-          runtimeConfig: args.workspaceMetadata.runtimeConfig,
-          createdWorkspaces,
-          containerCreated,
+          projectPath: projectSnapshot.projectPath,
+          workspaceName: projectSnapshot.workspaceName,
+          workspacePath: createdWorkspacePath,
         });
-        return Err(`Failed to restore archive snapshot: ${getErrorMessage(error)}`);
       }
-
-      log.debug("Keeping restored checkout despite snapshot cleanup/writeback failure", {
-        workspaceId: args.workspaceId,
-        error: getErrorMessage(error),
-      });
-      return Ok("restored");
-    }
-  }
-
-  private buildTaskBaseCommitShaByProjectPath(args: {
-    primaryProjectPath: string;
-    taskBaseCommitSha?: string;
-    taskBaseCommitShaByProjectPath?: Record<string, string>;
-  }): Record<string, string> {
-    const baseCommitShaByProjectPath: Record<string, string> = {};
-    for (const [projectPath, value] of Object.entries(args.taskBaseCommitShaByProjectPath ?? {})) {
-      const sha = value.trim();
-      if (sha.length > 0) {
-        baseCommitShaByProjectPath[projectPath] = sha;
+      if (checkoutReady) {
+        // The user-visible checkout is valid; stale metadata can self-heal on the next unarchive.
+        return Ok("restored");
       }
+      return Err(`Failed to restore JJ archive snapshot: ${getErrorMessage(error)}`);
     }
-
-    const primaryBaseSha = args.taskBaseCommitSha?.trim();
-    if (primaryBaseSha) {
-      baseCommitShaByProjectPath[args.primaryProjectPath] = primaryBaseSha;
-    }
-
-    return baseCommitShaByProjectPath;
   }
 
-  private async resolveTrunkBranch(args: {
-    taskTrunkBranch?: string;
-    projectPath: string;
-  }): Promise<string> {
-    const configuredTrunkBranch = args.taskTrunkBranch?.trim();
-    if (configuredTrunkBranch) {
-      return configuredTrunkBranch;
+  private getWorkspaceContext(args: { workspaceId: string; workspaceMetadata: WorkspaceMetadata }) {
+    const configSnapshot = this.config.loadConfigOrDefault();
+    const workspaceEntry = findWorkspaceEntryByIdOrPath(
+      this.config,
+      configSnapshot,
+      args.workspaceId
+    );
+    if (!workspaceEntry) {
+      throw new Error("Workspace not found in config");
     }
-
-    return detectDefaultTrunkBranch(args.projectPath);
+    const workspaceName = getPersistedWorkspaceName(workspaceEntry.workspace);
+    if (!workspaceName) {
+      throw new Error("Workspace is missing its persisted source name");
+    }
+    const projectRepos = getWorkspaceProjectRepos({
+      workspaceId: args.workspaceId,
+      workspaceName,
+      workspacePath: workspaceEntry.workspace.path,
+      runtimeConfig: args.workspaceMetadata.runtimeConfig,
+      projectPath: args.workspaceMetadata.projectPath,
+      projectName: args.workspaceMetadata.projectName,
+      projects: workspaceEntry.workspace.projects,
+    });
+    if (projectRepos.length === 0) {
+      throw new Error("Workspace has no project repositories");
+    }
+    return {
+      configSnapshot,
+      workspaceEntry,
+      workspaceName,
+      workspacePath: workspaceEntry.workspace.path,
+      projectRepos,
+    };
   }
 
-  /**
-   * Fetch the current untracked-file set for a workspace and return an
-   * `Err` asking the user to re-confirm. Used by `captureSnapshotForArchive`
-   * when untracked files are detected that the user hasn't acknowledged.
-   */
-  private async buildUntrackedConfirmationErr(args: {
+  private async getSingleProjectSnapshotContext(args: {
     workspaceId: string;
     workspaceMetadata: WorkspaceMetadata;
-  }): Promise<Result<never, CaptureSnapshotForArchiveError>> {
-    const latestUntrackedResult = await this.getUnsupportedUntrackedPaths({
-      workspaceId: args.workspaceId,
-      workspaceMetadata: args.workspaceMetadata,
-    });
-    if (!latestUntrackedResult.success) {
-      return Err(latestUntrackedResult.error);
+  }): Promise<SnapshotContext> {
+    const context = this.getWorkspaceContext(args);
+    if (context.projectRepos.length !== 1) {
+      throw new Error("JJ-native archive snapshots currently support one project per workspace");
     }
-    assert(
-      latestUntrackedResult.data.length > 0,
-      "captureSnapshotForArchive: expected current untracked paths when confirmation is required"
-    );
-    return Err({
-      kind: "confirm-lossy-untracked-files",
-      paths: latestUntrackedResult.data,
-    });
+    const projectRepo = context.projectRepos[0];
+    assert(projectRepo, "getSingleProjectSnapshotContext: missing project repo");
+    const sourceBookmark =
+      (await this.getPersistedWorkspaceBranchName(
+        projectRepo.projectPath,
+        context.workspaceName
+      )) ?? context.workspaceName;
+    return {
+      workspaceName: context.workspaceName,
+      workspacePath: context.workspacePath,
+      projectPath: projectRepo.projectPath,
+      projectName: projectRepo.projectName,
+      storageKey: projectRepo.storageKey,
+      sourceBookmark,
+    };
   }
 
-  /**
-   * List untracked files/directories in a repo that archive snapshots cannot preserve.
-   * Returns a sorted, normalized array of relative paths.
-   */
-  private async listUnsupportedUntrackedFiles(repoCwd: string): Promise<string[]> {
-    const untrackedOutput = await this.gitStdout(repoCwd, [
-      "ls-files",
-      "--others",
-      "--exclude-standard",
-      "--directory",
-    ]);
-    return untrackedOutput
-      .split("\n")
-      .map((line) => line.trim())
-      .filter((line) => line.length > 0)
-      .sort();
+  private async captureJjSnapshot(context: SnapshotContext): Promise<JjArchiveSnapshot> {
+    // This command intentionally snapshots the working copy; do not add --ignore-working-copy.
+    const identity = await getCurrentJjRevisionIdentity(context.workspacePath);
+    const sparsePatterns = await getJjSparsePatterns(context.workspacePath);
+    return {
+      version: 2,
+      capturedAt: new Date().toISOString(),
+      projects: [
+        {
+          projectPath: context.projectPath,
+          projectName: context.projectName,
+          storageKey: context.storageKey,
+          workspaceName: context.workspaceName,
+          sourceBookmark: context.sourceBookmark,
+          changeId: identity.changeId,
+          commitId: identity.commitId,
+          sparsePatterns,
+        },
+      ],
+    };
   }
 
-  private async ensureNoUnsupportedUntrackedFiles(repoCwd: string): Promise<void> {
-    const untrackedPaths = await this.listUnsupportedUntrackedFiles(repoCwd);
-    if (untrackedPaths.length > 0) {
+  private async validateAcknowledgedUntrackedPaths(args: {
+    workspaceId: string;
+    workspaceMetadata: WorkspaceMetadata;
+    acknowledgedUntrackedPaths?: string[];
+  }): Promise<Result<void, CaptureSnapshotForArchiveError>> {
+    const unsupported = await this.getUnsupportedUntrackedPaths(args);
+    if (!unsupported.success) {
+      return unsupported;
+    }
+    if (unsupported.data.length === 0) {
+      return Ok(undefined);
+    }
+
+    const acknowledged = args.acknowledgedUntrackedPaths;
+    const acknowledgedSet = acknowledged == null ? null : new Set(acknowledged);
+    const hasNewPaths =
+      acknowledgedSet == null || unsupported.data.some((entry) => !acknowledgedSet.has(entry));
+    if (!hasNewPaths) {
+      return Ok(undefined);
+    }
+    return Err({ kind: "confirm-lossy-untracked-files", paths: unsupported.data });
+  }
+
+  private async resolveRestoreTarget(
+    snapshot: JjArchiveSnapshotProject
+  ): Promise<JjRevisionIdentity> {
+    let identities: JjRevisionIdentity[];
+    try {
+      identities = await resolveVisibleJjRevisionIdentities(
+        snapshot.projectPath,
+        snapshot.changeId
+      );
+    } catch {
+      identities = [];
+    }
+    const matching = identities.filter((identity) => identity.changeId === snapshot.changeId);
+    if (matching.length === 0) {
       throw new Error(
-        `Archive snapshot does not yet support untracked files: ${untrackedPaths.join(", ")}`
+        "Archived JJ change is no longer visible; refusing to resurrect a superseded commit automatically."
       );
     }
+    if (matching.length > 1) {
+      throw new Error(
+        "Archived JJ change is divergent; reconcile it before restoring the workspace."
+      );
+    }
+    const target = matching[0];
+    assert(target, "resolveRestoreTarget: missing unique revision");
+    if (target.commitId !== snapshot.commitId) {
+      log.info("Restoring rewritten JJ archive change", {
+        projectPath: snapshot.projectPath,
+        changeId: snapshot.changeId,
+        archivedCommitId: snapshot.commitId,
+        currentCommitId: target.commitId,
+      });
+    }
+    return target;
   }
 
-  private async ensureNoDirtySubmodules(repoCwd: string): Promise<void> {
-    const submoduleStatus = await this.tryGitStdout(repoCwd, [
-      "submodule",
-      "status",
-      "--recursive",
-    ]);
-    if (!submoduleStatus) {
-      return;
-    }
-
-    const submodulePaths = submoduleStatus
-      .split("\n")
-      .map((line) => line.trim())
-      .filter((line) => line.length > 0)
-      .map((line) => line.split(/\s+/)[1])
-      .filter((submodulePath): submodulePath is string => typeof submodulePath === "string");
-
-    for (const submodulePath of submodulePaths) {
-      const absoluteSubmodulePath = path.join(repoCwd, submodulePath);
-      const dirtyOutput = await this.tryGitStdout(absoluteSubmodulePath, [
-        "status",
-        "--porcelain",
-        "--untracked-files=all",
-      ]);
-      if (dirtyOutput && dirtyOutput.trim().length > 0) {
-        throw new Error(`Archive snapshot does not support dirty submodules yet: ${submodulePath}`);
-      }
-    }
-  }
-
-  private async resolveSnapshotBranchName(
-    repoPath: string,
-    fallbackWorkspaceName: string
-  ): Promise<string> {
-    assert(
-      fallbackWorkspaceName.trim().length > 0,
-      "resolveSnapshotBranchName: fallbackWorkspaceName must be non-empty"
-    );
-
-    const currentBranch = await this.tryGitStdout(repoPath, [
-      "symbolic-ref",
-      "--quiet",
-      "--short",
-      "HEAD",
-    ]);
-    const trimmedCurrentBranch = currentBranch?.trim();
-    if (trimmedCurrentBranch) {
-      return trimmedCurrentBranch;
-    }
-
-    return fallbackWorkspaceName;
-  }
-
-  private async resolveRestoreBranchName(args: {
+  private async strictlyRemoveWorkspaceCheckout(args: {
     projectPath: string;
     workspaceName: string;
-    snapshotBranchName: string;
-    snapshotHeadSha: string;
-  }): Promise<string> {
-    if (args.snapshotBranchName !== args.workspaceName) {
-      return args.snapshotBranchName;
+    workspacePath: string;
+  }): Promise<void> {
+    const projectPath = path.resolve(args.projectPath);
+    const workspacePath = path.resolve(args.workspacePath);
+    if (
+      projectPath === workspacePath ||
+      workspacePath === path.parse(workspacePath).root ||
+      isPathInsideDir(workspacePath, projectPath)
+    ) {
+      throw new Error("Refusing to delete a path that contains the project checkout");
     }
 
-    const snapshotBranchSha = await this.tryGitStdout(args.projectPath, [
-      "rev-parse",
-      `refs/heads/${args.snapshotBranchName}`,
-    ]);
-    if (snapshotBranchSha === args.snapshotHeadSha) {
-      return args.snapshotBranchName;
+    // A real forget failure must keep the directory intact so no unsnapshotted files are lost.
+    await forgetJjWorkspace({
+      projectPath: args.projectPath,
+      workspaceName: args.workspaceName,
+    });
+    await fsPromises.rm(workspacePath, { recursive: true, force: true });
+  }
+
+  private getPersistedWorkspacePath(workspaceId: string): string {
+    const workspace = this.config.findWorkspace(workspaceId);
+    if (!workspace) {
+      throw new Error("Workspace disappeared before archive checkout deletion");
+    }
+    return workspace.workspacePath;
+  }
+
+  private async clearSnapshotState(
+    workspaceId: string,
+    snapshot: WorktreeArchiveSnapshot
+  ): Promise<void> {
+    if (snapshot.version === 1) {
+      const sessionDir = this.config.getSessionDir(workspaceId);
+      const stateDir = path.resolve(sessionDir, snapshot.stateDirPath);
+      assert(
+        isPathInsideDir(sessionDir, stateDir) && stateDir !== sessionDir,
+        "clearSnapshotState: refusing to remove a path outside the session directory"
+      );
+      await fsPromises.rm(stateDir, { recursive: true, force: true });
     }
 
-    // Older snapshot captures stored the workspace name instead of the actual checked-out branch.
-    // When a renamed workspace preserved its original branch, recover via the persisted mapping so
-    // those already-archived workspaces remain restorable after upgrading.
-    const mappedBranchName = await this.getPersistedWorkspaceBranchName(
-      args.projectPath,
-      args.workspaceName
-    );
-    if (!mappedBranchName || mappedBranchName === args.snapshotBranchName) {
-      return args.snapshotBranchName;
-    }
+    await this.config.editConfig((config) => {
+      const workspaceEntry = findWorkspaceEntryByIdOrPath(this.config, config, workspaceId);
+      const current = workspaceEntry?.workspace.worktreeArchiveSnapshot;
+      if (
+        current?.version === snapshot.version &&
+        current.capturedAt === snapshot.capturedAt &&
+        workspaceEntry
+      ) {
+        delete workspaceEntry.workspace.worktreeArchiveSnapshot;
+      }
+      return config;
+    });
+  }
 
-    const mappedBranchSha = await this.tryGitStdout(args.projectPath, [
-      "rev-parse",
-      `refs/heads/${mappedBranchName}`,
-    ]);
-    if (mappedBranchSha === args.snapshotHeadSha) {
-      return mappedBranchName;
+  private async cleanupFailedRestore(args: {
+    projectPath: string;
+    workspaceName: string;
+    workspacePath: string;
+  }): Promise<void> {
+    try {
+      await forgetJjWorkspace({
+        projectPath: args.projectPath,
+        workspaceName: args.workspaceName,
+      });
+      await fsPromises.rm(args.workspacePath, { recursive: true, force: true });
+    } catch (error) {
+      log.debug("Failed to clean up partially restored JJ workspace", {
+        workspacePath: args.workspacePath,
+        error: getErrorMessage(error),
+      });
     }
-
-    return args.snapshotBranchName;
   }
 
   private async getPersistedWorkspaceBranchName(
@@ -839,13 +589,12 @@ export class WorktreeArchiveSnapshotService {
         return {};
       }
       return Object.fromEntries(
-        Object.entries(parsed).filter(([workspaceName, branchName]) => {
-          return (
+        Object.entries(parsed).filter(
+          ([workspaceName, branchName]) =>
             workspaceName.trim().length > 0 &&
             typeof branchName === "string" &&
             branchName.trim().length > 0
-          );
-        })
+        )
       );
     } catch {
       return {};
@@ -853,271 +602,15 @@ export class WorktreeArchiveSnapshotService {
   }
 
   private async getWorkspaceBranchMapPath(projectPath: string): Promise<string> {
-    const gitPath = path.join(projectPath, ".git");
-
+    const jjMapPath = path.join(projectPath, ".jj", "repo", JJ_WORKSPACE_MAP_FILENAME);
     try {
-      const gitPathStat = await fsPromises.stat(gitPath);
-      if (gitPathStat.isDirectory()) {
-        return path.join(gitPath, "mux-workspace-branches.json");
-      }
-
-      const gitDirRef = await fsPromises.readFile(gitPath, "utf8");
-      const gitDirPrefix = "gitdir:";
-      const gitDirLine = gitDirRef.trim();
-      if (gitDirLine.startsWith(gitDirPrefix)) {
-        return path.join(
-          path.resolve(projectPath, gitDirLine.slice(gitDirPrefix.length).trim()),
-          "mux-workspace-branches.json"
-        );
+      if ((await fsPromises.stat(path.dirname(jjMapPath))).isDirectory()) {
+        return jjMapPath;
       }
     } catch {
-      // Fall through to the default .git path when git metadata is unavailable.
+      // Fall through to the legacy colocated Git metadata path.
     }
-
-    return path.join(gitPath, "mux-workspace-branches.json");
-  }
-
-  private async gitCommitExists(repoPath: string, sha: string): Promise<boolean> {
-    return (await this.tryGitStdout(repoPath, ["cat-file", "-e", `${sha}^{commit}`])) !== undefined;
-  }
-
-  private async gitStdout(repoPath: string, args: string[]): Promise<string> {
-    const trimmed = (await this.runGitCommand(repoPath, args)).trimEnd();
-    return trimmed;
-  }
-
-  private async tryGitStdout(repoPath: string, args: string[]): Promise<string | undefined> {
-    try {
-      return await this.gitStdout(repoPath, args);
-    } catch {
-      return undefined;
-    }
-  }
-
-  private async runGitCommand(repoPath: string, args: string[]): Promise<string> {
-    const gitEnv =
-      args[0] === "am"
-        ? {
-            ...GIT_NO_HOOKS_ENV,
-            GIT_COMMITTER_NAME: "Mux Archive Restore",
-            GIT_COMMITTER_EMAIL: "mux-archive-restore@local",
-          }
-        : GIT_NO_HOOKS_ENV;
-    using proc = execFileAsync("git", ["-C", repoPath, ...args], { env: gitEnv });
-    const { stdout } = await proc.result;
-    return stdout;
-  }
-
-  private resolveSessionRelativePath(sessionDir: string, relativePath: string): string {
-    assert(
-      relativePath.trim().length > 0,
-      "resolveSessionRelativePath: relativePath must be non-empty"
-    );
-    const absolutePath = path.resolve(sessionDir, relativePath);
-    const isStrictChildPath =
-      isPathInsideDir(sessionDir, absolutePath) && absolutePath !== sessionDir;
-    assert(isStrictChildPath, `resolveSessionRelativePath: refusing to escape ${sessionDir}`);
-    return absolutePath;
-  }
-
-  private async writeArtifact(args: {
-    sessionDir: string;
-    stateDir: string;
-    fileName: string;
-    contents: string;
-  }): Promise<string> {
-    const artifactPath = path.join(args.stateDir, args.fileName);
-    await fsPromises.writeFile(artifactPath, args.contents, "utf-8");
-
-    assert(
-      isPathInsideDir(args.sessionDir, artifactPath),
-      `writeArtifact: artifact path escaped session dir (${artifactPath})`
-    );
-
-    const relativePath = path.join(SNAPSHOT_DIR_NAME, args.fileName);
-    assert(!path.isAbsolute(relativePath), "writeArtifact: relativePath must stay relative");
-    return relativePath;
-  }
-
-  private async clearSnapshotState(
-    workspaceId: string,
-    snapshot: WorktreeArchiveSnapshot
-  ): Promise<void> {
-    const sessionDir = this.config.getSessionDir(workspaceId);
-    const stateDir = this.resolveSessionRelativePath(sessionDir, snapshot.stateDirPath);
-    await fsPromises.rm(stateDir, { recursive: true, force: true });
-
-    await this.config.editConfig((config) => {
-      const workspaceEntry = findWorkspaceEntryByIdOrPath(this.config, config, workspaceId);
-      if (workspaceEntry) {
-        delete workspaceEntry.workspace.worktreeArchiveSnapshot;
-      }
-      return config;
-    });
-  }
-
-  private async cleanupFailedRestore(args: {
-    workspaceName: string;
-    runtimeConfig: WorkspaceMetadata["runtimeConfig"];
-    createdWorkspaces: CreatedRestoreWorkspace[];
-    containerCreated: boolean;
-  }): Promise<void> {
-    if (args.containerCreated) {
-      const srcBaseDir = getSrcBaseDir(args.runtimeConfig) ?? this.config.srcDir;
-      await new ContainerManager(srcBaseDir)
-        .removeContainer(args.workspaceName)
-        .catch(() => undefined);
-    }
-
-    for (const createdWorkspace of [...args.createdWorkspaces].reverse()) {
-      try {
-        await this.removeRestoredWorktreePath(
-          createdWorkspace.projectPath,
-          createdWorkspace.workspacePath
-        );
-      } catch (error) {
-        log.debug("Failed to clean up partially restored checkout snapshot", {
-          projectPath: createdWorkspace.projectPath,
-          workspacePath: createdWorkspace.workspacePath,
-          error: getErrorMessage(error),
-        });
-      }
-    }
-  }
-
-  private async existingCheckoutMatchesSnapshot(args: {
-    workspaceId: string;
-    workspaceName: string;
-    workspacePath: string;
-    projectSnapshot: WorktreeArchiveSnapshotProject;
-  }): Promise<boolean> {
-    const checkoutIsGitRepo = await isGitRepository(args.workspacePath);
-    if (!checkoutIsGitRepo) {
-      return false;
-    }
-
-    const expectedBranchName = await this.resolveRestoreBranchName({
-      projectPath: args.projectSnapshot.projectPath,
-      workspaceName: args.workspaceName,
-      snapshotBranchName: args.projectSnapshot.branchName,
-      snapshotHeadSha: args.projectSnapshot.headSha,
-    });
-    const checkoutBranch = await this.tryGitStdout(args.workspacePath, [
-      "rev-parse",
-      "--abbrev-ref",
-      "HEAD",
-    ]);
-    if (checkoutBranch !== expectedBranchName) {
-      return false;
-    }
-
-    const checkoutHeadSha = await this.tryGitStdout(args.workspacePath, ["rev-parse", "HEAD"]);
-    if (checkoutHeadSha !== args.projectSnapshot.headSha) {
-      return false;
-    }
-
-    const checkoutCommonDir = await this.tryGitStdout(args.workspacePath, [
-      "rev-parse",
-      "--path-format=absolute",
-      "--git-common-dir",
-    ]);
-    const expectedCommonDir = path.resolve(args.projectSnapshot.projectPath, ".git");
-    if (!checkoutCommonDir || path.resolve(checkoutCommonDir) !== expectedCommonDir) {
-      return false;
-    }
-
-    const expectedStagedPatch = await this.readSnapshotPatchArtifact({
-      workspaceId: args.workspaceId,
-      artifactPath: args.projectSnapshot.stagedPatchPath,
-    });
-    const expectedUnstagedPatch = await this.readSnapshotPatchArtifact({
-      workspaceId: args.workspaceId,
-      artifactPath: args.projectSnapshot.unstagedPatchPath,
-    });
-
-    const stagedArtifactMissing =
-      args.projectSnapshot.stagedPatchPath != null && expectedStagedPatch == null;
-    const unstagedArtifactMissing =
-      args.projectSnapshot.unstagedPatchPath != null && expectedUnstagedPatch == null;
-    const hasTrackedArtifactReference =
-      args.projectSnapshot.stagedPatchPath != null ||
-      args.projectSnapshot.unstagedPatchPath != null;
-    const allReferencedTrackedArtifactsMissing =
-      hasTrackedArtifactReference &&
-      (args.projectSnapshot.stagedPatchPath == null || stagedArtifactMissing) &&
-      (args.projectSnapshot.unstagedPatchPath == null || unstagedArtifactMissing);
-    if (allReferencedTrackedArtifactsMissing) {
-      // A prior restore may have already deleted every tracked patch artifact before snapshot-state
-      // writeback failed. Once the branch/head/common-dir checks pass, there is no remaining
-      // recovery payload to preserve, so treat the checkout as reconciled and let retry clear
-      // the stale snapshot metadata.
-      return true;
-    }
-
-    const currentStagedPatch = await this.runGitCommand(args.workspacePath, [
-      "diff",
-      "--cached",
-      "--binary",
-    ]);
-    const currentUnstagedPatch = await this.runGitCommand(args.workspacePath, ["diff", "--binary"]);
-
-    const stagedMatches = stagedArtifactMissing
-      ? true
-      : currentStagedPatch === (expectedStagedPatch ?? "");
-    const unstagedMatches = unstagedArtifactMissing
-      ? true
-      : currentUnstagedPatch === (expectedUnstagedPatch ?? "");
-    return stagedMatches && unstagedMatches;
-  }
-
-  private async readSnapshotPatchArtifact(args: {
-    workspaceId: string;
-    artifactPath?: string;
-  }): Promise<string | null> {
-    if (!args.artifactPath) {
-      return "";
-    }
-
-    try {
-      return await fsPromises.readFile(
-        this.resolveSessionRelativePath(
-          this.config.getSessionDir(args.workspaceId),
-          args.artifactPath
-        ),
-        "utf-8"
-      );
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-        return null;
-      }
-      throw error;
-    }
-  }
-
-  private async removeRestoredWorktreePath(
-    projectPath: string,
-    workspacePath: string
-  ): Promise<void> {
-    try {
-      using removeProc = execFileAsync(
-        "git",
-        ["-C", projectPath, "worktree", "remove", "--force", workspacePath],
-        { env: GIT_NO_HOOKS_ENV }
-      );
-      await removeProc.result;
-      return;
-    } catch {
-      try {
-        using pruneProc = execFileAsync("git", ["-C", projectPath, "worktree", "prune"], {
-          env: GIT_NO_HOOKS_ENV,
-        });
-        await pruneProc.result;
-      } catch {
-        // Best-effort prune only; fall through to filesystem cleanup.
-      }
-    }
-
-    await fsPromises.rm(workspacePath, { recursive: true, force: true });
+    return path.join(projectPath, ".git", "mux-workspace-branches.json");
   }
 
   private async pathExists(targetPath: string): Promise<boolean> {
