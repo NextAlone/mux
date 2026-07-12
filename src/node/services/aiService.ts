@@ -126,6 +126,7 @@ import { getProjects, isMultiProject } from "@/common/utils/multiProject";
 import { uniqueSuffix } from "@/common/utils/hasher";
 import { isWorkspaceTrustedForSharedExecution } from "@/node/services/utils/workspaceTrust";
 import { getProviderModelEntryIdForProvider } from "@/common/utils/providers/modelEntries";
+import { assertProactiveTaskKindAllowed, unmarkBuiltInTaskTool } from "@/node/services/tools/task";
 
 import { DEFAULT_GOAL_DEFAULTS, normalizeGoalDefaults } from "@/constants/goals";
 import { mergeGoalDefaults } from "@/common/utils/goals/resolveGoalSetIntent";
@@ -135,6 +136,7 @@ import {
   type OpenAIReasoningMode,
   type ThinkingLevel,
 } from "@/common/types/thinking";
+import type { TaskDelegationCallSurface, TaskDelegationMode } from "@/common/types/taskDelegation";
 import {
   enforceThinkingPolicy,
   resolveEffectiveThinkingLevel,
@@ -177,7 +179,11 @@ import {
   simulateToolPolicyNoop,
   type SimulationContext,
 } from "./streamSimulation";
-import { applyToolPolicyAndExperiments, captureMcpToolTelemetry } from "./toolAssembly";
+import {
+  applyToolPolicyAndExperiments,
+  captureMcpToolTelemetry,
+  resolveTaskDelegationCallSurface,
+} from "./toolAssembly";
 import { getErrorMessage } from "@/common/utils/errors";
 import { validateJsonSchemaSubsetSchema } from "@/common/utils/jsonSchemaSubset";
 import { filterSideQuestionMessages } from "@/common/utils/messages/sideQuestion";
@@ -439,6 +445,8 @@ export interface StreamMessageOptions {
   thinkingLevel?: ThinkingLevel;
   /** OpenAI pro reasoning mode; delivered via provider options (inert for unsupported models). */
   reasoningMode?: OpenAIReasoningMode;
+  /** Immutable user-turn snapshot for proactive sub-agent delegation. */
+  taskDelegationMode?: TaskDelegationMode;
   toolPolicy?: ToolPolicy;
   abortSignal?: AbortSignal;
   /** Live workspace scratchpad snapshot from the renderer; when present it wins over disk. */
@@ -1119,7 +1127,8 @@ export class AIService extends EventEmitter {
   private wrapToolsForDelegation(
     workspaceId: string,
     tools: Record<string, Tool>,
-    delegatedToolNames?: string[]
+    delegatedToolNames?: string[],
+    proactiveTaskDelegation?: boolean
   ): Record<string, Tool> {
     const normalizedDelegatedTools =
       delegatedToolNames
@@ -1145,9 +1154,24 @@ export class AIService extends EventEmitter {
       }
 
       const wrappedTool = cloneToolPreservingDescriptors(tool);
+      if (toolName === "task") {
+        // ACP delegation replaces local execution. Remove local-task provenance so tool
+        // assembly cannot advertise it as a callable Mux sub-agent capability.
+        unmarkBuiltInTaskTool(wrappedTool);
+      }
       const wrappedToolRecord = wrappedTool as Record<string, unknown>;
 
-      wrappedToolRecord.execute = async (_args: unknown, options: unknown) => {
+      wrappedToolRecord.execute = async (args: unknown, options: unknown) => {
+        if (toolName === "task") {
+          const kind =
+            args != null && typeof args === "object"
+              ? (args as { kind?: unknown }).kind
+              : undefined;
+          // ACP replaces the local execute handler, so repeat the proactive workspace-turn
+          // boundary here instead of letting delegated task calls bypass it.
+          assertProactiveTaskKindAllowed(kind, proactiveTaskDelegation);
+        }
+
         const executionContext = isToolExecutionContext(options) ? options : undefined;
         const toolCallId = executionContext?.toolCallId?.trim();
 
@@ -1246,6 +1270,7 @@ export class AIService extends EventEmitter {
       modelString,
       thinkingLevel,
       reasoningMode,
+      taskDelegationMode,
       toolPolicy,
       abortSignal,
       additionalSystemContext,
@@ -1738,6 +1763,16 @@ export class AIService extends EventEmitter {
       const legacyModeForMetadata = getLegacyModeForAgentMetadata(effectiveAgentId, effectiveMode);
       const projectTrusted = isProjectTrusted(this.config, metadata.projectPath);
       const sharedExecutionTrusted = isWorkspaceTrustedForSharedExecution(metadata, cfg.projects);
+      const latestUserMessage = [...messages].reverse().find((message) => message.role === "user");
+      const proactiveTaskDelegation =
+        taskDelegationMode === "proactive" &&
+        agentInitiated !== true &&
+        latestUserMessage != null &&
+        latestUserMessage.metadata?.synthetic !== true &&
+        latestUserMessage.metadata?.retrySendOptions?.agentInitiated !== true &&
+        !isSubagentWorkspace &&
+        sharedExecutionTrusted &&
+        isExecLikeEditingCapableInResolvedChain(agentInheritanceChain);
       const agentAdvisorEnabled = resolveAdvisorEnabledForAgent(
         effectiveAgentId,
         cfg.agentAiDefaults?.[effectiveAgentId]?.advisorEnabled
@@ -1862,7 +1897,11 @@ export class AIService extends EventEmitter {
       // below so the prompt never advertises an absent tool.
       const memoryToolEligible = memoryExperimentEnabled && this.memoryService !== undefined;
       const buildStreamSystemContextForToolset = (
-        toolset: { advisorToolAvailable: boolean; memoryToolAvailable: boolean },
+        toolset: {
+          advisorToolAvailable: boolean;
+          memoryToolAvailable: boolean;
+          taskDelegationCallSurface?: TaskDelegationCallSurface;
+        },
         modelStringForSystem: string = modelString,
         contextForModel: MemorySessionContext | undefined = memoryContext
       ) =>
@@ -1886,6 +1925,7 @@ export class AIService extends EventEmitter {
           loadDesktopCapability,
           advisorToolAvailable: toolset.advisorToolAvailable,
           memoryToolAvailable: toolset.memoryToolAvailable,
+          taskDelegationCallSurface: toolset.taskDelegationCallSurface,
           hotMemoriesBlock: contextForModel?.hotMemoriesBlock ?? undefined,
         });
 
@@ -2425,6 +2465,7 @@ export class AIService extends EventEmitter {
         },
         onConfigChanged: () => this.providerService.notifyConfigChanged(),
         taskService: this.taskService,
+        proactiveTaskDelegation,
         analyticsService: this.analyticsService,
         desktopSessionManager: this.desktopSessionManager,
         mcpServerManager: this.mcpServerManager,
@@ -2465,7 +2506,8 @@ export class AIService extends EventEmitter {
       const toolsWithDelegation = this.wrapToolsForDelegation(
         workspaceId,
         allTools,
-        delegatedToolNames
+        delegatedToolNames,
+        proactiveTaskDelegation
       );
 
       // Forward nested PTC tool events to the stream (tool-call-start/end only,
@@ -2479,7 +2521,7 @@ export class AIService extends EventEmitter {
 
       // Apply tool policy and PTC experiments (lazy-loads PTC dependencies only when needed).
       const applyToolPolicyAndExperimentsStartedAt = Date.now();
-      let tools = await applyToolPolicyAndExperiments({
+      const toolAssembly = await applyToolPolicyAndExperiments({
         allTools: toolsWithDelegation,
         extraTools: this.extraTools,
         effectiveToolPolicy,
@@ -2487,6 +2529,7 @@ export class AIService extends EventEmitter {
         codeModeOnly: codeModeOnlyEnabled ? { workspaceId } : undefined,
         emitNestedToolEvent: emitNestedPtcToolEvent,
       });
+      let tools = toolAssembly.tools;
       recordStartupPhaseTiming(
         "applyToolPolicyAndExperimentsMs",
         applyToolPolicyAndExperimentsStartedAt
@@ -2517,6 +2560,17 @@ export class AIService extends EventEmitter {
         }
       }
 
+      const taskDelegationCallSurface = proactiveTaskDelegation
+        ? resolveTaskDelegationCallSurface({
+            tools,
+            bridgedBuiltInTask: toolAssembly.bridgedBuiltInTask,
+            taskServiceAvailable: this.taskService !== undefined,
+            trusted: sharedExecutionTrusted,
+            delegatedToAcp:
+              delegatedToolNames?.some((toolName) => toolName.trim() === "task") === true,
+          })
+        : undefined;
+
       const advisorToolAvailable = tools.advisor !== undefined;
       const memoryToolAvailable = tools.memory !== undefined;
       const finalMemoryContext = await upgradeMemoryContextForModel(
@@ -2526,6 +2580,7 @@ export class AIService extends EventEmitter {
       const finalStreamSystemContext =
         advisorToolAvailable === advisorToolEligible &&
         memoryToolAvailable === memoryToolEligible &&
+        taskDelegationCallSurface === undefined &&
         finalMemoryContext === memoryContext
           ? prePolicyStreamSystemContext
           : await (async () => {
@@ -2539,6 +2594,7 @@ export class AIService extends EventEmitter {
                 {
                   advisorToolAvailable,
                   memoryToolAvailable,
+                  taskDelegationCallSurface,
                 },
                 modelString,
                 finalMemoryContext
@@ -3030,11 +3086,12 @@ export class AIService extends EventEmitter {
                     toolInstructions,
                     mcpTools
                   );
-                  let nextTools = await applyToolPolicyAndExperiments({
+                  const nextToolAssembly = await applyToolPolicyAndExperiments({
                     allTools: this.wrapToolsForDelegation(
                       workspaceId,
                       nextAllTools,
-                      delegatedToolNames
+                      delegatedToolNames,
+                      proactiveTaskDelegation
                     ),
                     extraTools: this.extraTools,
                     effectiveToolPolicy,
@@ -3042,6 +3099,7 @@ export class AIService extends EventEmitter {
                     codeModeOnly: nextCodeModeOnlyEnabled ? { workspaceId } : undefined,
                     emitNestedToolEvent: emitNestedPtcToolEvent,
                   });
+                  let nextTools = nextToolAssembly.tools;
                   // Tool search: keep the per-stream state consistent with the
                   // fallback model's re-assembled toolset. rebuildToolSearchState
                   // mutates the state object in place — StreamManager's request
@@ -3065,6 +3123,17 @@ export class AIService extends EventEmitter {
                       nextTools = rest;
                     }
                   }
+                  const nextTaskDelegationCallSurface = proactiveTaskDelegation
+                    ? resolveTaskDelegationCallSurface({
+                        tools: nextTools,
+                        bridgedBuiltInTask: nextToolAssembly.bridgedBuiltInTask,
+                        taskServiceAvailable: this.taskService !== undefined,
+                        trusted: sharedExecutionTrusted,
+                        delegatedToAcp:
+                          delegatedToolNames?.some((toolName) => toolName.trim() === "task") ===
+                          true,
+                      })
+                    : undefined;
                   // Same active-set scoping as the primary sentinel: never
                   // advertise deferred, not-yet-activated MCP tools.
                   const nextToolNamesForSentinel = (
@@ -3083,6 +3152,7 @@ export class AIService extends EventEmitter {
                     {
                       advisorToolAvailable: nextTools.advisor !== undefined,
                       memoryToolAvailable: nextMemoryToolAvailable,
+                      taskDelegationCallSurface: nextTaskDelegationCallSurface,
                     },
                     next.canonicalModelString,
                     nextMemoryContext

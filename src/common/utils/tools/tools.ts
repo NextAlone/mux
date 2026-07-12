@@ -195,6 +195,8 @@ export interface ToolConfiguration {
   reportModelUsage?: (event: ToolModelUsageEvent) => void;
   /** Task orchestration for sub-agent tasks */
   taskService?: TaskService;
+  /** This top-level user turn may proactively spawn sub-agents (never workspace turns). */
+  proactiveTaskDelegation?: boolean;
   /** Durable workflow lifecycle service for dynamic workflow tools. */
   workflowService?: {
     getRun?(input: { workspaceId: string; runId: string }): Promise<unknown>;

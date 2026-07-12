@@ -10,6 +10,7 @@ describe("WorkspaceAISettingsSchema", () => {
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.data.reasoningMode).toBeUndefined();
+      expect(result.data.taskDelegationMode).toBeUndefined();
     }
   });
 
@@ -31,6 +32,32 @@ describe("WorkspaceAISettingsSchema", () => {
       thinkingLevel: "high",
       reasoningMode: "ultra",
     });
+    expect(result.success).toBe(false);
+  });
+
+  test.each(["explicit", "proactive"] as const)(
+    "parses taskDelegationMode=%s",
+    (taskDelegationMode) => {
+      const result = WorkspaceAISettingsSchema.safeParse({
+        model: "openai:gpt-5.6-sol",
+        thinkingLevel: "high",
+        taskDelegationMode,
+      });
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.taskDelegationMode).toBe(taskDelegationMode);
+      }
+    }
+  );
+
+  test("rejects unknown task delegation modes", () => {
+    const result = WorkspaceAISettingsSchema.safeParse({
+      model: "openai:gpt-5.6-sol",
+      thinkingLevel: "high",
+      taskDelegationMode: "automatic",
+    });
+
     expect(result.success).toBe(false);
   });
 });

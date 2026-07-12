@@ -71,6 +71,7 @@ export const CommandIds = {
   modelChange: () => "model:change" as const,
   thinkingSetLevel: () => "thinking:set-level" as const,
   toggleProReasoning: () => "thinking:toggle-pro-reasoning" as const,
+  toggleTaskDelegation: () => "tasks:toggle-proactive-delegation" as const,
 
   // Project commands
   projectAdd: () => "project:add" as const,

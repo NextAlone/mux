@@ -503,7 +503,12 @@ export class WorkspaceGoalService {
       if (message.metadata?.muxMetadata?.type === "goal-pause-boundary") {
         return { mode: "paused", pausedBy: "pause_boundary" };
       }
-      if (message.metadata?.synthetic === true) {
+      if (
+        message.metadata?.synthetic === true ||
+        message.metadata?.retrySendOptions?.agentInitiated === true
+      ) {
+        // Internal task/wake turns can be UI-visible without the synthetic marker. Their retry
+        // snapshot is the durable authorship signal, so they must not pause the user's goal.
         continue;
       }
       return { mode: "paused", pausedBy: "manual_user" };

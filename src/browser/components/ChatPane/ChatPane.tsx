@@ -1616,6 +1616,7 @@ const ChatPaneContent: React.FC<ChatPaneContentProps> = (props) => {
                 ) : (
                   <ChatInputPane
                     workspaceId={workspaceId}
+                    isTopLevelWorkspace={meta != null && !meta.parentWorkspaceId}
                     projectName={projectName}
                     workspaceName={workspaceName}
                     revealDecorations={revealDecorations}
@@ -1677,6 +1678,7 @@ const TranscriptOnlyNoticePane: React.FC = () => {
 
 interface ChatInputPaneProps {
   workspaceId: string;
+  isTopLevelWorkspace: boolean;
   projectName: string;
   workspaceName: string;
   /**
@@ -1815,6 +1817,7 @@ const ChatInputPane: React.FC<ChatInputPaneProps> = (props) => {
         key={props.workspaceId}
         variant="workspace"
         workspaceId={props.workspaceId}
+        isTopLevelWorkspace={props.isTopLevelWorkspace}
         runtimeType={getRuntimeTypeForTelemetry(props.runtimeConfig)}
         onMessageSendStarted={props.onMessageSendStarted}
         onMessageSent={props.onMessageSent}

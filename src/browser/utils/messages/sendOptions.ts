@@ -5,6 +5,7 @@ import {
   getThinkingLevelByModelKey,
   getThinkingLevelKey,
   getDisableWorkspaceAgentsKey,
+  getWorkspaceAISettingsByAgentKey,
 } from "@/common/constants/storage";
 import { readPersistedState, updatePersistedState } from "@/browser/hooks/usePersistedState";
 import { getDefaultModel } from "@/browser/hooks/useModelsFromSettings";
@@ -19,9 +20,12 @@ import {
   type ThinkingLevel,
 } from "@/common/types/thinking";
 import type { MuxProviderOptions } from "@/common/types/providerOptions";
+import { coerceTaskDelegationMode } from "@/common/types/taskDelegation";
 import { WORKSPACE_DEFAULTS } from "@/constants/workspaceDefaults";
 import { isExperimentEnabled } from "@/browser/hooks/useExperiments";
 import { EXPERIMENT_IDS } from "@/common/constants/experiments";
+import { normalizeAgentId } from "@/common/utils/agentIds";
+import type { WorkspaceAISettingsCache } from "@/browser/utils/workspaceModeAi";
 
 /**
  * Read provider options from localStorage
@@ -77,6 +81,14 @@ export function getSendOptionsFromStorage(workspaceId: string): SendMessageOptio
       readPersistedState<OpenAIReasoningMode | null>(getReasoningModeKey(workspaceId), null)
     ) ?? "standard";
 
+  const taskDelegationMode =
+    coerceTaskDelegationMode(
+      readPersistedState<WorkspaceAISettingsCache>(
+        getWorkspaceAISettingsByAgentKey(workspaceId),
+        {}
+      )[normalizeAgentId(agentId, WORKSPACE_DEFAULTS.agentId)]?.taskDelegationMode
+    ) ?? "explicit";
+
   const providerOptions = getProviderOptions();
 
   const disableWorkspaceAgents = readPersistedState<boolean>(
@@ -89,6 +101,7 @@ export function getSendOptionsFromStorage(workspaceId: string): SendMessageOptio
     agentId,
     thinkingLevel,
     reasoningMode,
+    taskDelegationMode,
     providerOptions,
     disableWorkspaceAgents,
     experiments: {

@@ -60,7 +60,14 @@ describe("AgentSession post-compaction context retry", () => {
         id: "user-1",
         role: "user",
         parts: [{ type: "text", text: "Continue" }],
-        metadata: { timestamp: 1100 },
+        metadata: {
+          timestamp: 1100,
+          retrySendOptions: {
+            model: "openai:gpt-4o",
+            agentId: "exec",
+            taskDelegationMode: "proactive",
+          },
+        },
       },
     ];
 
@@ -143,6 +150,8 @@ describe("AgentSession post-compaction context retry", () => {
     const options: SendMessageOptions = {
       model: "openai:gpt-4o",
       agentId: "exec",
+      // Simulate a live preference changed after the original turn was accepted.
+      taskDelegationMode: "explicit",
     } as unknown as SendMessageOptions;
 
     // Call streamWithHistory directly (private) to avoid needing a full user send pipeline.
@@ -166,12 +175,14 @@ describe("AgentSession post-compaction context retry", () => {
       unknown
     >;
     expect(Array.isArray(firstOpts.postCompactionAttachments)).toBe(true);
+    expect(firstOpts.taskDelegationMode).toBe("proactive");
 
     const secondOpts = (streamMessage as ReturnType<typeof mock>).mock.calls[1][0] as Record<
       string,
       unknown
     >;
     expect(secondOpts.postCompactionAttachments).toBeNull();
+    expect(secondOpts.taskDelegationMode).toBe("proactive");
 
     expect((historyService.deleteMessage as ReturnType<typeof mock>).mock.calls[0][1]).toBe(
       "assistant-ctx-exceeded"

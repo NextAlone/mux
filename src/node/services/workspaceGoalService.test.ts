@@ -414,6 +414,28 @@ describe("WorkspaceGoalService", () => {
     expect(reconciled).toMatchObject({ status: "active" });
   });
 
+  test("chat-tail reconciliation ignores agent-initiated non-synthetic user rows", async () => {
+    await setGoalOk(service, { workspaceId, objective: "Ignore task wake rows" });
+    await appendUserHistoryMessage(historyService, workspaceId, "Continue goal", {
+      timestamp: Date.now(),
+      synthetic: true,
+      uiVisible: true,
+      kind: GOAL_CONTINUATION_KIND,
+    });
+    await appendUserHistoryMessage(historyService, workspaceId, "Task wake", {
+      timestamp: Date.now(),
+      retrySendOptions: {
+        model: "openai:gpt-4o",
+        agentId: "exec",
+        agentInitiated: true,
+      },
+    });
+
+    const reconciled = await service.getGoal(workspaceId);
+
+    expect(reconciled).toMatchObject({ status: "active" });
+  });
+
   test("pause appends a hidden user boundary so the chat tail no longer marks the goal active", async () => {
     await setGoalOk(service, { workspaceId, objective: "Pause from continuation" });
     await appendUserHistoryMessage(historyService, workspaceId, "Continue goal", {

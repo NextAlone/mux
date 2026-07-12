@@ -25,6 +25,7 @@ import type { AgentDefinitionScope } from "@/common/types/agentDefinition";
 import type { WorkspaceMetadata } from "@/common/types/workspace";
 import type { ProvidersConfigMap } from "@/common/orpc/types";
 import type { TaskSettings } from "@/common/types/tasks";
+import type { TaskDelegationCallSurface } from "@/common/types/taskDelegation";
 import type { Runtime } from "@/node/runtime/Runtime";
 import { isPlanLikeInResolvedChain } from "@/common/utils/agentTools";
 import { getPlanFilePath } from "@/common/utils/planStorage";
@@ -262,6 +263,8 @@ export interface BuildStreamSystemContextOptions {
    * disappears with the tool.
    */
   memoryToolAvailable?: boolean;
+  /** Callable local task surface after policy, bridge, and tool-search finalization. */
+  taskDelegationCallSurface?: TaskDelegationCallSurface;
   /**
    * Pre-rendered hot-memories block (pinned + frequently used memory files;
    * memory-hot-set sub-experiment). Computed and cached by AgentSession per
@@ -487,6 +490,41 @@ function buildMemoryGuidanceSection(): string {
   ].join("\n");
 }
 
+const TASK_DELEGATION_INVOCATION_BY_SURFACE: Record<TaskDelegationCallSurface, string> = {
+  direct: 'Call the `task` tool. Omit `kind` or use `kind: "subagent"`.',
+  code_mode:
+    'Use `exec` to run `await tools.task({ agentId, prompt, title, run_in_background: true })`. Omit `kind` or use `kind: "subagent"`.',
+  code_execution:
+    'Use `code_execution` to run `return mux.task({ agentId, prompt, title, run_in_background: true })`. `mux.*` is synchronous: do not use `await`. Omit `kind` or use `kind: "subagent"`.',
+};
+
+export function buildTaskDelegationGuidanceSection(
+  surface: TaskDelegationCallSurface,
+  agents: ReadonlyArray<{
+    id: string;
+    name: string;
+    description?: string;
+    subagentRunnable: boolean;
+  }>
+): string | undefined {
+  const runnableAgents = agents.filter((agent) => agent.subagentRunnable);
+  if (runnableAgents.length === 0) {
+    return undefined;
+  }
+
+  return [
+    "<task-delegation-guidance>",
+    "You may proactively delegate bounded, independent work when parallel execution materially helps. Keep integration ownership, verify results, and avoid delegating trivial, sequential, or shared-write work.",
+    TASK_DELEGATION_INVOCATION_BY_SURFACE[surface],
+    "Runnable sub-agents:",
+    ...runnableAgents.map((agent) => {
+      const description = agent.description?.trim();
+      return `- ${agent.id}: ${description && description.length > 0 ? description : agent.name}`;
+    }),
+    "</task-delegation-guidance>",
+  ].join("\n");
+}
+
 /**
  * Build the agent system prompt, system message, and discover available agents/skills.
  *
@@ -581,6 +619,15 @@ export async function buildStreamSystemContext(
       cfg,
       loadDesktopCapability,
     });
+  }
+  if (opts.taskDelegationCallSurface && agentDefinitions) {
+    const taskDelegationGuidance = buildTaskDelegationGuidanceSection(
+      opts.taskDelegationCallSurface,
+      agentDefinitions
+    );
+    if (taskDelegationGuidance) {
+      agentSystemPromptSections.push(taskDelegationGuidance);
+    }
   }
 
   // Discover available skills for tool description context

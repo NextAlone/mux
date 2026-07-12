@@ -1,10 +1,60 @@
 import { describe, expect, it } from "@jest/globals";
 import {
+  isAgentDescriptorExecLikeEditingCapable,
   isExecLikeEditingCapableInResolvedChain,
   isToolEnabledByConfigs,
   isToolEnabledInResolvedChain,
   type ToolsConfig,
 } from "./agentTools";
+import type { AgentDefinitionDescriptor } from "@/common/types/agentDefinition";
+
+function descriptor(
+  id: string,
+  overrides: Partial<AgentDefinitionDescriptor> = {}
+): AgentDefinitionDescriptor {
+  return {
+    id,
+    scope: "built-in",
+    name: id,
+    uiSelectable: true,
+    subagentRunnable: false,
+    ...overrides,
+  };
+}
+
+describe("isAgentDescriptorExecLikeEditingCapable", () => {
+  it("accepts a custom agent whose resolved chain inherits editing from exec", () => {
+    const agents = [
+      descriptor("custom", { base: "exec" }),
+      descriptor("exec", { tools: { add: ["file_edit_insert"] } }),
+    ];
+
+    expect(isAgentDescriptorExecLikeEditingCapable("custom", agents)).toBe(true);
+  });
+
+  it("fails closed for missing and cyclic bases", () => {
+    const missingBase = [descriptor("custom", { base: "missing" })];
+    const cyclic = [
+      descriptor("first", { base: "second" }),
+      descriptor("second", { base: "first" }),
+      descriptor("exec", { tools: { add: ["file_edit_insert"] } }),
+    ];
+
+    expect(isAgentDescriptorExecLikeEditingCapable("custom", missingBase)).toBe(false);
+    expect(isAgentDescriptorExecLikeEditingCapable("first", cyclic)).toBe(false);
+  });
+
+  it("rejects plan and read-only exec-derived agents", () => {
+    const agents = [
+      descriptor("plan", { tools: { add: ["propose_plan"] } }),
+      descriptor("readonly", { base: "exec", tools: { remove: ["file_edit_.*"] } }),
+      descriptor("exec", { tools: { add: ["file_edit_insert"] } }),
+    ];
+
+    expect(isAgentDescriptorExecLikeEditingCapable("plan", agents)).toBe(false);
+    expect(isAgentDescriptorExecLikeEditingCapable("readonly", agents)).toBe(false);
+  });
+});
 
 describe("isExecLikeEditingCapableInResolvedChain", () => {
   it("returns true when exec chain enables file_edit_insert", () => {

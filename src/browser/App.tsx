@@ -54,6 +54,8 @@ import {
   type OpenAIReasoningMode,
   type ThinkingLevel,
 } from "@/common/types/thinking";
+import { coerceTaskDelegationMode } from "@/common/types/taskDelegation";
+import type { WorkspaceAISettingsCache } from "@/browser/utils/workspaceModeAi";
 import { CUSTOM_EVENTS } from "@/common/constants/events";
 import { isWorkspaceForkSwitchEvent } from "./utils/workspaceEvents";
 import {
@@ -469,6 +471,18 @@ function AppInner() {
     return coerceOpenAIReasoningMode(stored) ?? "standard";
   }, []);
 
+  const getTaskDelegationModeForWorkspace = useCallback((workspaceId: string) => {
+    const agentId =
+      readPersistedState<string>(getAgentIdKey(workspaceId), WORKSPACE_DEFAULTS.agentId)
+        .trim()
+        .toLowerCase() || WORKSPACE_DEFAULTS.agentId;
+    const settings = readPersistedState<WorkspaceAISettingsCache>(
+      getWorkspaceAISettingsByAgentKey(workspaceId),
+      {}
+    );
+    return coerceTaskDelegationMode(settings[agentId]?.taskDelegationMode) ?? "explicit";
+  }, []);
+
   const setThinkingLevelFromPalette = useCallback(
     (workspaceId: string, level: ThinkingLevel) => {
       if (!workspaceId) {
@@ -481,31 +495,29 @@ function AppInner() {
       // Carry the current pro-mode choice: the backend replaces the agent's
       // settings wholesale, so omitting reasoningMode would wipe it.
       const reasoningMode = getReasoningModeForWorkspace(workspaceId);
+      const taskDelegationMode = getTaskDelegationModeForWorkspace(workspaceId);
 
       // Use the utility function which handles localStorage and event dispatch
       // ThinkingProvider will pick this up via its listener
       updatePersistedState(key, normalized);
-
-      type WorkspaceAISettingsByAgentCache = Partial<
-        Record<
-          string,
-          { model: string; thinkingLevel: ThinkingLevel; reasoningMode?: OpenAIReasoningMode }
-        >
-      >;
 
       const normalizedAgentId =
         readPersistedState<string>(getAgentIdKey(workspaceId), WORKSPACE_DEFAULTS.agentId)
           .trim()
           .toLowerCase() || WORKSPACE_DEFAULTS.agentId;
 
-      updatePersistedState<WorkspaceAISettingsByAgentCache>(
+      updatePersistedState<WorkspaceAISettingsCache>(
         getWorkspaceAISettingsByAgentKey(workspaceId),
         (prev) => {
-          const record: WorkspaceAISettingsByAgentCache =
-            prev && typeof prev === "object" ? prev : {};
+          const record: WorkspaceAISettingsCache = prev && typeof prev === "object" ? prev : {};
           return {
             ...record,
-            [normalizedAgentId]: { model, thinkingLevel: normalized, reasoningMode },
+            [normalizedAgentId]: {
+              model,
+              thinkingLevel: normalized,
+              reasoningMode,
+              taskDelegationMode,
+            },
           };
         },
         {}
@@ -517,13 +529,14 @@ function AppInner() {
           model,
           thinkingLevel: normalized,
           reasoningMode,
+          taskDelegationMode,
         });
 
         api.workspace
           .updateAgentAISettings({
             workspaceId,
             agentId: normalizedAgentId,
-            aiSettings: { model, thinkingLevel: normalized, reasoningMode },
+            aiSettings: { model, thinkingLevel: normalized, reasoningMode, taskDelegationMode },
           })
           .then((result) => {
             if (!result.success) {
@@ -545,7 +558,7 @@ function AppInner() {
         );
       }
     },
-    [api, getModelForWorkspace, getReasoningModeForWorkspace]
+    [api, getModelForWorkspace, getReasoningModeForWorkspace, getTaskDelegationModeForWorkspace]
   );
 
   // Palette toggle for the OpenAI pro reasoning mode. Persists like the
@@ -561,29 +574,27 @@ function AppInner() {
         getReasoningModeForWorkspace(workspaceId) === "pro" ? "standard" : "pro";
       const model = getModelForWorkspace(workspaceId);
       const thinkingLevel = getThinkingLevelForWorkspace(workspaceId);
+      const taskDelegationMode = getTaskDelegationModeForWorkspace(workspaceId);
 
       updatePersistedState(getReasoningModeKey(workspaceId), next);
-
-      type WorkspaceAISettingsByAgentCache = Partial<
-        Record<
-          string,
-          { model: string; thinkingLevel: ThinkingLevel; reasoningMode?: OpenAIReasoningMode }
-        >
-      >;
 
       const normalizedAgentId =
         readPersistedState<string>(getAgentIdKey(workspaceId), WORKSPACE_DEFAULTS.agentId)
           .trim()
           .toLowerCase() || WORKSPACE_DEFAULTS.agentId;
 
-      updatePersistedState<WorkspaceAISettingsByAgentCache>(
+      updatePersistedState<WorkspaceAISettingsCache>(
         getWorkspaceAISettingsByAgentKey(workspaceId),
         (prev) => {
-          const record: WorkspaceAISettingsByAgentCache =
-            prev && typeof prev === "object" ? prev : {};
+          const record: WorkspaceAISettingsCache = prev && typeof prev === "object" ? prev : {};
           return {
             ...record,
-            [normalizedAgentId]: { model, thinkingLevel, reasoningMode: next },
+            [normalizedAgentId]: {
+              model,
+              thinkingLevel,
+              reasoningMode: next,
+              taskDelegationMode,
+            },
           };
         },
         {}
@@ -594,13 +605,14 @@ function AppInner() {
           model,
           thinkingLevel,
           reasoningMode: next,
+          taskDelegationMode,
         });
 
         api.workspace
           .updateAgentAISettings({
             workspaceId,
             agentId: normalizedAgentId,
-            aiSettings: { model, thinkingLevel, reasoningMode: next },
+            aiSettings: { model, thinkingLevel, reasoningMode: next, taskDelegationMode },
           })
           .then((result) => {
             if (!result.success) {
@@ -613,7 +625,13 @@ function AppInner() {
           });
       }
     },
-    [api, getModelForWorkspace, getReasoningModeForWorkspace, getThinkingLevelForWorkspace]
+    [
+      api,
+      getModelForWorkspace,
+      getReasoningModeForWorkspace,
+      getTaskDelegationModeForWorkspace,
+      getThinkingLevelForWorkspace,
+    ]
   );
 
   const registerParamsRef = useRef<BuildSourcesParams | null>(null);

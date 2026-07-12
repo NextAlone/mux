@@ -1,4 +1,5 @@
 import type { OpenAIReasoningMode, ThinkingLevel } from "@/common/types/thinking";
+import type { TaskDelegationMode } from "@/common/types/taskDelegation";
 import type { FrontendWorkspaceMetadata } from "@/common/types/workspace";
 
 interface WorkspaceAiSettingsSnapshot {
@@ -6,6 +7,7 @@ interface WorkspaceAiSettingsSnapshot {
   thinkingLevel: ThinkingLevel;
   /** Optional: legacy settings (and non-OpenAI workflows) omit it. */
   reasoningMode?: OpenAIReasoningMode;
+  taskDelegationMode?: TaskDelegationMode;
 }
 
 export function getWorkspaceAiSettingsFromMetadata(
@@ -15,6 +17,7 @@ export function getWorkspaceAiSettingsFromMetadata(
   model: string | undefined;
   thinkingLevel: ThinkingLevel | undefined;
   reasoningMode: OpenAIReasoningMode | undefined;
+  taskDelegationMode: TaskDelegationMode | undefined;
 } {
   const settings =
     (agentId ? metadata?.aiSettingsByAgent?.[agentId] : undefined) ?? metadata?.aiSettings;
@@ -22,6 +25,7 @@ export function getWorkspaceAiSettingsFromMetadata(
     model: settings?.model,
     thinkingLevel: settings?.thinkingLevel,
     reasoningMode: settings?.reasoningMode,
+    taskDelegationMode: settings?.taskDelegationMode,
   };
 }
 
@@ -68,7 +72,9 @@ export function shouldApplyWorkspaceAiSettingsFromBackend(
     pending.model === incoming.model &&
     pending.thinkingLevel === incoming.thinkingLevel &&
     // Absent reasoningMode is semantically "standard" on both sides.
-    (pending.reasoningMode ?? "standard") === (incoming.reasoningMode ?? "standard");
+    (pending.reasoningMode ?? "standard") === (incoming.reasoningMode ?? "standard") &&
+    // Absent taskDelegationMode is semantically "explicit" on both sides.
+    (pending.taskDelegationMode ?? "explicit") === (incoming.taskDelegationMode ?? "explicit");
   if (matches) {
     pendingAiSettingsByWorkspace.delete(key);
     return true;

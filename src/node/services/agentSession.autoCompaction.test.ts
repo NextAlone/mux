@@ -392,6 +392,7 @@ describe("AgentSession on-send auto-compaction snapshot deferral", () => {
     const baseOptions: SendMessageOptions = {
       model: inheritedModel,
       agentId: "exec",
+      taskDelegationMode: "proactive",
     };
     const followUpContent: CompactionFollowUpRequest = {
       text: "Continue",
@@ -422,6 +423,7 @@ describe("AgentSession on-send auto-compaction snapshot deferral", () => {
     });
 
     expect(compactionRequest.sendOptions.model).toBe(inheritedModel);
+    expect(compactionRequest.sendOptions.taskDelegationMode).toBe("explicit");
     expect(compactionRequest.metadata.requestedModel).toBe(inheritedModel);
     expect(compactionRequest.metadata.parsed?.model).toBe(inheritedModel);
 

@@ -253,6 +253,25 @@ describe("AgentSession goal safety hooks", () => {
     session.dispose();
   });
 
+  test("agent-initiated non-synthetic messages do not pause or acknowledge goals", async () => {
+    const workspaceId = "agent-initiated-does-not-intervene";
+    const { session, goalService, cleanup } = await createSessionHarness(workspaceId);
+    cleanups.push(cleanup);
+    await setGoalOk(goalService, { workspaceId, objective: "Keep running" });
+    await goalService.requireUserAcknowledgment(workspaceId, 77_000);
+
+    const result = await session.sendMessage("Task wake", SEND_OPTIONS, {
+      agentInitiated: true,
+    });
+
+    expect(result.success).toBe(true);
+    expect(await goalService.getGoal(workspaceId)).toMatchObject({
+      status: "active",
+      requireUserAcknowledgmentSinceMs: 77_000,
+    });
+    session.dispose();
+  });
+
   test("stream errors restore durable goal snapshot after live cost preview", async () => {
     const workspaceId = "stream-error-restores-goal-preview";
     const { session, goalService, extensionMetadata, aiService, cleanup } =

@@ -1,4 +1,4 @@
-import type { AgentId } from "@/common/types/agentDefinition";
+import type { AgentDefinitionDescriptor, AgentId } from "@/common/types/agentDefinition";
 
 export interface ToolsConfig {
   add?: readonly string[];
@@ -121,4 +121,40 @@ export function isExecLikeEditingCapableInResolvedChain(
     // Patch-applying agents can still modify their workspace by applying child patches.
     isToolEnabledInResolvedChain("task_apply_git_patch", agents, maxDepth)
   );
+}
+
+export function resolveAgentDescriptorChain(
+  agentId: string,
+  agents: readonly AgentDefinitionDescriptor[],
+  maxDepth = 10
+): AgentDefinitionDescriptor[] {
+  const byId = new Map(agents.map((agent) => [agent.id, agent]));
+  const chain: AgentDefinitionDescriptor[] = [];
+  const visited = new Set<string>();
+  let current = byId.get(agentId);
+
+  while (current && chain.length < maxDepth) {
+    if (visited.has(current.id)) {
+      return [];
+    }
+    visited.add(current.id);
+    chain.push(current);
+    if (!current.base) {
+      return chain;
+    }
+    current = byId.get(current.base);
+    if (!current) {
+      return [];
+    }
+  }
+
+  return current ? [] : chain;
+}
+
+export function isAgentDescriptorExecLikeEditingCapable(
+  agentId: string,
+  agents: readonly AgentDefinitionDescriptor[]
+): boolean {
+  const chain = resolveAgentDescriptorChain(agentId, agents);
+  return chain.length > 0 && isExecLikeEditingCapableInResolvedChain(chain);
 }

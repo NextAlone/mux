@@ -25,6 +25,8 @@ import type { MCPWorkspaceStats } from "@/node/services/mcpServerManager";
 import type { TelemetryService } from "@/node/services/telemetryService";
 import type { WorkspaceMetadata } from "@/common/types/workspace";
 import { getRuntimeTypeForTelemetry, roundToBase2 } from "@/common/telemetry/utils";
+import { isBuiltInTaskTool } from "@/node/services/tools/task";
+import type { TaskDelegationCallSurface } from "@/common/types/taskDelegation";
 
 // ---------------------------------------------------------------------------
 // PTC Lazy-Loading Singleton
@@ -90,6 +92,40 @@ export interface ApplyToolPolicyAndExperimentsOptions {
   emitNestedToolEvent: (event: PTCEventWithParent) => void;
 }
 
+export interface BridgedBuiltInTask {
+  surface: Exclude<TaskDelegationCallSurface, "direct">;
+  carrierName: "exec" | "code_execution";
+  carrier: Tool;
+}
+
+export interface ToolAssemblyResult {
+  tools: Record<string, Tool>;
+  bridgedBuiltInTask?: BridgedBuiltInTask;
+}
+
+export function resolveTaskDelegationCallSurface(args: {
+  tools: Record<string, Tool>;
+  bridgedBuiltInTask?: BridgedBuiltInTask;
+  taskServiceAvailable: boolean;
+  trusted: boolean;
+  delegatedToAcp: boolean;
+}): TaskDelegationCallSurface | undefined {
+  if (!args.taskServiceAvailable || !args.trusted || args.delegatedToAcp) {
+    return undefined;
+  }
+
+  // Supplement mode retains the direct task alongside code_execution; prefer the native
+  // schema so the model receives the strongest argument contract.
+  if (isBuiltInTaskTool(args.tools.task)) {
+    return "direct";
+  }
+
+  const bridged = args.bridgedBuiltInTask;
+  return bridged != null && args.tools[bridged.carrierName] === bridged.carrier
+    ? bridged.surface
+    : undefined;
+}
+
 /**
  * Apply tool policy, then wrap with PTC code_execution if experiments are enabled.
  *
@@ -106,7 +142,7 @@ export interface ApplyToolPolicyAndExperimentsOptions {
  */
 export async function applyToolPolicyAndExperiments(
   opts: ApplyToolPolicyAndExperimentsOptions
-): Promise<Record<string, Tool>> {
+): Promise<ToolAssemblyResult> {
   const {
     allTools,
     extraTools,
@@ -127,6 +163,7 @@ export async function applyToolPolicyAndExperiments(
 
   // Handle PTC experiments — add or replace tools with code_execution
   let toolsForModel = policyFilteredTools;
+  let bridgedBuiltInTask: BridgedBuiltInTask | undefined;
   if (codeModeOnly) {
     try {
       const ptc = await getPTCModules();
@@ -139,6 +176,13 @@ export async function applyToolPolicyAndExperiments(
         emitNestedEvent: emitNestedToolEvent,
       });
       toolsForModel = { ...toolBridge.getDirectModelTools(), ...codeModeTools };
+      if (isBuiltInTaskTool(toolBridge.getBridgeableTools().task) && codeModeTools.exec) {
+        bridgedBuiltInTask = {
+          surface: "code_mode",
+          carrierName: "exec",
+          carrier: codeModeTools.exec,
+        };
+      }
     } catch (error) {
       // Code Mode is a wire requirement for these models: expose the failure
       // instead of silently sending an incompatible direct-tool request.
@@ -164,6 +208,13 @@ export async function applyToolPolicyAndExperiments(
         toolBridge,
         emitNestedToolEvent
       );
+      if (isBuiltInTaskTool(toolBridge.getBridgeableTools().task)) {
+        bridgedBuiltInTask = {
+          surface: "code_execution",
+          carrierName: "code_execution",
+          carrier: codeExecutionTool,
+        };
+      }
 
       if (experiments?.programmaticToolCallingExclusive) {
         // Exclusive mode: code_execution is mandatory — it's the only way to use bridged
@@ -182,10 +233,14 @@ export async function applyToolPolicyAndExperiments(
     } catch (error) {
       // Fall back to policy-filtered tools if PTC creation fails
       log.error("Failed to create code_execution tool, falling back to base tools", { error });
+      bridgedBuiltInTask = undefined;
     }
   }
 
-  return toolsForModel;
+  return {
+    tools: toolsForModel,
+    ...(bridgedBuiltInTask ? { bridgedBuiltInTask } : {}),
+  };
 }
 
 // ---------------------------------------------------------------------------

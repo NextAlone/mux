@@ -138,7 +138,12 @@ describe("AgentSession startup auto-retry recovery", () => {
       workspaceId,
       createMuxMessage("user-1", "user", "Complete the workspace turn", {
         timestamp: Date.now(),
-        retrySendOptions: { model: "openai:gpt-4o", agentId: "exec" },
+        retrySendOptions: {
+          model: "openai:gpt-4o",
+          agentId: "exec",
+          taskDelegationMode: "proactive",
+          agentInitiated: true,
+        },
         muxMetadata,
       })
     );
@@ -156,6 +161,7 @@ describe("AgentSession startup auto-retry recovery", () => {
     session.ensureStartupAutoRetryCheck();
     await privateSession.startupAutoRetryCheckPromise;
     expect(privateSession.lastAutoRetryResumeRequest?.options.muxMetadata).toBeUndefined();
+    expect(privateSession.lastAutoRetryResumeRequest?.options.taskDelegationMode).toBe("explicit");
 
     await privateSession.retryActiveStream();
 
@@ -464,6 +470,7 @@ describe("AgentSession startup auto-retry recovery", () => {
           },
           allowAgentSetGoal: true,
           disableWorkspaceAgents: true,
+          taskDelegationMode: "proactive",
         },
       })
     );
@@ -497,6 +504,7 @@ describe("AgentSession startup auto-retry recovery", () => {
     expect(retryOptions.options.toolPolicy).toEqual([{ regex_match: "bash", action: "disable" }]);
     expect(retryOptions.options.allowAgentSetGoal).toBe(true);
     expect(retryOptions.options.disableWorkspaceAgents).toBe(true);
+    expect(retryOptions.options.taskDelegationMode).toBe("proactive");
     expect(retryOptions.goalKind).toBe(GOAL_CONTINUATION_KIND);
 
     expect(retryOptions.options.providerOptions?.anthropic?.use1MContext).toBe(true);
@@ -536,6 +544,7 @@ describe("AgentSession startup auto-retry recovery", () => {
           model: "openai:gpt-5.5",
           agentId: "exec",
           thinkingLevel: "high",
+          taskDelegationMode: "proactive",
         },
       })
     );
@@ -561,6 +570,7 @@ describe("AgentSession startup auto-retry recovery", () => {
     expect(retryOptions.options.agentId).toBe("explore");
     expect(retryOptions.options.model).toBe("openai:gpt-5.5-low");
     expect(retryOptions.options.thinkingLevel).toBe("low");
+    expect(retryOptions.options.taskDelegationMode).toBe("explicit");
 
     session.dispose();
   });

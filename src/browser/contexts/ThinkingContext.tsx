@@ -6,6 +6,7 @@ import {
   type OpenAIReasoningMode,
   type ThinkingLevel,
 } from "@/common/types/thinking";
+import { coerceTaskDelegationMode, type TaskDelegationMode } from "@/common/types/taskDelegation";
 import {
   readPersistedState,
   updatePersistedState,
@@ -35,6 +36,7 @@ import {
 import { useOptionalWorkspaceContext } from "@/browser/contexts/WorkspaceContext";
 import { KEYBINDS, matchesKeybind } from "@/browser/utils/ui/keybinds";
 import { WORKSPACE_DEFAULTS } from "@/constants/workspaceDefaults";
+import type { WorkspaceAISettingsCache } from "@/browser/utils/workspaceModeAi";
 
 interface ThinkingContextType {
   thinkingLevel: ThinkingLevel;
@@ -42,6 +44,8 @@ interface ThinkingContextType {
   /** OpenAI pro reasoning-mode toggle; sibling of thinkingLevel (orthogonal on the wire). */
   reasoningMode: OpenAIReasoningMode;
   setReasoningMode: (mode: OpenAIReasoningMode) => void;
+  taskDelegationMode: TaskDelegationMode;
+  setTaskDelegationMode: (mode: TaskDelegationMode) => void;
 }
 
 const ThinkingContext = createContext<ThinkingContextType | undefined>(undefined);
@@ -80,9 +84,15 @@ export const ThinkingProvider: React.FC<ThinkingProviderProps> = (props) => {
   const defaultModel = getDefaultModel();
   const scopeId = getScopeId(props.workspaceId, props.projectPath);
   const thinkingKey = getThinkingLevelKey(scopeId);
-  const metadataAgentId = readPersistedState<string>(
+  const [metadataAgentId] = usePersistedState<string>(
     getAgentIdKey(scopeId),
-    WORKSPACE_DEFAULTS.agentId
+    WORKSPACE_DEFAULTS.agentId,
+    { listener: true }
+  );
+  const [workspaceAiSettingsByAgent] = usePersistedState<WorkspaceAISettingsCache>(
+    getWorkspaceAISettingsByAgentKey(scopeId),
+    {},
+    { listener: true }
   );
   const metadataSettings = getWorkspaceAiSettingsFromMetadata(
     props.workspaceId ? workspaceContext?.workspaceMetadata.get(props.workspaceId) : undefined,
@@ -108,6 +118,15 @@ export const ThinkingProvider: React.FC<ThinkingProviderProps> = (props) => {
     coerceOpenAIReasoningMode(metadataSettings.reasoningMode) ??
     "standard";
 
+  const normalizedMetadataAgentId =
+    metadataAgentId.trim().toLowerCase() || WORKSPACE_DEFAULTS.agentId;
+  const taskDelegationMode =
+    coerceTaskDelegationMode(
+      workspaceAiSettingsByAgent[normalizedMetadataAgentId]?.taskDelegationMode
+    ) ??
+    coerceTaskDelegationMode(metadataSettings.taskDelegationMode) ??
+    "explicit";
+
   // One-time migration: if the new workspace-scoped key is missing, seed from the legacy per-model key.
   useEffect(() => {
     const existing = readPersistedState<ThinkingLevel | null | undefined>(thinkingKey, undefined);
@@ -128,12 +147,13 @@ export const ThinkingProvider: React.FC<ThinkingProviderProps> = (props) => {
   // Shared persistence for both setters: caches the full per-agent settings and
   // pushes them to the backend. updateAgentAISettings replaces the agent's
   // settings wholesale, so every payload must carry BOTH thinkingLevel and
-  // reasoningMode or the omitted one gets wiped on the next sync.
+  // reasoningMode/taskDelegationMode or an omitted sibling can be wiped by old clients.
   const persistAgentAiSettings = useCallback(
     (settings: {
       model: string;
       thinkingLevel: ThinkingLevel;
       reasoningMode: OpenAIReasoningMode;
+      taskDelegationMode: TaskDelegationMode;
     }) => {
       // Workspace variant: persist to backend so settings follow the workspace across devices.
       if (!props.workspaceId) {
@@ -142,23 +162,15 @@ export const ThinkingProvider: React.FC<ThinkingProviderProps> = (props) => {
 
       const workspaceId = props.workspaceId;
 
-      type WorkspaceAISettingsByAgentCache = Partial<
-        Record<
-          string,
-          { model: string; thinkingLevel: ThinkingLevel; reasoningMode?: OpenAIReasoningMode }
-        >
-      >;
-
       const normalizedAgentId =
         readPersistedState<string>(getAgentIdKey(scopeId), WORKSPACE_DEFAULTS.agentId)
           .trim()
           .toLowerCase() || WORKSPACE_DEFAULTS.agentId;
 
-      updatePersistedState<WorkspaceAISettingsByAgentCache>(
+      updatePersistedState<WorkspaceAISettingsCache>(
         getWorkspaceAISettingsByAgentKey(workspaceId),
         (prev) => {
-          const record: WorkspaceAISettingsByAgentCache =
-            prev && typeof prev === "object" ? prev : {};
+          const record: WorkspaceAISettingsCache = prev && typeof prev === "object" ? prev : {};
           return {
             ...record,
             [normalizedAgentId]: settings,
@@ -216,6 +228,18 @@ export const ThinkingProvider: React.FC<ThinkingProviderProps> = (props) => {
     [metadataSettings.thinkingLevel, thinkingKey]
   );
 
+  const getCurrentTaskDelegationMode = useCallback(
+    (): TaskDelegationMode =>
+      coerceTaskDelegationMode(
+        readPersistedState<WorkspaceAISettingsCache>(getWorkspaceAISettingsByAgentKey(scopeId), {})[
+          normalizedMetadataAgentId
+        ]?.taskDelegationMode
+      ) ??
+      coerceTaskDelegationMode(metadataSettings.taskDelegationMode) ??
+      "explicit",
+    [metadataSettings.taskDelegationMode, normalizedMetadataAgentId, scopeId]
+  );
+
   const setThinkingLevel = useCallback(
     (level: ThinkingLevel) => {
       const model = getModelForThinkingUpdate(scopeId, metadataSettings.model, defaultModel);
@@ -225,11 +249,13 @@ export const ThinkingProvider: React.FC<ThinkingProviderProps> = (props) => {
         model,
         thinkingLevel: level,
         reasoningMode: getCurrentReasoningMode(),
+        taskDelegationMode: getCurrentTaskDelegationMode(),
       });
     },
     [
       defaultModel,
       getCurrentReasoningMode,
+      getCurrentTaskDelegationMode,
       metadataSettings.model,
       persistAgentAiSettings,
       scopeId,
@@ -246,15 +272,38 @@ export const ThinkingProvider: React.FC<ThinkingProviderProps> = (props) => {
         model,
         thinkingLevel: getCurrentThinkingLevel(),
         reasoningMode: mode,
+        taskDelegationMode: getCurrentTaskDelegationMode(),
       });
     },
     [
       defaultModel,
       getCurrentThinkingLevel,
+      getCurrentTaskDelegationMode,
       metadataSettings.model,
       persistAgentAiSettings,
       scopeId,
       setReasoningModeInternal,
+    ]
+  );
+
+  const setTaskDelegationMode = useCallback(
+    (mode: TaskDelegationMode) => {
+      const model = getModelForThinkingUpdate(scopeId, metadataSettings.model, defaultModel);
+
+      persistAgentAiSettings({
+        model,
+        thinkingLevel: getCurrentThinkingLevel(),
+        reasoningMode: getCurrentReasoningMode(),
+        taskDelegationMode: mode,
+      });
+    },
+    [
+      defaultModel,
+      getCurrentReasoningMode,
+      getCurrentThinkingLevel,
+      metadataSettings.model,
+      persistAgentAiSettings,
+      scopeId,
     ]
   );
 
@@ -316,8 +365,22 @@ export const ThinkingProvider: React.FC<ThinkingProviderProps> = (props) => {
 
   // Memoize context value to prevent unnecessary re-renders of consumers.
   const contextValue = useMemo(
-    () => ({ thinkingLevel, setThinkingLevel, reasoningMode, setReasoningMode }),
-    [thinkingLevel, setThinkingLevel, reasoningMode, setReasoningMode]
+    () => ({
+      thinkingLevel,
+      setThinkingLevel,
+      reasoningMode,
+      setReasoningMode,
+      taskDelegationMode,
+      setTaskDelegationMode,
+    }),
+    [
+      thinkingLevel,
+      setThinkingLevel,
+      reasoningMode,
+      setReasoningMode,
+      taskDelegationMode,
+      setTaskDelegationMode,
+    ]
   );
 
   return <ThinkingContext.Provider value={contextValue}>{props.children}</ThinkingContext.Provider>;

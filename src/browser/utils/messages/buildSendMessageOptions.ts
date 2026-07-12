@@ -1,5 +1,6 @@
 import type { SendMessageOptions } from "@/common/orpc/types";
 import type { OpenAIReasoningMode, ThinkingLevel } from "@/common/types/thinking";
+import type { TaskDelegationMode } from "@/common/types/taskDelegation";
 import type { MuxProviderOptions } from "@/common/types/providerOptions";
 import { normalizeSelectedModel } from "@/common/utils/ai/models";
 
@@ -18,6 +19,7 @@ export interface SendMessageOptionsInput {
   model: string;
   thinkingLevel: ThinkingLevel;
   reasoningMode: OpenAIReasoningMode;
+  taskDelegationMode: TaskDelegationMode;
   agentId: string;
   providerOptions: MuxProviderOptions;
   experiments: ExperimentValues;
@@ -39,6 +41,7 @@ export function buildSendMessageOptions(input: SendMessageOptionsInput): SendMes
   return {
     thinkingLevel: input.thinkingLevel,
     reasoningMode: input.reasoningMode,
+    taskDelegationMode: input.taskDelegationMode,
     model: input.model,
     agentId: input.agentId,
     providerOptions: input.providerOptions,

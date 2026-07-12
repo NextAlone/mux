@@ -4,7 +4,12 @@ import type { TaskCreatedEvent } from "@/common/types/stream";
 import { tool } from "ai";
 import { z } from "zod";
 
-import { createTaskTool, markBuiltInTaskTool, isBuiltInTaskTool } from "./task";
+import {
+  createTaskTool,
+  isBuiltInTaskTool,
+  markBuiltInTaskTool,
+  unmarkBuiltInTaskTool,
+} from "./task";
 import { createTestToolConfig, mockToolCallOptions, TestTempDir } from "./testHelpers";
 import { Ok, Err } from "@/common/types/result";
 import { ForegroundWaitBackgroundedError, type TaskService } from "@/node/services/taskService";
@@ -170,6 +175,72 @@ describe("task tool", () => {
       workspaceId: "child-workspace",
       handleKind: "workspace_turn",
     });
+  });
+
+  it("rejects workspace turns during proactive delegation before calling TaskService", async () => {
+    using tempDir = new TestTempDir("test-task-tool-proactive-workspace-guard");
+    const createWorkspaceTurn = mock(() =>
+      Ok({
+        taskId: "wst-should-not-start",
+        kind: "workspace_turn" as const,
+        status: "running" as const,
+        workspaceId: "child-workspace",
+      })
+    );
+    const taskService = { createWorkspaceTurn } as unknown as TaskService;
+    const tool = createTaskTool({
+      ...createTestToolConfig(tempDir.path, { workspaceId: "parent-workspace" }),
+      proactiveTaskDelegation: true,
+      taskService,
+    });
+
+    let caught: unknown;
+    try {
+      await Promise.resolve(
+        tool.execute!(
+          {
+            kind: "workspace",
+            prompt: "start another workspace turn",
+            title: "Workspace turn",
+            run_in_background: true,
+          },
+          mockToolCallOptions
+        )
+      );
+    } catch (error: unknown) {
+      caught = error;
+    }
+
+    expect(caught).toBeInstanceOf(Error);
+    expect((caught as Error).message).toMatch(/only spawn sub-agents/i);
+    expect(createWorkspaceTurn).not.toHaveBeenCalled();
+  });
+
+  it("still permits sub-agent tasks during proactive delegation", async () => {
+    using tempDir = new TestTempDir("test-task-tool-proactive-subagent");
+    const create = mock(() =>
+      Ok({ taskId: "child-task", kind: "agent" as const, status: "queued" as const })
+    );
+    const taskService = { create } as unknown as TaskService;
+    const tool = createTaskTool({
+      ...createTestToolConfig(tempDir.path, { workspaceId: "parent-workspace" }),
+      proactiveTaskDelegation: true,
+      taskService,
+    });
+
+    await Promise.resolve(
+      tool.execute!(
+        {
+          agentId: "explore",
+          prompt: "inspect independently",
+          title: "Inspect",
+          run_in_background: true,
+        },
+        mockToolCallOptions
+      )
+    );
+
+    expect(create).toHaveBeenCalledTimes(1);
   });
 
   it("forwards workspace turn queue dispatch mode", async () => {
@@ -1185,5 +1256,13 @@ describe("built-in task marker", () => {
     expect(isBuiltInTaskTool(t)).toBe(false);
     markBuiltInTaskTool(t);
     expect(isBuiltInTaskTool(t)).toBe(true);
+  });
+
+  it("removes provenance when execution is delegated", () => {
+    const t = markBuiltInTaskTool(makeTool());
+
+    unmarkBuiltInTaskTool(t);
+
+    expect(isBuiltInTaskTool(t)).toBe(false);
   });
 });

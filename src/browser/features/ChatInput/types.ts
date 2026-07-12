@@ -30,6 +30,8 @@ export interface WorkspaceCreatedOptions {
 export interface ChatInputWorkspaceVariant {
   variant: "workspace";
   workspaceId: string;
+  /** Proactive delegation is a top-level turn feature; child task workspaces must hide it. */
+  isTopLevelWorkspace?: boolean;
   /** Runtime type for the workspace (for telemetry) - no sensitive details like SSH host */
   runtimeType?: TelemetryRuntimeType;
   /** Fires once a regular workspace send has passed validation, before IPC/streaming begins. */

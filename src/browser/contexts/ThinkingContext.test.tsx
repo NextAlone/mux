@@ -340,6 +340,14 @@ describe("ThinkingContext", () => {
         aiSettings: { model: "metadataModel:abc", thinkingLevel: "high" },
       })
     );
+    updatePersistedState(getWorkspaceAISettingsByAgentKey(workspaceId), {
+      exec: {
+        model: "metadataModel:abc",
+        thinkingLevel: "high",
+        reasoningMode: "standard",
+        taskDelegationMode: "proactive",
+      },
+    });
 
     const view = renderWithWorkspaceMetadata({
       workspaceId,
@@ -362,6 +370,7 @@ describe("ThinkingContext", () => {
       model: "metadataModel:abc",
       thinkingLevel: "medium" as const,
       reasoningMode: "standard" as const,
+      taskDelegationMode: "proactive" as const,
     };
     await waitFor(() => {
       expect(readWorkspaceAISettingsCache(workspaceId).exec).toEqual(expectedSettings);
@@ -576,6 +585,7 @@ describe("ThinkingContext", () => {
       model: metadataModel,
       thinkingLevel: expectedThinkingLevel,
       reasoningMode: "standard" as const,
+      taskDelegationMode: "explicit" as const,
     };
     await waitFor(() => {
       expect(readWorkspaceAISettingsCache(workspaceId).exec).toEqual(expectedSettings);

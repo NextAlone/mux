@@ -1,5 +1,6 @@
 import { WORKSPACE_DEFAULTS } from "@/constants/workspaceDefaults";
 import { useReasoningMode } from "./useReasoningMode";
+import { useTaskDelegationMode } from "./useTaskDelegationMode";
 import { useThinkingLevel } from "./useThinkingLevel";
 import { useAgent } from "@/browser/contexts/AgentContext";
 import { usePersistedState } from "./usePersistedState";
@@ -31,6 +32,7 @@ export interface SendMessageOptionsWithBase extends SendMessageOptions {
 export function useSendMessageOptions(workspaceId: string): SendMessageOptionsWithBase {
   const [thinkingLevel] = useThinkingLevel();
   const [reasoningMode] = useReasoningMode();
+  const [taskDelegationMode] = useTaskDelegationMode();
   const { agentId, disableWorkspaceAgents } = useAgent();
   const { workspaceMetadata } = useWorkspaceContext();
   const { options: providerOptions } = useProviderOptions();
@@ -82,6 +84,7 @@ export function useSendMessageOptions(workspaceId: string): SendMessageOptionsWi
     agentId,
     thinkingLevel,
     reasoningMode,
+    taskDelegationMode,
     model: baseModel,
     providerOptions,
     experiments: {

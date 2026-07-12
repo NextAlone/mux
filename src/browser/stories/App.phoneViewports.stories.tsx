@@ -144,6 +144,18 @@ export const IPhone16e: AppStory = {
   },
   play: async ({ canvasElement }) => {
     await stabilizePhoneViewportStory(canvasElement);
+    const storyRoot = document.getElementById("storybook-root") ?? canvasElement;
+    await waitFor(() => {
+      const delegationToggle = storyRoot.querySelector<HTMLElement>(
+        "[data-task-delegation-toggle]"
+      );
+      if (!delegationToggle) {
+        throw new Error("Expected the proactive delegation preference to stay mounted");
+      }
+      if (window.getComputedStyle(delegationToggle).display !== "none") {
+        throw new Error("Proactive delegation toolbar control must be hidden at phone width");
+      }
+    });
   },
 };
 

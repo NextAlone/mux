@@ -11,6 +11,7 @@ describe("applyCompactionOverrides", () => {
   const baseOptions: SendMessageOptions = {
     model: KNOWN_MODELS.SONNET.id,
     thinkingLevel: "medium",
+    taskDelegationMode: "proactive",
     toolPolicy: [],
     agentId: "exec",
   };
@@ -81,6 +82,7 @@ describe("applyCompactionOverrides", () => {
 
     expect(result.agentId).toBe("compact");
     expect(result.skipAiSettingsPersistence).toBe(true);
+    expect(result.taskDelegationMode).toBe("explicit");
     expect(result.toolPolicy).toEqual([{ regex_match: ".*", action: "disable" }]);
   });
 

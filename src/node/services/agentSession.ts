@@ -59,6 +59,7 @@ import {
   coerceThinkingLevel,
   type ThinkingLevel,
 } from "@/common/types/thinking";
+import { coerceTaskDelegationMode } from "@/common/types/taskDelegation";
 import { enforceThinkingPolicy, resolveMinimumThinkingLevel } from "@/common/utils/thinking/policy";
 import {
   createMuxMessage,
@@ -1430,6 +1431,15 @@ export class AgentSession {
     const baseReasoningMode = isChildTaskWorkspace
       ? (agentSettingsReasoningMode ?? persistedReasoningMode)
       : (persistedReasoningMode ?? agentSettingsReasoningMode);
+    const persistedTaskDelegationMode = coerceTaskDelegationMode(
+      persistedRetrySendOptions?.taskDelegationMode
+    );
+    const retryTaskDelegationMode =
+      !isChildTaskWorkspace &&
+      lastUserMessage?.metadata?.synthetic !== true &&
+      persistedRetrySendOptions?.agentInitiated !== true
+        ? (persistedTaskDelegationMode ?? "explicit")
+        : "explicit";
 
     const persistedToolPolicy =
       lastUserMessage?.metadata?.toolPolicy ?? persistedRetrySendOptions?.toolPolicy;
@@ -1473,6 +1483,7 @@ export class AgentSession {
         toolPolicy: [{ regex_match: ".*", action: "disable" }],
         allowAgentSetGoal: persistedAllowAgentSetGoal,
         disableWorkspaceAgents: persistedDisableWorkspaceAgents,
+        taskDelegationMode: "explicit",
       };
 
       if (persistedAdditionalSystemInstructions !== undefined) {
@@ -1497,6 +1508,7 @@ export class AgentSession {
     const retryRequest: StartupRetrySendOptions = {
       model: baseModel,
       agentId: baseAgentId,
+      taskDelegationMode: retryTaskDelegationMode,
     };
     if (baseThinkingLevel) {
       retryRequest.thinkingLevel = baseThinkingLevel;
@@ -2329,7 +2341,17 @@ export class AgentSession {
 
     assert(typeof message === "string", "sendMessage requires a string message");
 
-    const isManualUserMessage = internal?.synthetic !== true;
+    const isManualUserMessage = internal?.synthetic !== true && internal?.agentInitiated !== true;
+    if (options) {
+      // Only user-authored turns may opt into proactive delegation. Persist this immutable
+      // snapshot with the message so retries and resumes cannot observe a later toggle.
+      options = {
+        ...options,
+        taskDelegationMode: isManualUserMessage
+          ? (coerceTaskDelegationMode(options.taskDelegationMode) ?? "explicit")
+          : "explicit",
+      };
+    }
 
     // Last-line-of-defence pricing gate: every dispatch path (initial sends,
     // sendQueuedMessages, dispatchPendingFollowUp,
@@ -3318,6 +3340,8 @@ export class AgentSession {
       ),
       maxOutputTokens: undefined,
       toolPolicy: [{ regex_match: ".*", action: "disable" }],
+      // Compaction is an internal synthetic turn, never a new user-authored delegation turn.
+      taskDelegationMode: "explicit",
     };
 
     const followUpContent: CompactionFollowUpRequest =
@@ -3585,6 +3609,19 @@ export class AgentSession {
     const lastUserMessage = [...historyResult.data].reverse().find((m) => m.role === "user");
     this.activeStreamUserMessageId = lastUserMessage?.id;
 
+    const persistedRetryOptions = lastUserMessage?.metadata?.retrySendOptions;
+    const taskDelegationMode =
+      lastUserMessage?.metadata?.synthetic !== true &&
+      persistedRetryOptions?.agentInitiated !== true
+        ? (coerceTaskDelegationMode(persistedRetryOptions?.taskDelegationMode) ?? "explicit")
+        : "explicit";
+    if (options) {
+      // Resume callers rebuild options from live preferences. History owns the accepted
+      // turn, so restore its snapshot before provider retry/fallback reaches AIService.
+      options = { ...options, taskDelegationMode };
+      this.activeStreamContext.options = options;
+    }
+
     this.activeCompactionRequest = this.resolveCompactionRequest(
       historyResult.data,
       modelString,
@@ -3666,6 +3703,7 @@ export class AgentSession {
       thinkingLevel: effectiveThinkingLevel,
       // Orthogonal to thinking level; buildRequestHeaders gates it per model.
       reasoningMode: options?.reasoningMode,
+      taskDelegationMode: options?.taskDelegationMode,
       toolPolicy: options?.toolPolicy,
       additionalSystemContext: options?.additionalSystemContext,
       additionalSystemInstructions: options?.additionalSystemInstructions,

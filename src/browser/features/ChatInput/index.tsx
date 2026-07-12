@@ -30,6 +30,7 @@ import { useWorkspaceContext } from "@/browser/contexts/WorkspaceContext";
 import { useProjectContext } from "@/browser/contexts/ProjectContext";
 import { useAgent } from "@/browser/contexts/AgentContext";
 import { ProModeToggle } from "@/browser/components/ThinkingSlider/ProModeToggle";
+import { TaskDelegationToggle } from "@/browser/components/ThinkingSlider/TaskDelegationToggle";
 import { ThinkingSliderComponent } from "@/browser/components/ThinkingSlider/ThinkingSlider";
 import {
   getAllowedRuntimeModesForUi,
@@ -38,6 +39,8 @@ import {
 import { usePolicy } from "@/browser/contexts/PolicyContext";
 import { useAPI } from "@/browser/contexts/API";
 import { useReasoningMode } from "@/browser/hooks/useReasoningMode";
+import { useTaskDelegationMode } from "@/browser/hooks/useTaskDelegationMode";
+import type { WorkspaceAISettingsCache } from "@/browser/utils/workspaceModeAi";
 import { useThinkingLevel } from "@/browser/hooks/useThinkingLevel";
 import { useExperimentValue } from "@/browser/hooks/useExperiments";
 import { normalizeSelectedModel } from "@/common/utils/ai/models";
@@ -153,11 +156,7 @@ import {
 
 import type { AgentSkillDescriptor } from "@/common/types/agentSkill";
 import type { AgentAiDefaults } from "@/common/types/agentAiDefaults";
-import {
-  coerceThinkingLevel,
-  type OpenAIReasoningMode,
-  type ThinkingLevel,
-} from "@/common/types/thinking";
+import { coerceThinkingLevel, type ThinkingLevel } from "@/common/types/thinking";
 import { DEFAULT_RUNTIME_ENABLEMENT, normalizeRuntimeEnablement } from "@/common/types/runtime";
 import { resolveThinkingInput } from "@/common/utils/thinking/policy";
 import {
@@ -330,6 +329,7 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
     variant === "creation" ? userProjects.get(creationParentProjectPath) : undefined;
   const [thinkingLevel] = useThinkingLevel();
   const [reasoningMode] = useReasoningMode();
+  const [taskDelegationMode] = useTaskDelegationMode();
   const dynamicWorkflowsExperimentEnabled = useExperimentValue(EXPERIMENT_IDS.DYNAMIC_WORKFLOWS);
   const workspaceHeartbeatsExperimentEnabled = useExperimentValue(
     EXPERIMENT_IDS.WORKSPACE_HEARTBEATS
@@ -878,13 +878,6 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
 
   const setPreferredModel = useCallback(
     (model: string) => {
-      type WorkspaceAISettingsByAgentCache = Partial<
-        Record<
-          string,
-          { model: string; thinkingLevel: ThinkingLevel; reasoningMode?: OpenAIReasoningMode }
-        >
-      >;
-
       const selectedModel = normalizeSelectedModel(model);
       if (
         variant === "workspace" &&
@@ -919,16 +912,19 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
 
       const normalizedAgentId = normalizeAgentId(agentId, "exec");
 
-      updatePersistedState<WorkspaceAISettingsByAgentCache>(
+      updatePersistedState<WorkspaceAISettingsCache>(
         getWorkspaceAISettingsByAgentKey(workspaceId),
         (prev) => {
-          const record: WorkspaceAISettingsByAgentCache =
-            prev && typeof prev === "object" ? prev : {};
+          const record: WorkspaceAISettingsCache = prev && typeof prev === "object" ? prev : {};
           return {
             ...record,
-            // Include reasoningMode so a model change cannot wipe the persisted
-            // pro-mode choice (backend replaces the agent's settings wholesale).
-            [normalizedAgentId]: { model: selectedModel, thinkingLevel, reasoningMode },
+            // Carry sibling AI settings so a model change cannot erase them.
+            [normalizedAgentId]: {
+              model: selectedModel,
+              thinkingLevel,
+              reasoningMode,
+              taskDelegationMode,
+            },
           };
         },
         {}
@@ -943,13 +939,14 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
         model: selectedModel,
         thinkingLevel,
         reasoningMode,
+        taskDelegationMode,
       });
 
       api.workspace
         .updateAgentAISettings({
           workspaceId,
           agentId: normalizedAgentId,
-          aiSettings: { model: selectedModel, thinkingLevel, reasoningMode },
+          aiSettings: { model: selectedModel, thinkingLevel, reasoningMode, taskDelegationMode },
         })
         .then((result) => {
           if (!result.success) {
@@ -970,6 +967,7 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
       onModelChange,
       thinkingLevel,
       reasoningMode,
+      taskDelegationMode,
       variant,
       workspaceGoal,
       workspaceId,
@@ -3576,11 +3574,10 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
                   />
                 </div>
 
-                {/* On narrow layouts, hide the thinking paddles and PRO chip to prevent
-                    right-edge overflow (the chip pushed past a 375px viewport); pro mode
-                    stays reachable via the command palette. */}
+                {/* On narrow layouts, hide the thinking paddles and mode toggles to prevent
+                    right-edge overflow. The modes stay reachable via the command palette. */}
                 <div
-                  className="flex shrink-0 items-center gap-1 [@container(max-width:420px)]:[&_[data-pro-mode-toggle]]:hidden [@container(max-width:420px)]:[&_[data-thinking-paddle]]:hidden"
+                  className="flex shrink-0 items-center gap-1 [@container(max-width:420px)]:[&_[data-pro-mode-toggle]]:hidden [@container(max-width:420px)]:[&_[data-task-delegation-toggle]]:hidden [@container(max-width:420px)]:[&_[data-thinking-paddle]]:hidden"
                   data-component="ThinkingSliderGroup"
                 >
                   <ThinkingSliderComponent modelString={baseModel} />
@@ -3591,6 +3588,12 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
                     onCheckedChange={handleOpenAIFastModeChange}
                   />
                   <ProModeToggle modelString={baseModel} />
+                  {variant === "workspace" && (
+                    <TaskDelegationToggle
+                      busy={isSending || isStreamStarting || (props.canInterrupt ?? false)}
+                      topLevel={props.isTopLevelWorkspace !== false}
+                    />
+                  )}
                 </div>
               </div>
 

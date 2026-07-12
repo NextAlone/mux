@@ -13,7 +13,11 @@ import { getPlanFilePath } from "@/common/utils/planStorage";
 import { LocalRuntime } from "@/node/runtime/LocalRuntime";
 import { DisposableTempDir } from "@/node/services/tempDir";
 
-import { buildPlanInstructions, buildStreamSystemContext } from "./streamContextBuilder";
+import {
+  buildPlanInstructions,
+  buildStreamSystemContext,
+  buildTaskDelegationGuidanceSection,
+} from "./streamContextBuilder";
 
 class TestRuntime extends LocalRuntime {
   constructor(
@@ -240,6 +244,38 @@ describe("buildPlanInstructions", () => {
     );
     expect(fromFullHistory.effectiveAdditionalInstructions).toBeUndefined();
   });
+});
+
+describe("buildTaskDelegationGuidanceSection", () => {
+  const runnableAgent = {
+    id: "explore",
+    name: "Explore",
+    description: "Read-only repository research",
+    subagentRunnable: true,
+  };
+
+  test("omits guidance when no sub-agent is runnable", () => {
+    expect(
+      buildTaskDelegationGuidanceSection("direct", [{ ...runnableAgent, subagentRunnable: false }])
+    ).toBeUndefined();
+  });
+
+  test.each([
+    ["direct", "Call the `task` tool", "await tools.task", "mux.task"],
+    ["code_mode", "await tools.task", "mux.task", "Call the `task` tool"],
+    ["code_execution", "return mux.task", "await mux.task", "await tools.task"],
+  ] as const)(
+    "uses the %s invocation contract",
+    (surface, expected, forbidden, secondForbidden) => {
+      const guidance = buildTaskDelegationGuidanceSection(surface, [runnableAgent]);
+
+      expect(guidance).toContain(expected);
+      expect(guidance).not.toContain(forbidden);
+      expect(guidance).not.toContain(secondForbidden);
+      expect(guidance).toContain("explore: Read-only repository research");
+      expect(guidance).toContain('kind: "subagent"');
+    }
+  );
 });
 
 class RestrictedTestRuntime extends TestRuntime {

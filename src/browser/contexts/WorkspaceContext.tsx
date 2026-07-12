@@ -14,6 +14,7 @@ import { useLocation } from "react-router-dom";
 import type { FrontendWorkspaceMetadata } from "@/common/types/workspace";
 import type { ArchivePreflightResult, ArchiveWorkspaceResult } from "@/common/orpc/schemas/api";
 import type { OpenAIReasoningMode, ThinkingLevel } from "@/common/types/thinking";
+import type { WorkspaceAISettingsCache } from "@/browser/utils/workspaceModeAi";
 import type { WorkspaceSelection } from "@/browser/components/ProjectSidebar/ProjectSidebar";
 import type { RuntimeConfig } from "@/common/types/runtime";
 import type { MuxDeepLinkPayload } from "@/common/types/deepLink";
@@ -174,13 +175,6 @@ function shouldSeedWorkspaceAgentIdFromBackend(metadata: FrontendWorkspaceMetada
  */
 function seedWorkspaceLocalStorageFromBackend(metadata: FrontendWorkspaceMetadata): void {
   // Cache keyed by agentId (string) - includes exec, plan, and custom agents
-  type WorkspaceAISettingsByAgentCache = Partial<
-    Record<
-      string,
-      { model: string; thinkingLevel: ThinkingLevel; reasoningMode?: OpenAIReasoningMode }
-    >
-  >;
-
   const workspaceId = metadata.id;
 
   const metadataAgentId = resolvePersistedAgentId(metadata, "");
@@ -208,8 +202,8 @@ function seedWorkspaceLocalStorageFromBackend(metadata: FrontendWorkspaceMetadat
 
   // Merge backend values into a per-workspace per-agent cache.
   const byAgentKey = getWorkspaceAISettingsByAgentKey(workspaceId);
-  const existingByAgent = readPersistedState<WorkspaceAISettingsByAgentCache>(byAgentKey, {});
-  const nextByAgent: WorkspaceAISettingsByAgentCache = { ...existingByAgent };
+  const existingByAgent = readPersistedState<WorkspaceAISettingsCache>(byAgentKey, {});
+  const nextByAgent: WorkspaceAISettingsCache = { ...existingByAgent };
 
   for (const [agentKey, entry] of Object.entries(aiByAgent)) {
     if (!entry) continue;
@@ -221,6 +215,7 @@ function seedWorkspaceLocalStorageFromBackend(metadata: FrontendWorkspaceMetadat
         model: entry.model,
         thinkingLevel: entry.thinkingLevel,
         reasoningMode: entry.reasoningMode,
+        taskDelegationMode: entry.taskDelegationMode,
       })
     ) {
       continue;
@@ -230,6 +225,7 @@ function seedWorkspaceLocalStorageFromBackend(metadata: FrontendWorkspaceMetadat
       model: entry.model,
       thinkingLevel: entry.thinkingLevel,
       ...(entry.reasoningMode != null ? { reasoningMode: entry.reasoningMode } : {}),
+      ...(entry.taskDelegationMode != null ? { taskDelegationMode: entry.taskDelegationMode } : {}),
     };
   }
 

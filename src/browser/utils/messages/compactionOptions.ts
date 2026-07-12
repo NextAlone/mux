@@ -48,6 +48,7 @@ export function applyCompactionOverrides(
     skipAiSettingsPersistence: true,
     model: compactionModel,
     thinkingLevel,
+    taskDelegationMode: "explicit",
     maxOutputTokens: compactData.maxOutputTokens,
     // Disable all tools during compaction - regex .* matches all tool names
     toolPolicy: [{ regex_match: ".*", action: "disable" }],

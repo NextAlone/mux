@@ -49,6 +49,7 @@ export interface CompactionFollowUpInput extends UserMessageContent {
  * SendMessageOptions fields that should be preserved across compaction.
  * These affect how the follow-up message is processed (thinking level, system instructions, etc.)
  * and should use the user's original settings, not compaction defaults.
+ * taskDelegationMode is deliberately excluded: every compaction continuation is synthetic.
  */
 type PreservedSendOptions = Pick<
   SendMessageOptions,
@@ -85,6 +86,7 @@ export type StartupRetrySendOptions = Pick<
   | "agentId"
   | "thinkingLevel"
   | "reasoningMode"
+  | "taskDelegationMode"
   | "toolPolicy"
   | "additionalSystemInstructions"
   | "maxOutputTokens"
@@ -113,6 +115,7 @@ export function pickStartupRetrySendOptions(
     agentId: options.agentId,
     thinkingLevel: options.thinkingLevel,
     reasoningMode: options.reasoningMode,
+    taskDelegationMode: options.taskDelegationMode,
     toolPolicy: options.toolPolicy,
     additionalSystemInstructions: options.additionalSystemInstructions,
     maxOutputTokens: options.maxOutputTokens,

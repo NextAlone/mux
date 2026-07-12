@@ -6985,6 +6985,9 @@ export class WorkspaceService extends EventEmitter {
       model,
       thinkingLevel: aiSettings.thinkingLevel,
       ...(aiSettings.reasoningMode != null ? { reasoningMode: aiSettings.reasoningMode } : {}),
+      ...(aiSettings.taskDelegationMode != null
+        ? { taskDelegationMode: aiSettings.taskDelegationMode }
+        : {}),
     });
   }
 
@@ -7028,8 +7031,14 @@ export class WorkspaceService extends EventEmitter {
     // reasoningMode is optional: old clients omit it and the persist path then
     // preserves any previously stored value instead of wiping it.
     const reasoningMode = options?.reasoningMode;
+    const taskDelegationMode = options?.taskDelegationMode;
 
-    return { model, thinkingLevel, ...(reasoningMode != null ? { reasoningMode } : {}) };
+    return {
+      model,
+      thinkingLevel,
+      ...(reasoningMode != null ? { reasoningMode } : {}),
+      ...(taskDelegationMode != null ? { taskDelegationMode } : {}),
+    };
   }
 
   /**
@@ -7140,7 +7149,9 @@ export class WorkspaceService extends EventEmitter {
           prev?.thinkingLevel !== aiSettings.thinkingLevel ||
           // Absent reasoningMode preserves the previous value (see write below),
           // so only an explicit different value counts as a change.
-          (aiSettings.reasoningMode != null && prev?.reasoningMode !== aiSettings.reasoningMode));
+          (aiSettings.reasoningMode != null && prev?.reasoningMode !== aiSettings.reasoningMode) ||
+          (aiSettings.taskDelegationMode != null &&
+            prev?.taskDelegationMode !== aiSettings.taskDelegationMode));
       const selectedAgentChanged =
         options?.persistSelectedAgentId === true && snapshotEntry.agentId !== normalizedAgentId;
       if (!aiSettingsChanged && !selectedAgentChanged) {
@@ -7168,7 +7179,9 @@ export class WorkspaceService extends EventEmitter {
         aiSettings != null &&
         (prev?.model !== aiSettings.model ||
           prev?.thinkingLevel !== aiSettings.thinkingLevel ||
-          (aiSettings.reasoningMode != null && prev?.reasoningMode !== aiSettings.reasoningMode));
+          (aiSettings.reasoningMode != null && prev?.reasoningMode !== aiSettings.reasoningMode) ||
+          (aiSettings.taskDelegationMode != null &&
+            prev?.taskDelegationMode !== aiSettings.taskDelegationMode));
       const selectedAgentChanged =
         options?.persistSelectedAgentId === true && workspaceEntry.agentId !== normalizedAgentId;
       if (!aiSettingsChanged && !selectedAgentChanged) {
@@ -7178,13 +7191,17 @@ export class WorkspaceService extends EventEmitter {
 
       if (aiSettings != null) {
         // Callers that omit reasoningMode (older clients, thinking-only updates)
-        // must not wipe a previously persisted value — self-healing merge.
+        // or taskDelegationMode must not wipe a previously persisted sibling value.
         const mergedReasoningMode = aiSettings.reasoningMode ?? prev?.reasoningMode;
+        const mergedTaskDelegationMode = aiSettings.taskDelegationMode ?? prev?.taskDelegationMode;
         workspaceEntry.aiSettingsByAgent = {
           ...(workspaceEntry.aiSettingsByAgent ?? {}),
           [normalizedAgentId]: {
             ...aiSettings,
             ...(mergedReasoningMode != null ? { reasoningMode: mergedReasoningMode } : {}),
+            ...(mergedTaskDelegationMode != null
+              ? { taskDelegationMode: mergedTaskDelegationMode }
+              : {}),
           },
         };
       }
@@ -7911,6 +7928,7 @@ export class WorkspaceService extends EventEmitter {
 
     let resumedInterruptedTask = false;
     let claimedAutoTitle = false;
+    const isUserAuthored = internal?.synthetic !== true && internal?.agentInitiated !== true;
     try {
       // Block streaming while workspace is being renamed to prevent path conflicts
       if (this.renamingWorkspaces.has(workspaceId)) {
@@ -8001,7 +8019,7 @@ export class WorkspaceService extends EventEmitter {
         normalizedOptions
       );
       if (!pricingGate.success) {
-        if (internal?.synthetic !== true) {
+        if (isUserAuthored) {
           return session.sendMessage(message, normalizedOptions, {
             synthetic: internal?.synthetic,
             agentInitiated: internal?.agentInitiated,
@@ -8041,10 +8059,9 @@ export class WorkspaceService extends EventEmitter {
         // chat. Backend-initiated synthetic sends (scheduled heartbeats, task wakes) are
         // not user responses — canceling would destroy a user-facing prompt and record a
         // misleading cancel reason, so synthetic sends queue behind the question instead.
-        const pendingAskUserQuestion =
-          internal?.synthetic === true
-            ? null
-            : askUserQuestionManager.getLatestPending(workspaceId);
+        const pendingAskUserQuestion = isUserAuthored
+          ? askUserQuestionManager.getLatestPending(workspaceId)
+          : null;
         if (pendingAskUserQuestion) {
           try {
             askUserQuestionManager.cancel(
@@ -8067,6 +8084,7 @@ export class WorkspaceService extends EventEmitter {
         // displayed) as a heartbeat. New input supersedes the check-in instead — the
         // heartbeat is periodic and its next slot will fire anyway.
         if (
+          isUserAuthored &&
           internal?.queueDedupeKey !== HEARTBEAT_QUEUE_DEDUPE_KEY &&
           session.dropQueuedMessageWithOnlyDedupeKey(HEARTBEAT_QUEUE_DEDUPE_KEY)
         ) {
@@ -8155,7 +8173,7 @@ export class WorkspaceService extends EventEmitter {
       };
 
       const shouldRunPendingAutoTitle =
-        internal?.synthetic !== true &&
+        isUserAuthored &&
         normalizedOptions.editMessageId == null &&
         workspaceConfig.pendingAutoTitle === true &&
         !this.autoTitlingWorkspaces.has(workspaceId);

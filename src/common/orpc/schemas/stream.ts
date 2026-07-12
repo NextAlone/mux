@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { AgentIdSchema } from "./agentDefinition";
 import { OpenAIReasoningModeSchema, ThinkingLevelSchema } from "../../types/thinking";
+import { TaskDelegationModeSchema } from "../../types/taskDelegation";
 import { AgentModeSchema } from "../../types/mode";
 import { ChatUsageDisplaySchema } from "./chatStats";
 import { StreamErrorTypeSchema } from "./errors";
@@ -731,6 +732,8 @@ export const SendMessageOptionsSchema = z.object({
   thinkingLevel: ThinkingLevelSchema.optional(),
   /** OpenAI reasoning mode (pro toggle); inert for models without pro-mode support. */
   reasoningMode: OpenAIReasoningModeSchema.optional(),
+  /** User-authored turn snapshot for proactive sub-agent delegation. */
+  taskDelegationMode: TaskDelegationModeSchema.optional(),
   model: z.string("No model specified"),
   toolPolicy: ToolPolicySchema.optional(),
   additionalSystemInstructions: z.string().optional(),

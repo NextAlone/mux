@@ -6,11 +6,17 @@ import {
   type ThinkingLevel,
 } from "@/common/types/thinking";
 import { normalizeAgentId as normalizeWorkspaceAgentId } from "@/common/utils/agentIds";
+import type { TaskDelegationMode } from "@/common/types/taskDelegation";
 
 export type WorkspaceAISettingsCache = Partial<
   Record<
     string,
-    { model: string; thinkingLevel: ThinkingLevel; reasoningMode?: OpenAIReasoningMode }
+    {
+      model: string;
+      thinkingLevel: ThinkingLevel;
+      reasoningMode?: OpenAIReasoningMode;
+      taskDelegationMode?: TaskDelegationMode;
+    }
   >
 >;
 

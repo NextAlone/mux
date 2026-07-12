@@ -29,7 +29,7 @@ import { LocalRuntime } from "@/node/runtime/LocalRuntime";
 import { DisposableTempDir } from "@/node/services/tempDir";
 
 import { createTaskTool } from "./tools/task";
-import { createTestToolConfig } from "./tools/testHelpers";
+import { createTestToolConfig, mockToolCallOptions } from "./tools/testHelpers";
 import { MUX_APP_ATTRIBUTION_TITLE, MUX_APP_ATTRIBUTION_URL } from "@/constants/appAttribution";
 import type { ProviderName } from "@/common/constants/providers";
 import { KNOWN_MODELS } from "@/common/constants/knownModels";
@@ -68,6 +68,7 @@ import { MemoryMetaService } from "@/node/services/memoryMeta";
 import { MemoryService, projectMemoryDirName } from "@/node/services/memoryService";
 import * as toolAssembly from "./toolAssembly";
 import type { ToolModelUsageEvent } from "@/common/utils/tools/tools";
+import type { TaskDelegationCallSurface } from "@/common/types/taskDelegation";
 import { createDisplayUsage } from "@/common/utils/tokens/displayUsage";
 import { normalizeToCanonical } from "@/common/utils/ai/models";
 import * as toolsModule from "@/common/utils/tools/tools";
@@ -632,6 +633,43 @@ describe("AIService", () => {
   it("should create an AIService instance", () => {
     expect(service).toBeDefined();
     expect(service).toBeInstanceOf(AIService);
+  });
+
+  it("keeps the proactive workspace-turn guard after ACP replaces task execution", async () => {
+    const task = createTaskTool({
+      ...createTestToolConfig("/tmp", { workspaceId: "workspace-acp-task-guard" }),
+      proactiveTaskDelegation: true,
+    });
+    const wrapped = (
+      service as unknown as {
+        wrapToolsForDelegation: (
+          workspaceId: string,
+          tools: Record<string, Tool>,
+          delegatedToolNames: string[],
+          proactiveTaskDelegation: boolean
+        ) => Record<string, Tool>;
+      }
+    ).wrapToolsForDelegation("workspace-acp-task-guard", { task }, ["task"], true);
+
+    let caught: unknown;
+    try {
+      await Promise.resolve(
+        wrapped.task?.execute?.(
+          {
+            kind: "workspace",
+            prompt: "start a workspace turn",
+            title: "Workspace turn",
+            run_in_background: true,
+          },
+          mockToolCallOptions
+        )
+      );
+    } catch (error: unknown) {
+      caught = error;
+    }
+
+    expect(caught).toBeInstanceOf(Error);
+    expect((caught as Error).message).toMatch(/only spawn sub-agents/i);
   });
 });
 
@@ -1258,6 +1296,7 @@ describe("AIService.streamMessage compaction boundary slicing", () => {
     streamSystemContextMuxScopes: MuxToolScope[];
     streamSystemContextAdvisorFlags: Array<boolean | undefined>;
     streamSystemContextMemoryToolFlags: Array<boolean | undefined>;
+    streamSystemContextTaskDelegationSurfaces: Array<TaskDelegationCallSurface | undefined>;
     streamSystemContextHotMemoriesBlocks: Array<string | undefined>;
     startStreamCalls: unknown[][];
     getToolsForModelSpy: ReturnType<typeof spyOn<typeof toolsModule, "getToolsForModel">>;
@@ -1333,6 +1372,8 @@ describe("AIService.streamMessage compaction boundary slicing", () => {
     const streamSystemContextMuxScopes: MuxToolScope[] = [];
     const streamSystemContextAdvisorFlags: Array<boolean | undefined> = [];
     const streamSystemContextMemoryToolFlags: Array<boolean | undefined> = [];
+    const streamSystemContextTaskDelegationSurfaces: Array<TaskDelegationCallSurface | undefined> =
+      [];
     const streamSystemContextHotMemoriesBlocks: Array<string | undefined> = [];
     const startStreamCalls: unknown[][] = [];
 
@@ -1357,6 +1398,7 @@ describe("AIService.streamMessage compaction boundary slicing", () => {
         streamSystemContextMuxScopes.push(contextArgs.muxScope);
         streamSystemContextAdvisorFlags.push(contextArgs.advisorToolAvailable);
         streamSystemContextMemoryToolFlags.push(contextArgs.memoryToolAvailable);
+        streamSystemContextTaskDelegationSurfaces.push(contextArgs.taskDelegationCallSurface);
         streamSystemContextHotMemoriesBlocks.push(contextArgs.hotMemoriesBlock);
       },
       onPrepareMessagesForProvider: (pipelineArgs) => {
@@ -1367,9 +1409,9 @@ describe("AIService.streamMessage compaction boundary slicing", () => {
       },
     });
     if (options?.postPolicyTools) {
-      spyOn(toolAssembly, "applyToolPolicyAndExperiments").mockResolvedValue(
-        options.postPolicyTools
-      );
+      spyOn(toolAssembly, "applyToolPolicyAndExperiments").mockResolvedValue({
+        tools: options.postPolicyTools,
+      });
     }
 
     return {
@@ -1381,6 +1423,7 @@ describe("AIService.streamMessage compaction boundary slicing", () => {
       streamSystemContextMuxScopes,
       streamSystemContextAdvisorFlags,
       streamSystemContextMemoryToolFlags,
+      streamSystemContextTaskDelegationSurfaces,
       streamSystemContextHotMemoriesBlocks,
       startStreamCalls,
       getToolsForModelSpy,
@@ -1494,6 +1537,165 @@ describe("AIService.streamMessage compaction boundary slicing", () => {
 
   afterEach(() => {
     mock.restore();
+  });
+
+  it.each([
+    {
+      name: "user-authored trusted turn",
+      agentInitiated: undefined,
+      persistedAgentInitiated: false,
+      synthetic: false,
+      trusted: true,
+      expected: true,
+    },
+    {
+      name: "agent-initiated turn",
+      agentInitiated: true,
+      persistedAgentInitiated: false,
+      synthetic: false,
+      trusted: true,
+      expected: false,
+    },
+    {
+      name: "synthetic turn",
+      agentInitiated: undefined,
+      persistedAgentInitiated: false,
+      synthetic: true,
+      trusted: true,
+      expected: false,
+    },
+    {
+      name: "persisted agent-initiated turn",
+      agentInitiated: undefined,
+      persistedAgentInitiated: true,
+      synthetic: false,
+      trusted: true,
+      expected: false,
+    },
+    {
+      name: "untrusted workspace",
+      agentInitiated: undefined,
+      persistedAgentInitiated: false,
+      synthetic: false,
+      trusted: false,
+      expected: false,
+    },
+  ])("sets proactive tool configuration for $name", async (testCase) => {
+    using muxHome = new DisposableTempDir(`ai-service-proactive-${testCase.name}`);
+    const projectPath = path.join(muxHome.path, "project");
+    await fs.mkdir(projectPath, { recursive: true });
+
+    const workspaceId = `workspace-proactive-${testCase.name}`;
+    const metadata = createLocalWorkspaceMetadata(workspaceId, projectPath);
+    const harness = createHarness(muxHome.path, metadata);
+    await harness.config.editConfig((cfg) => {
+      cfg.projects.set(projectPath, { workspaces: [], trusted: testCase.trusted });
+      return cfg;
+    });
+
+    const result = await harness.service.streamMessage({
+      messages: [
+        createMuxMessage("latest-user", "user", "delegate if useful", {
+          synthetic: testCase.synthetic,
+          ...(testCase.persistedAgentInitiated
+            ? {
+                retrySendOptions: {
+                  model: "openai:gpt-5.2",
+                  agentId: "exec",
+                  agentInitiated: true,
+                },
+              }
+            : {}),
+        }),
+      ],
+      workspaceId,
+      modelString: "openai:gpt-5.2",
+      thinkingLevel: "off",
+      taskDelegationMode: "proactive",
+      agentInitiated: testCase.agentInitiated,
+    });
+
+    expect(result.success).toBe(true);
+    expect(getToolConfigFromHarness(harness).proactiveTaskDelegation).toBe(testCase.expected);
+  });
+
+  it("rebuilds the primary prompt only after a local task surface is callable", async () => {
+    using muxHome = new DisposableTempDir("ai-service-proactive-primary-surface");
+    const projectPath = path.join(muxHome.path, "project");
+    await fs.mkdir(projectPath, { recursive: true });
+
+    const workspaceId = "workspace-proactive-primary-surface";
+    const task = createTaskTool(createTestToolConfig(projectPath, { workspaceId }));
+    const metadata = createLocalWorkspaceMetadata(workspaceId, projectPath);
+    const harness = createHarness(muxHome.path, metadata, { allTools: { task } });
+    harness.service.setTaskService({} as Parameters<AIService["setTaskService"]>[0]);
+    await harness.config.editConfig((cfg) => {
+      cfg.projects.set(projectPath, { workspaces: [], trusted: true });
+      return cfg;
+    });
+
+    const result = await harness.service.streamMessage({
+      messages: [createMuxMessage("latest-user", "user", "delegate if useful")],
+      workspaceId,
+      modelString: "openai:gpt-5.2",
+      thinkingLevel: "off",
+      taskDelegationMode: "proactive",
+    });
+
+    expect(result.success).toBe(true);
+    expect(harness.streamSystemContextTaskDelegationSurfaces).toEqual([undefined, "direct"]);
+  });
+
+  it("recomputes task capability for provider fallback instead of inheriting primary", async () => {
+    using muxHome = new DisposableTempDir("ai-service-proactive-fallback-surface");
+    const projectPath = path.join(muxHome.path, "project");
+    await fs.mkdir(projectPath, { recursive: true });
+
+    const workspaceId = "workspace-proactive-fallback-surface";
+    const sourceModel = KNOWN_MODELS.SONNET.id;
+    const fallbackModel = KNOWN_MODELS.GPT.id;
+    await writeMainConfig(muxHome.path, {
+      modelFallbacks: { [sourceModel]: { models: [fallbackModel] } },
+    });
+    const task = createTaskTool(createTestToolConfig(projectPath, { workspaceId }));
+    const metadata = createLocalWorkspaceMetadata(workspaceId, projectPath);
+    const harness = createHarness(muxHome.path, metadata, {
+      effectiveModelString: sourceModel,
+      canonicalProviderName: "anthropic",
+      canonicalModelId: "claude-sonnet-4-5",
+    });
+    harness.service.setTaskService({} as Parameters<AIService["setTaskService"]>[0]);
+    await harness.config.editConfig((cfg) => {
+      cfg.projects.set(projectPath, { workspaces: [], trusted: true });
+      return cfg;
+    });
+    spyOn(toolAssembly, "applyToolPolicyAndExperiments")
+      .mockResolvedValueOnce({ tools: { task } })
+      .mockResolvedValueOnce({ tools: {} });
+
+    const result = await harness.service.streamMessage({
+      messages: [createMuxMessage("latest-user", "user", "delegate if useful")],
+      workspaceId,
+      modelString: sourceModel,
+      thinkingLevel: "off",
+      taskDelegationMode: "proactive",
+    });
+    expect(result.success).toBe(true);
+
+    const modelFallback = harness.startStreamCalls[0]?.[START_STREAM_MODEL_FALLBACK_INDEX] as
+      | ModelFallbackOptions
+      | undefined;
+    if (!modelFallback) {
+      throw new Error("Expected model fallback options");
+    }
+    const prepared = await modelFallback.prepare(fallbackModel);
+
+    expect(prepared.success).toBe(true);
+    expect(harness.streamSystemContextTaskDelegationSurfaces).toEqual([
+      undefined,
+      "direct",
+      undefined,
+    ]);
   });
 
   it("keeps set_goal disabled for one-shot streams that do not opt into agent-created goals", async () => {

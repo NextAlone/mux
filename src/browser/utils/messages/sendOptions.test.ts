@@ -1,5 +1,9 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { getModelKey } from "@/common/constants/storage";
+import {
+  getAgentIdKey,
+  getModelKey,
+  getWorkspaceAISettingsByAgentKey,
+} from "@/common/constants/storage";
 import { WORKSPACE_DEFAULTS } from "@/constants/workspaceDefaults";
 import { installDom } from "../../../../tests/ui/dom";
 import { getSendOptionsFromStorage } from "./sendOptions";
@@ -50,5 +54,46 @@ describe("getSendOptionsFromStorage", () => {
 
     const options = getSendOptionsFromStorage(workspaceId);
     expect(options.providerOptions?.anthropic?.cacheTtl).toBe("1h");
+  });
+
+  test("reads proactive delegation from the current agent only", () => {
+    const workspaceId = "ws-delegation";
+    window.localStorage.setItem(getAgentIdKey(workspaceId), JSON.stringify("reviewer"));
+    window.localStorage.setItem(
+      getWorkspaceAISettingsByAgentKey(workspaceId),
+      JSON.stringify({
+        exec: {
+          model: "openai:default",
+          thinkingLevel: "off",
+          taskDelegationMode: "explicit",
+        },
+        reviewer: {
+          model: "openai:default",
+          thinkingLevel: "off",
+          taskDelegationMode: "proactive",
+        },
+      })
+    );
+
+    expect(getSendOptionsFromStorage(workspaceId).taskDelegationMode).toBe("proactive");
+
+    window.localStorage.setItem(getAgentIdKey(workspaceId), JSON.stringify("exec"));
+    expect(getSendOptionsFromStorage(workspaceId).taskDelegationMode).toBe("explicit");
+  });
+
+  test("self-heals missing or invalid delegation preferences to explicit", () => {
+    const workspaceId = "ws-delegation-invalid";
+    window.localStorage.setItem(
+      getWorkspaceAISettingsByAgentKey(workspaceId),
+      JSON.stringify({
+        exec: {
+          model: "openai:default",
+          thinkingLevel: "off",
+          taskDelegationMode: "automatic",
+        },
+      })
+    );
+
+    expect(getSendOptionsFromStorage(workspaceId).taskDelegationMode).toBe("explicit");
   });
 });

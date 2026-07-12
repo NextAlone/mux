@@ -4325,7 +4325,10 @@ describe("WorkspaceService sendMessage status clearing", () => {
     expect(resetAutoResumeCount).not.toHaveBeenCalled();
   });
 
-  test("synthetic queued sends leave a pending interactive question intact", async () => {
+  test.each([
+    { name: "synthetic", internal: { synthetic: true } },
+    { name: "agent-initiated", internal: { agentInitiated: true } },
+  ])("$name queued sends leave a pending interactive question intact", async ({ internal }) => {
     fakeSession.isBusy.mockReturnValue(true);
 
     const questionPromise = askUserQuestionManager.registerPending("test-workspace", "tool-q1", [
@@ -4347,7 +4350,7 @@ describe("WorkspaceService sendMessage status clearing", () => {
         "test-workspace",
         "[Heartbeat] scheduled check-in",
         { model: "openai:gpt-4o-mini", agentId: "exec", queueDispatchMode: "turn-end" },
-        { synthetic: true, skipAutoResumeReset: true }
+        { ...internal, skipAutoResumeReset: true }
       );
 
       expect(result.success).toBe(true);
@@ -6932,6 +6935,80 @@ describe("WorkspaceService maybePersistAISettingsFromOptions", () => {
     );
 
     expect(persistSpy).toHaveBeenCalledTimes(1);
+  });
+
+  test("preserves an omitted delegation mode and keeps agent settings isolated", async () => {
+    const projectPath = "/tmp/proj";
+    const workspacePath = "/tmp/proj/ws";
+    const workspaceEntry = {
+      id: "ws",
+      path: workspacePath,
+      name: "ws",
+      aiSettingsByAgent: {
+        exec: {
+          model: "openai:gpt-5.5",
+          thinkingLevel: "high" as const,
+          taskDelegationMode: "proactive" as "explicit" | "proactive",
+        },
+        reviewer: {
+          model: "openai:gpt-5.5",
+          thinkingLevel: "low" as const,
+          taskDelegationMode: "explicit" as "explicit" | "proactive",
+        },
+      },
+    };
+    const storedConfig = {
+      projects: new Map([[projectPath, { workspaces: [workspaceEntry] }]]),
+    } as unknown as ProjectsConfig;
+    const svc = workspaceService as unknown as {
+      config: {
+        findWorkspace: (
+          workspaceId: string
+        ) => { projectPath: string; workspacePath: string } | null;
+        loadConfigOrDefault: () => ProjectsConfig;
+        editConfig: (transform: (config: ProjectsConfig) => ProjectsConfig) => Promise<void>;
+      };
+      persistWorkspaceAISettingsForAgent: (
+        workspaceId: string,
+        agentId: string,
+        settings: {
+          model: string;
+          thinkingLevel: "off" | "low" | "medium" | "high";
+          taskDelegationMode?: "explicit" | "proactive";
+        },
+        options: { emitMetadata: false }
+      ) => Promise<Result<boolean, string>>;
+    };
+    svc.config.findWorkspace = () => ({ projectPath, workspacePath });
+    svc.config.loadConfigOrDefault = () => storedConfig;
+    svc.config.editConfig = (transform) => {
+      transform(storedConfig);
+      return Promise.resolve();
+    };
+
+    const legacyUpdate = await svc.persistWorkspaceAISettingsForAgent(
+      "ws",
+      "exec",
+      { model: "openai:gpt-5.5", thinkingLevel: "medium" },
+      { emitMetadata: false }
+    );
+    expect(legacyUpdate.success).toBe(true);
+    expect(workspaceEntry.aiSettingsByAgent.exec.taskDelegationMode).toBe("proactive");
+    expect(workspaceEntry.aiSettingsByAgent.reviewer.taskDelegationMode).toBe("explicit");
+
+    const explicitClose = await svc.persistWorkspaceAISettingsForAgent(
+      "ws",
+      "exec",
+      {
+        model: "openai:gpt-5.5",
+        thinkingLevel: "medium",
+        taskDelegationMode: "explicit",
+      },
+      { emitMetadata: false }
+    );
+    expect(explicitClose.success).toBe(true);
+    expect(workspaceEntry.aiSettingsByAgent.exec.taskDelegationMode).toBe("explicit");
+    expect(workspaceEntry.aiSettingsByAgent.reviewer.taskDelegationMode).toBe("explicit");
   });
 
   test("persists AI settings for sub-agent workspaces so auto-resume can use latest model", async () => {

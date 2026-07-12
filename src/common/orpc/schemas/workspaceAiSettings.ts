@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { OpenAIReasoningModeSchema, ThinkingLevelSchema } from "../../types/thinking";
+import { TaskDelegationModeSchema } from "../../types/taskDelegation";
 
 /**
  * Workspace-scoped AI settings that should persist across devices.
@@ -18,6 +19,10 @@ export const WorkspaceAISettingsSchema = z.object({
   reasoningMode: OpenAIReasoningModeSchema.optional().meta({
     description:
       'OpenAI reasoning mode (orthogonal to effort). Currently applies only to OpenAI GPT-5.6 Sol/Terra; inert elsewhere. Absent = "standard".',
+  }),
+  taskDelegationMode: TaskDelegationModeSchema.optional().meta({
+    description:
+      'Whether user-authored top-level turns may proactively delegate independent work. Absent = "explicit".',
   }),
 });
 

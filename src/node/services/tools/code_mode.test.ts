@@ -1,4 +1,4 @@
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it, mock } from "bun:test";
 import { tool, type Tool, type ToolExecutionOptions } from "ai";
 import { z } from "zod";
 
@@ -119,6 +119,41 @@ describe("createCodeModeTools", () => {
     )) as CodeModeResult;
 
     expect(result).toMatchObject({ status: "completed", output: "ok", result: "ok" });
+  });
+
+  it("executes the advertised await tools.task protocol", async () => {
+    const executeTask = mock((args: unknown) => Promise.resolve({ status: "queued", args }));
+    const tools = createCodeModeTools({
+      workspaceId: `code-mode-task-${Date.now()}`,
+      runtimeFactory: new QuickJSRuntimeFactory(),
+      toolBridge: new ToolBridge({
+        task: tool({
+          inputSchema: z.object({
+            agentId: z.string(),
+            prompt: z.string(),
+            title: z.string(),
+            run_in_background: z.boolean().nullish(),
+          }),
+          execute: executeTask,
+        }),
+      }),
+    });
+
+    const result = (await executable(tools.exec)(
+      'return await tools.task({ agentId: "explore", prompt: "inspect", title: "Inspect", run_in_background: true });',
+      toolOptions
+    )) as CodeModeResult;
+
+    expect(result).toMatchObject({ status: "completed", result: { status: "queued" } });
+    expect(executeTask).toHaveBeenCalledWith(
+      {
+        agentId: "explore",
+        prompt: "inspect",
+        title: "Inspect",
+        run_in_background: true,
+      },
+      expect.anything()
+    );
   });
 
   it("returns a yielded cell that wait can poll to completion", async () => {

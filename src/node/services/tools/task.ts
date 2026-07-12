@@ -41,6 +41,17 @@ import { coerceNonEmptyString } from "@/node/services/taskUtils";
 const PLAN_AGENT_EXPLORE_ONLY_ERROR =
   'In the plan agent you may only spawn agentId: "explore" tasks.';
 
+export function assertProactiveTaskKindAllowed(
+  kind: unknown,
+  proactiveTaskDelegation: boolean | undefined
+): void {
+  if (proactiveTaskDelegation === true && kind === "workspace") {
+    throw new Error(
+      'Proactive delegation may only spawn sub-agents; omit kind or use kind: "subagent".'
+    );
+  }
+}
+
 const BUILT_IN_TASK_TOOL_MARKER = Symbol("muxBuiltInTaskTool");
 
 export function markBuiltInTaskTool<TParameters, TResult>(
@@ -61,6 +72,15 @@ export function isBuiltInTaskTool(tool: Tool | undefined): boolean {
   return Boolean(
     (tool as (Tool & Record<symbol, unknown>) | undefined)?.[BUILT_IN_TASK_TOOL_MARKER] === true
   );
+}
+
+export function unmarkBuiltInTaskTool<TParameters, TResult>(
+  taskTool: Tool<TParameters, TResult>
+): Tool<TParameters, TResult> {
+  delete (taskTool as Tool<TParameters, TResult> & Record<symbol, unknown>)[
+    BUILT_IN_TASK_TOOL_MARKER
+  ];
+  return taskTool;
 }
 
 /** Resolve the parent workspace's runtime mode from the injected MUX_RUNTIME env. */
@@ -396,6 +416,10 @@ export const createTaskTool: ToolFactory = (config: ToolConfiguration) => {
         isolation,
         workspace,
       } = validatedArgs;
+
+      // Proactive fan-out is intentionally bounded to sub-agents; workspace turns are an
+      // explicit user-controlled workflow and would bypass that product boundary.
+      assertProactiveTaskKindAllowed(kind, config.proactiveTaskDelegation);
 
       // Explicit per-launch model/thinking overrides. Omitted by default so delegated work
       // inherits the parent's live settings unless the caller requests an override.

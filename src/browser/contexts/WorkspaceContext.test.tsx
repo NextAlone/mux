@@ -16,6 +16,7 @@ import {
   getRightSidebarLayoutKey,
   getTerminalTitlesKey,
   getThinkingLevelKey,
+  getWorkspaceAISettingsByAgentKey,
 } from "@/common/constants/storage";
 import { MULTI_PROJECT_CONFIG_KEY } from "@/common/constants/multiProject";
 import type { RecursivePartial } from "@/browser/testUtils";
@@ -436,7 +437,11 @@ describe("WorkspaceContext", () => {
     const initialWorkspaces: FrontendWorkspaceMetadata[] = [
       createWorkspaceMetadata({
         id: "ws-ai",
-        aiSettings: { model: "openai:gpt-5.2", thinkingLevel: "xhigh" },
+        aiSettings: {
+          model: "openai:gpt-5.2",
+          thinkingLevel: "xhigh",
+          taskDelegationMode: "proactive",
+        },
       }),
     ];
 
@@ -461,6 +466,10 @@ describe("WorkspaceContext", () => {
     expect(JSON.parse(globalThis.localStorage.getItem(getThinkingLevelKey("ws-ai"))!)).toBe(
       "xhigh"
     );
+    const seededAiSettings = JSON.parse(
+      globalThis.localStorage.getItem(getWorkspaceAISettingsByAgentKey("ws-ai"))!
+    ) as { exec?: { taskDelegationMode?: string } };
+    expect(seededAiSettings.exec?.taskDelegationMode).toBe("proactive");
   });
   test("stale metadata does not override a main workspace agent selection", async () => {
     const workspaceId = "ws-agent-main";
