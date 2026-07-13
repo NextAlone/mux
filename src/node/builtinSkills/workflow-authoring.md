@@ -369,6 +369,26 @@ const reviews = parallel(
 );
 ```
 
+For a best-effort quorum, set `settled: true` with `minSuccessful` and `graceMs`. Once the requested number of agents succeeds, Mux keeps collecting results for at most `graceMs`, then interrupts unfinished branches. If failures make the requested quorum unreachable, the target falls to the number of still-possible successes. Fewer configured branches therefore finish without waiting for an impossible quorum.
+
+Settled mode returns one input-ordered entry per branch: `{ status: "fulfilled", value }`, `{ status: "rejected", reason }`, or `{ status: "cancelled" }`. Default `parallel()` remains fail-fast and continues to return the branch values directly.
+
+```js
+const panel = parallel(
+  models.map(
+    (model, index) => () =>
+      agent("Review independently", { id: "panel-" + index, model, agentId: "explore" })
+  ),
+  {
+    maxParallel: models.length,
+    minSuccessful: Math.min(4, models.length),
+    graceMs: 60_000,
+    settled: true,
+  }
+);
+const completed = panel.filter((result) => result.status === "fulfilled");
+```
+
 ### `pipeline(items, ...stages)`
 
 Runs items through stage functions without a full-stage barrier. An item can advance to the next stage as soon as its current stage finishes, even while other items are still in earlier stages. Each stage may return a value or call `agent(...)` once.

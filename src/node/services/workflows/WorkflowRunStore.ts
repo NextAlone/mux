@@ -652,6 +652,31 @@ export class WorkflowRunStore {
     );
   }
 
+  async recordStepInterrupted(
+    runId: string,
+    input: {
+      stepId: string;
+      inputHash: string;
+      taskId?: string;
+      startedAt: string;
+      completedAt: string;
+    },
+    options: AppendWorkflowRunEventOptions = {}
+  ): Promise<void> {
+    await this.appendStepRecord(
+      runId,
+      {
+        stepId: input.stepId,
+        inputHash: input.inputHash,
+        taskId: input.taskId,
+        startedAt: input.startedAt,
+        completedAt: input.completedAt,
+        status: "interrupted",
+      },
+      options
+    );
+  }
+
   async getStep(
     runId: string,
     stepId: string,

@@ -102,6 +102,18 @@ interface StartedWorkflowAgentCompletion {
   result: StructuredTaskOutput;
 }
 
+type SettledParallelAgentResult =
+  | { status: "fulfilled"; result: StructuredTaskOutput }
+  | { status: "rejected"; reason: string }
+  | { status: "cancelled" };
+
+interface ParallelAgentsOptions {
+  maxParallel?: number;
+  settled: boolean;
+  minSuccessful?: number;
+  graceMs?: number;
+}
+
 export type WorkflowApplyPatchStatus = "applied" | "conflict" | "failed";
 
 export interface WorkflowApplyPatchSpec {
@@ -260,32 +272,60 @@ function createForegroundWaitBackgroundedError(): Error {
   return error;
 }
 
-// Parallel fan-out primitives accept an optional second argument: { maxParallel?: number }.
-// maxParallel caps how many steps run at once; remaining specs start as running
-// ones finish (sliding window) instead of all launching up front.
+// Parallel fan-out defaults to fail-fast. The opt-in settled quorum mode keeps
+// useful sibling results when a provider fails and gives stragglers a bounded grace period.
 function parseWorkflowParallelOptions(
   raw: unknown,
   primitiveName: "parallel"
-): { maxParallel?: number } {
+): ParallelAgentsOptions {
   if (raw == null) {
-    return {};
+    return { settled: false };
   }
   assert(
     typeof raw === "object" && !Array.isArray(raw),
     `${primitiveName} options must be an object`
   );
-  const { maxParallel } = raw as { maxParallel?: unknown };
-  if (maxParallel == null) {
-    return {};
+  const { maxParallel, settled, minSuccessful, graceMs } = raw as {
+    maxParallel?: unknown;
+    settled?: unknown;
+    minSuccessful?: unknown;
+    graceMs?: unknown;
+  };
+  if (maxParallel != null) {
+    assert(
+      typeof maxParallel === "number" && Number.isInteger(maxParallel) && maxParallel > 0,
+      `${primitiveName} options.maxParallel must be a positive integer`
+    );
+  }
+  const settledMode = settled === true;
+  assert(
+    settled == null || typeof settled === "boolean",
+    `${primitiveName} options.settled must be a boolean`
+  );
+  if (!settledMode) {
+    assert(
+      minSuccessful == null && graceMs == null,
+      `${primitiveName} quorum options require settled: true`
+    );
+    return { ...(maxParallel != null ? { maxParallel } : {}), settled: false };
   }
   assert(
-    typeof maxParallel === "number" && Number.isInteger(maxParallel) && maxParallel > 0,
-    `${primitiveName} options.maxParallel must be a positive integer`
+    typeof minSuccessful === "number" && Number.isInteger(minSuccessful) && minSuccessful > 0,
+    `${primitiveName} options.minSuccessful must be a positive integer`
   );
-  return { maxParallel };
+  assert(
+    typeof graceMs === "number" && Number.isInteger(graceMs) && graceMs >= 0,
+    `${primitiveName} options.graceMs must be a non-negative integer`
+  );
+  return {
+    ...(maxParallel != null ? { maxParallel } : {}),
+    settled: true,
+    minSuccessful,
+    graceMs,
+  };
 }
 
-function parseParallelAgentsOptions(raw: unknown): { maxParallel?: number } {
+function parseParallelAgentsOptions(raw: unknown): ParallelAgentsOptions {
   return parseWorkflowParallelOptions(raw, "parallel");
 }
 
@@ -824,6 +864,15 @@ export class WorkflowRunner {
     input: Parameters<WorkflowRunStore["recordStepFailed"]>[1]
   ): Promise<void> {
     await this.runStore.recordStepFailed(runId, input, { expectedLeaseOwnerId: this.runnerId });
+  }
+
+  private async recordStepInterrupted(
+    runId: string,
+    input: Parameters<WorkflowRunStore["recordStepInterrupted"]>[1]
+  ): Promise<void> {
+    await this.runStore.recordStepInterrupted(runId, input, {
+      expectedLeaseOwnerId: this.runnerId,
+    });
   }
 
   private async throwIfInterrupted(runId: string): Promise<void> {
@@ -1448,12 +1497,13 @@ export class WorkflowRunner {
       leaseGuard: WorkflowRunnerLeaseGuard;
       rawOptions?: unknown;
     }
-  ): Promise<StructuredTaskOutput[]> {
+  ): Promise<Array<StructuredTaskOutput | SettledParallelAgentResult>> {
     assert(Array.isArray(rawSpecs), "parallel requires an array of agent specs");
     assert(rawSpecs.length > 0, "parallel requires at least one agent spec");
-    const { maxParallel } = parseParallelAgentsOptions(options.rawOptions);
+    const parallelOptions = parseParallelAgentsOptions(options.rawOptions);
+    const { maxParallel } = parallelOptions;
 
-    const results = new Array<StructuredTaskOutput>(rawSpecs.length);
+    const results = new Array<StructuredTaskOutput | SettledParallelAgentResult>(rawSpecs.length);
     const parsedSteps = rawSpecs.map((rawSpec) => {
       const spec = parseWorkflowAgentSpec(rawSpec, {
         allowMissingOutputSchema: options.allowLegacyMissingOutputSchema,
@@ -1487,7 +1537,9 @@ export class WorkflowRunner {
             title: step.spec.title,
           });
         }
-        results[index] = existingStep.result;
+        results[index] = parallelOptions.settled
+          ? { status: "fulfilled", result: existingStep.result }
+          : existingStep.result;
         continue;
       }
       pending.push({
@@ -1585,6 +1637,30 @@ export class WorkflowRunner {
           | { runIndex: number; step: (typeof queued)[number]; error: unknown }
         >
       >();
+      const activeSteps = new Map<number, (typeof queued)[number]>();
+      let graceTimer: ReturnType<typeof setTimeout> | undefined;
+      let graceExpired: Promise<{ graceExpired: true }> | undefined;
+
+      const startQuorumGraceIfReady = (): void => {
+        if (!parallelOptions.settled || graceExpired != null || unsettledRuns.size === 0) {
+          return;
+        }
+        const successfulCount = results.filter(
+          (result): result is SettledParallelAgentResult & { status: "fulfilled" } =>
+            result != null && "status" in result && result.status === "fulfilled"
+        ).length;
+        const reachableCount = successfulCount + queued.length + unsettledRuns.size;
+        const requiredCount = Math.min(parallelOptions.minSuccessful ?? 0, reachableCount);
+        if (successfulCount < requiredCount) {
+          return;
+        }
+        graceExpired = new Promise((resolve) => {
+          graceTimer = setTimeout(
+            () => resolve({ graceExpired: true }),
+            parallelOptions.graceMs ?? 0
+          );
+        });
+      };
 
       const startRun = (step: (typeof queued)[number]): void => {
         const runIndex = nextRunIndex;
@@ -1599,7 +1675,7 @@ export class WorkflowRunner {
               );
         const run = (async () => {
           try {
-            if (batchFailed || batchAbortController.signal.aborted) {
+            if ((!parallelOptions.settled && batchFailed) || batchAbortController.signal.aborted) {
               throw new Error(
                 `parallel step ${step.spec.id} canceled before it started: a sibling task failed or the batch was aborted`
               );
@@ -1615,12 +1691,17 @@ export class WorkflowRunner {
             });
             return { runIndex, step, runResult };
           } catch (error) {
-            batchFailed = true;
-            await applyChildFailureToBatch(error);
+            if (isForegroundWaitBackgroundedError(error)) {
+              await applyChildFailureToBatch(error);
+            } else if (!parallelOptions.settled) {
+              batchFailed = true;
+              await applyChildFailureToBatch(error);
+            }
             return { runIndex, step, error };
           }
         })();
         unsettledRuns.set(runIndex, run);
+        activeSteps.set(runIndex, step);
       };
 
       const launchAvailable = (): void => {
@@ -1698,9 +1779,70 @@ export class WorkflowRunner {
         launchAvailable();
         await throwIfAbortPreventsQueuedWork();
         while (unsettledRuns.size > 0) {
-          const settled = await Promise.race(unsettledRuns.values());
+          startQuorumGraceIfReady();
+          const settled = await Promise.race([
+            ...unsettledRuns.values(),
+            ...(graceExpired != null ? [graceExpired] : []),
+          ]);
+          if ("graceExpired" in settled) {
+            abortBatch();
+            await interruptRemainingTasks();
+            const cancelledSteps = [...queued, ...activeSteps.values()];
+            const interruptedAt = this.clock.nowIso();
+            for (const step of cancelledSteps) {
+              results[step.index] = { status: "cancelled" };
+              options.leaseGuard.throwIfLost();
+              await this.recordStepInterrupted(runId, {
+                stepId: step.spec.id,
+                inputHash: step.inputHash,
+                taskId: step.taskId,
+                startedAt: step.startedAt,
+                completedAt: interruptedAt,
+              });
+              if (step.taskId != null) {
+                await this.recordTaskTerminalEventIfMissing(runId, sequence, {
+                  stepId: step.spec.id,
+                  taskId: step.taskId,
+                  title: step.spec.title,
+                  status: "interrupted",
+                });
+              }
+            }
+            const activeRuns = [...unsettledRuns.values()];
+            await Promise.allSettled(activeRuns);
+            queued.length = 0;
+            unsettledRuns.clear();
+            activeSteps.clear();
+            break;
+          }
           unsettledRuns.delete(settled.runIndex);
+          activeSteps.delete(settled.runIndex);
           if ("error" in settled) {
+            if (isForegroundWaitBackgroundedError(settled.error)) {
+              await Promise.allSettled(unsettledRuns.values());
+              throw settled.error;
+            }
+            if (parallelOptions.settled) {
+              if (!isWorkflowAgentHardTimeoutError(settled.error) && settled.step.taskId != null) {
+                options.leaseGuard.throwIfLost();
+                await this.recordTaskTerminalEventIfMissing(runId, sequence, {
+                  stepId: settled.step.spec.id,
+                  taskId: settled.step.taskId,
+                  title: settled.step.spec.title,
+                  status: getTaskTerminalStatusForError(
+                    settled.error,
+                    batchWaitOptions.abortSignal
+                  ),
+                });
+              }
+              results[settled.step.index] = {
+                status: "rejected",
+                reason: getErrorMessage(settled.error),
+              };
+              launchAvailable();
+              await throwIfAbortPreventsQueuedWork();
+              continue;
+            }
             await Promise.allSettled(unsettledRuns.values());
             if (foregroundBackgrounded) {
               throw createForegroundWaitBackgroundedError();
@@ -1708,18 +1850,30 @@ export class WorkflowRunner {
             throw settled.error;
           }
           try {
-            results[settled.step.index] = await this.recordAgentResult(runId, sequence, {
+            const result = await this.recordAgentResult(runId, sequence, {
               spec: settled.runResult.resultSpec,
               inputHash: settled.step.inputHash,
               startedAt: settled.step.startedAt,
               leaseGuard: options.leaseGuard,
               rawResult: settled.runResult.rawResult,
             });
+            results[settled.step.index] = parallelOptions.settled
+              ? { status: "fulfilled", result }
+              : result;
           } catch (error) {
             if (
               !isRetryableAgentOutputError(error) ||
               settled.step.attempt >= WORKFLOW_AGENT_MAX_ATTEMPTS
             ) {
+              if (parallelOptions.settled) {
+                results[settled.step.index] = {
+                  status: "rejected",
+                  reason: getErrorMessage(error),
+                };
+                launchAvailable();
+                await throwIfAbortPreventsQueuedWork();
+                continue;
+              }
               batchFailed = true;
               await interruptRemainingTasks();
               await Promise.allSettled(unsettledRuns.values());
@@ -1745,6 +1899,9 @@ export class WorkflowRunner {
           await throwIfAbortPreventsQueuedWork();
         }
       } finally {
+        if (graceTimer != null) {
+          clearTimeout(graceTimer);
+        }
         upstreamAbortSignal?.removeEventListener("abort", abortBatch);
       }
     }
@@ -3207,6 +3364,19 @@ function __muxParallel(thunks, options) {
       return branchResult;
     }
     const taskResult = taskResults[branchResult.index];
+    if (options && options.settled === true) {
+      if (taskResult.status === "fulfilled") {
+        return {
+          status: "fulfilled",
+          value: __muxAgentReturnValue(
+            taskResult.result,
+            branchResult.hasSchema,
+            branchResult.isPlanAgent
+          ),
+        };
+      }
+      return taskResult;
+    }
     return __muxAgentReturnValue(taskResult, branchResult.hasSchema, branchResult.isPlanAgent);
   });
 }

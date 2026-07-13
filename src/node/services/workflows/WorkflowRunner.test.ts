@@ -215,6 +215,86 @@ Verify \${{ steps.implement.output }}`;
     expect(judgeSpec?.prompt).toContain("Answer from anthropic:claude-test");
   });
 
+  test("Fusion synthesizes four panel results after terminating grace-period stragglers", async () => {
+    using tmp = new DisposableTempDir("workflow-runner-fusion-quorum");
+    const store = new WorkflowRunStore({
+      sessionDir: tmp.path,
+      staleLeaseMs: WORKFLOW_RUNNER_TEST_STALE_LEASE_MS,
+    });
+    const source = readBuiltInSkillFile(
+      SkillNameSchema.parse("fusion"),
+      "workflow.js"
+    ).content.replace("graceMs: 60_000", "graceMs: 25");
+    const panel = ["a", "b", "c", "d", "e", "f"].map((model) => ({
+      model: `provider:${model}`,
+    }));
+    await store.createRun({
+      id: "wfr_fusion_quorum",
+      workspaceId: "workspace-1",
+      workflow: { ...definition, name: "fusion" },
+      source,
+      args: {
+        prompt: "Review the change",
+        panel,
+        judge: { model: "provider:judge" },
+      },
+      now: "2026-05-29T00:00:00.000Z",
+    });
+    let rejectStragglers!: (error: Error) => void;
+    const stragglers = new Promise<never>((_resolve, reject) => {
+      rejectStragglers = reject;
+    });
+    const fallbackTimer = setTimeout(
+      () => rejectStragglers(new Error("test fallback timeout")),
+      250
+    );
+    let judgeSpec: WorkflowAgentSpec | undefined;
+    const interruptRun = mock(async () => {
+      clearTimeout(fallbackTimer);
+      rejectStragglers(new Error("panel terminated after quorum grace"));
+    });
+    const runner = createRunner(store, {
+      async runAgent() {
+        throw new Error("Fusion should reserve panel and judge tasks");
+      },
+      async createAgentTasks(specs, lifecycle) {
+        if (specs.length === 1 && specs[0]?.id === "synthesize") {
+          judgeSpec = specs[0];
+        }
+        for (const [index, spec] of specs.entries()) {
+          await lifecycle?.onTaskCreated?.(index, `task_${spec.id}`);
+        }
+        return specs.map((spec) => ({ taskId: `task_${spec.id}`, status: "running" as const }));
+      },
+      async waitForAgentTask(taskId, spec) {
+        if (spec.id === "synthesize") {
+          return { taskId, reportMarkdown: "Fused four answers", structuredOutput: {} };
+        }
+        const panelIndex = Number(spec.id.replace("panel-", ""));
+        if (panelIndex >= 4) {
+          return await stragglers;
+        }
+        return {
+          taskId,
+          reportMarkdown: `Answer from ${spec.modelString ?? "unknown"}`,
+          structuredOutput: {},
+        };
+      },
+      interruptRun,
+    });
+
+    const result = await runner.run("wfr_fusion_quorum");
+    expect(result).toMatchObject({
+      reportMarkdown: "Fused four answers",
+      structuredOutput: { responseCount: 4 },
+    });
+    expect(interruptRun).toHaveBeenCalledTimes(1);
+    expect(judgeSpec?.prompt).toContain("## provider:a\n\nAnswer from provider:a");
+    expect(judgeSpec?.prompt).toContain("## provider:d\n\nAnswer from provider:d");
+    expect(judgeSpec?.prompt).not.toContain("## provider:e");
+    expect(judgeSpec?.prompt).not.toContain("## provider:f");
+  });
+
   test("runs onRunEnded after a successful workflow", async () => {
     using tmp = new DisposableTempDir("workflow-runner");
     const store = await createRunStore(tmp.path);
@@ -702,6 +782,172 @@ Verify \${{ steps.implement.output }}`;
     expect(waitForAgentTask).toHaveBeenCalledTimes(2);
     expect(trace.slice(0, 2)).toEqual(["create:source-a", "create:source-b"]);
     expect(trace).toEqual(expect.arrayContaining(["wait:task_source-a", "wait:task_source-b"]));
+  });
+
+  test("settled parallel lowers an unreachable success quorum after child failures", async () => {
+    using tmp = new DisposableTempDir("workflow-runner-parallel-quorum-failures");
+    const store = new WorkflowRunStore({
+      sessionDir: tmp.path,
+      staleLeaseMs: WORKFLOW_RUNNER_TEST_STALE_LEASE_MS,
+    });
+    await store.createRun({
+      id: "wfr_parallel_quorum_failures",
+      workspaceId: "workspace-1",
+      workflow: definition,
+      source: `export default function workflow({ agent, parallel }) {
+  const results = parallel(
+    ["a", "b", "c", "d", "e", "f"].map((label) =>
+      () => agent("Review " + label, { id: "panel-" + label })
+    ),
+    { maxParallel: 6, minSuccessful: 4, graceMs: 60000, settled: true }
+  );
+  const successful = results
+    .filter((result) => result.status === "fulfilled")
+    .map((result) => result.value);
+  const rejectedCount = results.filter((result) => result.status === "rejected").length;
+  return { reportMarkdown: successful.join(",") + "|" + rejectedCount };
+}
+`,
+      args: {},
+      now: "2026-05-29T00:00:00.000Z",
+    });
+    const runner = createRunner(store, {
+      async runAgent() {
+        throw new Error("settled parallel should reserve panel tasks in bulk");
+      },
+      async createAgentTasks(specs, lifecycle) {
+        for (const [index, spec] of specs.entries()) {
+          await lifecycle?.onTaskCreated?.(index, `task_${spec.id}`);
+        }
+        return specs.map((spec) => ({ taskId: `task_${spec.id}`, status: "running" as const }));
+      },
+      async waitForAgentTask(taskId) {
+        const label = taskId.replace("task_panel-", "");
+        if (["d", "e", "f"].includes(label)) {
+          throw new Error(`panel ${label} failed`);
+        }
+        return { taskId, reportMarkdown: label, structuredOutput: {} };
+      },
+    });
+
+    await expect(runner.run("wfr_parallel_quorum_failures")).resolves.toEqual({
+      reportMarkdown: "a,b,c|3",
+    });
+  });
+
+  test("settled parallel stops stragglers after the success quorum grace period", async () => {
+    using tmp = new DisposableTempDir("workflow-runner-parallel-quorum-grace");
+    const store = new WorkflowRunStore({
+      sessionDir: tmp.path,
+      staleLeaseMs: WORKFLOW_RUNNER_TEST_STALE_LEASE_MS,
+    });
+    await store.createRun({
+      id: "wfr_parallel_quorum_grace",
+      workspaceId: "workspace-1",
+      workflow: definition,
+      source: `export default function workflow({ agent, parallel }) {
+  const results = parallel(
+    ["a", "b", "c", "d", "e", "f"].map((label) =>
+      () => agent("Review " + label, { id: "panel-" + label })
+    ),
+    { maxParallel: 6, minSuccessful: 4, graceMs: 25, settled: true }
+  );
+  const successful = results
+    .filter((result) => result.status === "fulfilled")
+    .map((result) => result.value);
+  const cancelledCount = results.filter((result) => result.status === "cancelled").length;
+  return { reportMarkdown: successful.join(",") + "|" + cancelledCount };
+}
+`,
+      args: {},
+      now: "2026-05-29T00:00:00.000Z",
+    });
+    let rejectStragglers!: (error: Error) => void;
+    const stragglers = new Promise<never>((_resolve, reject) => {
+      rejectStragglers = reject;
+    });
+    const fallbackTimer = setTimeout(
+      () => rejectStragglers(new Error("test fallback timeout")),
+      250
+    );
+    const interruptRun = mock(async () => {
+      clearTimeout(fallbackTimer);
+      rejectStragglers(new Error("panel terminated after quorum grace"));
+    });
+    const runner = createRunner(store, {
+      async runAgent() {
+        throw new Error("settled parallel should reserve panel tasks in bulk");
+      },
+      async createAgentTasks(specs, lifecycle) {
+        for (const [index, spec] of specs.entries()) {
+          await lifecycle?.onTaskCreated?.(index, `task_${spec.id}`);
+        }
+        return specs.map((spec) => ({ taskId: `task_${spec.id}`, status: "running" as const }));
+      },
+      async waitForAgentTask(taskId) {
+        const label = taskId.replace("task_panel-", "");
+        if (["e", "f"].includes(label)) {
+          return await stragglers;
+        }
+        return { taskId, reportMarkdown: label, structuredOutput: {} };
+      },
+      interruptRun,
+    });
+
+    await expect(runner.run("wfr_parallel_quorum_grace")).resolves.toEqual({
+      reportMarkdown: "a,b,c,d|2",
+    });
+    expect(interruptRun).toHaveBeenCalledTimes(1);
+    const run = await store.getRun("wfr_parallel_quorum_grace");
+    expect(
+      run.steps
+        .filter((step) => step.stepId === "panel-e" || step.stepId === "panel-f")
+        .map((step) => step.status)
+    ).toEqual(["interrupted", "interrupted"]);
+  });
+
+  test("settled parallel preserves foreground workflow backgrounding", async () => {
+    using tmp = new DisposableTempDir("workflow-runner-parallel-quorum-backgrounded");
+    const store = new WorkflowRunStore({
+      sessionDir: tmp.path,
+      staleLeaseMs: WORKFLOW_RUNNER_TEST_STALE_LEASE_MS,
+    });
+    await store.createRun({
+      id: "wfr_parallel_quorum_backgrounded",
+      workspaceId: "workspace-1",
+      workflow: definition,
+      source: `export default function workflow({ agent, parallel }) {
+  parallel(
+    ["a", "b"].map((label) => () => agent("Review " + label, { id: "panel-" + label })),
+    { minSuccessful: 2, graceMs: 60000, settled: true }
+  );
+  return { reportMarkdown: "unexpected completion" };
+}
+`,
+      args: {},
+      now: "2026-05-29T00:00:00.000Z",
+    });
+    const runner = createRunner(store, {
+      async runAgent() {
+        throw new Error("settled parallel should reserve panel tasks in bulk");
+      },
+      async createAgentTasks(specs, lifecycle) {
+        for (const [index, spec] of specs.entries()) {
+          await lifecycle?.onTaskCreated?.(index, `task_${spec.id}`);
+        }
+        return specs.map((spec) => ({ taskId: `task_${spec.id}`, status: "running" as const }));
+      },
+      async waitForAgentTask() {
+        throw new ForegroundWaitBackgroundedError();
+      },
+    });
+
+    await expect(runner.run("wfr_parallel_quorum_backgrounded")).rejects.toBeInstanceOf(
+      WorkflowRunBackgroundedError
+    );
+    await expect(store.getRun("wfr_parallel_quorum_backgrounded")).resolves.toMatchObject({
+      status: "backgrounded",
+    });
   });
 
   test("pipeline advances items to later stages without waiting for a full-stage barrier", async () => {

@@ -38,7 +38,9 @@ export default function workflow({ args, phase, agent, parallel }) {
 
   const models = panel.map((entry) => entry.model);
   phase("panel", { models });
-  const responses = parallel(
+  // Four independent reports are enough to synthesize a useful answer. Give slower
+  // panelists one bounded chance to contribute instead of letting one provider stall Fusion.
+  const panelResults = parallel(
     panel.map(
       (entry, index) => () =>
         agent(panelPrompt(args.prompt), {
@@ -50,11 +52,34 @@ export default function workflow({ args, phase, agent, parallel }) {
           ...(entry.thinking ? { thinking: entry.thinking } : {}),
         })
     ),
-    { maxParallel: models.length }
+    {
+      maxParallel: models.length,
+      minSuccessful: Math.min(4, models.length),
+      graceMs: 60_000,
+      settled: true,
+    }
   );
 
+  const responses = panelResults
+    .map((result, index) =>
+      result.status === "fulfilled" ? { model: models[index], response: result.value } : null
+    )
+    .filter((result) => result !== null);
+
+  if (responses.length === 0) {
+    return {
+      reportMarkdown: "Fusion panel did not produce a successful response.",
+      structuredOutput: {
+        prompt: args.prompt,
+        models,
+        judgeModel: args.judge.model,
+        responseCount: 0,
+      },
+    };
+  }
+
   phase("synthesize", { responseCount: responses.length });
-  const reportMarkdown = agent(synthesisPrompt(args.prompt, models, responses), {
+  const reportMarkdown = agent(synthesisPrompt(args.prompt, responses), {
     id: "synthesize",
     title: "Synthesize panel",
     agentId: "explore",
@@ -97,11 +122,9 @@ function panelPrompt(prompt) {
   ].join("\n");
 }
 
-function synthesisPrompt(prompt, models, responses) {
+function synthesisPrompt(prompt, responses) {
   const panel = responses
-    .map(
-      (response, index) => "## " + models[index] + "\n\n" + mux.utils.compactText(response, 12000)
-    )
+    .map((result) => "## " + result.model + "\n\n" + mux.utils.compactText(result.response, 12000))
     .join("\n\n");
   return [
     "Act as the judge for a multi-model panel. Synthesize; do not merely concatenate.",
