@@ -1,8 +1,9 @@
-import React from "react";
+import React, { useSyncExternalStore } from "react";
 import { EmojiIcon } from "@/browser/components/icons/EmojiIcon/EmojiIcon";
 import { TodoList } from "@/browser/components/TodoList/TodoList";
 import type { TodoWriteToolArgs, TodoWriteToolResult } from "@/common/types/tools";
-import { deriveTodoStatus } from "@/common/utils/todoList";
+import { deriveTodoStatus, syncTodoStatuses } from "@/common/utils/todoList";
+import { useWorkspaceStoreRaw } from "@/browser/stores/WorkspaceStore";
 import {
   ToolContainer,
   ToolHeader,
@@ -17,16 +18,29 @@ interface TodoToolCallProps {
   args: TodoWriteToolArgs;
   result?: TodoWriteToolResult;
   status?: ToolStatus;
+  workspaceId?: string;
 }
+
+const EMPTY_TODOS: TodoWriteToolArgs["todos"] = [];
 
 export const TodoToolCall: React.FC<TodoToolCallProps> = ({
   args,
   result: _result,
   status = "pending",
+  workspaceId,
 }) => {
   const { expanded, toggleExpanded } = useToolExpansion(false); // Collapsed by default
+  const workspaceStore = useWorkspaceStoreRaw();
+  const latestTodos = useSyncExternalStore(
+    (callback) =>
+      workspaceId ? workspaceStore.subscribeKey(workspaceId, callback) : () => undefined,
+    () => (workspaceId ? workspaceStore.getTodos(workspaceId) : EMPTY_TODOS)
+  );
+  // The transcript keeps the original plan wording, while status follows the pinned
+  // TODO panel so users do not see the same step as active and completed at once.
+  const displayTodos = syncTodoStatuses(args.todos, latestTodos);
   const statusDisplay = getStatusDisplay(status);
-  const todoStatusPreview = deriveTodoStatus(args.todos);
+  const todoStatusPreview = deriveTodoStatus(displayTodos);
   const fallbackPreview =
     args.todos.length === 0
       ? "Cleared todo list"
@@ -58,7 +72,7 @@ export const TodoToolCall: React.FC<TodoToolCallProps> = ({
 
       {expanded && (
         <ToolDetails>
-          <TodoList todos={args.todos} />
+          <TodoList todos={displayTodos} />
         </ToolDetails>
       )}
     </ToolContainer>

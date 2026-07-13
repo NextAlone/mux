@@ -48,6 +48,29 @@ export function deriveTodoStatus(todos: readonly TodoItem[]): TodoStatusSummary 
 }
 
 /**
+ * Keep the steps recorded in a historical todo_write call while projecting the
+ * latest known status for matching content. Todo items have no durable IDs, so
+ * exact content is the narrowest identity that avoids rewriting transcript text.
+ */
+export function syncTodoStatuses(
+  historicalTodos: TodoItem[],
+  latestTodos: readonly TodoItem[]
+): TodoItem[] {
+  if (latestTodos.length === 0) return historicalTodos;
+
+  const latestStatusByContent = new Map(latestTodos.map((todo) => [todo.content, todo.status]));
+  let changed = false;
+  const syncedTodos = historicalTodos.map((todo) => {
+    const latestStatus = latestStatusByContent.get(todo.content);
+    if (latestStatus === undefined || latestStatus === todo.status) return todo;
+    changed = true;
+    return { ...todo, status: latestStatus };
+  });
+
+  return changed ? syncedTodos : historicalTodos;
+}
+
+/**
  * `propose_plan` ends the active planning turn immediately, so any in-progress
  * todo steps need to flip to completed even though the model does not get a
  * follow-up turn to call `todo_write` again.
