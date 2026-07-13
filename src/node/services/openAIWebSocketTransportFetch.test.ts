@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { AddressInfo } from "node:net";
+import { createServer, type AddressInfo } from "node:net";
 import { WebSocketServer } from "ws";
 
 import {
@@ -21,6 +21,10 @@ function getFetchInputUrl(input: RequestInfo | URL): string {
     return input;
   }
   return input.url;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function createTestFetch(
@@ -391,6 +395,10 @@ describe("Codex OAuth Responses WebSocket", () => {
     let authorization: string | undefined;
     let accountId: string | undefined;
     let beta: string | undefined;
+    let originator: string | undefined;
+    let sessionId: string | undefined;
+    let threadId: string | undefined;
+    let clientRequestId: string | undefined;
 
     server.on("connection", (connection, request) => {
       authorization = request.headers.authorization;
@@ -398,6 +406,16 @@ describe("Codex OAuth Responses WebSocket", () => {
       accountId = Array.isArray(rawAccountId) ? rawAccountId[0] : rawAccountId;
       const rawBeta = request.headers["openai-beta"];
       beta = Array.isArray(rawBeta) ? rawBeta[0] : rawBeta;
+      const rawOriginator = request.headers.originator;
+      originator = Array.isArray(rawOriginator) ? rawOriginator[0] : rawOriginator;
+      const rawSessionId = request.headers["session-id"];
+      sessionId = Array.isArray(rawSessionId) ? rawSessionId[0] : rawSessionId;
+      const rawThreadId = request.headers["thread-id"];
+      threadId = Array.isArray(rawThreadId) ? rawThreadId[0] : rawThreadId;
+      const rawClientRequestId = request.headers["x-client-request-id"];
+      clientRequestId = Array.isArray(rawClientRequestId)
+        ? rawClientRequestId[0]
+        : rawClientRequestId;
       connection.on("message", (data) => {
         const body = JSON.parse(
           Buffer.isBuffer(data)
@@ -442,6 +460,10 @@ describe("Codex OAuth Responses WebSocket", () => {
           headers: {
             Authorization: "Bearer oauth-token",
             "ChatGPT-Account-Id": "account-1",
+            originator: "mux",
+            "session-id": "session-1",
+            "thread-id": "thread-1",
+            "x-client-request-id": "thread-1",
             "x-openai-internal-codex-responses-lite": "true",
           },
           body: JSON.stringify({ model: "gpt-5.6-terra", stream: true, input: firstInput }),
@@ -457,6 +479,10 @@ describe("Codex OAuth Responses WebSocket", () => {
           headers: {
             Authorization: "Bearer oauth-token",
             "ChatGPT-Account-Id": "account-1",
+            originator: "mux",
+            "session-id": "session-1",
+            "thread-id": "thread-1",
+            "x-client-request-id": "thread-1",
           },
           body: JSON.stringify({
             model: "gpt-5.6-terra",
@@ -475,12 +501,18 @@ describe("Codex OAuth Responses WebSocket", () => {
       expect(authorization).toBe("Bearer oauth-token");
       expect(accountId).toBe("account-1");
       expect(beta).toBe("responses_websockets=2026-02-06");
+      expect(originator).toBe("mux");
+      expect(sessionId).toBe("session-1");
+      expect(threadId).toBe("thread-1");
+      expect(clientRequestId).toBe("thread-1");
       expect(requests).toHaveLength(2);
       expect(requests[0]).toMatchObject({
         type: "response.create",
         model: "gpt-5.6-terra",
         input: firstInput,
         client_metadata: {
+          session_id: "session-1",
+          thread_id: "thread-1",
           ws_request_header_x_openai_internal_codex_responses_lite: "true",
         },
       });
@@ -489,7 +521,101 @@ describe("Codex OAuth Responses WebSocket", () => {
         model: "gpt-5.6-terra",
         previous_response_id: "resp_1",
         input: [{ type: "function_call_output", call_id: "call_1", output: "ok" }],
+        client_metadata: {
+          session_id: "session-1",
+          thread_id: "thread-1",
+        },
       });
+      const firstMetadata = requests[0]?.client_metadata;
+      const secondMetadata = requests[1]?.client_metadata;
+      if (!isRecord(firstMetadata) || !isRecord(secondMetadata)) {
+        throw new Error("Expected Codex WebSocket client metadata");
+      }
+      expect(typeof firstMetadata["x-codex-ws-stream-request-start-ms"]).toBe("string");
+      expect(typeof secondMetadata["x-codex-ws-stream-request-start-ms"]).toBe("string");
+    } finally {
+      transport.close();
+      await new Promise<void>((resolve, reject) => {
+        server.close((error) => (error ? reject(error) : resolve()));
+      });
+    }
+  });
+
+  test("falls back to HTTP after the Codex WebSocket connect timeout", async () => {
+    const server = createServer(() => undefined);
+    server.listen(0, "127.0.0.1");
+    await new Promise<void>((resolve) => server.once("listening", resolve));
+    const address = server.address() as AddressInfo;
+    const baseCalls: string[] = [];
+    const transport = createCodexOAuthWebSocketTransportFetch({
+      enabled: true,
+      baseFetch: createTestFetch((input) => {
+        baseCalls.push(getFetchInputUrl(input));
+        return Promise.resolve(new Response("base"));
+      }),
+      webSocketUrl: `ws://127.0.0.1:${address.port}/backend-api/codex/responses`,
+      webSocketConnectTimeoutMs: 25,
+    });
+
+    try {
+      const response = await transport.fetch("https://chatgpt.com/backend-api/codex/responses", {
+        method: "POST",
+        body: JSON.stringify({ model: "gpt-5.6-sol", stream: true, input: [] }),
+      });
+
+      expect(await response.text()).toBe("base");
+      expect(baseCalls).toEqual(["https://chatgpt.com/backend-api/codex/responses"]);
+    } finally {
+      transport.close();
+      await new Promise<void>((resolve, reject) => {
+        server.close((error) => (error ? reject(error) : resolve()));
+      });
+    }
+  });
+
+  test("does not fall back to HTTP when WebSocket setup is aborted", () => {
+    let baseCalls = 0;
+    const transport = createCodexOAuthWebSocketTransportFetch({
+      enabled: true,
+      baseFetch: createTestFetch(() => {
+        baseCalls += 1;
+        return Promise.resolve(new Response("base"));
+      }),
+      webSocketUrl: "ws://127.0.0.1:1/backend-api/codex/responses",
+    });
+    const controller = new AbortController();
+    controller.abort(new DOMException("Stopped", "AbortError"));
+
+    expect(
+      transport.fetch("https://chatgpt.com/backend-api/codex/responses", {
+        method: "POST",
+        signal: controller.signal,
+        body: JSON.stringify({ model: "gpt-5.6-sol", stream: true, input: [] }),
+      })
+    ).rejects.toThrow("Stopped");
+    expect(baseCalls).toBe(0);
+  });
+
+  test("fails a connected Codex WebSocket after the stream idle timeout", async () => {
+    const server = new WebSocketServer({ port: 0 });
+    await new Promise<void>((resolve) => server.once("listening", resolve));
+    const address = server.address() as AddressInfo;
+    server.on("connection", (connection) => {
+      connection.on("message", () => undefined);
+    });
+    const transport = createCodexOAuthWebSocketTransportFetch({
+      enabled: true,
+      baseFetch: createTestFetch(() => Promise.resolve(new Response("base"))),
+      webSocketUrl: `ws://127.0.0.1:${address.port}/backend-api/codex/responses`,
+      streamIdleTimeoutMs: 25,
+    });
+
+    try {
+      const response = await transport.fetch("https://chatgpt.com/backend-api/codex/responses", {
+        method: "POST",
+        body: JSON.stringify({ model: "gpt-5.6-sol", stream: true, input: [] }),
+      });
+      expect(response.text()).rejects.toThrow("Codex Responses WebSocket idle timeout after 25ms");
     } finally {
       transport.close();
       await new Promise<void>((resolve, reject) => {

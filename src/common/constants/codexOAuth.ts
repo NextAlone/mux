@@ -33,8 +33,12 @@ export const CODEX_OAUTH_TOKEN_URL = `${CODEX_OAUTH_ORIGIN}/oauth/token`;
 // Codex OAuth tokens are only valid against this ChatGPT backend.
 export const CODEX_ENDPOINT = "https://chatgpt.com/backend-api/codex/responses";
 
+// Keep transport identity aligned with the originator used by Mux's OAuth flow.
+export const CODEX_ORIGINATOR = "mux";
 export const CODEX_RESPONSES_LITE_HEADER = "x-openai-internal-codex-responses-lite";
 export const CODEX_TURN_STATE_HEADER = "x-codex-turn-state";
+export const CODEX_WEBSOCKET_CONNECT_TIMEOUT_MS = 15_000;
+export const CODEX_STREAM_IDLE_TIMEOUT_MS = 300_000;
 
 // We request offline_access to receive refresh tokens.
 export const CODEX_OAUTH_SCOPE = "openid profile email offline_access";

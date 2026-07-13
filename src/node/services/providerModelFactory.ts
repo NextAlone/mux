@@ -14,6 +14,7 @@ import {
 } from "@/common/constants/providers";
 import {
   CODEX_ENDPOINT,
+  CODEX_ORIGINATOR,
   CODEX_RESPONSES_LITE_HEADER,
   CODEX_TURN_STATE_HEADER,
   isCodexOauthAllowedModel,
@@ -172,6 +173,16 @@ export function buildAIProviderRequestHeaders(existingHeaders: HeadersInit | und
   }
 
   return headers;
+}
+
+function addCodexOAuthRequestHeaders(headers: Headers, workspaceId: string | undefined): void {
+  // Codex uses the conversation identity for routing and request correlation on both SSE and
+  // WebSocket transports. Mux workspaces are its durable equivalent.
+  headers.set("originator", CODEX_ORIGINATOR);
+  if (!workspaceId) return;
+  headers.set("session-id", workspaceId);
+  headers.set("thread-id", workspaceId);
+  headers.set("x-client-request-id", workspaceId);
 }
 
 /**
@@ -1717,6 +1728,7 @@ export class ProviderModelFactory {
                   if (authResult.data.accountId) {
                     headers.set("ChatGPT-Account-Id", authResult.data.accountId);
                   }
+                  addCodexOAuthRequestHeaders(headers, opts?.workspaceId);
                   compactInput = buildOpenAIResponsesCompactUrl(CODEX_ENDPOINT);
                 }
 
@@ -1789,6 +1801,7 @@ export class ProviderModelFactory {
                 if (authResult.data.accountId) {
                   headers.set("ChatGPT-Account-Id", authResult.data.accountId);
                 }
+                addCodexOAuthRequestHeaders(headers, opts?.workspaceId);
                 if (codexGpt56CompatEnabled) {
                   headers.set(CODEX_RESPONSES_LITE_HEADER, "true");
                   if (codexTurnState) headers.set(CODEX_TURN_STATE_HEADER, codexTurnState);

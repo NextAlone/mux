@@ -864,7 +864,9 @@ describe("ProviderModelFactory GitHub Copilot", () => {
       };
 
       try {
-        const result = await factory.createModel("openai:gpt-5.3-codex");
+        const result = await factory.createModel("openai:gpt-5.3-codex", undefined, {
+          workspaceId: "workspace-1",
+        });
         expect(result.success).toBe(true);
         if (!result.success) {
           return;
@@ -916,6 +918,10 @@ describe("ProviderModelFactory GitHub Copilot", () => {
         const headers = new Headers(requests[0]?.init?.headers);
         expect(headers.get("authorization")).toBe("Bearer test-access-token");
         expect(headers.get("chatgpt-account-id")).toBe("test-account-id");
+        expect(headers.get("originator")).toBe("mux");
+        expect(headers.get("session-id")).toBe("workspace-1");
+        expect(headers.get("thread-id")).toBe("workspace-1");
+        expect(headers.get("x-client-request-id")).toBe("workspace-1");
         expect(headers.get("content-type")).toBe("application/json");
         expect(recordedUsagePercent.value).toBe("75");
 
@@ -1287,6 +1293,7 @@ describe("ProviderModelFactory GitHub Copilot", () => {
 
       try {
         const result = await factory.createModel("openai:gpt-5.5", undefined, {
+          workspaceId: "workspace-1",
           openAIResponsesCompactCapture: (response) => {
             capturedCompactedResponses.push(response);
           },
@@ -1318,6 +1325,10 @@ describe("ProviderModelFactory GitHub Copilot", () => {
         const headers = new Headers(requests[0]?.init?.headers);
         expect(headers.get("authorization")).toBe("Bearer test-access-token");
         expect(headers.get("chatgpt-account-id")).toBe("test-account-id");
+        expect(headers.get("originator")).toBe("mux");
+        expect(headers.get("session-id")).toBe("workspace-1");
+        expect(headers.get("thread-id")).toBe("workspace-1");
+        expect(headers.get("x-client-request-id")).toBe("workspace-1");
         expect(headers.get("content-length")).toBeNull();
         const sent = JSON.parse((requests[0]?.init?.body as string | undefined) ?? "{}") as Record<
           string,

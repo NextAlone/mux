@@ -1,4 +1,8 @@
 import assert from "node:assert";
+import {
+  CODEX_STREAM_IDLE_TIMEOUT_MS,
+  CODEX_WEBSOCKET_CONNECT_TIMEOUT_MS,
+} from "@/common/constants/codexOAuth";
 import { captureAndStripDevToolsHeader } from "./devToolsHeaderCapture";
 import { log } from "./log";
 import { createWebSocketFetch as createOpenAIWebSocketFetch } from "@vercel/ai-sdk-openai-websocket-fetch";
@@ -24,6 +28,8 @@ interface CreateCodexOAuthWebSocketTransportFetchOptions {
   enabled: boolean;
   baseFetch: typeof fetch;
   webSocketUrl: string;
+  webSocketConnectTimeoutMs?: number;
+  streamIdleTimeoutMs?: number;
 }
 
 interface OpenAIWebSocketTransportFetch {
@@ -38,6 +44,7 @@ const CODEX_RESPONSES_LITE_HEADER = "x-openai-internal-codex-responses-lite";
 const CODEX_TURN_STATE_HEADER = "x-codex-turn-state";
 const CODEX_WS_RESPONSES_LITE_CLIENT_METADATA_KEY =
   "ws_request_header_x_openai_internal_codex_responses_lite";
+const CODEX_WS_STREAM_REQUEST_START_MS_CLIENT_METADATA_KEY = "x-codex-ws-stream-request-start-ms";
 
 interface CodexWebSocketContinuationState {
   request: JsonRecord;
@@ -127,6 +134,11 @@ function decodeWebSocketData(data: RawData): string {
   return Buffer.from(data).toString("utf8");
 }
 
+function getAbortError(signal: AbortSignal): Error {
+  const reason: unknown = signal.reason;
+  return reason instanceof Error ? reason : new DOMException("Aborted", "AbortError");
+}
+
 /**
  * ChatGPT-authenticated Codex uses the same Responses WebSocket v2 protocol as the public API,
  * but its handshake also requires ChatGPT-Account-Id. The upstream fetch shim only forwards the
@@ -155,7 +167,10 @@ export function createCodexOAuthWebSocketTransportFetch(
     socket = null;
   };
 
-  const connect = (headers: Headers): Promise<WebSocket> => {
+  const connect = (headers: Headers, signal?: AbortSignal): Promise<WebSocket> => {
+    if (signal?.aborted) {
+      return Promise.reject(getAbortError(signal));
+    }
     if (socket?.readyState === WebSocket.OPEN && !busy) return Promise.resolve(socket);
     if (connecting && !busy) return connecting;
 
@@ -163,17 +178,49 @@ export function createCodexOAuthWebSocketTransportFetch(
       const requestHeaders = normalizeRequestHeaders(headers);
       requestHeaders["openai-beta"] = "responses_websockets=2026-02-06";
       const candidate = new WebSocket(options.webSocketUrl, { headers: requestHeaders });
+      const connectTimeoutMs =
+        options.webSocketConnectTimeoutMs ?? CODEX_WEBSOCKET_CONNECT_TIMEOUT_MS;
+      const timeout = setTimeout(() => {
+        if (connecting) {
+          finishConnect();
+          connecting = null;
+          candidate.terminate();
+          reject(
+            new Error(`Codex Responses WebSocket connection timed out after ${connectTimeoutMs}ms`)
+          );
+        }
+      }, connectTimeoutMs);
+      const onAbort = (): void => {
+        if (!connecting) return;
+        connecting = null;
+        clearTimeout(timeout);
+        candidate.terminate();
+        reject(signal ? getAbortError(signal) : new DOMException("Aborted", "AbortError"));
+      };
+      signal?.addEventListener("abort", onAbort, { once: true });
+
+      const finishConnect = (): void => {
+        clearTimeout(timeout);
+        signal?.removeEventListener("abort", onAbort);
+      };
+
+      if (signal?.aborted) {
+        onAbort();
+        return;
+      }
 
       candidate.once("upgrade", (response) => {
         handshakeHeaders = responseHeadersFromUpgrade(response.headers);
       });
       candidate.once("open", () => {
+        finishConnect();
         socket = candidate;
         connecting = null;
         resolve(candidate);
       });
       candidate.once("error", (error) => {
         if (connecting) {
+          finishConnect();
           connecting = null;
           reject(error);
         }
@@ -215,8 +262,9 @@ export function createCodexOAuthWebSocketTransportFetch(
 
       let connection: WebSocket;
       try {
-        connection = await connect(headers);
+        connection = await connect(headers, init?.signal ?? undefined);
       } catch (error) {
+        if (init?.signal?.aborted) throw error;
         log.warn("Codex Responses WebSocket unavailable; falling back to HTTP", { error });
         disableWebSocket();
         return options.baseFetch(input, { ...(init ?? {}), headers });
@@ -239,6 +287,11 @@ export function createCodexOAuthWebSocketTransportFetch(
       }
       const turnState = headers.get(CODEX_TURN_STATE_HEADER);
       if (turnState) clientMetadata[CODEX_TURN_STATE_HEADER] = turnState;
+      const sessionId = headers.get("session-id");
+      if (sessionId) clientMetadata.session_id = sessionId;
+      const threadId = headers.get("thread-id");
+      if (threadId) clientMetadata.thread_id = threadId;
+      clientMetadata[CODEX_WS_STREAM_REQUEST_START_MS_CLIENT_METADATA_KEY] = Date.now().toString();
       const wireRequest = {
         type: "response.create",
         ...incrementalRequest,
@@ -249,8 +302,22 @@ export function createCodexOAuthWebSocketTransportFetch(
       const responseStream = new ReadableStream<Uint8Array>({
         start(controller) {
           let completed = false;
+          const idleTimeoutMs = options.streamIdleTimeoutMs ?? CODEX_STREAM_IDLE_TIMEOUT_MS;
+          let idleTimeout: ReturnType<typeof setTimeout> | undefined;
+
+          const resetIdleTimeout = (): void => {
+            if (idleTimeout) clearTimeout(idleTimeout);
+            idleTimeout = setTimeout(() => {
+              cleanup();
+              disableWebSocket();
+              controller.error(
+                new Error(`Codex Responses WebSocket idle timeout after ${idleTimeoutMs}ms`)
+              );
+            }, idleTimeoutMs);
+          };
 
           const cleanup = (): void => {
+            if (idleTimeout) clearTimeout(idleTimeout);
             connection.off("message", onMessage);
             connection.off("error", onError);
             connection.off("close", onClose);
@@ -287,6 +354,7 @@ export function createCodexOAuthWebSocketTransportFetch(
             }
           };
           const onMessage = (data: RawData): void => {
+            resetIdleTimeout();
             const text = decodeWebSocketData(data);
             controller.enqueue(encoder.encode(`data: ${text}\n\n`));
             try {
@@ -326,6 +394,7 @@ export function createCodexOAuthWebSocketTransportFetch(
             }
             init.signal.addEventListener("abort", onAbort, { once: true });
           }
+          resetIdleTimeout();
           connection.send(JSON.stringify(wireRequest));
         },
       });
