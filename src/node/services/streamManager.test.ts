@@ -35,6 +35,7 @@ import type { ExecOptions, ExecStream, Runtime } from "@/node/runtime/Runtime";
 import { createRuntime } from "@/node/runtime/runtimeFactory";
 import { attachLanguageModelCleanup } from "./languageModelCleanup";
 import { shellQuote } from "@/common/utils/shell";
+import { linkAbortSignal } from "@/node/utils/abort";
 
 function createTestLanguageModel(modelId = "cleanup-model"): LanguageModel {
   return {
@@ -188,6 +189,9 @@ function createStreamInfoForTests(
 ): Record<string, unknown> {
   const now = Date.now();
   const model = overrides.model ?? TEST_STREAM_MODEL_ID;
+  const abortController = new AbortController();
+  const attemptAbortController = new AbortController();
+  const unlinkAttemptAbortSignal = linkAbortSignal(abortController.signal, attemptAbortController);
   return {
     state: "streaming",
     streamResult: createStreamResultForTests(
@@ -196,7 +200,9 @@ function createStreamInfoForTests(
         yield* [];
       })()
     ),
-    abortController: new AbortController(),
+    abortController,
+    attemptAbortController,
+    unlinkAttemptAbortSignal,
     messageId: "test-message",
     token: "test-token",
     startTime: now,
@@ -1826,6 +1832,243 @@ describe("StreamManager - Concurrent Stream Prevention", () => {
     expect(processCalled).toBe(false);
     expect(streamStartEmitted).toBe(false);
     expect(streamManager.isStreaming(workspaceId)).toBe(false);
+  });
+});
+
+describe("StreamManager - stalled stream recovery", () => {
+  test("retries a stream after the Codex-compatible idle timeout", async () => {
+    const streamManager = new StreamManager(historyService);
+    const workspaceId = "idle-timeout-workspace";
+    const messageId = "idle-timeout-message";
+    const historySequence = 1;
+
+    await appendPartialAssistantForTests(workspaceId, messageId, historySequence);
+    expect(
+      Reflect.set(streamManager, "tokenTracker", {
+        setModel: () => Promise.resolve(undefined),
+        countTokens: () => Promise.resolve(0),
+      })
+    ).toBe(true);
+    expect(Reflect.set(streamManager, "streamIdleTimeoutMs", 10)).toBe(true);
+    expect(Reflect.set(streamManager, "streamRetryBaseDelayMs", 0)).toBe(true);
+
+    const createStreamResult = mock(() =>
+      createStreamResultForTests(
+        (async function* () {
+          await Promise.resolve();
+          yield { type: "text-delta", text: "recovered" };
+          yield { type: "finish", finishReason: "stop", rawFinishReason: "stop" };
+        })()
+      )
+    );
+    expect(Reflect.set(streamManager, "createStreamResult", createStreamResult)).toBe(true);
+
+    const streamInfo = createStreamInfoForTests({
+      streamResult: createStreamResultForTests(
+        (async function* () {
+          // Long enough to prove the manager recovered before the original attempt resumed.
+          await new Promise((resolve) => setTimeout(resolve, 80));
+          yield { type: "finish", finishReason: "stop", rawFinishReason: "stop" };
+        })()
+      ),
+      messageId,
+      historySequence,
+      request: { model: createTestLanguageModel(), messages: [], providerOptions: undefined },
+    });
+
+    const processStreamWithCleanup = getProcessStreamWithCleanupForTests(streamManager);
+    const processing = processStreamWithCleanup.call(
+      streamManager,
+      workspaceId,
+      streamInfo,
+      historySequence
+    );
+    await processing;
+
+    expect(createStreamResult).toHaveBeenCalledTimes(1);
+  });
+
+  test("resets the idle timeout whenever a stream event arrives", async () => {
+    const streamManager = new StreamManager(historyService);
+    const workspaceId = "active-stream-workspace";
+    const messageId = "active-stream-message";
+    const historySequence = 1;
+
+    await appendPartialAssistantForTests(workspaceId, messageId, historySequence);
+    expect(
+      Reflect.set(streamManager, "tokenTracker", {
+        setModel: () => Promise.resolve(undefined),
+        countTokens: () => Promise.resolve(0),
+      })
+    ).toBe(true);
+    expect(Reflect.set(streamManager, "streamIdleTimeoutMs", 20)).toBe(true);
+    const createStreamResult = mock(() => {
+      throw new Error("Active streams must not reconnect");
+    });
+    expect(Reflect.set(streamManager, "createStreamResult", createStreamResult)).toBe(true);
+
+    const streamInfo = createStreamInfoForTests({
+      streamResult: createStreamResultForTests(
+        (async function* () {
+          await new Promise((resolve) => setTimeout(resolve, 12));
+          yield { type: "start" };
+          await new Promise((resolve) => setTimeout(resolve, 12));
+          yield { type: "text-delta", text: "still active" };
+          await new Promise((resolve) => setTimeout(resolve, 12));
+          yield { type: "finish", finishReason: "stop", rawFinishReason: "stop" };
+        })()
+      ),
+      messageId,
+      historySequence,
+    });
+
+    await getProcessStreamWithCleanupForTests(streamManager).call(
+      streamManager,
+      workspaceId,
+      streamInfo,
+      historySequence
+    );
+
+    expect(createStreamResult).not.toHaveBeenCalled();
+    expect(streamInfo.state).toBe("completed");
+  });
+
+  test("does not reconnect after the current step emitted output", async () => {
+    const streamManager = new StreamManager(historyService);
+    const workspaceId = "partial-idle-workspace";
+    const messageId = "partial-idle-message";
+    const historySequence = 1;
+    const errorEvents: Array<{ errorType?: string }> = [];
+    streamManager.on("error", (event) => errorEvents.push(event as { errorType?: string }));
+
+    await appendPartialAssistantForTests(workspaceId, messageId, historySequence);
+    expect(
+      Reflect.set(streamManager, "tokenTracker", {
+        setModel: () => Promise.resolve(undefined),
+        countTokens: () => Promise.resolve(0),
+      })
+    ).toBe(true);
+    expect(Reflect.set(streamManager, "streamIdleTimeoutMs", 10)).toBe(true);
+    const createStreamResult = mock(() => {
+      throw new Error("Partial output must not be replayed");
+    });
+    expect(Reflect.set(streamManager, "createStreamResult", createStreamResult)).toBe(true);
+
+    const streamInfo = createStreamInfoForTests({
+      streamResult: createStreamResultForTests(
+        (async function* () {
+          yield { type: "text-delta", text: "already visible" };
+          await new Promise((resolve) => setTimeout(resolve, 40));
+          yield { type: "finish", finishReason: "stop", rawFinishReason: "stop" };
+        })()
+      ),
+      messageId,
+      historySequence,
+    });
+
+    await getProcessStreamWithCleanupForTests(streamManager).call(
+      streamManager,
+      workspaceId,
+      streamInfo,
+      historySequence
+    );
+
+    expect(createStreamResult).not.toHaveBeenCalled();
+    expect(errorEvents).toHaveLength(1);
+    expect(errorEvents[0]).toMatchObject({ errorType: "retry_failed" });
+  });
+
+  test("stops reconnect backoff when the user aborts", async () => {
+    const streamManager = new StreamManager(historyService);
+    const workspaceId = "idle-abort-workspace";
+    const historySequence = 1;
+    const errorEvents: unknown[] = [];
+    streamManager.on("error", (event) => errorEvents.push(event));
+
+    expect(
+      Reflect.set(streamManager, "tokenTracker", {
+        setModel: () => Promise.resolve(undefined),
+        countTokens: () => Promise.resolve(0),
+      })
+    ).toBe(true);
+    expect(Reflect.set(streamManager, "streamIdleTimeoutMs", 10)).toBe(true);
+    expect(Reflect.set(streamManager, "streamRetryBaseDelayMs", 100)).toBe(true);
+    const createStreamResult = mock(() => {
+      throw new Error("An aborted retry must not create another request");
+    });
+    expect(Reflect.set(streamManager, "createStreamResult", createStreamResult)).toBe(true);
+
+    const abortController = new AbortController();
+    const streamInfo = createStreamInfoForTests({
+      abortController,
+      streamResult: createStreamResultForTests(
+        (async function* () {
+          await new Promise((resolve) => setTimeout(resolve, 100));
+          yield { type: "finish", finishReason: "stop", rawFinishReason: "stop" };
+        })()
+      ),
+      historySequence,
+    });
+    const processing = getProcessStreamWithCleanupForTests(streamManager).call(
+      streamManager,
+      workspaceId,
+      streamInfo,
+      historySequence
+    );
+    setTimeout(() => abortController.abort(), 25);
+    await processing;
+
+    expect(createStreamResult).not.toHaveBeenCalled();
+    expect(errorEvents).toHaveLength(0);
+  });
+
+  test("stops after the configured reconnect limit", async () => {
+    const streamManager = new StreamManager(historyService);
+    const workspaceId = "idle-retry-limit-workspace";
+    const messageId = "idle-retry-limit-message";
+    const historySequence = 1;
+    const errorEvents: Array<{ error?: string; errorType?: string }> = [];
+    streamManager.on("error", (event) =>
+      errorEvents.push(event as { error?: string; errorType?: string })
+    );
+
+    await appendPartialAssistantForTests(workspaceId, messageId, historySequence);
+    expect(
+      Reflect.set(streamManager, "tokenTracker", {
+        setModel: () => Promise.resolve(undefined),
+        countTokens: () => Promise.resolve(0),
+      })
+    ).toBe(true);
+    expect(Reflect.set(streamManager, "streamIdleTimeoutMs", 10)).toBe(true);
+    expect(Reflect.set(streamManager, "streamRetryBaseDelayMs", 0)).toBe(true);
+    expect(Reflect.set(streamManager, "streamMaxRetries", 2)).toBe(true);
+
+    const stalledResult = () =>
+      createStreamResultForTests(
+        (async function* () {
+          await new Promise((resolve) => setTimeout(resolve, 100));
+          yield { type: "finish", finishReason: "stop", rawFinishReason: "stop" };
+        })()
+      );
+    const createStreamResult = mock(stalledResult);
+    expect(Reflect.set(streamManager, "createStreamResult", createStreamResult)).toBe(true);
+
+    const streamInfo = createStreamInfoForTests({
+      streamResult: stalledResult(),
+      messageId,
+      historySequence,
+    });
+    await getProcessStreamWithCleanupForTests(streamManager).call(
+      streamManager,
+      workspaceId,
+      streamInfo,
+      historySequence
+    );
+
+    expect(createStreamResult).toHaveBeenCalledTimes(2);
+    expect(errorEvents).toHaveLength(1);
+    expect(errorEvents[0]).toMatchObject({ errorType: "retry_failed" });
+    expect(errorEvents[0]?.error).toContain("after 2 reconnect attempts");
   });
 });
 
@@ -4134,11 +4377,15 @@ describe("StreamManager - previousResponseId recovery", () => {
     const model = createAnthropic({ apiKey: "test" })("claude-sonnet-4-5");
     const runtime = createRuntime({ type: "local", srcBaseDir: "/tmp" });
     const stepMessages: ModelMessage[] = [{ role: "user", content: "next step" }];
+    const abortController = new AbortController();
+    const attemptAbortController = new AbortController();
 
     const streamInfo = {
       state: "streaming",
       streamResult: {},
-      abortController: new AbortController(),
+      abortController,
+      attemptAbortController,
+      unlinkAttemptAbortSignal: linkAbortSignal(abortController.signal, attemptAbortController),
       messageId: "msg-1",
       token: "token",
       startTime: Date.now(),

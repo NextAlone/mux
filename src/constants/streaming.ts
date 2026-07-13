@@ -5,6 +5,13 @@
 // startup/streaming flags settle on adjacent renders.
 export const WORKSPACE_STREAMING_STATUS_TRANSITION_MS = 150;
 
+// Match Codex CLI's provider-stream recovery policy: the timeout measures silence
+// between stream events, not total request duration.
+export const PROVIDER_STREAM_IDLE_TIMEOUT_MS = 300_000;
+export const PROVIDER_STREAM_MAX_RETRIES = 5;
+export const PROVIDER_STREAM_RETRY_BASE_DELAY_MS = 200;
+export const PROVIDER_STREAM_RETRY_JITTER_RATIO = 0.1;
+
 /**
  * Average character-per-token estimate used to convert tokens-per-second (from
  * the streaming TPS calculator) into characters-per-second (consumed by the

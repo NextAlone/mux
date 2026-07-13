@@ -87,6 +87,12 @@ import { classify429Capacity } from "@/common/utils/errors/classify429Capacity";
 import { extractChunkDeltaText } from "@/common/utils/ai/streamChunks";
 import { PROVIDER_DEFINITIONS } from "@/common/constants/providers";
 import { isRefusalFinishReason } from "@/common/utils/messages/refusalFinishReason";
+import {
+  PROVIDER_STREAM_IDLE_TIMEOUT_MS,
+  PROVIDER_STREAM_MAX_RETRIES,
+  PROVIDER_STREAM_RETRY_BASE_DELAY_MS,
+  PROVIDER_STREAM_RETRY_JITTER_RATIO,
+} from "@/constants/streaming";
 
 // Disable noisy AI SDK warning logging.
 globalThis.AI_SDK_LOG_WARNINGS = false;
@@ -131,6 +137,20 @@ class StreamTruncatedError extends Error {
     super(`${providerDisplayName} ${STREAM_TRUNCATED_MESSAGE_SUFFIX}`);
     this.name = "StreamTruncatedError";
     this.providerDisplayName = providerDisplayName;
+  }
+}
+
+class StreamIdleTimeoutError extends Error {
+  readonly retryCount: number;
+
+  constructor(timeoutMs: number, retryCount = 0) {
+    super(
+      retryCount > 0
+        ? `Provider stream produced no events for ${timeoutMs}ms after ${retryCount} reconnect attempts.`
+        : `Provider stream produced no events for ${timeoutMs}ms.`
+    );
+    this.name = "StreamIdleTimeoutError";
+    this.retryCount = retryCount;
   }
 }
 
@@ -531,6 +551,8 @@ type WorkflowRunToolAttachment = NonNullable<DynamicToolCompletedMessagePart["wo
 interface WorkspaceStreamInfo {
   state: StreamState;
   streamResult: Awaited<ReturnType<typeof streamText>>;
+  attemptAbortController: AbortController;
+  unlinkAttemptAbortSignal?: () => void;
   unlinkAbortSignal?: () => void;
   abortController: AbortController;
   workspaceName?: string;
@@ -662,6 +684,9 @@ export class StreamManager extends EventEmitter {
   private mcpServerManager?: MCPServerManager;
   private readonly sessionUsageService?: SessionUsageService;
   private readonly getProvidersConfig: () => ProvidersConfigMap | null;
+  private readonly streamIdleTimeoutMs = PROVIDER_STREAM_IDLE_TIMEOUT_MS;
+  private readonly streamMaxRetries = PROVIDER_STREAM_MAX_RETRIES;
+  private readonly streamRetryBaseDelayMs = PROVIDER_STREAM_RETRY_BASE_DELAY_MS;
   // Token tracker for live streaming statistics
   private tokenTracker = new StreamingTokenTracker();
   // Track OpenAI previousResponseIds that have been invalidated
@@ -1745,6 +1770,102 @@ export class StreamManager extends EventEmitter {
     });
   }
 
+  private createStreamAttempt(
+    request: StreamRequestConfig,
+    streamAbortController: AbortController,
+    stepTracker: StepMessageTracker
+  ): Pick<
+    WorkspaceStreamInfo,
+    "streamResult" | "attemptAbortController" | "unlinkAttemptAbortSignal"
+  > {
+    const attemptAbortController = new AbortController();
+    const unlinkAttemptAbortSignal = linkAbortSignal(
+      streamAbortController.signal,
+      attemptAbortController
+    );
+
+    try {
+      return {
+        streamResult: this.createStreamResult(request, attemptAbortController, stepTracker),
+        attemptAbortController,
+        unlinkAttemptAbortSignal,
+      };
+    } catch (error) {
+      unlinkAttemptAbortSignal();
+      throw error;
+    }
+  }
+
+  private disposeStreamAttempt(streamInfo: WorkspaceStreamInfo): void {
+    streamInfo.unlinkAttemptAbortSignal?.();
+    streamInfo.unlinkAttemptAbortSignal = undefined;
+    if (!streamInfo.attemptAbortController.signal.aborted) {
+      streamInfo.attemptAbortController.abort();
+    }
+  }
+
+  private replaceStreamAttempt(
+    streamInfo: WorkspaceStreamInfo,
+    request: StreamRequestConfig = streamInfo.request
+  ): void {
+    const nextAttempt = this.createStreamAttempt(
+      request,
+      streamInfo.abortController,
+      streamInfo.stepTracker
+    );
+    this.disposeStreamAttempt(streamInfo);
+    Object.assign(streamInfo, nextAttempt);
+  }
+
+  private async nextStreamPart<T>(
+    streamInfo: WorkspaceStreamInfo,
+    iterator: AsyncIterator<T>
+  ): Promise<IteratorResult<T>> {
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    const timeoutError = new StreamIdleTimeoutError(this.streamIdleTimeoutMs);
+    const timedOut = new Promise<never>((_resolve, reject) => {
+      timeout = setTimeout(() => {
+        // Abort only this provider attempt. The parent controller must stay live so
+        // a Codex-style reconnect can build a fresh request and remain cancellable.
+        reject(timeoutError);
+        streamInfo.attemptAbortController.abort(timeoutError);
+      }, this.streamIdleTimeoutMs);
+    });
+
+    try {
+      return await Promise.race([iterator.next(), timedOut]);
+    } finally {
+      if (timeout !== undefined) {
+        clearTimeout(timeout);
+      }
+    }
+  }
+
+  private getStreamRetryDelayMs(retryNumber: number): number {
+    const baseDelay = this.streamRetryBaseDelayMs * 2 ** Math.max(0, retryNumber - 1);
+    const jitter = 1 + (Math.random() * 2 - 1) * PROVIDER_STREAM_RETRY_JITTER_RATIO;
+    return Math.round(baseDelay * jitter);
+  }
+
+  private waitForStreamRetryDelay(delayMs: number, signal: AbortSignal): Promise<boolean> {
+    if (signal.aborted) {
+      return Promise.resolve(false);
+    }
+
+    return new Promise((resolve) => {
+      const timeout = setTimeout(() => {
+        signal.removeEventListener("abort", handleAbort);
+        resolve(true);
+      }, delayMs);
+      const handleAbort = (): void => {
+        clearTimeout(timeout);
+        signal.removeEventListener("abort", handleAbort);
+        resolve(false);
+      };
+      signal.addEventListener("abort", handleAbort, { once: true });
+    });
+  }
+
   /**
    * Atomically creates a new stream with all necessary setup
    */
@@ -1800,9 +1921,9 @@ export class StreamManager extends EventEmitter {
     );
 
     // Start streaming - this can throw immediately if API key is missing
-    let streamResult;
+    let streamAttempt;
     try {
-      streamResult = this.createStreamResult(request, abortController, stepTracker);
+      streamAttempt = this.createStreamAttempt(request, abortController, stepTracker);
     } catch (error) {
       // Clean up abort controller if stream creation fails
       abortController.abort();
@@ -1813,7 +1934,7 @@ export class StreamManager extends EventEmitter {
     const startTime = Date.now();
     const streamInfo: WorkspaceStreamInfo = {
       state: StreamState.STARTING,
-      streamResult,
+      ...streamAttempt,
       workspaceName,
       abortController,
       messageId,
@@ -2467,9 +2588,12 @@ export class StreamManager extends EventEmitter {
     // latestMessages. Clear stale source-step messages before starting it so a
     // later disk-reset await cannot wipe freshly prepared fallback messages.
     streamInfo.stepTracker.latestMessages = undefined;
-    let nextStreamResult: WorkspaceStreamInfo["streamResult"];
+    let nextAttempt: Pick<
+      WorkspaceStreamInfo,
+      "streamResult" | "attemptAbortController" | "unlinkAttemptAbortSignal"
+    >;
     try {
-      nextStreamResult = this.createStreamResult(
+      nextAttempt = this.createStreamAttempt(
         nextRequest,
         streamInfo.abortController,
         streamInfo.stepTracker
@@ -2529,7 +2653,8 @@ export class StreamManager extends EventEmitter {
     // refused model (e.g. an OpenAI WS transport socket) would leak per hop.
     runLanguageModelCleanup(streamInfo.request.model);
     streamInfo.request = nextRequest;
-    streamInfo.streamResult = nextStreamResult;
+    this.disposeStreamAttempt(streamInfo);
+    Object.assign(streamInfo, nextAttempt);
     await this.tokenTracker.setModel(streamInfo.model, streamInfo.metadataModel);
 
     return { kind: "swapped" };
@@ -2600,11 +2725,69 @@ export class StreamManager extends EventEmitter {
       workspaceLog,
     });
     streamInfo.currentStepStartIndex = 0;
-    streamInfo.streamResult = this.createStreamResult(
-      streamInfo.request,
-      streamInfo.abortController,
-      streamInfo.stepTracker
+    this.replaceStreamAttempt(streamInfo);
+    return true;
+  }
+
+  private async retryStreamAfterIdleTimeout(
+    workspaceId: WorkspaceId,
+    streamInfo: WorkspaceStreamInfo,
+    retryCount: number
+  ): Promise<boolean> {
+    if (streamInfo.abortController.signal.aborted || streamInfo.softInterrupt.pending) {
+      return false;
+    }
+
+    // Replaying a step after it emitted user-visible content or started a tool
+    // could duplicate text or side effects. Codex can resume from protocol state;
+    // Mux conservatively reconnects only at an output-free step boundary.
+    if (streamInfo.currentStepStartIndex !== streamInfo.parts.length) {
+      return false;
+    }
+
+    if (retryCount >= this.streamMaxRetries) {
+      throw new StreamIdleTimeoutError(this.streamIdleTimeoutMs, retryCount);
+    }
+
+    const hasParts = streamInfo.parts.length > 0;
+    const stepMessages = streamInfo.stepTracker.latestMessages;
+    if (hasParts && stepMessages === undefined) {
+      return false;
+    }
+
+    const nextRetryCount = retryCount + 1;
+    const delayMs = this.getStreamRetryDelayMs(nextRetryCount);
+    const workspaceLog = this.getWorkspaceLogger(workspaceId, streamInfo);
+    workspaceLog.warn("Provider stream idle; reconnecting", {
+      messageId: streamInfo.messageId,
+      model: streamInfo.model,
+      retry: nextRetryCount,
+      maxRetries: this.streamMaxRetries,
+      delayMs,
+      retryScope: hasParts ? "step" : "stream",
+    });
+
+    const delayCompleted = await this.waitForStreamRetryDelay(
+      delayMs,
+      streamInfo.abortController.signal
     );
+    if (!delayCompleted || streamInfo.softInterrupt.pending) {
+      return false;
+    }
+
+    if (hasParts) {
+      streamInfo.didRetryPreviousResponseIdAtStep = true;
+    }
+    await this.resetStreamStateForRetry(workspaceId, streamInfo, {
+      preserveParts: hasParts,
+      preserveUsage: hasParts,
+      workspaceLog,
+    });
+    streamInfo.currentStepStartIndex = streamInfo.parts.length;
+    if (stepMessages !== undefined) {
+      streamInfo.request = { ...streamInfo.request, messages: stepMessages };
+    }
+    this.replaceStreamAttempt(streamInfo);
     return true;
   }
 
@@ -2630,6 +2813,7 @@ export class StreamManager extends EventEmitter {
 
       let didRetryPreviousResponseId = false;
       let emptyStreamRecoveryAttempts = 0;
+      let idleStreamRetryCount = 0;
       const workspaceLog = this.getWorkspaceLogger(workspaceId, streamInfo);
       let orphanToolResultCount = 0;
 
@@ -2638,7 +2822,13 @@ export class StreamManager extends EventEmitter {
         const toolCalls: ToolCallMap = new Map();
 
         try {
-          for await (const part of streamInfo.streamResult.fullStream) {
+          const streamIterator = streamInfo.streamResult.fullStream[Symbol.asyncIterator]();
+          while (true) {
+            const nextPart = await this.nextStreamPart(streamInfo, streamIterator);
+            if (nextPart.done) {
+              break;
+            }
+            const part = nextPart.value;
             // Check if stream was cancelled BEFORE processing any parts
             // This improves interruption responsiveness by catching aborts earlier
             if (streamInfo.abortController.signal.aborted) {
@@ -3257,6 +3447,30 @@ export class StreamManager extends EventEmitter {
           }
           break;
         } catch (error) {
+          if (error instanceof StreamIdleTimeoutError) {
+            let retriedIdleStream = false;
+            let idleError: unknown = error;
+            try {
+              retriedIdleStream = await this.retryStreamAfterIdleTimeout(
+                workspaceId,
+                streamInfo,
+                idleStreamRetryCount
+              );
+            } catch (retryError) {
+              idleError = retryError;
+            }
+
+            if (retriedIdleStream) {
+              idleStreamRetryCount += 1;
+              continue;
+            }
+            if (streamInfo.abortController.signal.aborted || streamInfo.softInterrupt.pending) {
+              break;
+            }
+            await this.handleStreamFailure(workspaceId, streamInfo, idleError);
+            break;
+          }
+
           let handledError: unknown = error;
           let retried = false;
           try {
@@ -3292,6 +3506,8 @@ export class StreamManager extends EventEmitter {
       }
 
       runLanguageModelCleanup(streamInfo.request?.model);
+
+      this.disposeStreamAttempt(streamInfo);
 
       streamInfo.unlinkAbortSignal?.();
       streamInfo.unlinkAbortSignal = undefined;
@@ -3356,6 +3572,15 @@ export class StreamManager extends EventEmitter {
         messageId: streamInfo.messageId,
         error: error.message,
         errorType: "stream_truncated",
+        acpPromptId: streamInfo.initialMetadata?.acpPromptId,
+      };
+    }
+
+    if (error instanceof StreamIdleTimeoutError) {
+      return {
+        messageId: streamInfo.messageId,
+        error: `${error.message} Retry the message or switch models if the provider remains unavailable.`,
+        errorType: "retry_failed",
         acpPromptId: streamInfo.initialMetadata?.acpPromptId,
       };
     }
@@ -3708,11 +3933,7 @@ export class StreamManager extends EventEmitter {
       ...(stepMessages ? { messages: stepMessages } : {}),
       providerOptions,
     };
-    streamInfo.streamResult = this.createStreamResult(
-      streamInfo.request,
-      streamInfo.abortController,
-      streamInfo.stepTracker
-    );
+    this.replaceStreamAttempt(streamInfo);
 
     return true;
   }
