@@ -492,8 +492,12 @@ function buildMemoryGuidanceSection(): string {
 
 const TASK_DELEGATION_INVOCATION_BY_SURFACE: Record<TaskDelegationCallSurface, string> = {
   direct: 'Call the `task` tool. Omit `kind` or use `kind: "subagent"`.',
+  // Codex Code Mode does not expose nested tool result declarations, so spell out the grouped
+  // result shape before it generates JavaScript that consumes the value.
   code_mode:
-    'Use `exec` to run `await tools.task({ agentId, prompt, title, run_in_background: true })`. Omit `kind` or use `kind: "subagent"`.',
+    "Use `exec` to run `await tools.task({ agentId, prompt, title, run_in_background: true })`. " +
+    "The result is an object, not an array; grouped launches are in `result.tasks` and their IDs are in `result.taskIds`, so never call array methods on the result itself. " +
+    'Omit `kind` or use `kind: "subagent"`.',
   code_execution:
     'Use `code_execution` to run `return mux.task({ agentId, prompt, title, run_in_background: true })`. `mux.*` is synchronous: do not use `await`. Omit `kind` or use `kind: "subagent"`.',
 };
