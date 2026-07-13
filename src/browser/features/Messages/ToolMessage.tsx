@@ -4,6 +4,7 @@ import type { ReviewNoteData } from "@/common/types/review";
 import type { BashOutputGroupInfo } from "@/browser/utils/messages/messageUtils";
 import type { TaskReportLinking } from "@/browser/utils/messages/taskReportLinking";
 import { getToolComponent } from "../Tools/Shared/getToolComponent";
+import { NestedToolsContainer } from "../Tools/Shared/NestedToolsContainer";
 import {
   HookOutputDisplay,
   extractHookOutput,
@@ -48,6 +49,12 @@ export const ToolMessage: React.FC<ToolMessageProps> = ({
   // Extract hook output if present (only shown when hook produced output)
   const hookOutput = extractHookOutput(result);
   const hookDuration = extractHookDuration(result);
+  const nestedTools = message.nestedCalls?.length ? (
+    <NestedToolsContainer
+      calls={message.nestedCalls}
+      parentInterrupted={message.status === "interrupted"}
+    />
+  ) : undefined;
   return (
     <div className={className}>
       {/* ToolNameProvider lets useStickyExpand key the auto-expand preference by tool name. */}
@@ -75,6 +82,7 @@ export const ToolMessage: React.FC<ToolMessageProps> = ({
           taskReportLinking={taskReportLinking}
           // CodeExecution-specific
           nestedCalls={message.nestedCalls}
+          nestedTools={nestedTools}
         />
       </ToolNameProvider>
       {hookOutput && <HookOutputDisplay output={hookOutput} durationMs={hookDuration} />}

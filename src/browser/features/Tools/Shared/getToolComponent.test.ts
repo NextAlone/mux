@@ -5,6 +5,7 @@ import { AgentSkillListToolCall } from "../AgentSkillListToolCall";
 import { AgentSkillReadFileToolCall } from "../AgentSkillReadFileToolCall";
 import { AgentSkillReadToolCall } from "../AgentSkillReadToolCall";
 import { CompleteGoalToolCall } from "../CompleteGoalToolCall";
+import { CodeModeWaitToolCall } from "../CodeModeWaitToolCall";
 import { DesktopActionToolCall } from "../DesktopActionToolCall";
 import { DesktopScreenshotToolCall } from "../DesktopScreenshotToolCall";
 import { GenericToolCall } from "../GenericToolCall";
@@ -18,6 +19,17 @@ import { ToolSearchToolCall } from "../ToolSearchToolCall";
 import { getToolComponent } from "./getToolComponent";
 
 describe("getToolComponent", () => {
+  test("routes Code mode carrier tools without treating unrelated exec-shaped data as valid", () => {
+    expect(
+      getToolComponent("exec", "return await tools.file_read({ path: 'README.md' })")
+    ).not.toBe(GenericToolCall);
+    expect(getToolComponent("wait", { cell_id: "cell-1", yield_time_ms: 10_000 })).toBe(
+      CodeModeWaitToolCall
+    );
+    expect(getToolComponent("exec", { code: "legacy shape" })).toBe(GenericToolCall);
+    expect(getToolComponent("wait", { yield_time_ms: 10_000 })).toBe(GenericToolCall);
+  });
+
   test("falls back to generic rendering for removed workflow discovery tools", () => {
     expect(getToolComponent("workflow_list", {})).toBe(GenericToolCall);
     expect(getToolComponent("workflow_read", { name: "deep-research" })).toBe(GenericToolCall);

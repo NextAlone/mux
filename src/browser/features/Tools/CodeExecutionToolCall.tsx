@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState } from "react";
 import {
   CodeIcon,
   TerminalIcon,
@@ -11,18 +11,21 @@ import { DetailContent } from "./Shared/ToolPrimitives";
 import { type ToolStatus } from "./Shared/toolUtils";
 import { HighlightedCode } from "./Shared/HighlightedCode";
 import { ConsoleOutputDisplay } from "./Shared/ConsoleOutput";
-import { NestedToolsContainer } from "./Shared/NestedToolsContainer";
 import type { CodeExecutionResult, NestedToolCall } from "./Shared/codeExecutionTypes";
 import { cn } from "@/common/lib/utils";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/browser/components/Tooltip/Tooltip";
 import { resolveCodeExecutionViewMode, type CodeExecutionViewMode } from "./codeExecutionViewMode";
+import { normalizeCodeModeExecResult } from "./codeModeResult";
 
 interface CodeExecutionToolCallProps {
-  args: { code: string };
-  result?: CodeExecutionResult;
+  args: { code: string } | string;
+  result?: unknown;
   status?: ToolStatus;
+  title?: string;
   /** Nested tool calls from streaming (takes precedence over result.toolCalls) */
   nestedCalls?: NestedToolCall[];
+  /** Rendered by the message layer to keep the tool registry dependency acyclic. */
+  nestedTools?: React.ReactNode;
 }
 
 interface ViewToggleProps {
@@ -65,18 +68,25 @@ export const CodeExecutionToolCall: React.FC<CodeExecutionToolCallProps> = ({
   args,
   result,
   status = "pending",
+  title = "Code Execution",
   nestedCalls,
+  nestedTools,
 }) => {
+  const isCodeMode = typeof args === "string";
+  const code = isCodeMode ? args : args.code;
+  const displayResult = isCodeMode
+    ? normalizeCodeModeExecResult(result)
+    : (result as CodeExecutionResult | undefined);
   // Use streaming nested calls if available, otherwise fall back to result
   const toolCalls = nestedCalls ?? [];
-  const consoleOutput = result?.consoleOutput ?? [];
+  const consoleOutput = displayResult?.consoleOutput ?? [];
   const hasToolCalls = toolCalls.length > 0;
   const isComplete = status === "completed" || status === "failed";
 
   const [viewMode, setViewMode] = useState<CodeExecutionViewMode>("tools");
 
   // Determine the appropriate default view for no-tool-calls case
-  const hasFailed = isComplete && result && !result.success;
+  const hasFailed = isComplete && displayResult && !displayResult.success;
   const noToolCallsDefaultView = hasFailed ? "result" : "code";
 
   const effectiveViewMode = resolveCodeExecutionViewMode(viewMode, {
@@ -99,12 +109,12 @@ export const CodeExecutionToolCall: React.FC<CodeExecutionToolCallProps> = ({
   };
 
   // Format result for display
-  const formattedResult = useMemo(() => {
-    if (!result?.success || result.result === undefined) return null;
-    return typeof result.result === "string"
-      ? result.result
-      : JSON.stringify(result.result, null, 2);
-  }, [result]);
+  const formattedResult = (() => {
+    if (!displayResult?.success || displayResult.result === undefined) return null;
+    return typeof displayResult.result === "string"
+      ? displayResult.result
+      : JSON.stringify(displayResult.result, null, 2);
+  })();
 
   // Determine result icon and variant
   const isInterrupted = status === "interrupted";
@@ -115,15 +125,17 @@ export const CodeExecutionToolCall: React.FC<CodeExecutionToolCallProps> = ({
       ? "default"
       : !isComplete
         ? "default"
-        : result?.success
+        : displayResult?.success
           ? "success"
           : "error";
 
   return (
-    <fieldset className="border-foreground/20 mt-3 flex flex-col gap-1.5 rounded-lg border border-dashed px-3 pt-1 pb-2">
+    <fieldset className="border-foreground/20 mt-3 flex min-w-0 flex-col gap-1.5 rounded-lg border border-dashed px-3 pt-1 pb-2">
       {/* Legend with title and view toggles */}
       <legend className="flex items-center gap-1.5 px-1.5">
-        <span className="text-foreground text-xs font-medium">Code Execution</span>
+        <span className="text-foreground text-xs font-medium">
+          {isCodeMode && title === "Code Execution" ? "Code Mode" : title}
+        </span>
         <div className="flex items-center">
           <div className="mr-0.5">
             <ViewToggle
@@ -138,7 +150,7 @@ export const CodeExecutionToolCall: React.FC<CodeExecutionToolCallProps> = ({
                 <CirclePauseIcon className="h-3.5 w-3.5" />
               ) : !isComplete ? (
                 <span className="text-xs font-medium">...</span>
-              ) : result?.success ? (
+              ) : displayResult?.success ? (
                 <CheckCircleIcon className="h-3.5 w-3.5" />
               ) : (
                 <XCircleIcon className="h-3.5 w-3.5" />
@@ -163,13 +175,11 @@ export const CodeExecutionToolCall: React.FC<CodeExecutionToolCallProps> = ({
       </legend>
 
       {/* Content based on view mode */}
-      {effectiveViewMode === "tools" && hasToolCalls && (
-        <NestedToolsContainer calls={toolCalls} parentInterrupted={isInterrupted} />
-      )}
+      {effectiveViewMode === "tools" && hasToolCalls && nestedTools}
 
       {effectiveViewMode === "code" && (
         <div className="border-foreground/10 bg-code-bg rounded border p-2">
-          <HighlightedCode language="javascript" code={args.code.trim()} />
+          <HighlightedCode language="javascript" code={code.trim()} />
         </div>
       )}
 
@@ -184,8 +194,8 @@ export const CodeExecutionToolCall: React.FC<CodeExecutionToolCallProps> = ({
       )}
 
       {effectiveViewMode === "result" &&
-        (isComplete && result ? (
-          result.success ? (
+        (isComplete && displayResult ? (
+          displayResult.success ? (
             formattedResult ? (
               <DetailContent className="p-2">{formattedResult}</DetailContent>
             ) : (
@@ -193,7 +203,7 @@ export const CodeExecutionToolCall: React.FC<CodeExecutionToolCallProps> = ({
             )
           ) : (
             <DetailContent className="border border-red-500/30 bg-red-500/10 p-2 text-red-400">
-              {result.error}
+              {displayResult.error}
             </DetailContent>
           )
         ) : isInterrupted ? (

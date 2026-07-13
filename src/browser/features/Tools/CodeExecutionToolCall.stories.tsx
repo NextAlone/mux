@@ -2,10 +2,12 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import type { ComponentProps, ReactNode } from "react";
 import { BackgroundBashProvider } from "@/browser/contexts/BackgroundBashContext";
 import { CodeExecutionToolCall } from "@/browser/features/Tools/CodeExecutionToolCall";
+import { CodeModeWaitToolCall } from "@/browser/features/Tools/CodeModeWaitToolCall";
 import type {
   CodeExecutionResult,
   NestedToolCall,
 } from "@/browser/features/Tools/Shared/codeExecutionTypes";
+import { NestedToolsContainer } from "@/browser/features/Tools/Shared/NestedToolsContainer";
 import { lightweightMeta } from "@/browser/stories/meta.js";
 
 const meta = {
@@ -111,12 +113,18 @@ function GallerySection(props: {
   label: string;
   cardProps: ComponentProps<typeof CodeExecutionToolCall>;
 }) {
+  const nestedTools = props.cardProps.nestedCalls?.length ? (
+    <NestedToolsContainer
+      calls={props.cardProps.nestedCalls}
+      parentInterrupted={props.cardProps.status === "interrupted"}
+    />
+  ) : undefined;
   return (
     <section className="flex flex-col gap-2">
       <h3 className="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
         {props.label}
       </h3>
-      <CodeExecutionToolCall {...props.cardProps} />
+      <CodeExecutionToolCall {...props.cardProps} nestedTools={nestedTools} />
     </section>
   );
 }
@@ -140,6 +148,27 @@ export const Gallery: Story = {
             nestedCalls: completedNestedCalls,
           }}
         />
+        <section className="flex flex-col gap-2">
+          <h3 className="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
+            Code mode exec (narrow-safe nested tools)
+          </h3>
+          <CodeExecutionToolCall
+            args={`const file = await tools.file_read({ path: "src/config.ts" });\ntext(file);`}
+            result={{
+              cell_id: "1234567890abcdef",
+              status: "completed",
+              output: "Read src/config.ts",
+            }}
+            status="completed"
+            nestedCalls={completedNestedCalls}
+            nestedTools={<NestedToolsContainer calls={completedNestedCalls} />}
+          />
+          <CodeModeWaitToolCall
+            args={{ cell_id: "1234567890abcdef", yield_time_ms: 10_000 }}
+            result={{ cell_id: "1234567890abcdef", status: "completed" }}
+            status="completed"
+          />
+        </section>
         <GallerySection
           label="Executing (one done, one in-progress)"
           cardProps={{

@@ -37,6 +37,7 @@ import { BashBackgroundTerminateToolCall } from "../BashBackgroundTerminateToolC
 import { BashOutputToolCall } from "../BashOutputToolCall";
 import { AgentReportToolCall } from "../AgentReportToolCall";
 import { CodeExecutionToolCall } from "../CodeExecutionToolCall";
+import { CodeModeWaitToolCall } from "../CodeModeWaitToolCall";
 import {
   TaskToolCall,
   TaskAwaitToolCall,
@@ -94,7 +95,16 @@ const agentReportRenderSchema = z.union([
   legacyAgentReportFileArgsSchema,
 ]);
 
+// GPT-5.6 Code mode uses a freeform custom tool for exec and a structured polling tool.
+const codeModeWaitSchema = z.object({
+  cell_id: z.string(),
+  yield_time_ms: z.number().int().nonnegative().nullish(),
+  max_tokens: z.number().int().positive().nullish(),
+  terminate: z.boolean().nullish(),
+});
+
 const TOOL_REGISTRY: Record<string, ToolRegistryEntry> = {
+  wait: { component: CodeModeWaitToolCall, schema: codeModeWaitSchema },
   bash: { component: BashToolCall, schema: TOOL_DEFINITIONS.bash.schema },
   file_read: { component: FileReadToolCall, schema: TOOL_DEFINITIONS.file_read.schema },
   memory: { component: MemoryToolCall, schema: TOOL_DEFINITIONS.memory.schema },
@@ -181,6 +191,7 @@ const TOOL_REGISTRY: Record<string, ToolRegistryEntry> = {
     component: CodeExecutionToolCall,
     schema: TOOL_DEFINITIONS.code_execution.schema,
   },
+  exec: { component: CodeExecutionToolCall, schema: z.string().min(1) },
   task: { component: TaskToolCall, schema: TOOL_DEFINITIONS.task.schema },
   task_await: { component: TaskAwaitToolCall, schema: TOOL_DEFINITIONS.task_await.schema },
   task_list: { component: TaskListToolCall, schema: TOOL_DEFINITIONS.task_list.schema },
