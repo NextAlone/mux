@@ -27,6 +27,7 @@ import { enforceThinkingPolicy, getAvailableThinkingLevels } from "@/common/util
 import { useMinThinkingLevels } from "@/browser/hooks/useMinThinkingLevels";
 import { useProvidersConfig } from "@/browser/hooks/useProvidersConfig";
 import { useAPI } from "@/browser/contexts/API";
+import { requestActiveTurnThinkingLevel } from "@/browser/utils/activeTurnThinking";
 import {
   clearPendingWorkspaceAiSettings,
   getWorkspaceAiSettingsFromMetadata,
@@ -226,12 +227,20 @@ export const ThinkingProvider: React.FC<ThinkingProviderProps> = (props) => {
         thinkingLevel: level,
         reasoningMode: getCurrentReasoningMode(),
       });
+      // Mid-turn change: also request the new level for the active turn's next
+      // model step. Non-workspace (project/global) mounts have no workspaceId
+      // and skip this inside the helper.
+      if (props.workspaceId) {
+        requestActiveTurnThinkingLevel(api, props.workspaceId, level);
+      }
     },
     [
+      api,
       defaultModel,
       getCurrentReasoningMode,
       metadataSettings.model,
       persistAgentAiSettings,
+      props.workspaceId,
       scopeId,
       setThinkingLevelInternal,
     ]
