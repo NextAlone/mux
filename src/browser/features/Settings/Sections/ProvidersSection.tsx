@@ -2617,27 +2617,35 @@ export function ProvidersSection() {
                                         WebSocket transport
                                       </label>
                                       <span className="text-muted text-xs">
-                                        Experimental: uses OpenAI&apos;s Responses WebSocket
-                                        transport for streaming Responses API requests. Unsupported
-                                        endpoints may fail.
+                                        {openaiServiceTierMode === "codexOauth"
+                                          ? "Uses Codex Responses WebSocket with automatic HTTP fallback. Enabled by default."
+                                          : "Experimental: uses OpenAI's Responses WebSocket transport for streaming Responses API requests. Unsupported endpoints may fail."}
                                       </span>
                                     </div>
                                     <Switch
-                                      checked={config?.openai?.webSocketTransportEnabled === true}
+                                      checked={
+                                        openaiServiceTierMode === "codexOauth"
+                                          ? config?.openai?.webSocketTransportEnabled !== false
+                                          : config?.openai?.webSocketTransportEnabled === true
+                                      }
                                       disabled={!api}
                                       onCheckedChange={(nextChecked) => {
                                         if (!api) return;
 
-                                        const webSocketTransportEnabled = nextChecked
-                                          ? true
-                                          : undefined;
+                                        const webSocketTransportEnabled =
+                                          nextChecked || openaiServiceTierMode !== "codexOauth"
+                                            ? nextChecked || undefined
+                                            : false;
                                         updateOptimistically("openai", {
                                           webSocketTransportEnabled,
                                         });
                                         void api.providers.setProviderConfig({
                                           provider: "openai",
                                           keyPath: ["webSocketTransportEnabled"],
-                                          value: nextChecked ? true : "",
+                                          value:
+                                            nextChecked || openaiServiceTierMode === "codexOauth"
+                                              ? nextChecked
+                                              : "",
                                         });
                                       }}
                                       aria-label="WebSocket transport"

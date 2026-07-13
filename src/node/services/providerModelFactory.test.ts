@@ -841,6 +841,7 @@ describe("ProviderModelFactory GitHub Copilot", () => {
           codexOauth: auth,
           serviceTier: "fast",
           fetch: baseFetch,
+          webSocketTransportEnabled: false,
         },
       });
 
@@ -1264,6 +1265,7 @@ describe("ProviderModelFactory GitHub Copilot", () => {
         openai: {
           codexOauth: auth,
           fetch: baseFetch,
+          webSocketTransportEnabled: false,
         },
       });
 
@@ -1407,6 +1409,7 @@ describe("ProviderModelFactory GitHub Copilot", () => {
         openai: {
           codexOauth: auth,
           fetch: baseFetch,
+          webSocketTransportEnabled: false,
         },
       });
 
@@ -1665,7 +1668,7 @@ describe("ProviderModelFactory OpenAI WebSocket transport", () => {
     );
   });
 
-  it("does not attach cleanup for Codex OAuth routed models", async () => {
+  it("enables cleanup-backed WebSocket transport by default for Codex OAuth", async () => {
     await withTempConfig(async (config, factory) => {
       config.saveProvidersConfig({
         openai: {
@@ -1686,8 +1689,31 @@ describe("ProviderModelFactory OpenAI WebSocket transport", () => {
       if (!result.success) {
         return;
       }
-      expect(hasLanguageModelCleanup(result.data)).toBe(false);
+      expect(hasLanguageModelCleanup(result.data)).toBe(true);
       expect(modelCostsIncluded(result.data)).toBe(true);
+    });
+  });
+
+  it("allows Codex OAuth WebSocket transport to be disabled explicitly", async () => {
+    await withTempConfig(async (config, factory) => {
+      config.saveProvidersConfig({
+        openai: {
+          webSocketTransportEnabled: false,
+          codexOauth: {
+            type: "oauth",
+            access: "test-access-token",
+            refresh: "test-refresh-token",
+            expires: Date.now() + 60_000,
+            accountId: "test-account-id",
+          },
+        },
+      });
+
+      const result = await factory.createModel(KNOWN_MODELS.GPT_53_CODEX.id);
+
+      expect(result.success).toBe(true);
+      if (!result.success) return;
+      expect(hasLanguageModelCleanup(result.data)).toBe(false);
     });
   });
 

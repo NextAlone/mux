@@ -52,7 +52,10 @@ import {
   attachLanguageModelCleanup,
   moveLanguageModelCleanup,
 } from "@/node/services/languageModelCleanup";
-import { createOpenAIWebSocketTransportFetch } from "@/node/services/openAIWebSocketTransportFetch";
+import {
+  createCodexOAuthWebSocketTransportFetch,
+  createOpenAIWebSocketTransportFetch,
+} from "@/node/services/openAIWebSocketTransportFetch";
 import { log } from "@/node/services/log";
 import {
   MUX_ANTHROPIC_EFFORT_OVERRIDE_HEADER,
@@ -1639,9 +1642,22 @@ export class ProviderModelFactory {
 
         const baseFetch = getProviderFetch(providerConfig);
         const codexOauthService = this.codexOauthService;
-        const webSocketTransportEnabled =
-          (providerConfig as { webSocketTransportEnabled?: unknown }).webSocketTransportEnabled ===
-          true;
+        const configuredWebSocketTransport = (
+          providerConfig as { webSocketTransportEnabled?: unknown }
+        ).webSocketTransportEnabled;
+        // Codex enables Responses WebSocket whenever the provider supports it. Match that default
+        // for OAuth routing, while preserving the existing opt-in behavior for public/custom APIs.
+        const webSocketTransportEnabled = shouldRouteThroughCodexOauth
+          ? configuredWebSocketTransport !== false
+          : configuredWebSocketTransport === true;
+        const codexWebSocketTransport = createCodexOAuthWebSocketTransportFetch({
+          enabled:
+            webSocketTransportEnabled &&
+            shouldRouteThroughCodexOauth &&
+            effectiveWireFormat === "responses",
+          baseFetch,
+          webSocketUrl: CODEX_ENDPOINT.replace(/^https:/, "wss:"),
+        });
 
         // Wrap fetch so Codex OAuth Responses requests are normalized before
         // they are rerouted from api.openai.com to chatgpt.com's Codex backend.
@@ -1782,7 +1798,7 @@ export class ProviderModelFactory {
                 nextInit = { ...(nextInit ?? {}), headers };
               }
 
-              const response = await baseFetch(nextInput, nextInit);
+              const response = await codexWebSocketTransport.fetch(nextInput, nextInit);
               if (
                 shouldRouteThroughCodexOauth &&
                 effectiveWireFormat !== "chatCompletions" &&
@@ -1810,9 +1826,7 @@ export class ProviderModelFactory {
             : {}
         );
 
-        const webSocketTransport = createOpenAIWebSocketTransportFetch({
-          // Codex OAuth requests must keep using the HTTP fetch wrapper above so
-          // Mux can rewrite the endpoint and attach ChatGPT OAuth headers.
+        const directWebSocketTransport = createOpenAIWebSocketTransportFetch({
           enabled:
             webSocketTransportEnabled &&
             effectiveWireFormat === "responses" &&
@@ -1829,7 +1843,9 @@ export class ProviderModelFactory {
           ...configWithCreds,
           // Cast is safe: our fetch implementation is compatible with the SDK's fetch type.
           // The preconnect method is optional in our implementation but required by the SDK type.
-          fetch: webSocketTransport.fetch,
+          fetch: shouldRouteThroughCodexOauth
+            ? (fetchWithOpenAICodexNormalization as typeof fetch)
+            : directWebSocketTransport.fetch,
         });
         // OpenAI reasoning state is preserved via explicit history, so no extra
         // middleware is needed beyond the provider's standard Responses handling.
@@ -1837,8 +1853,11 @@ export class ProviderModelFactory {
           effectiveWireFormat === "chatCompletions"
             ? provider.chat(modelId)
             : provider.responses(modelId);
-        if (webSocketTransport.active) {
-          attachLanguageModelCleanup(model, webSocketTransport.close);
+        const activeWebSocketTransport = shouldRouteThroughCodexOauth
+          ? codexWebSocketTransport
+          : directWebSocketTransport;
+        if (activeWebSocketTransport.active) {
+          attachLanguageModelCleanup(model, activeWebSocketTransport.close);
         }
 
         const injectModelOpenAIStore = (storeValue: unknown, mode: "default" | "force"): void => {

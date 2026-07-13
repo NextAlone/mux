@@ -1,11 +1,17 @@
 import { describe, expect, test } from "bun:test";
+import type { AddressInfo } from "node:net";
+import { WebSocketServer } from "ws";
 
 import {
   consumeCapturedRequestHeaders,
   DEVTOOLS_RUN_METADATA_ID_HEADER,
   DEVTOOLS_STEP_ID_HEADER,
 } from "./devToolsHeaderCapture";
-import { createOpenAIWebSocketTransportFetch } from "./openAIWebSocketTransportFetch";
+import {
+  buildCodexIncrementalWebSocketRequest,
+  createCodexOAuthWebSocketTransportFetch,
+  createOpenAIWebSocketTransportFetch,
+} from "./openAIWebSocketTransportFetch";
 
 function getFetchInputUrl(input: RequestInfo | URL): string {
   if (input instanceof URL) {
@@ -338,5 +344,157 @@ describe("createOpenAIWebSocketTransportFetch", () => {
     transport.close();
 
     expect(closeCalls).toBe(1);
+  });
+});
+
+describe("Codex OAuth Responses WebSocket", () => {
+  test("only chains an exact extension of the prior request and response", () => {
+    const firstRequest = {
+      model: "gpt-5.6-terra",
+      input: [{ role: "user", content: "Inspect it." }],
+      tools: [{ type: "function", name: "exec" }],
+    };
+    const output = [{ type: "function_call", call_id: "call_1", name: "exec" }];
+    const continuation = {
+      request: firstRequest,
+      responseId: "resp_1",
+      output,
+    };
+    const nextInput = [
+      ...firstRequest.input,
+      ...output,
+      { type: "function_call_output", call_id: "call_1", output: "ok" },
+    ];
+
+    expect(
+      buildCodexIncrementalWebSocketRequest({ ...firstRequest, input: nextInput }, continuation)
+    ).toEqual({
+      ...firstRequest,
+      previous_response_id: "resp_1",
+      input: [{ type: "function_call_output", call_id: "call_1", output: "ok" }],
+    });
+
+    const changedTools = { ...firstRequest, input: nextInput, tools: [] };
+    expect(buildCodexIncrementalWebSocketRequest(changedTools, continuation)).toBe(changedTools);
+
+    const mismatchedHistory = { ...firstRequest, input: [{ role: "user", content: "Other" }] };
+    expect(buildCodexIncrementalWebSocketRequest(mismatchedHistory, continuation)).toBe(
+      mismatchedHistory
+    );
+  });
+
+  test("forwards OAuth headers and reuses the connection with incremental input", async () => {
+    const server = new WebSocketServer({ port: 0 });
+    await new Promise<void>((resolve) => server.once("listening", resolve));
+    const address = server.address() as AddressInfo;
+    const requests: Array<Record<string, unknown>> = [];
+    let authorization: string | undefined;
+    let accountId: string | undefined;
+    let beta: string | undefined;
+
+    server.on("connection", (connection, request) => {
+      authorization = request.headers.authorization;
+      const rawAccountId = request.headers["chatgpt-account-id"];
+      accountId = Array.isArray(rawAccountId) ? rawAccountId[0] : rawAccountId;
+      const rawBeta = request.headers["openai-beta"];
+      beta = Array.isArray(rawBeta) ? rawBeta[0] : rawBeta;
+      connection.on("message", (data) => {
+        const body = JSON.parse(
+          Buffer.isBuffer(data)
+            ? data.toString("utf8")
+            : Array.isArray(data)
+              ? Buffer.concat(data).toString("utf8")
+              : Buffer.from(data).toString("utf8")
+        ) as Record<string, unknown>;
+        requests.push(body);
+        const responseNumber = requests.length;
+        connection.send(
+          JSON.stringify({
+            type: "response.completed",
+            response: {
+              id: `resp_${responseNumber}`,
+              output:
+                responseNumber === 1
+                  ? [{ type: "function_call", call_id: "call_1", name: "exec" }]
+                  : [],
+            },
+          })
+        );
+      });
+    });
+
+    const baseCalls: string[] = [];
+    const transport = createCodexOAuthWebSocketTransportFetch({
+      enabled: true,
+      baseFetch: createTestFetch((input) => {
+        baseCalls.push(getFetchInputUrl(input));
+        return Promise.resolve(new Response("base"));
+      }),
+      webSocketUrl: `ws://127.0.0.1:${address.port}/backend-api/codex/responses`,
+    });
+
+    try {
+      const firstInput = [{ role: "user", content: "Inspect it." }];
+      const firstResponse = await transport.fetch(
+        "https://chatgpt.com/backend-api/codex/responses",
+        {
+          method: "POST",
+          headers: {
+            Authorization: "Bearer oauth-token",
+            "ChatGPT-Account-Id": "account-1",
+            "x-openai-internal-codex-responses-lite": "true",
+          },
+          body: JSON.stringify({ model: "gpt-5.6-terra", stream: true, input: firstInput }),
+        }
+      );
+      await firstResponse.text();
+
+      const firstOutput = [{ type: "function_call", call_id: "call_1", name: "exec" }];
+      const secondResponse = await transport.fetch(
+        "https://chatgpt.com/backend-api/codex/responses",
+        {
+          method: "POST",
+          headers: {
+            Authorization: "Bearer oauth-token",
+            "ChatGPT-Account-Id": "account-1",
+          },
+          body: JSON.stringify({
+            model: "gpt-5.6-terra",
+            stream: true,
+            input: [
+              ...firstInput,
+              ...firstOutput,
+              { type: "function_call_output", call_id: "call_1", output: "ok" },
+            ],
+          }),
+        }
+      );
+      await secondResponse.text();
+
+      expect(baseCalls).toEqual([]);
+      expect(authorization).toBe("Bearer oauth-token");
+      expect(accountId).toBe("account-1");
+      expect(beta).toBe("responses_websockets=2026-02-06");
+      expect(requests).toHaveLength(2);
+      expect(requests[0]).toMatchObject({
+        type: "response.create",
+        model: "gpt-5.6-terra",
+        input: firstInput,
+        client_metadata: {
+          ws_request_header_x_openai_internal_codex_responses_lite: "true",
+        },
+      });
+      expect(requests[1]).toMatchObject({
+        type: "response.create",
+        model: "gpt-5.6-terra",
+        previous_response_id: "resp_1",
+        input: [{ type: "function_call_output", call_id: "call_1", output: "ok" }],
+      });
+    } finally {
+      transport.close();
+      await new Promise<void>((resolve, reject) => {
+        server.close((error) => (error ? reject(error) : resolve()));
+      });
+    }
   });
 });

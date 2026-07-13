@@ -600,22 +600,29 @@ describe("ProvidersSection", () => {
     });
   });
 
-  test("shows the OpenAI WebSocket transport toggle when Codex OAuth is the active default", async () => {
+  test("enables Codex OAuth WebSocket by default and persists an explicit opt-out", async () => {
     const view = renderProvidersSection();
     view.providersConfig.openai.codexOauthSet = true;
     view.providersConfig.openai.apiKeySet = false;
-    view.providersConfig.openai.webSocketTransportEnabled = true;
     const openAiButton = await view.findByRole("button", { name: /^OpenAI\b/ });
 
     fireEvent.click(openAiButton);
 
     const openAiCard = getProviderCard(openAiButton);
-    expect(
-      within(openAiCard).getByRole("switch", {
-        name: /WebSocket transport/i,
-      })
-    ).toBeTruthy();
-    expect(view.providersConfig.openai.webSocketTransportEnabled).toBe(true);
+    const webSocketToggle = within(openAiCard).getByRole("switch", {
+      name: /WebSocket transport/i,
+    });
+    expect(webSocketToggle.getAttribute("aria-checked")).toBe("true");
+
+    fireEvent.click(webSocketToggle);
+
+    await waitFor(() => {
+      expect(view.setProviderConfig).toHaveBeenCalledWith({
+        provider: "openai",
+        keyPath: ["webSocketTransportEnabled"],
+        value: false,
+      });
+    });
   });
 
   test("shows the OpenAI WebSocket transport toggle when OpenAI uses a custom base URL", async () => {
