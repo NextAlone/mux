@@ -4,6 +4,7 @@ import {
   shouldShowInterruptedBarrier,
   mergeConsecutiveStreamErrors,
   computeBashOutputGroupInfos,
+  computeCodeModeWaitGroupInfos,
   shouldBypassDeferredMessages,
   type BashOutputGroupInfo,
 } from "./messageUtils";
@@ -481,6 +482,69 @@ describe("mergeConsecutiveStreamErrors", () => {
       model: "test-model",
       errorCount: 2,
     });
+  });
+});
+
+describe("computeCodeModeWaitGroupInfos", () => {
+  function createWaitMessage(
+    id: string,
+    cellId: string,
+    status: "executing" | "completed" = "completed"
+  ): DisplayedMessage {
+    return {
+      type: "tool",
+      id,
+      historyId: `h-${id}`,
+      toolCallId: `tc-${id}`,
+      toolName: "wait",
+      args: { cell_id: cellId, yield_time_ms: 10_000 },
+      result: status === "completed" ? { status: "completed" } : undefined,
+      status,
+      isPartial: false,
+      historySequence: Number(id.replace(/\D/g, "")),
+    };
+  }
+
+  it("groups consecutive completed waits for the same cell", () => {
+    const infos = computeCodeModeWaitGroupInfos([
+      createWaitMessage("wait-1", "cell-a"),
+      createWaitMessage("wait-2", "cell-a"),
+      createWaitMessage("wait-3", "cell-a"),
+    ]);
+
+    expect(infos).toEqual([
+      { position: "first", totalCount: 3, cellId: "cell-a", firstIndex: 0 },
+      { position: "member", totalCount: 3, cellId: "cell-a", firstIndex: 0 },
+      { position: "member", totalCount: 3, cellId: "cell-a", firstIndex: 0 },
+    ]);
+  });
+
+  it("keeps exec boundaries, live waits, and different cells separate", () => {
+    const execMessage: DisplayedMessage = {
+      type: "tool",
+      id: "exec",
+      historyId: "h-exec",
+      toolCallId: "tc-exec",
+      toolName: "exec",
+      args: "text('done')",
+      status: "completed",
+      isPartial: false,
+      historySequence: 3,
+    };
+    const infos = computeCodeModeWaitGroupInfos([
+      createWaitMessage("wait-1", "cell-a"),
+      createWaitMessage("wait-2", "cell-a"),
+      execMessage,
+      createWaitMessage("wait-4", "cell-a"),
+      createWaitMessage("wait-5", "cell-b"),
+      createWaitMessage("wait-6", "cell-b", "executing"),
+    ]);
+
+    expect(infos.slice(0, 2)).toEqual([
+      { position: "first", totalCount: 2, cellId: "cell-a", firstIndex: 0 },
+      { position: "member", totalCount: 2, cellId: "cell-a", firstIndex: 0 },
+    ]);
+    expect(infos.slice(2)).toEqual([undefined, undefined, undefined, undefined]);
   });
 });
 

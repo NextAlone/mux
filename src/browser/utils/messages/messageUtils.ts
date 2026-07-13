@@ -94,6 +94,28 @@ export interface BashOutputGroupInfo {
   firstIndex: number;
 }
 
+export interface CodeModeWaitGroupInfo {
+  /** The summary replaces the first row; remaining rows stay hidden until expanded. */
+  position: "first" | "member";
+  totalCount: number;
+  cellId: string;
+  firstIndex: number;
+}
+
+function getCompletedCodeModeWaitCellId(msg: DisplayedMessage): string | undefined {
+  if (msg.type !== "tool" || msg.toolName !== "wait" || msg.status !== "completed") {
+    return undefined;
+  }
+
+  const args = msg.args;
+  if (typeof args !== "object" || args === null || !("cell_id" in args)) {
+    return undefined;
+  }
+
+  const cellId = (args as { cell_id: unknown }).cell_id;
+  return typeof cellId === "string" ? cellId : undefined;
+}
+
 interface InterruptedBarrierVisibilityOptions {
   isHydratingTranscript?: boolean;
   isAutoRetryActive?: boolean;
@@ -304,6 +326,46 @@ export function computeBashOutputGroupInfos(
           totalCount: groupSize,
           collapsedCount,
           processId,
+          firstIndex: index,
+        };
+      }
+    }
+
+    index = groupEnd + 1;
+  }
+
+  return groupInfos;
+}
+
+/** Collapse completed polling noise without hiding a live wait or crossing an exec boundary. */
+export function computeCodeModeWaitGroupInfos(
+  messages: DisplayedMessage[]
+): Array<CodeModeWaitGroupInfo | undefined> {
+  const groupInfos = new Array<CodeModeWaitGroupInfo | undefined>(messages.length);
+
+  let index = 0;
+  while (index < messages.length) {
+    const cellId = getCompletedCodeModeWaitCellId(messages[index]);
+    if (cellId === undefined) {
+      index++;
+      continue;
+    }
+
+    let groupEnd = index;
+    while (
+      groupEnd < messages.length - 1 &&
+      getCompletedCodeModeWaitCellId(messages[groupEnd + 1]) === cellId
+    ) {
+      groupEnd++;
+    }
+
+    const totalCount = groupEnd - index + 1;
+    if (totalCount >= 2) {
+      for (let groupIndex = index; groupIndex <= groupEnd; groupIndex++) {
+        groupInfos[groupIndex] = {
+          position: groupIndex === index ? "first" : "member",
+          totalCount,
+          cellId,
           firstIndex: index,
         };
       }

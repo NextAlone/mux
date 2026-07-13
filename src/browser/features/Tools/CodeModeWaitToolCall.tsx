@@ -28,6 +28,30 @@ interface CodeModeWaitToolCallProps {
   status?: ToolStatus;
 }
 
+interface CodeModeWaitGroupSummaryProps {
+  cellId: string;
+  count: number;
+  expanded: boolean;
+  onToggle: () => void;
+}
+
+/** One transcript row for repeated completed polls; expanding restores their individual details. */
+export function CodeModeWaitGroupSummary(props: CodeModeWaitGroupSummaryProps) {
+  return (
+    <ToolContainer expanded={false}>
+      <ToolHeader onClick={props.onToggle}>
+        <ExpandIcon expanded={props.expanded}>▶</ExpandIcon>
+        <Clock3Icon className="h-3.5 w-3.5 shrink-0" />
+        <ToolName>wait ×{props.count}</ToolName>
+        <span className="text-muted min-w-0 truncate text-[10px]">
+          cell {props.cellId.slice(0, 8)}
+        </span>
+        <StatusIndicator status="completed">{getStatusDisplay("completed")}</StatusIndicator>
+      </ToolHeader>
+    </ToolContainer>
+  );
+}
+
 /** Keep repeated polls compact while exposing which yielded code cell they advance. */
 export function CodeModeWaitToolCall(props: CodeModeWaitToolCallProps) {
   const { expanded, toggleExpanded } = useToolExpansion();

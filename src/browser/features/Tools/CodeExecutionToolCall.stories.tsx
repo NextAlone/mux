@@ -2,7 +2,10 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import type { ComponentProps, ReactNode } from "react";
 import { BackgroundBashProvider } from "@/browser/contexts/BackgroundBashContext";
 import { CodeExecutionToolCall } from "@/browser/features/Tools/CodeExecutionToolCall";
-import { CodeModeWaitToolCall } from "@/browser/features/Tools/CodeModeWaitToolCall";
+import {
+  CodeModeWaitGroupSummary,
+  CodeModeWaitToolCall,
+} from "@/browser/features/Tools/CodeModeWaitToolCall";
 import type {
   CodeExecutionResult,
   NestedToolCall,
@@ -167,6 +170,12 @@ export const Gallery: Story = {
             args={{ cell_id: "1234567890abcdef", yield_time_ms: 10_000 }}
             result={{ cell_id: "1234567890abcdef", status: "completed" }}
             status="completed"
+          />
+          <CodeModeWaitGroupSummary
+            cellId="1234567890abcdef"
+            count={4}
+            expanded={false}
+            onToggle={() => undefined}
           />
         </section>
         <GallerySection

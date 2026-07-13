@@ -40,12 +40,14 @@ import {
   shouldShowInterruptedBarrier,
   mergeConsecutiveStreamErrors,
   computeBashOutputGroupInfos,
+  computeCodeModeWaitGroupInfos,
   shouldBypassDeferredMessages,
   getEditableUserMessageText,
 } from "@/browser/utils/messages/messageUtils";
 import { computeTaskReportLinking } from "@/browser/utils/messages/taskReportLinking";
 import { BashCollapsedSummaryModeProvider } from "@/browser/features/Tools/BashCollapsedSummaryModeContext";
 import { BashOutputCollapsedIndicator } from "@/browser/features/Tools/BashOutputCollapsedIndicator";
+import { CodeModeWaitGroupSummary } from "@/browser/features/Tools/CodeModeWaitToolCall";
 import {
   getInterruptionContext,
   getLastMainRetryCandidateMessage,
@@ -390,6 +392,9 @@ const ChatPaneContent: React.FC<ChatPaneContentProps> = (props) => {
 
   // Track which bash_output groups are expanded (keyed by first message ID)
   const [expandedBashGroups, setExpandedBashGroups] = useState<Set<string>>(new Set());
+  const [expandedCodeModeWaitGroups, setExpandedCodeModeWaitGroups] = useState<Set<string>>(
+    new Set()
+  );
 
   const [workBundleExpansionOverrides, setWorkBundleExpansionOverrides] = useState<
     Map<string, boolean>
@@ -491,6 +496,8 @@ const ChatPaneContent: React.FC<ChatPaneContentProps> = (props) => {
     () => computeBashOutputGroupInfos(deferredMessages),
     [deferredMessages]
   );
+
+  const codeModeWaitGroupInfos = computeCodeModeWaitGroupInfos(deferredMessages);
 
   const workBundleInfos = useMemo(
     () => (transcriptDensity === "hyper" ? computeWorkBundleInfos(deferredMessages) : undefined),
@@ -774,6 +781,7 @@ const ChatPaneContent: React.FC<ChatPaneContentProps> = (props) => {
   useEffect(() => {
     setEditingState({ workspaceId, message: undefined });
     setExpandedBashGroups(new Set());
+    setExpandedCodeModeWaitGroups(new Set());
     setWorkBundleExpansionOverrides(new Map());
     setOperationalBundleExpansionOverrides(new Map());
   }, [workspaceId]);
@@ -1239,6 +1247,18 @@ const ChatPaneContent: React.FC<ChatPaneContentProps> = (props) => {
     });
   };
 
+  const toggleCodeModeWaitGroup = (groupKey: string) => {
+    setExpandedCodeModeWaitGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(groupKey)) {
+        next.delete(groupKey);
+      } else {
+        next.add(groupKey);
+      }
+      return next;
+    });
+  };
+
   const renderMessageAtIndex = (
     message: DisplayedMessage,
     index: number,
@@ -1247,6 +1267,30 @@ const ChatPaneContent: React.FC<ChatPaneContentProps> = (props) => {
     const bashOutputGroup = bashOutputGroupInfos[index];
     const groupKey = bashOutputGroup ? deferredMessages[bashOutputGroup.firstIndex]?.id : undefined;
     const isGroupExpanded = groupKey ? expandedBashGroups.has(groupKey) : false;
+
+    const codeModeWaitGroup = codeModeWaitGroupInfos[index];
+    const codeModeWaitGroupKey = codeModeWaitGroup
+      ? deferredMessages[codeModeWaitGroup.firstIndex]?.id
+      : undefined;
+    const isCodeModeWaitGroupExpanded = codeModeWaitGroupKey
+      ? expandedCodeModeWaitGroups.has(codeModeWaitGroupKey)
+      : false;
+
+    if (codeModeWaitGroup && !isCodeModeWaitGroupExpanded) {
+      if (codeModeWaitGroup.position === "member" || !codeModeWaitGroupKey) {
+        return null;
+      }
+
+      return (
+        <CodeModeWaitGroupSummary
+          key={options.key}
+          cellId={codeModeWaitGroup.cellId}
+          count={codeModeWaitGroup.totalCount}
+          expanded={false}
+          onToggle={() => toggleCodeModeWaitGroup(codeModeWaitGroupKey)}
+        />
+      );
+    }
 
     if (bashOutputGroup?.position === "middle" && !isGroupExpanded) {
       return null;
@@ -1288,6 +1332,14 @@ const ChatPaneContent: React.FC<ChatPaneContentProps> = (props) => {
 
     return (
       <React.Fragment key={options.key}>
+        {codeModeWaitGroup?.position === "first" && codeModeWaitGroupKey && (
+          <CodeModeWaitGroupSummary
+            cellId={codeModeWaitGroup.cellId}
+            count={codeModeWaitGroup.totalCount}
+            expanded
+            onToggle={() => toggleCodeModeWaitGroup(codeModeWaitGroupKey)}
+          />
+        )}
         {options.className ? <div className={options.className}>{messageNode}</div> : messageNode}
         {bashOutputGroup?.position === "first" && groupKey && (
           <BashOutputCollapsedIndicator
