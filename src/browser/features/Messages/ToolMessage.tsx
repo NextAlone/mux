@@ -3,7 +3,7 @@ import type { DisplayedMessage } from "@/common/types/message";
 import type { ReviewNoteData } from "@/common/types/review";
 import type { BashOutputGroupInfo } from "@/browser/utils/messages/messageUtils";
 import type { TaskReportLinking } from "@/browser/utils/messages/taskReportLinking";
-import { getToolComponent } from "../Tools/Shared/getToolComponent";
+import { getToolRenderSpec } from "../Tools/Shared/getToolComponent";
 import { NestedToolsContainer } from "../Tools/Shared/NestedToolsContainer";
 import {
   HookOutputDisplay,
@@ -38,7 +38,7 @@ export const ToolMessage: React.FC<ToolMessageProps> = ({
   const { toolName, args, result, status, toolCallId } = message;
 
   // Get the component from the registry (validates args, falls back to GenericToolCall)
-  const ToolComponent = getToolComponent(toolName, args);
+  const { ToolComponent, args: renderArgs } = getToolRenderSpec(toolName, args);
 
   // Compute tool-specific extras
   const groupPosition =
@@ -61,7 +61,7 @@ export const ToolMessage: React.FC<ToolMessageProps> = ({
       <ToolNameProvider toolName={toolName}>
         <ToolComponent
           // Base props (all tools)
-          args={args}
+          args={renderArgs}
           result={result ?? null}
           status={status}
           toolName={toolName}

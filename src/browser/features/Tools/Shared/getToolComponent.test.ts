@@ -16,9 +16,28 @@ import { WorkflowResumeToolCall, WorkflowRunToolCall } from "../WorkflowRunToolC
 import { GetGoalToolCall } from "../GetGoalToolCall";
 import { HeartbeatToolCall } from "../HeartbeatToolCall";
 import { ToolSearchToolCall } from "../ToolSearchToolCall";
-import { getToolComponent } from "./getToolComponent";
+import { getToolComponent, getToolRenderSpec } from "./getToolComponent";
 
 describe("getToolComponent", () => {
+  test("passes schema-normalized aliases to specialized renderers", () => {
+    const input = {
+      command: "jj st",
+      description: "Checking status",
+      timeout_secs: 30,
+    };
+
+    const resolved = getToolRenderSpec("bash", input);
+
+    expect(resolved.ToolComponent).not.toBe(GenericToolCall);
+    expect(resolved.args).toMatchObject({
+      script: "jj st",
+      display_name: "Checking status",
+      timeout_secs: 30,
+    });
+    expect(resolved.args).not.toHaveProperty("command");
+    expect(resolved.args).not.toHaveProperty("description");
+  });
+
   test("routes Code mode carrier tools without treating unrelated exec-shaped data as valid", () => {
     expect(
       getToolComponent("exec", "return await tools.file_read({ path: 'README.md' })")

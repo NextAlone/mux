@@ -254,13 +254,30 @@ const TOOL_REGISTRY: Record<string, ToolRegistryEntry> = {
  * Validates args against Zod schemas; returns GenericToolCall if validation fails or tool unknown.
  */
 export function getToolComponent(toolName: string, args: unknown): AnyToolComponent {
+  return getToolRenderSpec(toolName, args).ToolComponent;
+}
+
+/**
+ * Resolve both the renderer and its canonical args. Schemas may normalize accepted model aliases
+ * (for example bash `command` → `script`), so passing the raw input after validation makes the UI
+ * disagree with the command that actually executed.
+ */
+export function getToolRenderSpec(
+  toolName: string,
+  args: unknown
+): { ToolComponent: AnyToolComponent; args: unknown } {
   // Object.hasOwn: toolName flows verbatim from persisted transcripts (attacker-controlled).
   // A bare index lookup returns truthy inherited members for names like "constructor",
   // which would then throw on .schema and brick the workspace view instead of degrading
   // to the generic renderer (self-healing invariant).
   const entry = Object.hasOwn(TOOL_REGISTRY, toolName) ? TOOL_REGISTRY[toolName] : undefined;
-  if (!entry?.schema.safeParse(args).success) {
-    return GenericToolCall;
+  if (!entry) {
+    return { ToolComponent: GenericToolCall, args };
   }
-  return entry.component;
+
+  const parsed = entry.schema.safeParse(args);
+  if (!parsed.success) {
+    return { ToolComponent: GenericToolCall, args };
+  }
+  return { ToolComponent: entry.component, args: parsed.data };
 }

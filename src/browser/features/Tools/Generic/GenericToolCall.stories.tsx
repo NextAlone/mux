@@ -42,3 +42,14 @@ export const GenericTool: Story = {
     },
   },
 };
+
+export const FailedTool: Story = {
+  args: {
+    toolName: "agent_skill_read",
+    args: { skill_name: "ponytail" },
+    result: {
+      error: "Invalid arguments for agent_skill_read: expected name",
+    },
+    status: "failed",
+  },
+};

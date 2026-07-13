@@ -1,6 +1,6 @@
 import React from "react";
 import type { ToolStatus } from "./toolUtils";
-import { getToolComponent } from "./getToolComponent";
+import { getToolRenderSpec } from "./getToolComponent";
 import { HookOutputDisplay, extractHookDuration, extractHookOutput } from "./HookOutputDisplay";
 import { ToolNameProvider } from "../../Messages/ToolNameContext";
 
@@ -21,7 +21,7 @@ export const NestedToolRenderer: React.FC<NestedToolRendererProps> = ({
   output,
   status,
 }) => {
-  const ToolComponent = getToolComponent(toolName, input);
+  const { ToolComponent, args } = getToolRenderSpec(toolName, input);
   const hookOutput = extractHookOutput(output);
   const hookDuration = extractHookDuration(output);
 
@@ -29,7 +29,7 @@ export const NestedToolRenderer: React.FC<NestedToolRendererProps> = ({
     <>
       {/* ToolNameProvider lets useStickyExpand key the auto-expand preference by tool name. */}
       <ToolNameProvider toolName={toolName}>
-        <ToolComponent args={input} result={output} status={status} toolName={toolName} />
+        <ToolComponent args={args} result={output} status={status} toolName={toolName} />
       </ToolNameProvider>
       {hookOutput && <HookOutputDisplay output={hookOutput} durationMs={hookDuration} />}
     </>

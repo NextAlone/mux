@@ -12,6 +12,7 @@ import {
   DetailLabel,
   DetailContent,
   LoadingDots,
+  ErrorBox,
 } from "./Shared/ToolPrimitives";
 import { useToolExpansion, getStatusDisplay, type ToolStatus } from "./Shared/toolUtils";
 import { JsonHighlight } from "./Shared/HighlightedCode";
@@ -36,6 +37,14 @@ export const GenericToolCall: React.FC<GenericToolCallProps> = ({
   const hasDetails = args !== undefined || result !== undefined;
   const images = extractImagesFromToolResult(result);
   const hasImages = images.length > 0;
+  const errorMessage =
+    status === "failed" &&
+    typeof result === "object" &&
+    result !== null &&
+    "error" in result &&
+    typeof result.error === "string"
+      ? result.error
+      : undefined;
 
   // Auto-expand if there are images to show
   const shouldShowDetails = expanded || hasImages;
@@ -51,6 +60,7 @@ export const GenericToolCall: React.FC<GenericToolCallProps> = ({
 
       {/* Always show images if present */}
       {hasImages && <ToolResultImages result={result} />}
+      {errorMessage && <ErrorBox className="mt-2">{errorMessage}</ErrorBox>}
 
       {expanded && hasDetails && (
         <ToolDetails>

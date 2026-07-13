@@ -110,6 +110,14 @@ const completedNestedCalls: NestedToolCall[] = [
     output: { success: true, edits_applied: 1 },
     state: "output-available",
   },
+  {
+    toolCallId: "nested-3",
+    toolName: "bash",
+    // Code Mode history retains the model's accepted alias; rendering must use schema-normalized args.
+    input: { command: "jj st", timeout_secs: 30, description: "Checking status" },
+    output: { success: true, output: "The working copy has no changes.", exitCode: 0 },
+    state: "output-available",
+  },
 ];
 
 function GallerySection(props: {
