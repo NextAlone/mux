@@ -10,6 +10,7 @@ import {
   createMuxMessage,
   type CompactionFollowUpRequest,
   type MuxMessage,
+  type MuxMessageMetadata,
 } from "@/common/types/message";
 import { GOAL_CONTINUATION_KIND } from "@/constants/goals";
 import { Ok, Err } from "@/common/types/result";
@@ -153,6 +154,34 @@ describe("AgentSession on-send auto-compaction snapshot deferral", () => {
     });
 
     expect(followUp.goalKind).toBe(GOAL_CONTINUATION_KIND);
+    session.dispose();
+  });
+
+  test("preserves agent follow-up origin through on-send compaction", async () => {
+    const { session } = await createSessionHarness({
+      workspaceId: "ws-auto-compaction-agent-follow-up",
+    });
+
+    const followUp = (
+      session as unknown as {
+        buildAutoCompactionFollowUp: (params: {
+          messageText: string;
+          options: SendMessageOptions;
+          modelForStream: string;
+          agentInitiated: boolean;
+          muxMetadata: MuxMessageMetadata;
+        }) => CompactionFollowUpRequest;
+      }
+    ).buildAutoCompactionFollowUp({
+      messageText: "Continue after compaction",
+      options: { model: "openai:gpt-4o", agentId: "exec" },
+      modelForStream: "openai:gpt-4o",
+      agentInitiated: true,
+      muxMetadata: { type: "agent-follow-up" },
+    });
+
+    expect(followUp.muxMetadata).toEqual({ type: "agent-follow-up" });
+    expect(followUp.agentInitiated).toBe(true);
     session.dispose();
   });
 

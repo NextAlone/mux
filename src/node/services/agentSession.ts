@@ -26,6 +26,7 @@ import type {
   StreamErrorMessage,
 } from "@/common/orpc/types";
 import { WORKSPACE_DEFAULTS } from "@/constants/workspaceDefaults";
+import { AGENT_FOLLOW_UP_QUEUE_DEDUPE_KEY } from "@/constants/streaming";
 import {
   GOAL_BUDGET_LIMIT_KIND,
   GOAL_CONTINUATION_KIND,
@@ -2726,6 +2727,7 @@ export class AgentSession {
           options: optionsForStream,
           modelForStream,
           fileParts: followUpFileParts,
+          agentInitiated: internal?.agentInitiated,
           goalKind,
           muxMetadata: typedMuxMetadata,
         });
@@ -3247,6 +3249,7 @@ export class AgentSession {
     options: SendMessageOptions;
     modelForStream: string;
     fileParts?: FilePart[];
+    agentInitiated?: boolean;
     goalKind?: GoalSyntheticMessageKind;
     muxMetadata?: MuxMessageMetadata;
   }): CompactionFollowUpRequest {
@@ -3256,6 +3259,10 @@ export class AgentSession {
       agentId: params.options.agentId,
       ...pickPreservedSendOptions(params.options),
     };
+
+    if (params.agentInitiated === true) {
+      followUp.agentInitiated = true;
+    }
 
     if (params.goalKind != null) {
       followUp.goalKind = params.goalKind;
@@ -3421,6 +3428,7 @@ export class AgentSession {
         // buildCompactionMessageText can hide the internal resume marker.
         messageText: "Continue",
         options: streamContext.options,
+        agentInitiated: streamContext.agentInitiated,
         goalKind: streamContext.goalKind,
         modelForStream: streamContext.modelString,
       });
@@ -3729,6 +3737,12 @@ export class AgentSession {
       experiments: options?.experiments,
       disableWorkspaceAgents: options?.disableWorkspaceAgents,
       hasQueuedMessages: this.hasQueuedMessages.bind(this),
+      ...(options
+        ? {
+            queueAgentFollowUp: (message: string) =>
+              this.queueAgentFollowUp(message, { ...options, model: modelString }),
+          }
+        : {}),
       openaiTruncationModeOverride,
       installOpenAIResponsesRemoteCompaction: async (params) => {
         const result = await this.compactionHandler.installOpenAIResponsesRemoteCompaction(params);
@@ -5182,6 +5196,32 @@ export class AgentSession {
     return effectiveDispatchMode;
   }
 
+  queueAgentFollowUp(
+    message: string,
+    activeOptions: SendMessageOptions
+  ): { status: "queued" | "user-message-pending" | "already-pending" } {
+    if (this.messageQueue.hasUserAuthoredEntries() || this.pendingExternalManualFollowUps > 0) {
+      return { status: "user-message-pending" };
+    }
+
+    // A generated next-turn prompt must inherit stable AI settings without replaying
+    // edit targets, attachments, ACP routing, or one-shot tool requirements.
+    const followUpOptions: SendMessageOptions = {
+      model: activeOptions.model,
+      agentId: activeOptions.agentId,
+      ...pickPreservedSendOptions(activeOptions),
+      skipAiSettingsPersistence: true,
+      queueDispatchMode: "turn-end",
+      muxMetadata: { type: "agent-follow-up" },
+    };
+    const dispatchMode = this.queueMessage(message, followUpOptions, {
+      synthetic: true,
+      agentInitiated: true,
+      dedupeKey: AGENT_FOLLOW_UP_QUEUE_DEDUPE_KEY,
+    });
+    return { status: dispatchMode == null ? "already-pending" : "queued" };
+  }
+
   clearQueue(cancelReason = "Queued message cleared before dispatch."): void {
     this.assertNotDisposed("clearQueue");
     const callbackSets = this.messageQueue.getClearCallbacks();
@@ -5238,6 +5278,21 @@ export class AgentSession {
       !this.messageQueue.isEmpty() && this.messageQueue.getQueueDispatchMode() === "tool-end"
     );
     this.notifyQueuedMessageCleared(callbacks, cancelReason);
+    return true;
+  }
+
+  cancelQueuedAgentFollowUp(): boolean {
+    this.assertNotDisposed("cancelQueuedAgentFollowUp");
+    const callbacks = this.messageQueue.removeByDedupeKey(AGENT_FOLLOW_UP_QUEUE_DEDUPE_KEY);
+    if (callbacks == null) {
+      return false;
+    }
+    this.emitQueuedMessageChanged();
+    this.backgroundProcessManager.setMessageQueued(
+      this.workspaceId,
+      !this.messageQueue.isEmpty() && this.messageQueue.getQueueDispatchMode() === "tool-end"
+    );
+    this.notifyQueuedMessageCleared(callbacks, "Automatic follow-up superseded by user input.");
     return true;
   }
 
@@ -5656,7 +5711,7 @@ export class AgentSession {
     // The compaction summary is now the source of truth for the next live resume
     // request. Pre-arm retry state from the reconstructed follow-up so failures
     // before stream startup do not fall back to the already-completed compact turn.
-    this.setAutoRetryResumeState(options, undefined, followUp.goalKind);
+    this.setAutoRetryResumeState(options, followUp.agentInitiated, followUp.goalKind);
 
     // Await sendMessage to ensure the follow-up is persisted before returning.
     // This guarantees ordering: the follow-up message is written to history
@@ -5665,6 +5720,7 @@ export class AgentSession {
     // re-enable auto-retry after a user explicitly opted out.
     const sendResult = await this.sendMessage(finalText, options, {
       synthetic: true,
+      agentInitiated: followUp.agentInitiated === true ? true : undefined,
       goalKind: followUp.goalKind,
       goalContinuation: followUp.goalKind === GOAL_CONTINUATION_KIND,
     });

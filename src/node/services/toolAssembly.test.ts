@@ -23,6 +23,7 @@ describe("applyToolPolicyAndExperiments Code Mode", () => {
         bash: executableTool(),
         task: builtInTaskTool(),
         ask_user_question: executableTool(),
+        send_follow_up: executableTool(),
         web_search: { inputSchema: z.object({ query: z.string() }) },
       },
       effectiveToolPolicy: undefined,
@@ -30,7 +31,12 @@ describe("applyToolPolicyAndExperiments Code Mode", () => {
       emitNestedToolEvent: () => undefined,
     });
 
-    expect(Object.keys(result.tools).sort()).toEqual(["ask_user_question", "exec", "wait"]);
+    expect(Object.keys(result.tools).sort()).toEqual([
+      "ask_user_question",
+      "exec",
+      "send_follow_up",
+      "wait",
+    ]);
     expect(
       resolveTaskDelegationCallSurface({
         tools: result.tools,

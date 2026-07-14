@@ -12,6 +12,9 @@ export const PROVIDER_STREAM_MAX_RETRIES = 5;
 export const PROVIDER_STREAM_RETRY_BASE_DELAY_MS = 200;
 export const PROVIDER_STREAM_RETRY_JITTER_RATIO = 0.1;
 
+/** Only one model-authored automatic follow-up may be pending per workspace queue. */
+export const AGENT_FOLLOW_UP_QUEUE_DEDUPE_KEY = "agent-follow-up";
+
 /**
  * Average character-per-token estimate used to convert tokens-per-second (from
  * the streaming TPS calculator) into characters-per-second (consumed by the

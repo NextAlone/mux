@@ -265,7 +265,7 @@ function resolvedAgentResultFor(
       },
       agentDiscoveryRuntime: new LocalRuntime(metadata.projectPath),
       agentDiscoveryPath: metadata.projectPath,
-      isSubagentWorkspace: false,
+      isSubagentWorkspace: metadata.parentWorkspaceId != null,
       agentInheritanceChain: [{ id: "exec", tools: { add: [".*"] } }],
       agentIsPlanLike: false,
       effectiveMode: "exec",
@@ -1537,6 +1537,129 @@ describe("AIService.streamMessage compaction boundary slicing", () => {
 
   afterEach(() => {
     mock.restore();
+  });
+
+  it("provides a shared send_follow_up runtime for a top-level user turn", async () => {
+    using muxHome = new DisposableTempDir("ai-service-send-follow-up");
+    const projectPath = path.join(muxHome.path, "project");
+    await fs.mkdir(projectPath, { recursive: true });
+    const workspaceId = "workspace-send-follow-up";
+    const harness = createHarness(
+      muxHome.path,
+      createLocalWorkspaceMetadata(workspaceId, projectPath)
+    );
+    const queueAgentFollowUp = mock(() => ({ status: "queued" as const }));
+
+    const result = await harness.service.streamMessage({
+      messages: [createMuxMessage("latest-user", "user", "restart then continue")],
+      workspaceId,
+      modelString: "openai:gpt-5.2",
+      thinkingLevel: "off",
+      queueAgentFollowUp,
+    });
+
+    expect(result.success).toBe(true);
+    expect(getToolConfigFromHarness(harness).sendFollowUpRuntime).toMatchObject({ used: false });
+  });
+
+  it("reuses the send_follow_up runtime when provider fallback rebuilds tools", async () => {
+    using muxHome = new DisposableTempDir("ai-service-send-follow-up-fallback");
+    const projectPath = path.join(muxHome.path, "project");
+    await fs.mkdir(projectPath, { recursive: true });
+    const workspaceId = "workspace-send-follow-up-fallback";
+    const sourceModel = KNOWN_MODELS.SONNET.id;
+    const fallbackModel = KNOWN_MODELS.GPT.id;
+    await writeMainConfig(muxHome.path, {
+      modelFallbacks: { [sourceModel]: { models: [fallbackModel] } },
+    });
+    const harness = createHarness(
+      muxHome.path,
+      createLocalWorkspaceMetadata(workspaceId, projectPath),
+      {
+        effectiveModelString: sourceModel,
+        canonicalProviderName: "anthropic",
+        canonicalModelId: "claude-sonnet-4-5",
+      }
+    );
+
+    const result = await harness.service.streamMessage({
+      messages: [createMuxMessage("latest-user", "user", "restart then continue")],
+      workspaceId,
+      modelString: sourceModel,
+      thinkingLevel: "off",
+      queueAgentFollowUp: mock(() => ({ status: "queued" as const })),
+    });
+    expect(result.success).toBe(true);
+
+    const primaryRuntime = getToolConfigFromHarness(harness).sendFollowUpRuntime as
+      | { used: boolean }
+      | undefined;
+    expect(primaryRuntime).toBeDefined();
+    if (!primaryRuntime) {
+      throw new Error("Expected send_follow_up runtime on the primary model");
+    }
+    primaryRuntime.used = true;
+
+    const modelFallback = harness.startStreamCalls[0]?.[START_STREAM_MODEL_FALLBACK_INDEX] as
+      | ModelFallbackOptions
+      | undefined;
+    if (!modelFallback) {
+      throw new Error("Expected model fallback options");
+    }
+    const prepared = await modelFallback.prepare(fallbackModel);
+    expect(prepared.success).toBe(true);
+
+    const fallbackConfig = harness.getToolsForModelSpy.mock.calls.at(-1)?.[1] as
+      | Record<string, unknown>
+      | undefined;
+    expect(fallbackConfig?.sendFollowUpRuntime).toBe(primaryRuntime);
+    expect(fallbackConfig?.sendFollowUpRuntime).toMatchObject({ used: true });
+  });
+
+  it.each([
+    { name: "automatic follow-up turn", automatic: true },
+    { name: "child task turn", parentWorkspaceId: "parent-workspace" },
+    { name: "synthetic turn", synthetic: true },
+    { name: "current agent-initiated turn", agentInitiated: true },
+    { name: "persisted agent-initiated turn", persistedAgentInitiated: true },
+    { name: "turn without a user message", noUserMessage: true },
+  ])("withholds send_follow_up from a $name", async (testCase) => {
+    using muxHome = new DisposableTempDir(`ai-service-no-send-follow-up-${testCase.name}`);
+    const projectPath = path.join(muxHome.path, "project");
+    await fs.mkdir(projectPath, { recursive: true });
+    const workspaceId = `workspace-no-send-follow-up-${testCase.name}`;
+    const metadata = createLocalWorkspaceMetadata(workspaceId, projectPath);
+    metadata.parentWorkspaceId = testCase.parentWorkspaceId;
+    const harness = createHarness(muxHome.path, metadata);
+    const queueAgentFollowUp = mock(() => ({ status: "queued" as const }));
+
+    const result = await harness.service.streamMessage({
+      messages: testCase.noUserMessage
+        ? [createMuxMessage("latest-assistant", "assistant", "done")]
+        : [
+            createMuxMessage("latest-user", "user", "continue", {
+              ...(testCase.automatic ? { muxMetadata: { type: "agent-follow-up" } as const } : {}),
+              ...(testCase.synthetic ? { synthetic: true } : {}),
+              ...(testCase.persistedAgentInitiated
+                ? {
+                    retrySendOptions: {
+                      model: "openai:gpt-5.2",
+                      agentId: "exec",
+                      agentInitiated: true,
+                    },
+                  }
+                : {}),
+            }),
+          ],
+      workspaceId,
+      modelString: "openai:gpt-5.2",
+      thinkingLevel: "off",
+      queueAgentFollowUp,
+      agentInitiated: testCase.agentInitiated,
+    });
+
+    expect(result.success).toBe(true);
+    expect(getToolConfigFromHarness(harness).sendFollowUpRuntime).toBeUndefined();
   });
 
   it.each([

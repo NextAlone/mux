@@ -52,6 +52,12 @@ function isWorkspaceTurnMetadata(meta: unknown): meta is WorkspaceTurnMetadata {
   );
 }
 
+function isAgentFollowUpMetadata(meta: unknown): boolean {
+  return typeof meta === "object" && meta !== null && !Array.isArray(meta)
+    ? (meta as Record<string, unknown>).type === "agent-follow-up"
+    : false;
+}
+
 // Type guard for metadata with reviews
 interface MetadataWithReviews {
   reviews?: ReviewNoteData[];
@@ -198,6 +204,27 @@ export class MessageQueue {
     return this.entries.some((entry) => entry.dedupeKeys.has(dedupeKey));
   }
 
+  hasUserAuthoredEntries(): boolean {
+    return this.entries.some((entry) => entry.userAuthored);
+  }
+
+  removeByDedupeKey(dedupeKey: string): QueueClearCallbacks | null {
+    // Targeted cancellation must not discard unrelated input that later merged into this entry.
+    const index = this.entries.findIndex(
+      (entry) => entry.addCount === 1 && entry.dedupeKeys.has(dedupeKey)
+    );
+    if (index === -1) {
+      return null;
+    }
+    const [entry] = this.entries.splice(index, 1);
+    return {
+      ...(entry.onCanceled != null ? { onCanceled: entry.onCanceled } : {}),
+      ...(entry.onAcceptedPreStreamFailure != null
+        ? { onAcceptedPreStreamFailure: entry.onAcceptedPreStreamFailure }
+        : {}),
+    };
+  }
+
   /**
    * Whether the queue's only content is the single message queued under this dedupe key.
    * Used to supersede low-value scheduled entries (heartbeats): a later real message must
@@ -257,6 +284,7 @@ export class MessageQueue {
     const incomingIsSealed =
       isAgentSkillMetadata(options?.muxMetadata) ||
       isWorkspaceTurnMetadata(options?.muxMetadata) ||
+      isAgentFollowUpMetadata(options?.muxMetadata) ||
       incomingHasAcceptedCallbacks;
     // Compaction starts its own entry (its metadata must not adopt earlier batched
     // texts), but stays open so a follow-up typed behind a pending /compact batches

@@ -31,6 +31,7 @@ import { createDesktopTools } from "@/node/services/tools/desktopTools";
 import type { MuxToolScope } from "@/common/types/toolScope";
 import { createTaskTool } from "@/node/services/tools/task";
 import { createMcpRestartTool } from "@/node/services/tools/mcp_restart";
+import { createSendFollowUpTool } from "@/node/services/tools/send_follow_up";
 import { createTaskApplyGitPatchTool } from "@/node/services/tools/task_apply_git_patch";
 import { createTaskAwaitTool } from "@/node/services/tools/task_await";
 import { createTaskTerminateTool } from "@/node/services/tools/task_terminate";
@@ -329,6 +330,13 @@ export interface ToolConfiguration {
   desktopSessionManager?: DesktopSessionManager;
   /** MCP server manager for restarting cached workspace clients. */
   mcpServerManager?: Pick<MCPServerManager, "stopServers">;
+  /** Per-stream runtime for scheduling at most one automatic next-turn message. */
+  sendFollowUpRuntime?: {
+    used: boolean;
+    enqueue(message: string): {
+      status: "queued" | "user-message-pending" | "already-pending";
+    };
+  };
 }
 
 /**
@@ -615,6 +623,9 @@ export async function getToolsForModel(
     ask_user_question: createAskUserQuestionTool(config),
     propose_plan: createProposePlanTool(config),
     mcp_restart: createMcpRestartTool(config),
+    ...(config.sendFollowUpRuntime && !config.enableAgentReport
+      ? { send_follow_up: createSendFollowUpTool(config) }
+      : {}),
     // propose_name and propose_status are intentionally NOT registered here —
     // they are only used by the internal workspace-naming path
     // (workspaceTitleGenerator.ts) and the sidebar agent-status path
@@ -755,6 +766,7 @@ export async function getToolsForModel(
       enableAdvisor: Boolean(config.advisorRuntime),
       enableMemory: Boolean(config.memoryService && config.experiments?.memory),
       enableToolSearch: Boolean(config.toolSearchRuntime),
+      enableSendFollowUp: Boolean(config.sendFollowUpRuntime && !config.enableAgentReport),
       // The Review pane belongs to the user-facing parent workspace. config
       // .enableAgentReport is the canonical "is sub-agent" signal (set true iff
       // the workspace has a parentWorkspaceId), so withhold the review_pane_*

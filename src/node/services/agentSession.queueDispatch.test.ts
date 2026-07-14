@@ -1,6 +1,8 @@
-import { describe, expect, spyOn, test } from "bun:test";
+import { describe, expect, mock, spyOn, test } from "bun:test";
 
 import { Ok } from "@/common/types/result";
+import type { SendMessageOptions } from "@/common/orpc/types";
+import type { StreamMessageOptions } from "./aiService";
 import { createAgentSessionHarness } from "./agentSession.testHarness";
 
 const TEST_MODEL = "anthropic:claude-sonnet-4-5";
@@ -56,6 +58,152 @@ async function waitForCondition(condition: () => boolean, timeoutMs = 500): Prom
 }
 
 describe("AgentSession queued message tool-call dispatch", () => {
+  test("passes the active turn's follow-up queue callback to AIService", async () => {
+    const workspaceId = "queue-agent-follow-up-stream-runtime";
+    const streamMessage = mock((_options: StreamMessageOptions) => Promise.resolve(Ok(undefined)));
+    const { session, cleanup } = await createAgentSessionHarness({
+      workspaceId,
+      aiServiceOverrides: { streamMessage: streamMessage as never },
+    });
+    const options: SendMessageOptions = { model: TEST_MODEL, agentId: "exec" };
+
+    try {
+      await session.sendMessage("Start the current turn", options);
+
+      const request = streamMessage.mock.calls[0]?.[0] as unknown as {
+        queueAgentFollowUp?: (message: string) => { status: string };
+      };
+      expect(request.queueAgentFollowUp).toBeFunction();
+      expect(request.queueAgentFollowUp?.("Continue automatically")).toEqual({ status: "queued" });
+      expect(session.hasQueuedDedupeKey("agent-follow-up")).toBe(true);
+    } finally {
+      session.dispose();
+      await cleanup();
+    }
+  });
+
+  test("queues a sanitized synthetic follow-up for turn end", async () => {
+    const workspaceId = "queue-agent-follow-up";
+    const { session, cleanup } = await createAgentSessionHarness({ workspaceId });
+    const sendMessage = spyOn(session, "sendMessage").mockResolvedValue(Ok(undefined));
+
+    try {
+      const result = session.queueAgentFollowUp("Continue automatically", {
+        model: TEST_MODEL,
+        agentId: "exec",
+        thinkingLevel: "high",
+        additionalSystemInstructions: "Keep the active task context.",
+        editMessageId: "user-message-to-not-edit",
+        acpPromptId: "prompt-to-not-reuse",
+        delegatedToolNames: ["external_tool"],
+        maxOutputTokens: 123,
+        toolPolicy: [{ regex_match: "bash", action: "require" }],
+        muxMetadata: { type: "normal" },
+      });
+
+      expect(result).toEqual({ status: "queued" });
+      expect(session.hasQueuedDedupeKey("agent-follow-up")).toBe(true);
+      expect(session.hasQueuedMessages("turn-end")).toBe(true);
+
+      session.sendQueuedMessages();
+      expect(await waitForCondition(() => sendMessage.mock.calls.length === 1)).toBe(true);
+      const [, options, internal] = sendMessage.mock.calls[0];
+      expect(options).toMatchObject({
+        model: TEST_MODEL,
+        agentId: "exec",
+        thinkingLevel: "high",
+        additionalSystemInstructions: "Keep the active task context.",
+        skipAiSettingsPersistence: true,
+        muxMetadata: { type: "agent-follow-up" },
+      });
+      expect(options?.editMessageId).toBeUndefined();
+      expect(options?.acpPromptId).toBeUndefined();
+      expect(options?.delegatedToolNames).toBeUndefined();
+      expect(options?.maxOutputTokens).toBeUndefined();
+      expect(options?.toolPolicy).toBeUndefined();
+      expect(internal).toMatchObject({ synthetic: true, agentInitiated: true });
+    } finally {
+      sendMessage.mockRestore();
+      session.dispose();
+      await cleanup();
+    }
+  });
+
+  test("does not queue an automatic follow-up behind pending user input", async () => {
+    const workspaceId = "queue-agent-follow-up-user-priority";
+    const { session, cleanup } = await createAgentSessionHarness({ workspaceId });
+
+    try {
+      session.queueMessage("Manual follow-up", {
+        model: TEST_MODEL,
+        agentId: "exec",
+        queueDispatchMode: "turn-end",
+      });
+
+      const result = session.queueAgentFollowUp("Automatic follow-up", {
+        model: TEST_MODEL,
+        agentId: "exec",
+      });
+
+      expect(result).toEqual({ status: "user-message-pending" });
+      expect(session.hasQueuedDedupeKey("agent-follow-up")).toBe(false);
+    } finally {
+      session.dispose();
+      await cleanup();
+    }
+  });
+
+  test("does not queue an automatic follow-up ahead of an external manual follow-up", async () => {
+    const workspaceId = "queue-agent-follow-up-external-user-priority";
+    const { session, cleanup } = await createAgentSessionHarness({ workspaceId });
+    const releaseManualSlot = session.registerExternalManualFollowUp();
+
+    try {
+      const result = session.queueAgentFollowUp("Automatic follow-up", {
+        model: TEST_MODEL,
+        agentId: "exec",
+      });
+
+      expect(result).toEqual({ status: "user-message-pending" });
+      expect(session.hasQueuedDedupeKey("agent-follow-up")).toBe(false);
+    } finally {
+      releaseManualSlot();
+      session.dispose();
+      await cleanup();
+    }
+  });
+
+  test("cancels only a pending automatic follow-up when user input takes over", async () => {
+    const workspaceId = "queue-agent-follow-up-cancel";
+    const { session, cleanup } = await createAgentSessionHarness({ workspaceId });
+    const sendMessage = spyOn(session, "sendMessage").mockResolvedValue(Ok(undefined));
+
+    try {
+      expect(
+        session.queueAgentFollowUp("Automatic follow-up", {
+          model: TEST_MODEL,
+          agentId: "exec",
+        })
+      ).toEqual({ status: "queued" });
+      session.queueMessage("Manual follow-up", {
+        model: TEST_MODEL,
+        agentId: "exec",
+        queueDispatchMode: "turn-end",
+      });
+
+      expect(session.cancelQueuedAgentFollowUp()).toBe(true);
+      expect(session.hasQueuedDedupeKey("agent-follow-up")).toBe(false);
+
+      session.sendQueuedMessages();
+      expect(await waitForCondition(() => sendMessage.mock.calls.length === 1)).toBe(true);
+      expect(sendMessage.mock.calls[0]?.[0]).toBe("Manual follow-up");
+    } finally {
+      sendMessage.mockRestore();
+      session.dispose();
+      await cleanup();
+    }
+  });
+
   test("soft-stops the current stream after a real tool call when a tool-end message is queued", async () => {
     const workspaceId = "queue-dispatch-tool-end";
     const { session, cleanup, aiEmitter, aiService } = await createAgentSessionHarness({

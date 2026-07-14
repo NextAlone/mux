@@ -90,6 +90,43 @@ describe("supportsAnthropicNativeWebFetch", () => {
 });
 
 describe("getToolsForModel", () => {
+  test("only includes send_follow_up for a top-level stream with a runtime", async () => {
+    const runtime = new LocalRuntime(process.cwd());
+    const initStateManager = createInitStateManager();
+    const sendFollowUpRuntime = {
+      used: false,
+      enqueue: () => ({ status: "queued" as const }),
+    };
+
+    const topLevelTools = await getToolsForModel(
+      "noop:model",
+      {
+        cwd: process.cwd(),
+        runtime,
+        runtimeTempDir: "/tmp",
+        enableAgentReport: false,
+        sendFollowUpRuntime,
+      },
+      "ws-1",
+      initStateManager
+    );
+    const childTools = await getToolsForModel(
+      "noop:model",
+      {
+        cwd: process.cwd(),
+        runtime,
+        runtimeTempDir: "/tmp",
+        enableAgentReport: true,
+        sendFollowUpRuntime,
+      },
+      "ws-child",
+      initStateManager
+    );
+
+    expect(topLevelTools.send_follow_up).toBeDefined();
+    expect(childTools.send_follow_up).toBeUndefined();
+  });
+
   test("includes the image generation tool in the executable toolset", async () => {
     const runtime = new LocalRuntime(process.cwd());
     const initStateManager = createInitStateManager();

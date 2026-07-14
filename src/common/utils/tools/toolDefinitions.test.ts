@@ -589,6 +589,15 @@ describe("TOOL_DEFINITIONS", () => {
     expect(parsed.success).toBe(true);
   });
 
+  it("defines a non-empty send_follow_up message", () => {
+    expect(TOOL_DEFINITIONS.send_follow_up.schema.safeParse({ message: "continue" }).success).toBe(
+      true
+    );
+    expect(TOOL_DEFINITIONS.send_follow_up.schema.safeParse({ message: "   " }).success).toBe(
+      false
+    );
+  });
+
   it("rejects task(kind=bash) tool calls (bash is a separate tool)", () => {
     const parsed = TOOL_DEFINITIONS.task.schema.safeParse({
       // Legacy shape; should not validate against the current task schema.

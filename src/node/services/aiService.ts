@@ -483,6 +483,10 @@ export interface StreamMessageOptions {
   workspaceGoalService?: WorkspaceGoalService;
   disableWorkspaceAgents?: boolean;
   hasQueuedMessages?: (dispatchMode?: "tool-end" | "turn-end") => boolean;
+  /** Queue one model-authored synthetic message after this stream finishes. */
+  queueAgentFollowUp?: (message: string) => {
+    status: "queued" | "user-message-pending" | "already-pending";
+  };
   muxMetadata?: MuxMessageMetadata;
   openaiTruncationModeOverride?: "auto" | "disabled";
   installOpenAIResponsesRemoteCompaction?: (params: {
@@ -1290,6 +1294,7 @@ export class AIService extends EventEmitter {
       workspaceGoalService,
       disableWorkspaceAgents,
       hasQueuedMessages,
+      queueAgentFollowUp,
       openaiTruncationModeOverride,
       installOpenAIResponsesRemoteCompaction,
       muxMetadata,
@@ -1764,13 +1769,21 @@ export class AIService extends EventEmitter {
       const projectTrusted = isProjectTrusted(this.config, metadata.projectPath);
       const sharedExecutionTrusted = isWorkspaceTrustedForSharedExecution(metadata, cfg.projects);
       const latestUserMessage = [...messages].reverse().find((message) => message.role === "user");
-      const proactiveTaskDelegation =
-        taskDelegationMode === "proactive" &&
+      const isTopLevelOrdinaryUserTurn =
         agentInitiated !== true &&
         latestUserMessage != null &&
         latestUserMessage.metadata?.synthetic !== true &&
         latestUserMessage.metadata?.retrySendOptions?.agentInitiated !== true &&
-        !isSubagentWorkspace &&
+        !isSubagentWorkspace;
+      const sendFollowUpRuntime =
+        queueAgentFollowUp != null &&
+        isTopLevelOrdinaryUserTurn &&
+        latestUserMessage?.metadata?.muxMetadata?.type !== "agent-follow-up"
+          ? { used: false, enqueue: queueAgentFollowUp }
+          : undefined;
+      const proactiveTaskDelegation =
+        taskDelegationMode === "proactive" &&
+        isTopLevelOrdinaryUserTurn &&
         sharedExecutionTrusted &&
         isExecLikeEditingCapableInResolvedChain(agentInheritanceChain);
       const agentAdvisorEnabled = resolveAdvisorEnabledForAgent(
@@ -2356,6 +2369,7 @@ export class AIService extends EventEmitter {
             }
           : {}),
         ...(toolSearchRuntime ? { toolSearchRuntime } : {}),
+        ...(sendFollowUpRuntime ? { sendFollowUpRuntime } : {}),
         openaiWireFormat: effectiveMuxProviderOptions?.openai?.wireFormat,
         backgroundProcessManager: this.backgroundProcessManager,
         // Plan agent configuration for plan file access.

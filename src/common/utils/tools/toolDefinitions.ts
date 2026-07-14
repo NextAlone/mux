@@ -1000,6 +1000,15 @@ export const McpRestartToolResultSchema = z
   .strict();
 
 // -----------------------------------------------------------------------------
+// send_follow_up (queue one synthetic follow-up for the next turn)
+// -----------------------------------------------------------------------------
+export const SendFollowUpToolArgsSchema = z
+  .object({
+    message: z.string().trim().min(1).describe("Message to send automatically on the next turn."),
+  })
+  .strict();
+
+// -----------------------------------------------------------------------------
 // task_terminate (terminate sub-agent/bash tasks, interrupt workflow runs)
 // -----------------------------------------------------------------------------
 export const TaskTerminateToolArgsSchema = z
@@ -2133,6 +2142,13 @@ export const TOOL_DEFINITIONS = {
       "This closes current MCP clients; fresh clients are created on the next model turn/tool setup. Do not call MCP tools again in the same turn after this.",
     schema: McpRestartToolArgsSchema,
   },
+  send_follow_up: {
+    description:
+      "Queue one synthetic user message to start automatically after the current turn finishes. " +
+      "Use when work must continue in a fresh model turn, such as after restarting MCP clients. " +
+      "Explicit user input takes priority over a queued automatic follow-up.",
+    schema: SendFollowUpToolArgsSchema,
+  },
   task_apply_git_patch: {
     description:
       "Apply a completed sub-agent task's jj-native task-change artifact to the current workspace using `jj restore`. " +
@@ -3098,6 +3114,8 @@ export function getAvailableTools(
     enableMemory?: boolean;
     /** Whether tool_search is available (tool-search experiment + deferred MCP tools present). */
     enableToolSearch?: boolean;
+    /** Whether the current top-level stream can schedule an automatic next turn. */
+    enableSendFollowUp?: boolean;
     /**
      * Whether the Review pane tools (review_pane_update/review_pane_get) are
      * available. The Review pane belongs to the user-facing parent workspace,
@@ -3116,6 +3134,7 @@ export function getAvailableTools(
   const enableDynamicWorkflows = options?.enableDynamicWorkflows ?? false;
   const enableMemory = options?.enableMemory ?? false;
   const enableToolSearch = options?.enableToolSearch ?? false;
+  const enableSendFollowUp = options?.enableSendFollowUp ?? false;
   const enableReviewPane = options?.enableReviewPane ?? true;
 
   // Base tools available for all models
@@ -3153,6 +3172,7 @@ export function getAvailableTools(
     "propose_plan",
     "bash",
     "mcp_restart",
+    ...(enableSendFollowUp ? ["send_follow_up"] : []),
     "task",
     "task_await",
     "task_apply_git_patch",

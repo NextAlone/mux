@@ -153,6 +153,8 @@ export interface CompactionFollowUpRequest extends CompactionFollowUpInput, Pres
   model: string;
   /** Agent ID for the follow-up message (user's original agentId, not "compact") */
   agentId: string;
+  /** Preserve synthetic agent-origin classification through compaction handoffs. */
+  agentInitiated?: boolean;
   /** Internal goal continuation classification for synthetic follow-up accounting. */
   goalKind?: GoalSyntheticMessageKind;
   /** Internal dispatch guardrails for crash-safe follow-up recovery. */
@@ -412,6 +414,10 @@ export type MuxMessageMetadata = MuxMessageMetadataBase &
          * advanceAnchoredDeadline anchor.
          */
         firedAt?: number;
+      }
+    | {
+        /** Synthetic user turn queued by send_follow_up after the current model turn. */
+        type: "agent-follow-up";
       }
     | {
         type: "normal"; // Regular messages

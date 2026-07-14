@@ -553,6 +553,73 @@ describe("MessageQueue", () => {
     });
   });
 
+  describe("automatic follow-up", () => {
+    it("keeps an agent follow-up in a sealed queue entry", () => {
+      const metadata: MuxMessageMetadata = { type: "agent-follow-up" };
+      queue.addOnce(
+        "Continue automatically",
+        {
+          model: "gpt-4",
+          agentId: "exec",
+          queueDispatchMode: "turn-end",
+          muxMetadata: metadata,
+        },
+        "agent-follow-up",
+        { synthetic: true, agentInitiated: true }
+      );
+      queue.add(
+        "Background wake",
+        { model: "gpt-4", agentId: "exec" },
+        { synthetic: true, agentInitiated: true }
+      );
+
+      const followUp = queue.dequeueNext();
+      expect(followUp.message).toBe("Continue automatically");
+      expect((followUp.options?.muxMetadata as MuxMessageMetadata).type).toBe("agent-follow-up");
+      expect(followUp.internal).toMatchObject({ synthetic: true, agentInitiated: true });
+      expect(queue.dequeueNext().message).toBe("Background wake");
+    });
+
+    it("distinguishes pending user input from synthetic entries", () => {
+      queue.add(
+        "Background wake",
+        { model: "gpt-4", agentId: "exec" },
+        { synthetic: true, agentInitiated: true }
+      );
+      expect(queue.hasUserAuthoredEntries()).toBe(false);
+
+      queue.add("User follow-up", { model: "gpt-4", agentId: "exec" });
+      expect(queue.hasUserAuthoredEntries()).toBe(true);
+    });
+
+    it("removes only the keyed automatic entry", () => {
+      queue.add("User message before", { model: "gpt-4", agentId: "exec" });
+      queue.addOnce(
+        "Continue automatically",
+        {
+          model: "gpt-4",
+          agentId: "exec",
+          muxMetadata: { type: "agent-follow-up" },
+        },
+        "agent-follow-up",
+        { synthetic: true, agentInitiated: true }
+      );
+      queue.add("User message after", { model: "gpt-4", agentId: "exec" });
+
+      expect(queue.removeByDedupeKey("other")).toBeNull();
+      expect(queue.removeByDedupeKey("agent-follow-up")).not.toBeNull();
+      expect(queue.getMessages()).toEqual(["User message before", "User message after"]);
+    });
+
+    it("does not remove a keyed entry that absorbed another message", () => {
+      queue.addOnce("First user message", { model: "gpt-4", agentId: "exec" }, "shared-entry");
+      queue.add("Second user message", { model: "gpt-4", agentId: "exec" });
+
+      expect(queue.removeByDedupeKey("shared-entry")).toBeNull();
+      expect(queue.getMessages()).toEqual(["First user message", "Second user message"]);
+    });
+  });
+
   describe("multi-message batching", () => {
     it("should batch multiple follow-up messages", () => {
       queue.add("First message");

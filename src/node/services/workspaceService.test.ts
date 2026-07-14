@@ -3966,6 +3966,7 @@ describe("WorkspaceService sendMessage status clearing", () => {
   let fakeSession: {
     isBusy: ReturnType<typeof mock>;
     hasQueuedMessages: ReturnType<typeof mock>;
+    cancelQueuedAgentFollowUp: ReturnType<typeof mock>;
     dropQueuedMessageWithOnlyDedupeKey: ReturnType<typeof mock>;
     queueMessage: ReturnType<typeof mock>;
     sendMessage: ReturnType<typeof mock>;
@@ -4038,6 +4039,7 @@ describe("WorkspaceService sendMessage status clearing", () => {
     fakeSession = {
       isBusy: mock(() => true),
       hasQueuedMessages: mock(() => false),
+      cancelQueuedAgentFollowUp: mock(() => false),
       dropQueuedMessageWithOnlyDedupeKey: mock(() => false),
       queueMessage: mock(() => "tool-end" as const),
       sendMessage: mock(() => Promise.resolve(Ok(undefined))),
@@ -4402,6 +4404,33 @@ describe("WorkspaceService sendMessage status clearing", () => {
     expect(fakeSession.queueMessage).toHaveBeenCalled();
   });
 
+  test("manual input cancels a pending agent follow-up before async send preparation", async () => {
+    const pricingGate = createDeferred<Result<void, SendMessageError>>();
+    (
+      workspaceService as unknown as {
+        assertPricedModelForBudgetedGoal: () => Promise<Result<void, SendMessageError>>;
+      }
+    ).assertPricedModelForBudgetedGoal = mock(() => pricingGate.promise);
+
+    const sendPromise = workspaceService.sendMessage("test-workspace", "manual takeover", {
+      model: "openai:gpt-4o-mini",
+      agentId: "exec",
+    });
+
+    expect(fakeSession.cancelQueuedAgentFollowUp).toHaveBeenCalledTimes(1);
+    pricingGate.resolve(Ok(undefined));
+    expect((await sendPromise).success).toBe(true);
+  });
+
+  test("blank manual input does not cancel a pending agent follow-up", async () => {
+    await workspaceService.sendMessage("test-workspace", "   ", {
+      model: "openai:gpt-4o-mini",
+      agentId: "exec",
+    });
+
+    expect(fakeSession.cancelQueuedAgentFollowUp).not.toHaveBeenCalled();
+  });
+
   test("a queued heartbeat send does not supersede itself", async () => {
     fakeSession.isBusy.mockReturnValue(true);
 
@@ -4750,6 +4779,7 @@ describe("WorkspaceService pending auto-title", () => {
   let workspacePath: string;
   let fakeSession: {
     isBusy: ReturnType<typeof mock>;
+    cancelQueuedAgentFollowUp: ReturnType<typeof mock>;
     queueMessage: ReturnType<typeof mock>;
     sendMessage: ReturnType<typeof mock>;
     resumeStream: ReturnType<typeof mock>;
@@ -4831,6 +4861,7 @@ describe("WorkspaceService pending auto-title", () => {
 
     fakeSession = {
       isBusy: mock(() => false),
+      cancelQueuedAgentFollowUp: mock(() => false),
       queueMessage: mock(() => "tool-end" as const),
       sendMessage: mock(() => Promise.resolve(Ok(undefined))),
       resumeStream: mock(() => Promise.resolve(Ok({ started: true }))),

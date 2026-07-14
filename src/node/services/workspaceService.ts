@@ -8008,6 +8008,19 @@ export class WorkspaceService extends EventEmitter {
 
       const session = this.getOrCreateSession(workspaceId);
 
+      // The user explicitly took control of the next turn. Cancel the pending automatic
+      // follow-up synchronously, before pricing/settings awaits can let stream-end dispatch it.
+      // A blank invalid submit is not an actionable takeover and must leave valid queued work intact.
+      const hasActionableUserPayload =
+        message.trim().length > 0 ||
+        (options?.fileParts?.length ?? 0) > 0 ||
+        (options?.editMessageId?.trim().length ?? 0) > 0;
+      if (isUserAuthored && hasActionableUserPayload && session.cancelQueuedAgentFollowUp()) {
+        log.info("sendMessage: canceled pending agent follow-up superseded by user input", {
+          workspaceId,
+        });
+      }
+
       // Skip recency update for idle compaction - preserve original "last used" time
       const muxMeta = options?.muxMetadata as { type?: string; source?: string } | undefined;
       const isIdleCompaction =
