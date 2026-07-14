@@ -20,6 +20,7 @@ import { normalizeTaskSettings } from "@/common/types/tasks";
 import { askUserQuestionManager } from "@/node/services/askUserQuestionManager";
 import { delegatedToolCallManager } from "@/node/services/delegatedToolCallManager";
 import { log } from "@/node/services/log";
+import { shutdownCodeModeSessionIfLoaded } from "@/node/services/toolAssembly";
 import { isPathInsideDir } from "@/node/utils/pathUtils";
 import { AgentSession } from "@/node/services/agentSession";
 import type { HistoryService } from "@/node/services/historyService";
@@ -4558,6 +4559,17 @@ export class WorkspaceService extends EventEmitter {
         }
       } else {
         log.error(`Could not find metadata for workspace ${workspaceId}, creating phantom cleanup`);
+      }
+
+      // A Code Mode session is owned by this workspace/thread. Once removal is committed,
+      // cancel and join its cells before deleting the rest of the session state.
+      try {
+        await shutdownCodeModeSessionIfLoaded(workspaceId);
+      } catch (error: unknown) {
+        log.error("Failed to shut down Code Mode session during workspace removal", {
+          workspaceId,
+          error: getErrorMessage(error),
+        });
       }
 
       // Avoid leaking init waiters/logs after workspace deletion.

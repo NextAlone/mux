@@ -17,7 +17,11 @@ import type {
   PTCEventWithParent,
   createCodeExecutionTool as CreateCodeExecutionToolFn,
 } from "@/node/services/tools/code_execution";
-import type { createCodeModeTools as CreateCodeModeToolsFn } from "@/node/services/tools/code_mode";
+import type {
+  createCodeModeTools as CreateCodeModeToolsFn,
+  shutdownAllCodeModeSessions as ShutdownAllCodeModeSessionsFn,
+  shutdownCodeModeSession as ShutdownCodeModeSessionFn,
+} from "@/node/services/tools/code_mode";
 import type { QuickJSRuntimeFactory } from "@/node/services/ptc/quickjsRuntime";
 import type { ToolBridge } from "@/node/services/ptc/toolBridge";
 import { log } from "./log";
@@ -40,6 +44,8 @@ import type { TaskDelegationCallSurface } from "@/common/types/taskDelegation";
 interface PTCModules {
   createCodeExecutionTool: typeof CreateCodeExecutionToolFn;
   createCodeModeTools: typeof CreateCodeModeToolsFn;
+  shutdownCodeModeSession: typeof ShutdownCodeModeSessionFn;
+  shutdownAllCodeModeSessions: typeof ShutdownAllCodeModeSessionsFn;
   QuickJSRuntimeFactory: typeof QuickJSRuntimeFactory;
   ToolBridge: typeof ToolBridge;
   runtimeFactory: QuickJSRuntimeFactory | null;
@@ -62,11 +68,23 @@ async function getPTCModules(): Promise<PTCModules> {
   ptcModules = {
     createCodeExecutionTool: codeExecution.createCodeExecutionTool,
     createCodeModeTools: codeMode.createCodeModeTools,
+    shutdownCodeModeSession: codeMode.shutdownCodeModeSession,
+    shutdownAllCodeModeSessions: codeMode.shutdownAllCodeModeSessions,
     QuickJSRuntimeFactory: quickjs.QuickJSRuntimeFactory,
     ToolBridge: toolBridge.ToolBridge,
     runtimeFactory: null,
   };
   return ptcModules;
+}
+
+/** Shut down a workspace's Code Mode session without defeating PTC lazy loading. */
+export function shutdownCodeModeSessionIfLoaded(workspaceId: string): Promise<void> {
+  return ptcModules?.shutdownCodeModeSession(workspaceId) ?? Promise.resolve();
+}
+
+/** Shut down every loaded Code Mode session without loading PTC during app teardown. */
+export function shutdownAllCodeModeSessionsIfLoaded(): Promise<void> {
+  return ptcModules?.shutdownAllCodeModeSessions() ?? Promise.resolve();
 }
 
 // ---------------------------------------------------------------------------

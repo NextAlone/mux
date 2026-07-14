@@ -73,6 +73,7 @@ import { ServerAuthService } from "@/node/services/serverAuthService";
 import { DesktopBridgeServer } from "@/node/services/desktop/DesktopBridgeServer";
 import { DesktopSessionManager } from "@/node/services/desktop/DesktopSessionManager";
 import { DesktopTokenManager } from "@/node/services/desktop/DesktopTokenManager";
+import { shutdownAllCodeModeSessionsIfLoaded } from "@/node/services/toolAssembly";
 import type { ORPCContext } from "@/node/orpc/context";
 import type { ExternalSecretResolver } from "@/common/types/secrets";
 /**
@@ -631,6 +632,7 @@ export class ServiceContainer {
    * Shutdown services that need cleanup
    */
   async shutdown(): Promise<void> {
+    await shutdownAllCodeModeSessionsIfLoaded();
     // Stop the bridge before closing sessions so desktop clients get a clean disconnect.
     await this.desktopBridgeServer.stop();
     this.desktopTokenManager.dispose();
@@ -662,6 +664,7 @@ export class ServiceContainer {
     // backgroundProcessManager.cleanup(), which would otherwise erase the persisted
     // armed-monitor registry records that drive post-restart "monitor lost" wakes.
     this.backgroundProcessManager.beginShutdown();
+    await shutdownAllCodeModeSessionsIfLoaded();
     // Stop the bridge before closing sessions so desktop clients get a clean disconnect.
     await this.desktopBridgeServer.stop();
     this.desktopTokenManager.dispose();
