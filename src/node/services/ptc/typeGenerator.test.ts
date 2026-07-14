@@ -1,7 +1,12 @@
 import { describe, test, expect, beforeEach } from "bun:test";
 import { z } from "zod";
 import type { Tool } from "ai";
-import { generateMuxTypes, getCachedMuxTypes, clearTypeCache } from "./typeGenerator";
+import {
+  generateMuxTypes,
+  getCachedCodeModeTypes,
+  getCachedMuxTypes,
+  clearTypeCache,
+} from "./typeGenerator";
 
 /**
  * Create a mock tool with the given schema and optional execute function.
@@ -44,6 +49,15 @@ describe("generateMuxTypes", () => {
     // Asyncify makes async host functions appear synchronous to QuickJS
     expect(types).toContain("function file_read(args: FileReadArgs): FileReadResult");
     expect(types).not.toContain("Promise<FileReadResult>");
+  });
+
+  test("generates awaitable tools for Code Mode", async () => {
+    const fileReadTool = createMockTool(z.object({ filePath: z.string() }));
+
+    const types = await getCachedCodeModeTypes({ file_read: fileReadTool });
+
+    expect(types).toContain("declare namespace tools");
+    expect(types).toContain("function file_read(args: FileReadArgs): Promise<FileReadResult>");
   });
 
   test("generates result type from Zod schema (not hardcoded)", async () => {

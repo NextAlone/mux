@@ -14,6 +14,7 @@ import { z } from "zod";
 import type { ToolBridge } from "@/node/services/ptc/toolBridge";
 import type { IJSRuntime, IJSRuntimeFactory } from "@/node/services/ptc/runtime";
 import type { PTCEvent } from "@/node/services/ptc/types";
+import { getCachedCodeModeTypes } from "@/node/services/ptc/typeGenerator";
 import type { PTCEventWithParent } from "./code_execution";
 
 const DEFAULT_YIELD_MS = 10_000;
@@ -202,7 +203,10 @@ class CodeModeSession {
       };
       try {
         runtime.setLimits({ timeoutMs: 60 * 60 * 1000 });
-        bridge.register(runtime, "tools");
+        // Codex emits `await tools.*` and concurrent Promise combinators. Real guest
+        // promises avoid Asyncify's single-suspension limit while preserving legacy
+        // synchronous `mux.*` behavior for code_execution.
+        bridge.register(runtime, "tools", true);
         runtime.registerValue?.("ALL_TOOLS", bridge.getBridgeableToolNames());
         this.registerHelpers(runtime, cell);
         this.registerNestedEvents(runtime, toolCallId, emitNestedEvent);
@@ -554,12 +558,17 @@ export function shutdownAllCodeModeSessions(): Promise<void> {
   });
 }
 
-export function createCodeModeTools(opts: {
+export async function createCodeModeTools(opts: {
   workspaceId: string;
   runtimeFactory: IJSRuntimeFactory;
   toolBridge: ToolBridge;
   emitNestedEvent?: (event: PTCEventWithParent) => void;
-}): Record<string, Tool> {
+}): Promise<Record<string, Tool>> {
+  if (shutdownAllPromise || closingSessions.has(opts.workspaceId)) {
+    throw new Error("code mode session is shutting down");
+  }
+  const toolTypes = await getCachedCodeModeTypes(opts.toolBridge.getBridgeableTools());
+  // Type generation yields; re-check before publishing tools backed by this session.
   if (shutdownAllPromise || closingSessions.has(opts.workspaceId)) {
     throw new Error("code mode session is shutting down");
   }
@@ -570,8 +579,12 @@ export function createCodeModeTools(opts: {
   }
 
   const exec = openai.tools.customTool({
-    description:
-      'Run raw JavaScript in a fresh isolated runtime. Awaitable Mux tools are on `tools.*`; `ALL_TOOLS` lists their names. Helpers: `text()`, `image()`, `generatedImage()`, `notify()`, `store()`/`load()`, and `yield_control()`. Cells in the same workspace share stored values, not runtime state. An optional first line `// @exec: {"yield_time_ms":10000,"max_output_tokens":1000}` controls the initial response. Pass JavaScript source directly, not JSON, quotes, or a Markdown code fence.',
+    description: `Run raw JavaScript in a fresh isolated runtime. Awaitable Mux tools are on \`tools.*\`; \`ALL_TOOLS\` lists their names. Helpers: \`text()\`, \`image()\`, \`generatedImage()\`, \`notify()\`, \`store()\`/\`load()\`, and \`yield_control()\`. Cells in the same workspace share stored values, not runtime state. An optional first line \`// @exec: {"yield_time_ms":10000,"max_output_tokens":1000}\` controls the initial response. Pass JavaScript source directly, not JSON, quotes, or a Markdown code fence.
+
+Available tools:
+\`\`\`typescript
+${toolTypes}
+\`\`\``,
     format: {
       type: "grammar",
       syntax: "lark",

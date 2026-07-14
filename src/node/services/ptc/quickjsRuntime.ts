@@ -181,7 +181,8 @@ export class QuickJSRuntime implements IJSRuntime {
 
   registerObject(
     name: string,
-    obj: Record<string, (...args: unknown[]) => Promise<unknown>>
+    obj: Record<string, (...args: unknown[]) => Promise<unknown>>,
+    awaitable = false
   ): void {
     this.assertNotDisposed("registerObject");
 
@@ -189,7 +190,7 @@ export class QuickJSRuntime implements IJSRuntime {
     const objHandle = this.ctx.newObject();
 
     for (const [methodName, fn] of Object.entries(obj)) {
-      const fnHandle = this.ctx.newAsyncifiedFunction(methodName, async (...argHandles) => {
+      const invoke = async (argHandles: QuickJSHandle[]): Promise<unknown> => {
         if (this.abortController?.signal.aborted) {
           throw new Error("Execution aborted");
         }
@@ -227,7 +228,7 @@ export class QuickJSRuntime implements IJSRuntime {
             endTime,
           });
 
-          return this.marshal(result);
+          return result;
         } catch (error) {
           const endTime = Date.now();
           const duration_ms = endTime - startTime;
@@ -252,7 +253,40 @@ export class QuickJSRuntime implements IJSRuntime {
 
           throw error;
         }
-      });
+      };
+
+      const fnHandle = awaitable
+        ? this.ctx.newFunction(methodName, (...argHandles) => {
+            const deferred = this.ctx.newPromise();
+            invoke(argHandles).then(
+              (result) => {
+                if (this.disposed) return;
+                const resultHandle = this.marshal(result);
+                deferred.resolve(resultHandle);
+                resultHandle.dispose();
+              },
+              (error: unknown) => {
+                if (this.disposed) return;
+                const errorHandle = this.ctx.newError(
+                  error instanceof Error ? error : new Error(String(error))
+                );
+                deferred.reject(errorHandle);
+                errorHandle.dispose();
+              }
+            );
+            // A settled host promise only queues guest continuations. Drive them so
+            // the outer Code Mode promise can progress before its runtime is disposed.
+            deferred.settled.then(
+              () => {
+                if (!this.disposed) this.ctx.runtime.executePendingJobs().dispose();
+              },
+              () => undefined
+            );
+            return deferred.handle;
+          })
+        : this.ctx.newAsyncifiedFunction(methodName, async (...argHandles) =>
+            this.marshal(await invoke(argHandles))
+          );
 
       this.ctx.setProp(objHandle, methodName, fnHandle);
       fnHandle.dispose();
@@ -327,7 +361,7 @@ export class QuickJSRuntime implements IJSRuntime {
         };
       }
 
-      const resolvedValue = this.resolveReturnedValue(evalResult.value, deadline, timeoutMs);
+      const resolvedValue = await this.resolveReturnedValue(evalResult.value, deadline, timeoutMs);
       evalResult.value.dispose();
 
       if (!resolvedValue.success) {
@@ -391,41 +425,32 @@ export class QuickJSRuntime implements IJSRuntime {
     }
   }
 
-  private resolveReturnedValue(
+  private async resolveReturnedValue(
     handle: QuickJSHandle,
     deadline: number,
     timeoutMs: number
-  ): { success: true; value: unknown } | { success: false; error: string } {
-    let promiseState = this.ctx.getPromiseState(handle);
-    while (promiseState.type === "pending" && this.ctx.runtime.hasPendingJob()) {
-      const pendingJobs = this.ctx.runtime.executePendingJobs();
-      if (pendingJobs.error) {
-        const errorObj: unknown = pendingJobs.error.context.dump(pendingJobs.error) as unknown;
-        const error = this.getErrorMessage(errorObj, deadline, timeoutMs);
-        pendingJobs.dispose();
-        return { success: false, error };
-      }
+  ): Promise<{ success: true; value: unknown } | { success: false; error: string }> {
+    const resolution = this.ctx.resolvePromise(handle);
+    const pendingJobs = this.ctx.runtime.executePendingJobs();
+    if (pendingJobs.error) {
+      const errorObj: unknown = pendingJobs.error.context.dump(pendingJobs.error) as unknown;
+      const error = this.getErrorMessage(errorObj, deadline, timeoutMs);
       pendingJobs.dispose();
-      promiseState = this.ctx.getPromiseState(handle);
+      return { success: false, error };
     }
+    pendingJobs.dispose();
 
-    if (promiseState.type === "pending") {
-      return { success: false, error: "Execution returned a pending Promise" };
-    }
-    if (promiseState.type === "rejected") {
-      const errorObj: unknown = this.ctx.dump(promiseState.error) as unknown;
-      promiseState.error.dispose();
+    const resolved = await resolution;
+    if (resolved.error) {
+      const errorObj: unknown = this.ctx.dump(resolved.error) as unknown;
+      resolved.error.dispose();
       return { success: false, error: this.getErrorMessage(errorObj, deadline, timeoutMs) };
     }
-
     try {
-      const valueHandle = promiseState.notAPromise ? handle : promiseState.value;
-      const value: unknown = this.ctx.dump(valueHandle) as unknown;
+      const value: unknown = this.ctx.dump(resolved.value) as unknown;
       return { success: true, value };
     } finally {
-      if (!promiseState.notAPromise) {
-        promiseState.value.dispose();
-      }
+      resolved.value.dispose();
     }
   }
 

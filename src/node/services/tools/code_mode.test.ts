@@ -131,7 +131,7 @@ async function expectRejectedWith(promise: Promise<unknown>, message: string): P
 
 describe("createCodeModeTools", () => {
   it("persists store/load values across cells", async () => {
-    const tools = createCodeModeTools({
+    const tools = await createCodeModeTools({
       workspaceId: `code-mode-store-${Date.now()}`,
       runtimeFactory: new QuickJSRuntimeFactory(),
       toolBridge: new ToolBridge({}),
@@ -150,29 +150,37 @@ describe("createCodeModeTools", () => {
     expect(loaded).toMatchObject({ status: "completed", result: 42 });
   });
 
-  it("completes after outputting an awaited bridged tool result", async () => {
-    const tools = createCodeModeTools({
+  it("supports sequential and concurrent awaited bridged tools", async () => {
+    const tools = await createCodeModeTools({
       workspaceId: `code-mode-output-${Date.now()}`,
       runtimeFactory: new QuickJSRuntimeFactory(),
       toolBridge: new ToolBridge({
         echo: tool({
-          inputSchema: z.object({}),
-          execute: () => Promise.resolve({ output: "ok" }),
+          inputSchema: z.object({ value: z.number() }),
+          execute: async ({ value }) => {
+            await new Promise((resolve) => setTimeout(resolve, 5));
+            return value;
+          },
         }),
       }),
     });
 
     const result = (await executable(tools.exec)(
-      "const value = await tools.echo({}); text(value.output); return value.output;",
+      `const first = await tools.echo({ value: 1 });
+       const second = await tools.echo({ value: 2 });
+       return [first, second, ...await Promise.all([
+         tools.echo({ value: 3 }),
+         tools.echo({ value: 4 }),
+       ])];`,
       toolOptions
     )) as CodeModeResult;
 
-    expect(result).toMatchObject({ status: "completed", output: "ok", result: "ok" });
+    expect(result).toMatchObject({ status: "completed", result: [1, 2, 3, 4] });
   });
 
   it("executes the advertised await tools.task protocol", async () => {
     const executeTask = mock((args: unknown) => Promise.resolve({ status: "queued", args }));
-    const tools = createCodeModeTools({
+    const tools = await createCodeModeTools({
       workspaceId: `code-mode-task-${Date.now()}`,
       runtimeFactory: new QuickJSRuntimeFactory(),
       toolBridge: new ToolBridge({
@@ -207,7 +215,7 @@ describe("createCodeModeTools", () => {
 
   it("returns a yielded cell that wait can poll to completion", async () => {
     const runtimeFactory = new DeferredRuntimeFactory();
-    const tools = createCodeModeTools({
+    const tools = await createCodeModeTools({
       workspaceId: `code-mode-${Date.now()}`,
       runtimeFactory,
       toolBridge: new ToolBridge({}),
@@ -241,7 +249,7 @@ describe("createCodeModeTools", () => {
 
   it("closes a terminal cell after delivering its final response", async () => {
     const runtimeFactory = new DeferredRuntimeFactory();
-    const tools = createCodeModeTools({
+    const tools = await createCodeModeTools({
       workspaceId: `code-mode-close-${Date.now()}`,
       runtimeFactory,
       toolBridge: new ToolBridge({}),
@@ -277,7 +285,7 @@ describe("createCodeModeTools", () => {
 
   it("strictly validates and strips the exec pragma before evaluation", async () => {
     const runtimeFactory = new DeferredRuntimeFactory();
-    const tools = createCodeModeTools({
+    const tools = await createCodeModeTools({
       workspaceId: `code-mode-pragma-${Date.now()}`,
       runtimeFactory,
       toolBridge: new ToolBridge({}),
@@ -306,7 +314,7 @@ describe("createCodeModeTools", () => {
 
   it("waits for runtime cleanup before reporting termination", async () => {
     const runtimeFactory = new DeferredRuntimeFactory();
-    const tools = createCodeModeTools({
+    const tools = await createCodeModeTools({
       workspaceId: `code-mode-terminate-${Date.now()}`,
       runtimeFactory,
       toolBridge: new ToolBridge({}),
@@ -339,7 +347,7 @@ describe("createCodeModeTools", () => {
 
   it("reports runtime cleanup failures on a terminated cell", async () => {
     const runtimeFactory = new DeferredRuntimeFactory();
-    const tools = createCodeModeTools({
+    const tools = await createCodeModeTools({
       workspaceId: `code-mode-terminate-cleanup-error-${Date.now()}`,
       runtimeFactory,
       toolBridge: new ToolBridge({}),
@@ -365,7 +373,7 @@ describe("createCodeModeTools", () => {
 
   it("lets termination resolve an active observer without displacing it", async () => {
     const runtimeFactory = new DeferredRuntimeFactory();
-    const tools = createCodeModeTools({
+    const tools = await createCodeModeTools({
       workspaceId: `code-mode-observed-termination-${Date.now()}`,
       runtimeFactory,
       toolBridge: new ToolBridge({}),
@@ -403,7 +411,7 @@ describe("createCodeModeTools", () => {
 
   it("preserves a natural completion that reaches the session before termination", async () => {
     const runtimeFactory = new DeferredRuntimeFactory();
-    const tools = createCodeModeTools({
+    const tools = await createCodeModeTools({
       workspaceId: `code-mode-natural-completion-${Date.now()}`,
       runtimeFactory,
       toolBridge: new ToolBridge({}),
@@ -427,7 +435,7 @@ describe("createCodeModeTools", () => {
 
   it("rejects staged store writes when a cell is terminated", async () => {
     const runtimeFactory = new DeferredRuntimeFactory();
-    const tools = createCodeModeTools({
+    const tools = await createCodeModeTools({
       workspaceId: `code-mode-store-termination-${Date.now()}`,
       runtimeFactory,
       toolBridge: new ToolBridge({}),
@@ -462,7 +470,7 @@ describe("createCodeModeTools", () => {
 
   it("rejects a second observer without displacing the first", async () => {
     const runtimeFactory = new DeferredRuntimeFactory();
-    const tools = createCodeModeTools({
+    const tools = await createCodeModeTools({
       workspaceId: `code-mode-observer-${Date.now()}`,
       runtimeFactory,
       toolBridge: new ToolBridge({}),
@@ -491,7 +499,7 @@ describe("createCodeModeTools", () => {
 
   it("releases observer ownership when a wait request is aborted", async () => {
     const runtimeFactory = new DeferredRuntimeFactory();
-    const tools = createCodeModeTools({
+    const tools = await createCodeModeTools({
       workspaceId: `code-mode-observer-abort-${Date.now()}`,
       runtimeFactory,
       toolBridge: new ToolBridge({}),
@@ -529,7 +537,7 @@ describe("createCodeModeTools", () => {
 
   it("supports repeated yield_control observations", async () => {
     const runtimeFactory = new DeferredRuntimeFactory();
-    const tools = createCodeModeTools({
+    const tools = await createCodeModeTools({
       workspaceId: `code-mode-yield-${Date.now()}`,
       runtimeFactory,
       toolBridge: new ToolBridge({}),
@@ -567,7 +575,7 @@ describe("createCodeModeTools", () => {
   it("shuts down a workspace session by aborting and joining active cells", async () => {
     const workspaceId = `code-mode-shutdown-${Date.now()}`;
     const runtimeFactory = new DeferredRuntimeFactory();
-    const tools = createCodeModeTools({
+    const tools = await createCodeModeTools({
       workspaceId,
       runtimeFactory,
       toolBridge: new ToolBridge({}),
@@ -598,7 +606,7 @@ describe("createCodeModeTools", () => {
   it("rejects a cell whose runtime creation finishes after shutdown begins", async () => {
     const workspaceId = `code-mode-shutdown-admission-${Date.now()}`;
     const runtimeFactory = new GatedRuntimeFactory();
-    const tools = createCodeModeTools({
+    const tools = await createCodeModeTools({
       workspaceId,
       runtimeFactory,
       toolBridge: new ToolBridge({}),

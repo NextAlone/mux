@@ -187,7 +187,7 @@ export async function applyToolPolicyAndExperiments(
       const ptc = await getPTCModules();
       const toolBridge = new ptc.ToolBridge(policyFilteredTools);
       ptc.runtimeFactory ??= new ptc.QuickJSRuntimeFactory();
-      const codeModeTools = ptc.createCodeModeTools({
+      const codeModeTools = await ptc.createCodeModeTools({
         workspaceId: codeModeOnly.workspaceId,
         runtimeFactory: ptc.runtimeFactory,
         toolBridge,

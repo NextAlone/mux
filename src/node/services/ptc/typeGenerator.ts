@@ -87,6 +87,14 @@ export async function getCachedMuxTypes(tools: Record<string, Tool>): Promise<st
   return types;
 }
 
+/** Codex Code Mode exposes the same tools as awaitable methods on `tools`. */
+export async function getCachedCodeModeTypes(tools: Record<string, Tool>): Promise<string> {
+  const muxTypes = await getCachedMuxTypes(tools);
+  return muxTypes
+    .replace("declare namespace mux {", "declare namespace tools {")
+    .replace(/^( {2}function .+\): )(.+);$/gm, "$1Promise<$2>;");
+}
+
 // ============================================================================
 // Helper Functions
 // ============================================================================

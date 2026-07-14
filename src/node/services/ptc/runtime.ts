@@ -44,8 +44,13 @@ export interface IJSRuntime extends Disposable {
   /**
    * Register an object with methods (for namespaced tools like mux.bash).
    * Each method on the object becomes callable from the sandbox.
+   * Awaitable methods return real guest promises; synchronous methods use Asyncify.
    */
-  registerObject(name: string, obj: Record<string, (...args: unknown[]) => Promise<unknown>>): void;
+  registerObject(
+    name: string,
+    obj: Record<string, (...args: unknown[]) => Promise<unknown>>,
+    awaitable?: boolean
+  ): void;
 
   /**
    * Set memory/CPU limits for the sandbox.

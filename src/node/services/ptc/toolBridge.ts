@@ -87,7 +87,7 @@ export class ToolBridge {
    * This ensures nested tool calls are cancelled when the sandbox times out,
    * not just when the parent stream is cancelled.
    */
-  register(runtime: IJSRuntime, namespace = "mux"): void {
+  register(runtime: IJSRuntime, namespace = "mux", awaitable = false): void {
     const muxObj: Record<string, (...args: unknown[]) => Promise<unknown>> = {};
 
     for (const [name, tool] of this.bridgeableTools) {
@@ -121,7 +121,7 @@ export class ToolBridge {
       };
     }
 
-    runtime.registerObject(namespace, muxObj);
+    runtime.registerObject(namespace, muxObj, awaitable);
   }
 
   private hasExecute(tool: Tool): tool is Tool & { execute: NonNullable<Tool["execute"]> } {
