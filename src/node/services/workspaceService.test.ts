@@ -9,6 +9,7 @@ import * as fsPromises from "fs/promises";
 import { tmpdir } from "os";
 import path from "path";
 import { Err, Ok, type Result } from "@/common/types/result";
+import { SCRATCH_PROJECT_CONFIG_KEY } from "@/common/constants/scratch";
 import { DEFAULT_TASK_SETTINGS } from "@/common/types/tasks";
 import type { SendMessageError } from "@/common/types/errors";
 import type { ProjectsConfig } from "@/common/types/project";
@@ -119,6 +120,7 @@ function createDeferred<T>() {
 
 const mockInitStateManager: Partial<InitStateManager> = {
   on: mock(() => undefined as unknown as InitStateManager),
+  off: mock(() => undefined as unknown as InitStateManager),
   getInitState: mock(() => undefined),
   waitForInit: mock(() => Promise.resolve()),
   clearInMemoryState: mock(() => undefined),
@@ -3790,6 +3792,31 @@ describe("WorkspaceService initialize", () => {
     expect(startStartupRecoverySpy).not.toHaveBeenCalled();
   });
 
+  test("preserves scratch workdirs when config cannot be loaded", async () => {
+    const { config: realConfig, historyService, cleanup } = await createTestHistoryService();
+    const scratchPath = path.join(realConfig.rootDir, "scratch", "existing-scratch");
+    await fsPromises.mkdir(scratchPath, { recursive: true });
+    await fsPromises.writeFile(path.join(realConfig.rootDir, "config.json"), "{invalid-json");
+
+    const aiService = {
+      on: mock(() => undefined),
+      off: mock(() => undefined),
+    } as unknown as AIService;
+    const service = createWorkspaceServiceForTest({
+      config: realConfig,
+      historyService,
+      aiService,
+      initStateManager: mockInitStateManager as InitStateManager,
+    });
+
+    try {
+      await service.initialize();
+      expect(await fsPromises.stat(scratchPath).then(() => true)).toBe(true);
+    } finally {
+      await cleanup();
+    }
+  });
+
   test("disposes transient startup-recovery sessions that go idle", async () => {
     const dispose = mock(() => undefined);
     const fakeSession = {
@@ -6473,6 +6500,24 @@ describe("WorkspaceService getProjectGitStatuses", () => {
 
     return { workspaceService, executeBashMock, getWorkspaceMetadataMock };
   }
+
+  test("returns no entries for scratch workspaces without invoking git", async () => {
+    const metadata: WorkspaceMetadata = {
+      kind: "scratch",
+      id: "ws-scratch",
+      name: "scratch-ws-scratch",
+      projectName: "Scratch",
+      projectPath: "/tmp/mux/scratch/ws-scratch",
+      runtimeConfig: { type: "local" },
+    };
+    const { workspaceService, executeBashMock } = createServiceHarness({
+      metadata,
+      executeBashImpl: () => Promise.reject(new Error("git should not run")),
+    });
+
+    expect(await workspaceService.getProjectGitStatuses(metadata.id)).toEqual([]);
+    expect(executeBashMock).not.toHaveBeenCalled();
+  });
 
   test("returns a single entry for single-project workspaces", async () => {
     const metadata: WorkspaceMetadata = {
@@ -9249,6 +9294,37 @@ describe("WorkspaceService preflightArchive and acknowledged archive", () => {
     await cleanupHistory();
   });
 
+  test("preflightArchive returns ready for scratch workspaces under snapshot behavior", async () => {
+    // Scratch chats run on the plain local runtime, so the worktree snapshot
+    // preflight must short-circuit instead of consulting the snapshot service
+    // (whose non-worktree path would reject and block archiving).
+    const scratchMetadata: WorkspaceMetadata = {
+      kind: "scratch",
+      id: workspaceId,
+      name: "ws-preflight-archive",
+      projectName: "Scratch",
+      projectPath: "/tmp/mux/scratch/ws-preflight-archive",
+      runtimeConfig: { type: "local" },
+    };
+    (workspaceService as unknown as { aiService: AIService }).aiService.getWorkspaceMetadata = mock(
+      () => Promise.resolve(Ok(scratchMetadata))
+    );
+    const getUnsupportedUntrackedPaths = mock(() =>
+      Promise.resolve(Err("Archive snapshots are only supported for worktree runtimes"))
+    );
+    workspaceService.setWorktreeArchiveSnapshotService({
+      preflightSnapshotForArchive: mock(() => Promise.resolve(Ok(undefined))),
+      captureSnapshotForArchive: mock(() => Promise.resolve(Err("unused"))),
+      restoreSnapshotAfterUnarchive: mock(() => Promise.resolve(Ok("skipped" as const))),
+      getUnsupportedUntrackedPaths,
+    });
+
+    const result = await workspaceService.preflightArchive(workspaceId);
+
+    expect(result).toEqual(Ok({ kind: "ready" }));
+    expect(getUnsupportedUntrackedPaths).not.toHaveBeenCalled();
+  });
+
   test("preflightArchive returns ready when no untracked files", async () => {
     workspaceService.setWorktreeArchiveSnapshotService({
       preflightSnapshotForArchive: mock(() => Promise.resolve(Ok(undefined))),
@@ -10052,6 +10128,169 @@ describe("WorkspaceService init cancellation", () => {
 
   afterEach(async () => {
     await cleanupHistory();
+  });
+
+  test("scratch workspace deletion preserves shared workdirs until the last reference", async () => {
+    const {
+      config,
+      historyService: scratchHistoryService,
+      cleanup,
+    } = await createTestHistoryService();
+    const parentId = "1111111111";
+    const childId = "2222222222";
+    const configWithStableId = config as unknown as { generateStableId: () => string };
+    configWithStableId.generateStableId = () => parentId;
+
+    const aiService = {
+      isStreaming: mock(() => false),
+      stopStream: mock(() => Promise.resolve(Ok(undefined))),
+      getWorkspaceMetadata: mock(async (workspaceId: string) => {
+        const metadata = (await config.getAllWorkspaceMetadata()).find(
+          (workspace) => workspace.id === workspaceId
+        );
+        return metadata ? Ok(metadata) : Err("not found");
+      }),
+      on: mock(() => undefined),
+      off: mock(() => undefined),
+    } as unknown as AIService;
+
+    try {
+      const workspaceService = createWorkspaceServiceForTest({
+        config,
+        historyService: scratchHistoryService,
+        aiService,
+      });
+      const created = await workspaceService.createScratch("Scratch test");
+      expect(created.success).toBe(true);
+      if (!created.success) return;
+
+      const scratchPath = created.data.metadata.namedWorkspacePath;
+      await config.editConfig((current) => {
+        const scratchProject = current.projects.get(SCRATCH_PROJECT_CONFIG_KEY);
+        if (!scratchProject) throw new Error("Scratch project missing");
+        scratchProject.workspaces.push({
+          kind: "scratch",
+          path: scratchPath,
+          id: childId,
+          name: `agent-explore-${childId}`,
+          parentWorkspaceId: parentId,
+          taskIsolation: "none",
+          taskStatus: "reported",
+          createdAt: new Date().toISOString(),
+          runtimeConfig: { type: "local" },
+        });
+        return current;
+      });
+
+      expect(await fsPromises.stat(scratchPath).then(() => true)).toBe(true);
+      expect(await workspaceService.remove(parentId, true)).toEqual(Ok(undefined));
+      expect(await fsPromises.stat(scratchPath).then(() => true)).toBe(true);
+      expect(await workspaceService.remove(childId, true)).toEqual(Ok(undefined));
+      expect(
+        await fsPromises
+          .stat(scratchPath)
+          .then(() => true)
+          .catch(() => false)
+      ).toBe(false);
+    } finally {
+      await cleanup();
+    }
+  });
+
+  test("scratch removal refuses to delete a workdir the workspace does not own", async () => {
+    // A stale or hand-edited config entry can point at another chat's dir
+    // under the scratch root; removal must not recursively delete it.
+    const {
+      config,
+      historyService: scratchHistoryService,
+      cleanup,
+    } = await createTestHistoryService();
+    const victimId = "3333333333";
+    const malformedId = "4444444444";
+    const configWithStableId = config as unknown as { generateStableId: () => string };
+    configWithStableId.generateStableId = () => victimId;
+
+    const aiService = {
+      isStreaming: mock(() => false),
+      stopStream: mock(() => Promise.resolve(Ok(undefined))),
+      getWorkspaceMetadata: mock(async (workspaceId: string) => {
+        const metadata = (await config.getAllWorkspaceMetadata()).find(
+          (workspace) => workspace.id === workspaceId
+        );
+        return metadata ? Ok(metadata) : Err("not found");
+      }),
+      on: mock(() => undefined),
+      off: mock(() => undefined),
+    } as unknown as AIService;
+
+    try {
+      const workspaceService = createWorkspaceServiceForTest({
+        config,
+        historyService: scratchHistoryService,
+        aiService,
+      });
+      const created = await workspaceService.createScratch("Victim scratch");
+      expect(created.success).toBe(true);
+      if (!created.success) return;
+      const victimPath = created.data.metadata.namedWorkspacePath;
+
+      // Remove the victim's config entry (keep the dir) so the malformed
+      // entry is the workdir's only reference; then point the malformed
+      // root entry (no task ancestry) at the victim's dir.
+      await config.editConfig((current) => {
+        const scratchProject = current.projects.get(SCRATCH_PROJECT_CONFIG_KEY);
+        if (!scratchProject) throw new Error("Scratch project missing");
+        scratchProject.workspaces = scratchProject.workspaces.filter(
+          (workspace) => workspace.id !== victimId
+        );
+        scratchProject.workspaces.push({
+          kind: "scratch",
+          path: victimPath,
+          id: malformedId,
+          name: `scratch-${malformedId}`,
+          createdAt: new Date().toISOString(),
+          runtimeConfig: { type: "local" },
+        });
+        return current;
+      });
+
+      expect(await workspaceService.remove(malformedId, true)).toEqual(Ok(undefined));
+      // Config cleanup proceeded, but the victim's dir must survive.
+      expect(await fsPromises.stat(victimPath).then(() => true)).toBe(true);
+    } finally {
+      await cleanup();
+    }
+  });
+
+  test("createScratch rejects when policy disallows the local runtime", async () => {
+    const {
+      config,
+      historyService: scratchHistoryService,
+      cleanup,
+    } = await createTestHistoryService();
+    const policyService = {
+      isEnforced: mock(() => true),
+      isRuntimeAllowed: mock(() => false),
+    } as unknown as WorkspaceServiceArgs[7];
+
+    try {
+      const workspaceService = createWorkspaceServiceForTest({
+        config,
+        historyService: scratchHistoryService,
+        policyService,
+      });
+
+      const result = await workspaceService.createScratch("Blocked scratch");
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error).toContain("not allowed by policy");
+      }
+      // No config entry or workdir may be left behind by the rejected create.
+      expect((await config.getAllWorkspaceMetadata()).length).toBe(0);
+    } finally {
+      await cleanup();
+    }
   });
 
   test("create() rejects untrusted projects", async () => {
