@@ -19,6 +19,12 @@ describe("commandParser", () => {
       expect(parseCommand(" ")).toBeNull();
     });
 
+    it("should treat an absolute path as normal message text", () => {
+      expect(
+        parseCommand("/Users/example/Downloads/OTA_Demo_v2 refreshed, take a look")
+      ).toBeNull();
+    });
+
     it("should parse /clear command", () => {
       expectParse("/clear", { type: "clear", mode: "hard" });
     });

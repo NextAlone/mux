@@ -27,6 +27,12 @@ export function parseCommand(input: string): ParsedCommand {
   }
 
   const [commandKey, ...restTokens] = parts;
+  // Paths such as /Users/example/project are authored message text; slash command names cannot
+  // contain path separators.
+  if (commandKey?.includes("/")) {
+    return null;
+  }
+
   const definition = SLASH_COMMAND_DEFINITION_MAP.get(commandKey);
 
   if (!definition) {
