@@ -144,10 +144,12 @@ import { AttachFileButton } from "./AttachFileButton";
 import { VimTextArea } from "@/browser/components/VimTextArea/VimTextArea";
 import { ChatAttachments, type ChatAttachment } from "@/browser/features/ChatInput/ChatAttachments";
 import {
+  classifyDroppedFiles,
   extractAttachmentsFromClipboard,
-  extractAttachmentsFromDrop,
   chatAttachmentsToFileParts,
+  insertDroppedFilePaths,
   processAttachmentFiles,
+  resolveDroppedFilePaths,
 } from "@/browser/utils/attachmentsHandling";
 import {
   buildPendingFromRestoredInput,
@@ -2462,13 +2464,14 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
     [editingMessageForUi]
   );
 
-  // Handle drop to extract attachments
+  // Supported files keep the rich attachment flow. Everything else stays in place and is
+  // referenced by its local path so arbitrary drops are useful without copying hidden data.
   const handleDrop = useCallback(
     (e: React.DragEvent<HTMLTextAreaElement>) => {
       e.preventDefault();
 
-      const attachmentFiles = extractAttachmentsFromDrop(e.dataTransfer);
-      if (attachmentFiles.length === 0) return;
+      const { attachmentFiles, pathFiles } = classifyDroppedFiles(e.dataTransfer);
+      if (attachmentFiles.length === 0 && pathFiles.length === 0) return;
 
       if (editingMessageForUi) {
         pushToast({
@@ -2477,6 +2480,34 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
         });
         return;
       }
+
+      if (pathFiles.length > 0) {
+        try {
+          const paths = resolveDroppedFilePaths(pathFiles, window.api?.getPathForFile);
+          const element = inputRef.current;
+          const selectionStart = element?.selectionStart ?? input.length;
+          const selectionEnd = element?.selectionEnd ?? selectionStart;
+          const insertion = insertDroppedFilePaths(input, selectionStart, selectionEnd, paths);
+          resetMessageHistoryNavigation();
+          setInput(insertion.text);
+
+          requestAnimationFrame(() => {
+            const nextElement = inputRef.current;
+            if (!nextElement || nextElement.disabled) return;
+            nextElement.focus();
+            nextElement.selectionStart = insertion.cursor;
+            nextElement.selectionEnd = insertion.cursor;
+          });
+        } catch (error) {
+          console.error("Failed to resolve dropped file paths:", error);
+          pushToast({
+            type: "error",
+            message: error instanceof Error ? error.message : "Failed to resolve dropped files",
+          });
+        }
+      }
+
+      if (attachmentFiles.length === 0) return;
 
       processAttachmentFilesForComposer(attachmentFiles)
         .then((nextAttachments) => {
@@ -2493,9 +2524,12 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
     },
     [
       editingMessageForUi,
+      input,
       processAttachmentFilesForComposer,
       pushToast,
+      resetMessageHistoryNavigation,
       setAttachments,
+      setInput,
       showResizeToast,
     ]
   );

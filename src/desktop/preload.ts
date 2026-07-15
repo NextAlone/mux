@@ -15,7 +15,7 @@
  * Build: `bun build src/desktop/preload.ts --format=cjs --target=node --external=electron`
  */
 
-import { contextBridge, ipcRenderer } from "electron";
+import { contextBridge, ipcRenderer, webUtils } from "electron";
 import type { MuxDeepLinkPayload } from "@/common/types/deepLink";
 
 // mux:// deep links can arrive before the React app subscribes.
@@ -72,6 +72,9 @@ contextBridge.exposeInMainWorld("api", {
   // like `child_process` (which can break in hardened/sandboxed environments).
   getIsRosetta: () => ipcRenderer.invoke("mux:get-is-rosetta"),
   getIsWindowsWslShell: () => ipcRenderer.invoke("mux:get-is-windows-wsl-shell"),
+  // Unsupported attachment types stay on the user's machine; expose only Electron's narrow
+  // File-to-path conversion so dropping one can reference it without granting renderer fs access.
+  getPathForFile: (file: File) => webUtils.getPathForFile(file),
   // Register a callback for notification clicks (navigates to workspace)
   // Returns an unsubscribe function.
   onNotificationClicked: (callback: (data: { workspaceId: string }) => void) => {

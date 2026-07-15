@@ -24,6 +24,8 @@ declare global {
     isRosetta?: boolean;
     // Async getter (used in Electron) for environments where preload cannot use Node builtins
     getIsRosetta?: () => Promise<boolean>;
+    // Resolve a native drag/drop File without exposing general filesystem access to the renderer.
+    getPathForFile?: (file: File) => string;
     // True if Windows appears to be configured to use WSL as the default shell.
     isWindowsWslShell?: boolean;
     // Async getter (Electron) for Windows environments where WSL may win PATH.

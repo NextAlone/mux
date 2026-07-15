@@ -6,6 +6,9 @@ import {
   fileToChatAttachment,
   extractAttachmentsFromClipboard,
   extractAttachmentsFromDrop,
+  classifyDroppedFiles,
+  insertDroppedFilePaths,
+  resolveDroppedFilePaths,
   processAttachmentFiles,
   chatAttachmentsToFileParts,
 } from "./attachmentsHandling";
@@ -173,6 +176,22 @@ describe("attachmentsHandling", () => {
   });
 
   describe("extractAttachmentsFromDrop", () => {
+    test("separates supported attachments from files that should be inserted as paths", () => {
+      const image = new File(["image"], "screenshot.png", { type: "image/png" });
+      const archive = new File(["zip"], "logs.zip", { type: "application/zip" });
+      const source = new File(["source"], "main.ts", { type: "text/typescript" });
+      const binary = new File(["binary"], "trace.bin", { type: "application/octet-stream" });
+
+      const result = classifyDroppedFiles({
+        files: [image, source, archive, binary],
+      } as unknown as DataTransfer);
+
+      expect(result).toEqual({
+        attachmentFiles: [image, archive],
+        pathFiles: [source, binary],
+      });
+    });
+
     test("extracts image files from DataTransfer", () => {
       const mockFile1 = new File(["image 1"], "test1.png", { type: "image/png" });
       const mockFile2 = new File(["text"], "test.txt", { type: "text/plain" });
@@ -219,6 +238,66 @@ describe("attachmentsHandling", () => {
       expect(files).toContain(mockFile2);
       expect(files).toContain(mockFile3);
       expect(files).not.toContain(mockFile4);
+    });
+  });
+
+  describe("insertDroppedFilePaths", () => {
+    test("inserts multiple paths at the current selection and keeps surrounding text separated", () => {
+      expect(
+        insertDroppedFilePaths("Inspect REPLACE please", 8, 15, [
+          "/tmp/project/source file.ts",
+          "/tmp/project/trace.bin",
+        ])
+      ).toEqual({
+        text: "Inspect /tmp/project/source file.ts\n/tmp/project/trace.bin please",
+        cursor: 58,
+      });
+    });
+
+    test("does not add padding around paths that already touch whitespace", () => {
+      expect(insertDroppedFilePaths("Inspect \nplease", 8, 8, ["/tmp/file.txt"])).toEqual({
+        text: "Inspect /tmp/file.txt\nplease",
+        cursor: 21,
+      });
+    });
+
+    test("leaves the input unchanged when no paths were resolved", () => {
+      expect(insertDroppedFilePaths("Inspect this", 7, 11, [])).toEqual({
+        text: "Inspect this",
+        cursor: 11,
+      });
+    });
+  });
+
+  describe("resolveDroppedFilePaths", () => {
+    test("uses the desktop bridge for each unsupported file", () => {
+      const source = new File(["source"], "main.ts", { type: "text/typescript" });
+      const trace = new File(["trace"], "trace.bin", { type: "application/octet-stream" });
+      const paths = new Map<File, string>([
+        [source, "/tmp/project/main.ts"],
+        [trace, "/tmp/project/trace.bin"],
+      ]);
+
+      expect(resolveDroppedFilePaths([source, trace], (file) => paths.get(file) ?? "")).toEqual([
+        "/tmp/project/main.ts",
+        "/tmp/project/trace.bin",
+      ]);
+    });
+
+    test("reports when the desktop bridge is unavailable", () => {
+      const file = new File(["source"], "main.ts", { type: "text/typescript" });
+
+      expect(() => resolveDroppedFilePaths([file], undefined)).toThrow(
+        "Local file paths are only available in the desktop app."
+      );
+    });
+
+    test("reports an empty path instead of silently inserting only the filename", () => {
+      const file = new File(["source"], "main.ts", { type: "text/typescript" });
+
+      expect(() => resolveDroppedFilePaths([file], () => "")).toThrow(
+        "Could not read the local path for main.ts."
+      );
     });
   });
 

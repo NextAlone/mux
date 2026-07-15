@@ -26,6 +26,16 @@ export interface ProcessAttachmentOptions {
   stageAttachment?: (file: File, dataBase64: string) => Promise<StageAttachmentResult>;
 }
 
+export interface DroppedFileClassification {
+  attachmentFiles: File[];
+  pathFiles: File[];
+}
+
+export interface TextInsertionResult {
+  text: string;
+  cursor: number;
+}
+
 function getSupportedMediaType(file: File): string | null {
   return getSupportedAttachmentMediaType({
     mediaType: file.type !== "" ? file.type : null,
@@ -222,18 +232,73 @@ export function extractAttachmentsFromClipboard(items: DataTransferItemList): Fi
 }
 
 /**
- * Extract supported attachment files from drag and drop DataTransfer.
+ * Preserve the existing attachment behavior for supported files while letting callers surface
+ * every other dropped file as a local path instead of silently ignoring it.
  */
-export function extractAttachmentsFromDrop(dataTransfer: DataTransfer): File[] {
-  const files: File[] = [];
+export function classifyDroppedFiles(dataTransfer: DataTransfer): DroppedFileClassification {
+  const attachmentFiles: File[] = [];
+  const pathFiles: File[] = [];
 
   for (const file of Array.from(dataTransfer.files)) {
     if (isSupportedAttachmentFile(file)) {
-      files.push(file);
+      attachmentFiles.push(file);
+    } else {
+      pathFiles.push(file);
     }
   }
 
-  return files;
+  return { attachmentFiles, pathFiles };
+}
+
+/**
+ * Extract supported attachment files from drag and drop DataTransfer.
+ */
+export function extractAttachmentsFromDrop(dataTransfer: DataTransfer): File[] {
+  return classifyDroppedFiles(dataTransfer).attachmentFiles;
+}
+
+export function insertDroppedFilePaths(
+  text: string,
+  selectionStart: number,
+  selectionEnd: number,
+  paths: readonly string[]
+): TextInsertionResult {
+  if (paths.length === 0) {
+    return { text, cursor: selectionEnd };
+  }
+
+  const start = Math.max(0, Math.min(selectionStart, text.length));
+  const end = Math.max(start, Math.min(selectionEnd, text.length));
+  const before = text.slice(0, start);
+  const after = text.slice(end);
+  const prefix = before.length > 0 && !/\s$/u.test(before) ? " " : "";
+  const suffix = after.length > 0 && !/^\s/u.test(after) ? " " : "";
+  const insertedText = `${prefix}${paths.join("\n")}${suffix}`;
+
+  return {
+    text: before + insertedText + after,
+    cursor: before.length + insertedText.length,
+  };
+}
+
+export function resolveDroppedFilePaths(
+  files: readonly File[],
+  getPathForFile: ((file: File) => string) | undefined
+): string[] {
+  if (files.length === 0) {
+    return [];
+  }
+  if (getPathForFile == null) {
+    throw new Error("Local file paths are only available in the desktop app.");
+  }
+
+  return files.map((file) => {
+    const path = getPathForFile(file);
+    if (path.trim().length === 0) {
+      throw new Error(`Could not read the local path for ${file.name || "dropped file"}.`);
+    }
+    return path;
+  });
 }
 
 /**
