@@ -1437,9 +1437,9 @@ export const ProposeNameToolArgsSchema = z.object({
     ),
   title: z
     .string()
-    .min(5)
-    .max(60)
-    .describe("Human-readable title (2-5 words): verb-noun format like 'Fix plan mode'"),
+    .min(2)
+    .max(16)
+    .describe("Concise Simplified Chinese title (2-16 characters), e.g. '修复计划模式'"),
 });
 
 // -----------------------------------------------------------------------------

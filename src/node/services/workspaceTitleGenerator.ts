@@ -164,17 +164,17 @@ export function buildWorkspaceIdentityPrompt(
     }
   }
 
-  // Prompt wording is tuned for short UI titles that stay accurate over the whole chat,
-  // rather than over-indexing on whichever message happened most recently.
+  // Keep titles in concise Simplified Chinese so the sidebar stays scannable, while the
+  // repository-safe workspace name remains English and independent of the display title.
   return [
     "Generate a workspace name and title for this development task:\n\n",
     `${promptSections.join("\n\n")}\n\n`,
     "Requirements:\n",
     '- name: The area of the codebase being worked on (1-2 words, max 15 chars, git-safe: lowercase, hyphens only). Random bytes will be appended for uniqueness, so focus on the area not the specific task. Examples: "sidebar", "auth", "config", "api"\n',
-    '- title: 2-5 words, verb-noun format, describing the primary deliverable (what will be different when the work is done). Examples: "Fix plan mode", "Add user authentication", "Refactor sidebar layout"\n',
-    '- title quality: Be specific about the feature/system being changed. Prefer concrete nouns; avoid vague words ("stuff", "things"), self-referential meta phrases ("this chat", "this conversation", "regenerate title"), and temporal words ("latest", "recent", "today", "now").\n',
+    '- title: Use Simplified Chinese, 2-16 characters, preferably a concise verb-object phrase describing the primary deliverable. Use the fewest characters that remain specific and accurate; do not pad the title to approach the limit. Keep necessary technical terms such as API or GPT-5 unchanged. Examples: "修复计划模式", "添加用户认证", "重构侧边栏"\n',
+    '- title quality: Be specific about the feature/system being changed. Prefer concrete nouns; avoid vague wording, self-referential meta phrases such as "本次对话" or "重新生成标题", and temporal words such as "最新", "近期", "今天", or "现在".\n',
     "- title scope: Choose the title that best represents the overall scope and goal across the entire conversation. Weigh all turns equally — do not favor the most recent message over earlier ones.\n",
-    "- title style: Sentence case, no punctuation, no quotes.\n",
+    "- title style: No punctuation, no quotes.\n",
   ].join("");
 }
 

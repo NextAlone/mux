@@ -7,9 +7,30 @@ import {
   supportsGoogleNativeToolsWithFunctionTools,
   TaskToolArgsSchema,
   TaskWorkspaceLifecycleToolArgsSchema,
+  ProposeNameToolArgsSchema,
   TOOL_DEFINITIONS,
   WorkflowRunToolArgsSchema,
 } from "./toolDefinitions";
+
+describe("ProposeNameToolArgsSchema", () => {
+  test("accepts concise Chinese titles up to 16 characters", () => {
+    expect(ProposeNameToolArgsSchema.safeParse({ name: "title", title: "修标题" }).success).toBe(
+      true
+    );
+    expect(
+      ProposeNameToolArgsSchema.safeParse({
+        name: "title",
+        title: "一二三四五六七八九十一二三四五六",
+      }).success
+    ).toBe(true);
+    expect(
+      ProposeNameToolArgsSchema.safeParse({
+        name: "title",
+        title: "一二三四五六七八九十一二三四五六七",
+      }).success
+    ).toBe(false);
+  });
+});
 
 describe("TOOL_DEFINITIONS", () => {
   it("accepts custom subagent_type IDs (deprecated alias)", () => {
