@@ -158,7 +158,7 @@ export const ScratchWorkspace: AppStory = {
   parameters: {
     chromatic: {
       modes: {
-        desktop: { theme: "dark" },
+        // ScratchWorkspace was added for the phone regression; desktop remains covered elsewhere.
         mobile: { theme: "light", viewport: "mobile1", hasTouch: true },
       },
     },

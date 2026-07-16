@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { userEvent, within } from "@storybook/test";
-import { lightweightMeta } from "@/browser/stories/meta.js";
+import { CHROMATIC_DISABLED, lightweightMeta } from "@/browser/stories/meta.js";
 import { createMockORPCClient } from "@/browser/stories/mocks/orpc";
 import { createWorkspace, groupWorkspacesByProject } from "@/browser/stories/mocks/workspaces";
 import { selectWorkspace } from "@/browser/stories/helpers/uiState";
@@ -67,6 +67,8 @@ function renderSecretsSection(setup: () => ReturnType<typeof createMockORPCClien
 }
 
 export const GlobalSecretsView: Story = {
+  // ProjectSecrets owns the visual snapshot; this duplicate desktop state stays as play coverage.
+  parameters: { chromatic: CHROMATIC_DISABLED },
   render: () => renderSecretsSection(() => setupSecretsStory()),
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
@@ -77,6 +79,8 @@ export const GlobalSecretsView: Story = {
 };
 
 export const PopulatedGlobalSecrets: Story = {
+  // The interaction assertions remain useful without duplicating the shared Secrets layout snapshot.
+  parameters: { chromatic: CHROMATIC_DISABLED },
   render: () =>
     renderSecretsSection(() =>
       setupSecretsStory({
@@ -98,24 +102,11 @@ export const PopulatedGlobalSecrets: Story = {
   },
 };
 
-export const ProjectSecrets: Story = {
-  render: () => renderSecretsSection(() => setupSecretsStory()),
-  play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
-
-    const projectScopeToggle = await canvas.findByRole("radio", { name: /^Project$/i });
-    await userEvent.click(projectScopeToggle);
-
-    await canvas.findByText(/Select a project to configure/i);
-    await canvas.findByDisplayValue("PROJECT_TOKEN");
-  },
-};
-
 /**
- * Fixed-width wrapper keeps the responsive contract active in the Storybook test runner,
- * while the matching viewport mode makes Chromatic capture the same narrow Settings layout.
+ * Reuse the existing project scenario for the 375px contract so responsive coverage does not add
+ * another paid snapshot. The fixed wrapper also exercises the breakpoint in the test runner.
  */
-export const NarrowProjectSecrets: Story = {
+export const ProjectSecrets: Story = {
   tags: ["secrets-responsive"],
   globals: {
     viewport: { value: "mobile1", isRotated: false },
@@ -137,12 +128,10 @@ export const NarrowProjectSecrets: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     const accountInput = await canvas.findByPlaceholderText("my-team.1password.com");
-    const projectScopeToggle = await canvas.findByRole("radio", {
-      name: /^(Project|项目)$/i,
-    });
-
+    const projectScopeToggle = await canvas.findByRole("radio", { name: /^Project$/i });
     await userEvent.click(projectScopeToggle);
 
+    await canvas.findByText(/Select a project to configure/i);
     const keyInput = await canvas.findByDisplayValue("PROJECT_TOKEN");
     const valueInput = await canvas.findByDisplayValue("project-secret");
     const sourceSelect = await canvas.findByRole("combobox", {
