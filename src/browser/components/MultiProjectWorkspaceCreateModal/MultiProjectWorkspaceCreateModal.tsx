@@ -106,9 +106,9 @@ export function MultiProjectWorkspaceCreateModal(props: MultiProjectWorkspaceCre
         ) : (
           <div className="space-y-2">
             <p className="text-muted text-xs">
-              {t("Selected")}
-              {selectedProjectPaths.length} {t(" of ")}
-              {props.projectOptions.length} {t("projects")}
+              {t("Selected {selected} of {total} projects")
+                .replace("{selected}", String(selectedProjectPaths.length))
+                .replace("{total}", String(props.projectOptions.length))}
             </p>
             <div className="border-border-medium bg-modal-bg max-h-72 space-y-1 overflow-y-auto rounded border p-2">
               {props.projectOptions.map((project) => {

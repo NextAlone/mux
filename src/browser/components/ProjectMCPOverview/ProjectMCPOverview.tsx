@@ -72,8 +72,10 @@ export const ProjectMCPOverview: React.FC<ProjectMCPOverviewProps> = (props) => 
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <span className="text-foreground font-medium">
-              {t("MCP Servers (")}
-              {enabledServerNames.length} {t("enabled)")}
+              {t("MCP Servers ({count} enabled)").replace(
+                "{count}",
+                String(enabledServerNames.length)
+              )}
             </span>
             {loading && <Loader2 className="text-muted h-4 w-4 animate-spin" />}
           </div>
@@ -90,7 +92,7 @@ export const ProjectMCPOverview: React.FC<ProjectMCPOverviewProps> = (props) => 
               {remainingCount > 0 && (
                 <span className="text-muted/60">
                   {" "}
-                  +{remainingCount} {t(" more")}
+                  {t("+{count} more").replace("{count}", String(remainingCount))}
                 </span>
               )}
             </div>

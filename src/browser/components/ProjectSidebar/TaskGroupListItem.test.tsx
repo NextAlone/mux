@@ -3,26 +3,34 @@ import "../../../../tests/ui/dom";
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { cleanup, render } from "@testing-library/react";
 import { installDom } from "../../../../tests/ui/dom";
+import { LanguageProvider, type Language } from "@/browser/contexts/LanguageContext";
+import { UI_LANGUAGE_KEY } from "@/common/constants/storage";
 import { TaskGroupListItem } from "./TaskGroupListItem";
 
-function renderTaskGroup(overrides: Partial<React.ComponentProps<typeof TaskGroupListItem>> = {}) {
+function renderTaskGroup(
+  overrides: Partial<React.ComponentProps<typeof TaskGroupListItem>> = {},
+  language: Language = "en"
+) {
+  localStorage.setItem(UI_LANGUAGE_KEY, JSON.stringify(language));
   return render(
-    <TaskGroupListItem
-      groupId="best-of-demo"
-      title="Compare options"
-      kind="bestOf"
-      depth={1}
-      totalCount={3}
-      visibleCount={3}
-      completedCount={0}
-      runningCount={0}
-      queuedCount={0}
-      interruptedCount={0}
-      isExpanded={false}
-      isSelected={false}
-      onToggle={() => undefined}
-      {...overrides}
-    />
+    <LanguageProvider>
+      <TaskGroupListItem
+        groupId="best-of-demo"
+        title="Compare options"
+        kind="bestOf"
+        depth={1}
+        totalCount={3}
+        visibleCount={3}
+        completedCount={0}
+        runningCount={0}
+        queuedCount={0}
+        interruptedCount={0}
+        isExpanded={false}
+        isSelected={false}
+        onToggle={() => undefined}
+        {...overrides}
+      />
+    </LanguageProvider>
   );
 }
 
@@ -31,6 +39,7 @@ describe("TaskGroupListItem", () => {
 
   beforeEach(() => {
     cleanupDom = installDom();
+    localStorage.clear();
   });
 
   afterEach(() => {
@@ -62,6 +71,18 @@ describe("TaskGroupListItem", () => {
       "text-content-success"
     );
     expect(groupRow.textContent).toContain("1 queued");
+  });
+
+  test("formats member counts in Chinese without English word order", () => {
+    const active = renderTaskGroup({ runningCount: 2, queuedCount: 1 }, "zh-CN");
+    const activeRow = active.getByTestId("task-group-best-of-demo");
+
+    expect(activeRow.textContent).toContain("2 个正在运行");
+    expect(activeRow.textContent).toContain("1 个排队中");
+    cleanup();
+
+    const idle = renderTaskGroup({}, "zh-CN");
+    expect(idle.getByTestId("task-group-best-of-demo").textContent).toContain("3 个候选项");
   });
 
   test("aggregates member state into the shared status-dot language", () => {

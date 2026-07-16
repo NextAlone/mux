@@ -23,6 +23,8 @@ import type {
 } from "@/browser/utils/ui/workspaceFiltering";
 import type { StreamAbortReasonSnapshot } from "@/common/types/stream";
 import type { FrontendWorkspaceMetadata } from "@/common/types/workspace";
+import { LanguageProvider, type Language } from "@/browser/contexts/LanguageContext";
+import { UI_LANGUAGE_KEY } from "@/common/constants/storage";
 import type { WorkspaceSelection } from "./AgentListItem";
 import type { AgentListItem as AgentListItemComponent } from "./AgentListItem";
 
@@ -255,10 +257,14 @@ function renderWorkspaceItem(
     completedChildrenExpanded?: boolean;
     onToggleCompletedChildren?: (workspaceId: string) => void;
     onSelectWorkspace?: (selection: WorkspaceSelection) => void;
+    language?: Language;
   } = {}
 ) {
   const metadata = options.metadata ?? createMetadata();
-  const view = render(
+  if (options.language) {
+    localStorage.setItem(UI_LANGUAGE_KEY, JSON.stringify(options.language));
+  }
+  const item = (
     <AgentListItem
       metadata={metadata}
       projectPath={metadata.projectPath}
@@ -278,6 +284,7 @@ function renderWorkspaceItem(
       onCancelCreation={() => Promise.resolve()}
     />
   );
+  const view = render(options.language ? <LanguageProvider>{item}</LanguageProvider> : item);
 
   return {
     metadata,
@@ -297,6 +304,7 @@ describe("AgentListItem", () => {
 
   beforeEach(() => {
     cleanupDom = installDom();
+    localStorage.clear();
     mockWorkspaceHeartbeatsEnabled = false;
     mockWorkspaceUnreadState = createWorkspaceUnreadState();
     mockWorkspaceSidebarState = createWorkspaceSidebarState();
@@ -505,6 +513,21 @@ describe("AgentListItem", () => {
       "Workflow running · 2 sub-agents active · 1 queued"
     );
     expect(rowView.queryByTestId(`workspace-status-indicator-${TEST_WORKSPACE_ID}`)).toBeNull();
+  });
+
+  test("formats delegated activity counts in Chinese word order", () => {
+    const { view } = renderWorkspaceItem({
+      language: "zh-CN",
+      delegatedActivity: {
+        activeCount: 2,
+        queuedCount: 1,
+        workflowActiveCount: 2,
+        workflowQueuedCount: 1,
+      },
+    });
+    const row = view.container.querySelector(`[data-workspace-id="${TEST_WORKSPACE_ID}"]`);
+
+    expect(row?.textContent).toContain("工作流正在运行 · 2 个子智能体活跃 · 1 个排队中");
   });
 
   test("keeps coordinator streaming copy ahead of delegated workflow work", () => {

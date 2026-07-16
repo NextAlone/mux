@@ -220,7 +220,17 @@ function HeartbeatFallbackIcon() {
 type Translate = (text: string) => string;
 
 function formatSubAgentCount(count: number, label: "active" | "queued", t: Translate): string {
-  return `${count} ${t(count === 1 ? "sub-agent" : "sub-agents")} ${t(label)}`;
+  // Status belongs in the full count message: Chinese places its measure word
+  // and state differently from English.
+  const message =
+    label === "active"
+      ? count === 1
+        ? t("{count} sub-agent active")
+        : t("{count} sub-agents active")
+      : count === 1
+        ? t("{count} sub-agent queued")
+        : t("{count} sub-agents queued");
+  return message.replace("{count}", String(count));
 }
 
 function formatDelegatedActivityText(
@@ -241,7 +251,7 @@ function formatDelegatedActivityText(
   }
 
   if (activity.activeCount > 0 && activity.queuedCount > 0) {
-    parts.push(`${activity.queuedCount} ${t("queued")}`);
+    parts.push(t("{count} queued").replace("{count}", String(activity.queuedCount)));
   }
 
   return parts.length > 0 ? parts.join(" · ") : null;

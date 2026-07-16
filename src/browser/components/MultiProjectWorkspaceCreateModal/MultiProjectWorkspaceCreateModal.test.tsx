@@ -5,6 +5,8 @@ import { cleanup, render } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { installDom } from "../../../../tests/ui/dom";
 import * as ExperimentsModule from "@/browser/hooks/useExperiments";
+import { LanguageProvider, type Language } from "@/browser/contexts/LanguageContext";
+import { UI_LANGUAGE_KEY } from "@/common/constants/storage";
 
 void mock.module("@/browser/components/Dialog/Dialog", () => ({
   Dialog: (props: { open: boolean; children: ReactNode }) =>
@@ -20,23 +22,27 @@ import { MultiProjectWorkspaceCreateModal } from "./MultiProjectWorkspaceCreateM
 
 let cleanupDom: (() => void) | null = null;
 
-function renderModal() {
+function renderModal(language: Language = "en") {
+  localStorage.setItem(UI_LANGUAGE_KEY, JSON.stringify(language));
   return render(
-    <MultiProjectWorkspaceCreateModal
-      isOpen={true}
-      onClose={() => undefined}
-      onConfirm={() => Promise.resolve()}
-      projectOptions={[
-        { projectPath: "/projects/a", projectName: "a" },
-        { projectPath: "/projects/b", projectName: "b" },
-      ]}
-    />
+    <LanguageProvider>
+      <MultiProjectWorkspaceCreateModal
+        isOpen={true}
+        onClose={() => undefined}
+        onConfirm={() => Promise.resolve()}
+        projectOptions={[
+          { projectPath: "/projects/a", projectName: "a" },
+          { projectPath: "/projects/b", projectName: "b" },
+        ]}
+      />
+    </LanguageProvider>
   );
 }
 
 describe("MultiProjectWorkspaceCreateModal", () => {
   beforeEach(() => {
     cleanupDom = installDom();
+    localStorage.clear();
     spyOn(ExperimentsModule, "useExperimentValue").mockImplementation(() => true);
   });
 
@@ -51,6 +57,13 @@ describe("MultiProjectWorkspaceCreateModal", () => {
     const view = renderModal();
 
     expect(view.getByText("New Multi-Project Workspace")).toBeTruthy();
+    expect(view.getByText("Selected 0 of 2 projects")).toBeTruthy();
+  });
+
+  test("renders the project count in Chinese word order", () => {
+    const view = renderModal("zh-CN");
+
+    expect(view.getByText("已选择 0/2 个项目")).toBeTruthy();
   });
 
   test("returns null when the experiment is disabled even if a caller tries to open it", () => {

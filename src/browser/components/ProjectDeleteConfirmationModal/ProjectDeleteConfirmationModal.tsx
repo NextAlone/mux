@@ -50,6 +50,15 @@ export function ProjectDeleteConfirmationModal(
   const totalCount = activeCount + props.archivedCount;
   const hasActive = activeCount > 0;
   const hasArchived = props.archivedCount > 0;
+  // The full sentence keeps both English spacing and Chinese count-word order correct.
+  const deleteCountMessage = (
+    totalCount === 1
+      ? t("This will permanently delete {count} workspace")
+      : t("This will permanently delete {count} workspaces")
+  ).replace("{count}", String(totalCount));
+  const countBreakdown = t("{active} active, {archived} archived")
+    .replace("{active}", String(activeCount))
+    .replace("{archived}", String(props.archivedCount));
 
   const handleConfirm = async () => {
     if (!confirmationMatches || isConfirming) {
@@ -92,11 +101,8 @@ export function ProjectDeleteConfirmationModal(
         <WarningBox>
           <WarningTitle>{t("Warning")}</WarningTitle>
           <WarningText>
-            {t("This will permanently delete")}
-            {totalCount} {t(totalCount === 1 ? " workspace" : " workspaces")}
-            {hasActive &&
-              hasArchived &&
-              ` (${activeCount} ${t("active")}, ${props.archivedCount} ${t("archived")})`}
+            {deleteCountMessage}
+            {hasActive && hasArchived && ` (${countBreakdown})`}
             {t(". All chat transcripts and managed checkouts will be lost.")}
           </WarningText>
         </WarningBox>
