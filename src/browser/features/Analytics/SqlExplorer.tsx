@@ -148,7 +148,7 @@ export function SqlExplorer(props: SqlExplorerProps) {
                   }}
                   className="hover:bg-accent hover:text-accent-foreground w-full rounded px-2 py-1.5 text-left text-[11px] transition-colors"
                 >
-                  {sample.label}
+                  {t(sample.label)}
                 </button>
               ))}
             </div>

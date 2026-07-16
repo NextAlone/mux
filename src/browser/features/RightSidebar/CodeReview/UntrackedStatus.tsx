@@ -96,7 +96,10 @@ export const UntrackedStatus: React.FC<UntrackedStatusProps> = ({
           ▶
         </span>
         <span className="text-info-yellow text-xs font-medium">
-          {count} {t("untracked")} {t(count === 1 ? "file" : "files")}
+          {t(count === 1 ? "{count} untracked file" : "{count} untracked files").replace(
+            "{count}",
+            String(count)
+          )}
         </span>
         <span className="text-muted text-[11px]">{t("not included in diff")}</span>
       </button>
@@ -115,8 +118,9 @@ export const UntrackedStatus: React.FC<UntrackedStatusProps> = ({
             ))}
             {hiddenCount > 0 && (
               <div className="text-muted py-0.5 text-[11px] italic">
-                {t("and")}
-                {hiddenCount} {t("more")} {t(hiddenCount === 1 ? "file" : "files")}...
+                {t(
+                  hiddenCount === 1 ? "and {count} more file..." : "and {count} more files..."
+                ).replace("{count}", String(hiddenCount))}
               </div>
             )}
           </div>

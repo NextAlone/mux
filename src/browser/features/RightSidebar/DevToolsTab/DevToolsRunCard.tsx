@@ -71,8 +71,10 @@ export function DevToolsRunCard(props: DevToolsRunCardProps) {
           <span className="text-muted min-w-0 truncate text-[10px]">{props.run.modelId}</span>
         )}
         <span className="text-muted shrink-0 text-[10px]">
-          {props.run.stepCount} {t("step")}
-          {props.run.stepCount !== 1 ? "s" : ""}
+          {t(props.run.stepCount === 1 ? "{count} step" : "{count} steps").replace(
+            "{count}",
+            String(props.run.stepCount)
+          )}
         </span>
         {props.run.totalDurationMs != null && (
           <span className="text-muted shrink-0 text-[10px]">
@@ -90,7 +92,7 @@ export function DevToolsRunCard(props: DevToolsRunCardProps) {
               <Loader2 className="text-muted h-4 w-4 animate-spin" />
             </div>
           ) : error && steps === null ? (
-            <p className="text-destructive py-1 text-[10px]">{error}</p>
+            <p className="text-destructive py-1 text-[10px]">{t(error)}</p>
           ) : displaySteps && displaySteps.length > 0 ? (
             <div className="flex min-w-0 flex-col gap-1">
               {displaySteps.map((step) => (

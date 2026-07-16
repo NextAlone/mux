@@ -226,7 +226,7 @@ export function AnalyticsQueryToolCall(props: AnalyticsQueryToolCallProps): JSX.
                     className={cn("inline-flex items-center gap-1")}
                   >
                     <option.icon className="size-3" />
-                    {option.label}
+                    {t(option.label)}
                   </HeaderButton>
                 ))}
               </div>

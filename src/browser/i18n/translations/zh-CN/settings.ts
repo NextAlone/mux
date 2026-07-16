@@ -306,6 +306,8 @@ export const SETTINGS_ZH_CN: Record<string, string> = {
   Tools: "工具",
   "tools: inherited": "工具：继承",
   "tools: {count}": "工具：{count}",
+  "{count} tool": "{count} 个工具",
+  "{count} tools": "{count} 个工具",
   "sub-agent": "子智能体",
   "built-in": "内置",
   global: "全局",

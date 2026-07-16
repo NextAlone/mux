@@ -1217,7 +1217,11 @@ export const MCPSettingsSection: React.FC = () => {
                               <Tooltip>
                                 <TooltipTrigger asChild>
                                   <span className="rounded bg-green-500/10 px-1.5 py-0.5 text-xs text-green-500">
-                                    {cached.result.tools.length} {t("tools")}
+                                    {t(
+                                      cached.result.tools.length === 1
+                                        ? "{count} tool"
+                                        : "{count} tools"
+                                    ).replace("{count}", String(cached.result.tools.length))}
                                   </span>
                                 </TooltipTrigger>
                                 <TooltipContent side="top">
@@ -1539,7 +1543,12 @@ export const MCPSettingsSection: React.FC = () => {
                         <CheckCircle className="mt-0.5 h-4 w-4 shrink-0" />
                         <div>
                           <span className="font-medium">
-                            {t("Connected")} — {newTestResult.result.tools.length} {t("tools")}
+                            {t("Connected")} —{" "}
+                            {t(
+                              newTestResult.result.tools.length === 1
+                                ? "{count} tool"
+                                : "{count} tools"
+                            ).replace("{count}", String(newTestResult.result.tools.length))}
                           </span>
                           {newTestResult.result.tools.length > 0 && (
                             <p className="mt-0.5 text-xs opacity-80">

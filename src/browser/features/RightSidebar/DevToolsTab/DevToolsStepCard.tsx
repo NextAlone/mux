@@ -429,6 +429,7 @@ function TokenUsageCard(props: {
   total: number | undefined;
   lines: Array<{ label: string; value: number | undefined }>;
 }) {
+  const { t } = useLanguage();
   const linesToRender = props.lines.filter((line) => line.value != null);
 
   return (
@@ -439,7 +440,7 @@ function TokenUsageCard(props: {
         <div className="mt-1 space-y-0.5">
           {linesToRender.map((line) => (
             <p key={line.label} className="text-muted text-[10px]">
-              {line.label}: {formatTokenCount(line.value)}
+              {t(line.label)}: {formatTokenCount(line.value)}
             </p>
           ))}
         </div>

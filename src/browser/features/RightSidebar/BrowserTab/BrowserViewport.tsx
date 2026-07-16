@@ -569,7 +569,7 @@ export function BrowserViewport(props: BrowserViewportProps) {
             className="bg-background-secondary border-destructive/20 text-destructive flex items-start gap-2 rounded-md border px-3 py-2 text-xs shadow-md"
           >
             <TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-            <span>{props.visibleError}</span>
+            <span>{t(props.visibleError)}</span>
           </div>
         </div>
       )}

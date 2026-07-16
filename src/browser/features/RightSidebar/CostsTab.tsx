@@ -370,7 +370,7 @@ const CostsTabComponent: React.FC<CostsTabProps> = ({ workspaceId }) => {
                                   className="h-2 w-2 shrink-0 rounded-sm"
                                   style={{ background: component.color }}
                                 />
-                                {component.name}
+                                {t(component.name)}
                               </div>
                             </td>
                             <td className="text-foreground py-1 pr-2 tabular-nums [&:last-child]:pr-0 [&:last-child]:text-right">

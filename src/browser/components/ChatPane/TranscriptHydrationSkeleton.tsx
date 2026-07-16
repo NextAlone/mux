@@ -26,7 +26,7 @@ export function TranscriptHydrationSkeleton() {
       data-testid="transcript-hydration-placeholder"
       role="status"
       aria-busy="true"
-      aria-label={t("Loading transcript")}
+      aria-label={t("Loading chat transcript")}
       className="flex flex-col gap-8 py-6 select-none"
     >
       {TURNS.map((turn, turnIndex) => (

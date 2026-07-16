@@ -252,7 +252,10 @@ export const AgentSkillListToolCall: React.FC<AgentSkillListToolCallProps> = (pr
         <span className="text-secondary font-medium whitespace-nowrap">{t(verb)}</span>
         {view.kind === "skills" && (
           <span className="text-muted whitespace-nowrap">
-            {skills.length} {t(skills.length === 1 ? "skill" : "skills")}
+            {t(skills.length === 1 ? "{count} skill" : "{count} skills").replace(
+              "{count}",
+              String(skills.length)
+            )}
           </span>
         )}
         {unadvertisedCount > 0 && (

@@ -137,6 +137,7 @@ const TreeNodeContent: React.FC<{
   expandStateMap,
   setExpandStateMap,
 }) => {
+  const { t } = useLanguage();
   // Check if user has manually set expand state for this directory
   const hasManualState = node.path in expandStateMap;
   const isOpen = hasManualState ? expandStateMap[node.path] : depth < 2; // Default: auto-expand first 2 levels
@@ -336,7 +337,7 @@ const TreeNodeContent: React.FC<{
                     </span>
                   </TooltipTrigger>
                   <TooltipContent side="left" align="center">
-                    {fileChangeBadge.title}
+                    {t(fileChangeBadge.title)}
                   </TooltipContent>
                 </Tooltip>
               ) : null}

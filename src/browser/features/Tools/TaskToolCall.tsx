@@ -1242,7 +1242,10 @@ export const TaskAwaitToolCall: React.FC<TaskAwaitToolCallProps> = ({
         )}
         {failedCount > 0 && (
           <span className="text-danger text-[10px]">
-            {failedCount} {t("failed")}
+            {t(failedCount === 1 ? "{count} failed task" : "{count} failed tasks").replace(
+              "{count}",
+              String(failedCount)
+            )}
           </span>
         )}
         <StatusIndicator status={effectiveStatus}>

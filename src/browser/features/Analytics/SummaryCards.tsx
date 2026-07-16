@@ -29,7 +29,9 @@ export function SummaryCards(props: SummaryCardsProps) {
     {
       label: "Total Spend",
       value: totalSpend,
-      helper: props.data ? `${formatCompactNumber(props.data.totalTokens)} tokens` : null,
+      helper: props.data
+        ? t("{count} tokens").replace("{count}", formatCompactNumber(props.data.totalTokens))
+        : null,
     },
     {
       label: "Today",
@@ -44,7 +46,12 @@ export function SummaryCards(props: SummaryCardsProps) {
     {
       label: "Cache Hit Ratio",
       value: cacheHitRatio,
-      helper: props.data ? `${formatCompactNumber(props.data.totalResponses)} responses` : null,
+      helper: props.data
+        ? t(props.data.totalResponses === 1 ? "{count} response" : "{count} responses").replace(
+            "{count}",
+            formatCompactNumber(props.data.totalResponses)
+          )
+        : null,
     },
   ] as const;
 
@@ -55,7 +62,7 @@ export function SummaryCards(props: SummaryCardsProps) {
           key={row.label}
           className="bg-background-secondary border-border-medium flex min-h-20 flex-col rounded-lg border p-3"
         >
-          <div className="text-muted text-xs">{row.label}</div>
+          <div className="text-muted text-xs">{t(row.label)}</div>
           {props.loading ? (
             <Skeleton variant="shimmer" className="mt-1 h-6 w-20" />
           ) : (

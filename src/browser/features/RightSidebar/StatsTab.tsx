@@ -367,8 +367,10 @@ export function StatsTab(props: StatsTabProps) {
           {viewMode === "session" && session && session.responseCount > 0 && (
             <div className="text-muted-light flex flex-wrap gap-x-3 gap-y-1 text-xs">
               <span>
-                {session.responseCount} {t("response")}
-                {session.responseCount !== 1 ? "s" : ""}
+                {t(session.responseCount === 1 ? "{count} response" : "{count} responses").replace(
+                  "{count}",
+                  String(session.responseCount)
+                )}
               </span>
               {(session.totalOutputTokens > 0 || session.totalReasoningTokens > 0) && (
                 <>
@@ -398,7 +400,7 @@ export function StatsTab(props: StatsTabProps) {
 
           {avgTPS !== null && avgTPS > 0 && (
             <div className="text-muted-light text-xs tabular-nums">
-              {rateLabel}: {avgTPS.toFixed(0)}
+              {t(rateLabel)}: {avgTPS.toFixed(0)}
               {/* i18n-ignore -- token-rate unit */} tok/s
             </div>
           )}
@@ -432,7 +434,7 @@ export function StatsTab(props: StatsTabProps) {
                     className="h-2 w-2 rounded-full"
                     style={{ backgroundColor: component.color }}
                   />
-                  <span className="text-secondary text-xs">{component.name}</span>
+                  <span className="text-secondary text-xs">{t(component.name)}</span>
                 </div>
                 <div className="flex items-center gap-2">
                   {component.waiting ? (
@@ -726,8 +728,10 @@ export function TimingPanel(props: TimingPanelProps) {
           {viewMode === "session" && session && session.responseCount > 0 && (
             <div className="text-muted-light flex flex-wrap gap-x-3 gap-y-1 text-xs">
               <span>
-                {session.responseCount} {t("response")}
-                {session.responseCount !== 1 ? "s" : ""}
+                {t(session.responseCount === 1 ? "{count} response" : "{count} responses").replace(
+                  "{count}",
+                  String(session.responseCount)
+                )}
               </span>
               {(session.totalOutputTokens > 0 || session.totalReasoningTokens > 0) && (
                 <>
@@ -757,7 +761,7 @@ export function TimingPanel(props: TimingPanelProps) {
 
           {avgTPS !== null && avgTPS > 0 && (
             <div className="text-muted-light text-xs">
-              {rateLabel}: {avgTPS.toFixed(0)}
+              {t(rateLabel)}: {avgTPS.toFixed(0)}
               {/* i18n-ignore -- token-rate unit */} tok/s
             </div>
           )}
@@ -791,7 +795,7 @@ export function TimingPanel(props: TimingPanelProps) {
                     className="h-2 w-2 rounded-full"
                     style={{ backgroundColor: component.color }}
                   />
-                  <span className="text-secondary text-xs">{component.name}</span>
+                  <span className="text-secondary text-xs">{t(component.name)}</span>
                 </div>
                 <div className="flex items-center gap-2">
                   {component.waiting ? (

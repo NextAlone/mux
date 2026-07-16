@@ -1751,7 +1751,7 @@ const RightSidebarComponent: React.FC<RightSidebarProps> = ({
       <DragOverlay>
         {activeDragData ? (
           <div className="border-border bg-background/95 cursor-grabbing rounded-md border px-3 py-1 text-xs font-medium shadow">
-            {getTabName(activeDragData.tab)}
+            {t(getTabName(activeDragData.tab))}
           </div>
         ) : null}
       </DragOverlay>

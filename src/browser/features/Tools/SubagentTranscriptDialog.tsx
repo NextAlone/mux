@@ -163,7 +163,7 @@ const SubagentTranscriptViewer: React.FC<{
       <div className="min-h-0 flex-1 overflow-y-auto rounded bg-[var(--color-bg-secondary)] p-3">
         {isLoading ? (
           <div className="text-muted text-[11px] italic">
-            {t("Loading transcript")}
+            {t("Loading sub-agent transcript")}
             <LoadingDots />
           </div>
         ) : displayedMessages ? (

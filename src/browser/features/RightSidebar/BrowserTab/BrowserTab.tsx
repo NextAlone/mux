@@ -139,6 +139,7 @@ export function BrowserTab(props: BrowserTabProps) {
   const pendingTabIdRef = useRef<string | null>(null);
   const selectedSessionNameRef = useRef<string | null>(null);
   const { api } = useAPI();
+  const { t } = useLanguage();
   const [discoveredSessions, setDiscoveredSessions] = useState<BrowserDiscoveredSession[]>([]);
   const [otherDiscoveredSessions, setOtherDiscoveredSessions] = useState<
     BrowserDiscoveredOtherSession[]
@@ -182,11 +183,12 @@ export function BrowserTab(props: BrowserTabProps) {
       : selectedDiscoveredSession != null
         ? DISCOVERY_BADGES[selectedDiscoveredSession.status]
         : null;
-  const headerTitle = "Browser preview";
+  const headerTitle = t("Browser preview");
   const shouldShowPageTabStrip = pageTabs.length > 1 || pageTabsError != null;
 
   useEffect(() => {
     if (api == null) {
+      // Store the stable source key; the renderer translates it at the display boundary.
       setDiscoveryError("Browser API client is unavailable.");
       setDiscoveredSessions([]);
       setOtherDiscoveredSessions([]);
@@ -440,7 +442,9 @@ export function BrowserTab(props: BrowserTabProps) {
       setPageTabsError(
         error instanceof Error
           ? error.message
-          : `Failed to switch browser tab "${trimmedTabRef}" for session "${targetSessionName}".`
+          : t('Failed to switch browser tab "{tab}" for session "{session}".')
+              .replace("{tab}", trimmedTabRef)
+              .replace("{session}", targetSessionName)
       );
     } finally {
       if (selectedSessionNameRef.current === targetSessionName) {
@@ -505,7 +509,7 @@ export function BrowserTab(props: BrowserTabProps) {
             className="border-destructive/20 bg-destructive/10 text-destructive flex items-start gap-2 rounded-md border px-3 py-2 text-xs"
           >
             <TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-            <span>{visibleError}</span>
+            <span>{t(visibleError)}</span>
           </div>
         </div>
       )}
@@ -534,6 +538,7 @@ export function BrowserTab(props: BrowserTabProps) {
 }
 
 function BrowserHeaderBadge(props: { badge: { label: string; className: string } }) {
+  const { t } = useLanguage();
   return (
     <span
       className={cn(
@@ -541,7 +546,7 @@ function BrowserHeaderBadge(props: { badge: { label: string; className: string }
         props.badge.className
       )}
     >
-      {props.badge.label}
+      {t(props.badge.label)}
     </span>
   );
 }
@@ -640,11 +645,11 @@ function BrowserPageTabStrip(props: {
         {props.error != null && (
           <span
             role="alert"
-            title={props.error}
+            title={t(props.error)}
             className="text-destructive flex max-w-[14rem] shrink-0 items-center gap-1 truncate pb-1.5 text-[10px]"
           >
             <TriangleAlert className="h-3 w-3 shrink-0" />
-            <span className="truncate">{props.error}</span>
+            <span className="truncate">{t(props.error)}</span>
           </span>
         )}
       </div>

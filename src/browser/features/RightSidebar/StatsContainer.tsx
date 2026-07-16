@@ -8,6 +8,7 @@
  */
 
 import { usePersistedState } from "@/browser/hooks/usePersistedState";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 import { CostsTab } from "./CostsTab";
 import { TimingPanel, ModelBreakdownPanel } from "./StatsTab";
 
@@ -29,6 +30,7 @@ interface StatsContainerProps {
 }
 
 export function StatsContainer(props: StatsContainerProps) {
+  const { t } = useLanguage();
   const [subTab, setSubTab] = usePersistedState<StatsSubTab>("statsContainer:subTab", "cost");
 
   const effectiveTab = OPTIONS.some((o) => o.value === subTab) ? subTab : "cost";
@@ -50,7 +52,7 @@ export function StatsContainer(props: StatsContainerProps) {
                 }`}
                 onClick={() => setSubTab(option.value)}
               >
-                {option.label}
+                {t(option.label)}
               </button>
             );
           })}

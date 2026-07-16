@@ -110,7 +110,7 @@ function DelegationTooltipContent(props: {
               className="inline-block h-2 w-2 rounded-full"
               style={{ backgroundColor: category.color }}
             />
-            {category.label}
+            {t(category.label)}
           </span>
           <span className="text-foreground font-mono">
             {formatCompactNumber(row[category.key])}

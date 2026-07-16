@@ -50,8 +50,14 @@ export const ReviewPaneUpdateToolCall: React.FC<ReviewPaneUpdateToolCallProps> =
   const verb = displayHunks.length === 0 ? "Cleared" : opLabel;
   const summary =
     displayHunks.length === 0
-      ? "Cleared review focus"
-      : `${verb} · ${displayHunks.length} hunk${displayHunks.length === 1 ? "" : "s"} pinned`;
+      ? t("Cleared review focus")
+      : t(
+          displayHunks.length === 1
+            ? "{operation} · {count} hunk pinned"
+            : "{operation} · {count} hunks pinned"
+        )
+          .replace("{operation}", t(verb))
+          .replace("{count}", String(displayHunks.length));
   const rejectedCount = successResult?.rejected.length ?? 0;
 
   return (
@@ -63,7 +69,11 @@ export const ReviewPaneUpdateToolCall: React.FC<ReviewPaneUpdateToolCallProps> =
           <span className="truncate">{summary}</span>
           {rejectedCount > 0 && (
             <span className="text-warning-light shrink-0">
-              · {rejectedCount} {t("rejected")}
+              ·{" "}
+              {t(rejectedCount === 1 ? "{count} rejected item" : "{count} rejected items").replace(
+                "{count}",
+                String(rejectedCount)
+              )}
             </span>
           )}
         </span>
