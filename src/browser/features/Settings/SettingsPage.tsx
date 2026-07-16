@@ -19,6 +19,7 @@ import {
   Blend,
 } from "lucide-react";
 import { useSettings } from "@/browser/contexts/SettingsContext";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 import { useOnboardingPause } from "@/browser/features/SplashScreens/SplashScreenProvider";
 import { useExperimentValue } from "@/browser/hooks/useExperiments";
 import { isEditableElement, KEYBINDS, matchesKeybind } from "@/browser/utils/ui/keybinds";
@@ -180,6 +181,7 @@ interface SettingsPageProps {
 
 export function SettingsPage(props: SettingsPageProps) {
   const { close, activeSection, setActiveSection } = useSettings();
+  const { t } = useLanguage();
   const onboardingPause = useOnboardingPause();
   const governorEnabled = useExperimentValue(EXPERIMENT_IDS.MUX_GOVERNOR);
   const memoryEnabled = useExperimentValue(EXPERIMENT_IDS.MEMORY);
@@ -239,32 +241,32 @@ export function SettingsPage(props: SettingsPageProps) {
               variant="ghost"
               size="icon"
               onClick={props.onToggleLeftSidebarCollapsed}
-              title="Open sidebar"
-              aria-label="Open sidebar menu"
+              title={t("Open sidebar")}
+              aria-label={t("Open sidebar menu")}
               className="mobile-menu-btn text-muted hover:text-foreground hidden h-6 w-6 shrink-0"
             >
               <Menu className="h-4 w-4" />
             </Button>
           )}
-          <span className="text-foreground text-sm font-semibold">Settings</span>
+          <span className="text-foreground text-sm font-semibold">{t("Settings")}</span>
         </div>
         <Button
           variant="ghost"
           size="sm"
           onClick={close}
-          title="Back"
-          aria-label="Back to previous page"
+          title={t("Back")}
+          aria-label={t("Back to previous page")}
           className="text-muted hover:text-foreground px-2"
         >
           <ArrowLeft className="h-3.5 w-3.5" />
-          Back
+          {t("Back")}
         </Button>
       </div>
 
       <div className="flex min-h-0 flex-1 overflow-hidden">
         <aside className="border-border-medium hidden w-48 shrink-0 flex-col border-r md:flex">
           <div className="border-border-medium flex h-12 items-center border-b px-4">
-            <span className="text-foreground text-sm font-semibold">Settings</span>
+            <span className="text-foreground text-sm font-semibold">{t("Settings")}</span>
           </div>
           <nav className="flex flex-1 flex-col gap-1 overflow-y-auto p-2">
             {sections.map((section) => (
@@ -279,7 +281,7 @@ export function SettingsPage(props: SettingsPageProps) {
                 }`}
               >
                 {section.icon}
-                {section.label}
+                {t(section.label)}
               </Button>
             ))}
           </nav>
@@ -300,20 +302,20 @@ export function SettingsPage(props: SettingsPageProps) {
                   }`}
                 >
                   {section.icon}
-                  {section.label}
+                  {t(section.label)}
                 </Button>
               ))}
             </nav>
           </div>
 
           <div className="border-border-medium hidden h-12 items-center justify-between border-b px-6 md:flex">
-            <span className="text-foreground text-sm font-medium">{currentSection.label}</span>
+            <span className="text-foreground text-sm font-medium">{t(currentSection.label)}</span>
             <Button
               variant="ghost"
               size="icon"
               onClick={close}
               className="h-6 w-6"
-              aria-label="Close settings"
+              aria-label={t("Close settings")}
             >
               <X className="h-4 w-4" />
             </Button>
@@ -325,9 +327,9 @@ export function SettingsPage(props: SettingsPageProps) {
             <div className="flex min-h-full w-full max-w-4xl flex-col">
               {onboardingPause.paused && (
                 <div className="bg-accent/10 border-accent/30 text-foreground mb-3 flex items-center justify-between rounded-md border px-3 py-2 text-sm">
-                  <span>Setup is paused while you configure providers.</span>
+                  <span>{t("Setup is paused while you configure providers.")}</span>
                   <Button variant="secondary" size="sm" onClick={close}>
-                    Return to setup
+                    {t("Return to setup")}
                   </Button>
                 </div>
               )}

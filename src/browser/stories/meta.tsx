@@ -12,6 +12,7 @@ import { AppLoader } from "../components/AppLoader/AppLoader";
 import { TooltipProvider } from "@/browser/components/Tooltip/Tooltip";
 import type { APIClient } from "@/browser/contexts/API";
 import { ThemeProvider } from "@/browser/contexts/ThemeContext";
+import { LanguageProvider } from "@/browser/contexts/LanguageContext";
 import {
   SELECTED_WORKSPACE_KEY,
   SIDEBAR_AGE_GROUPING_KEY,
@@ -67,7 +68,9 @@ export type AppStory = StoryObj<typeof appMeta>;
 export const StoryUiShell: FC<{ children: ReactNode }> = (props) => {
   return (
     <ThemeProvider>
-      <TooltipProvider>{props.children}</TooltipProvider>
+      <LanguageProvider>
+        <TooltipProvider>{props.children}</TooltipProvider>
+      </LanguageProvider>
     </ThemeProvider>
   );
 };

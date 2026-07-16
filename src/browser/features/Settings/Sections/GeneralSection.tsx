@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import { useTheme, THEME_OPTIONS, type ThemePreference } from "@/browser/contexts/ThemeContext";
+import { LANGUAGE_OPTIONS, useLanguage, type Language } from "@/browser/contexts/LanguageContext";
 import {
   Select,
   SelectContent,
@@ -168,6 +169,7 @@ const isBrowserMode = typeof window !== "undefined" && !window.api;
 
 export function GeneralSection() {
   const { themePreference, setTheme } = useTheme();
+  const { language, setLanguage, t } = useLanguage();
   const { api } = useAPI();
   const [launchBehavior, setLaunchBehavior] = usePersistedState<LaunchBehavior>(
     LAUNCH_BEHAVIOR_KEY,
@@ -566,12 +568,33 @@ export function GeneralSection() {
   return (
     <div className="space-y-6">
       <div>
-        <h3 className="text-foreground mb-4 text-sm font-medium">Appearance</h3>
+        <h3 className="text-foreground mb-4 text-sm font-medium">{t("Appearance")}</h3>
         <div className="space-y-4">
           <div className="flex items-center justify-between gap-4">
             <div className="flex-1">
-              <div className="text-foreground text-sm">Theme</div>
-              <div className="text-muted text-xs">Choose your preferred theme</div>
+              <div className="text-foreground text-sm">{t("Language")}</div>
+              <div className="text-muted text-xs">
+                {t("Choose the language used by the Mux interface")}
+              </div>
+            </div>
+            <Select value={language} onValueChange={(value) => setLanguage(value as Language)}>
+              <SelectTrigger className="border-border-medium bg-background-secondary hover:bg-hover h-9 w-auto cursor-pointer rounded-md border px-3 text-sm transition-colors">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {LANGUAGE_OPTIONS.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex-1">
+              <div className="text-foreground text-sm">{t("Theme")}</div>
+              <div className="text-muted text-xs">{t("Choose your preferred theme")}</div>
             </div>
             <Select
               value={themePreference}
@@ -583,7 +606,7 @@ export function GeneralSection() {
               <SelectContent>
                 {THEME_OPTIONS.map((option) => (
                   <SelectItem key={option.value} value={option.value}>
-                    {option.label}
+                    {t(option.label)}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -592,8 +615,8 @@ export function GeneralSection() {
 
           <div className="flex items-center justify-between gap-4">
             <div className="flex-1">
-              <div className="text-foreground text-sm">Launch behavior</div>
-              <div className="text-muted text-xs">What to show when Mux starts</div>
+              <div className="text-foreground text-sm">{t("Launch behavior")}</div>
+              <div className="text-muted text-xs">{t("What to show when Mux starts")}</div>
             </div>
             <Select
               value={launchBehavior}
@@ -605,7 +628,7 @@ export function GeneralSection() {
               <SelectContent>
                 {LAUNCH_BEHAVIOR_OPTIONS.map((option) => (
                   <SelectItem key={option.value} value={option.value}>
-                    {option.label}
+                    {t(option.label)}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -614,9 +637,9 @@ export function GeneralSection() {
 
           <div className="flex items-center justify-between gap-4">
             <div className="flex-1">
-              <div className="text-foreground text-sm">Full-width chat transcript</div>
+              <div className="text-foreground text-sm">{t("Full-width chat transcript")}</div>
               <div className="text-muted text-xs">
-                Let messages use the full chat pane instead of the default readable column.
+                {t("Let messages use the full chat pane instead of the default readable column.")}
               </div>
             </div>
             <Switch
@@ -628,10 +651,11 @@ export function GeneralSection() {
 
           <div className="flex items-center justify-between gap-4">
             <div className="flex-1">
-              <div className="text-foreground text-sm">Group sidebar workspaces by age</div>
+              <div className="text-foreground text-sm">{t("Group sidebar workspaces by age")}</div>
               <div className="text-muted text-xs">
-                Collect older workspaces under collapsible &quot;Older than X days&quot; sections.
-                When off, all workspaces are listed together.
+                {t(
+                  'Collect older workspaces under collapsible "Older than X days" sections. When off, all workspaces are listed together.'
+                )}
               </div>
             </div>
             <Switch
@@ -643,10 +667,11 @@ export function GeneralSection() {
 
           <div className="flex items-center justify-between gap-4">
             <div className="flex-1">
-              <div className="text-foreground text-sm">Transcript density</div>
+              <div className="text-foreground text-sm">{t("Transcript density")}</div>
               <div className="text-muted text-xs">
-                Control how much detail the transcript shows. Hyper collapses completed work into
-                expandable summaries.
+                {t(
+                  "Control how much detail the transcript shows. Hyper collapses completed work into expandable summaries."
+                )}
               </div>
             </div>
             <Select
@@ -659,7 +684,7 @@ export function GeneralSection() {
               <SelectContent>
                 {TRANSCRIPT_DENSITY_OPTIONS.map((option) => (
                   <SelectItem key={option.value} value={option.value}>
-                    {option.label}
+                    {t(option.label)}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -668,10 +693,11 @@ export function GeneralSection() {
 
           <div className="flex items-center justify-between gap-4">
             <div className="flex-1">
-              <div className="text-foreground text-sm">Collapsed bash summaries</div>
+              <div className="text-foreground text-sm">{t("Collapsed bash summaries")}</div>
               <div className="text-muted text-xs">
-                Choose whether collapsed bash tools show the raw command, the model&apos;s intent,
-                or both.
+                {t(
+                  "Choose whether collapsed bash tools show the raw command, the model's intent, or both."
+                )}
               </div>
             </div>
             <Select
@@ -686,7 +712,7 @@ export function GeneralSection() {
               <SelectContent>
                 {BASH_COLLAPSED_SUMMARY_MODE_OPTIONS.map((option) => (
                   <SelectItem key={option.value} value={option.value}>
-                    {option.label}
+                    {t(option.label)}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -695,13 +721,15 @@ export function GeneralSection() {
 
           <div className="flex items-center justify-between gap-4">
             <div className="flex-1">
-              <div className="text-foreground text-sm">Terminal Font</div>
+              <div className="text-foreground text-sm">{t("Terminal Font")}</div>
               {terminalFontWarning ? (
                 <div className="text-warning text-xs">{terminalFontWarning}</div>
               ) : null}
-              <div className="text-muted text-xs">Set this to a monospace font you like.</div>
               <div className="text-muted text-xs">
-                Preview:{" "}
+                {t("Set this to a monospace font you like.")}
+              </div>
+              <div className="text-muted text-xs">
+                {t("Preview")}:{" "}
                 <span className="text-foreground" style={{ fontFamily: terminalFontPreviewFamily }}>
                   {terminalFontPreviewText}
                 </span>
@@ -721,8 +749,8 @@ export function GeneralSection() {
 
           <div className="flex items-center justify-between gap-4">
             <div className="flex-1">
-              <div className="text-foreground text-sm">Terminal Font Size</div>
-              <div className="text-muted text-xs">Font size for the integrated terminal</div>
+              <div className="text-foreground text-sm">{t("Terminal Font Size")}</div>
+              <div className="text-muted text-xs">{t("Font size for the integrated terminal")}</div>
             </div>
             <Input
               type="number"
@@ -738,13 +766,13 @@ export function GeneralSection() {
       </div>
 
       <div>
-        <h3 className="text-foreground mb-4 text-sm font-medium">Workspace insights</h3>
+        <h3 className="text-foreground mb-4 text-sm font-medium">{t("Workspace insights")}</h3>
         <div className="divide-border-light divide-y">
           <div className="flex items-center justify-between py-3">
             <div className="flex-1 pr-4">
-              <div className="text-foreground text-sm">API Debug Logs</div>
+              <div className="text-foreground text-sm">{t("API Debug Logs")}</div>
               <div className="text-muted mt-0.5 text-xs">
-                Record the full input and output of every AI API call
+                {t("Record the full input and output of every AI API call")}
               </div>
             </div>
             <Switch
@@ -758,8 +786,8 @@ export function GeneralSection() {
 
       <div className="flex items-center justify-between">
         <div>
-          <div className="text-foreground text-sm">Editor</div>
-          <div className="text-muted text-xs">Editor to open files in</div>
+          <div className="text-foreground text-sm">{t("Editor")}</div>
+          <div className="text-muted text-xs">{t("Editor to open files in")}</div>
         </div>
         <Select value={editorConfig.editor} onValueChange={handleEditorChange}>
           <SelectTrigger className="border-border-medium bg-background-secondary hover:bg-hover h-9 w-auto cursor-pointer rounded-md border px-3 text-sm transition-colors">
@@ -768,7 +796,7 @@ export function GeneralSection() {
           <SelectContent>
             {EDITOR_OPTIONS.map((option) => (
               <SelectItem key={option.value} value={option.value}>
-                {option.label}
+                {t(option.label)}
               </SelectItem>
             ))}
           </SelectContent>
@@ -779,8 +807,10 @@ export function GeneralSection() {
         <div className="space-y-2">
           <div className="flex items-center justify-between">
             <div>
-              <div className="text-foreground text-sm">Custom Command</div>
-              <div className="text-muted text-xs">Command to run (path will be appended)</div>
+              <div className="text-foreground text-sm">{t("Custom Command")}</div>
+              <div className="text-muted text-xs">
+                {t("Command to run (path will be appended)")}
+              </div>
             </div>
             <Input
               value={editorConfig.customCommand ?? ""}
@@ -874,13 +904,13 @@ export function GeneralSection() {
       )}
 
       <div>
-        <h3 className="text-foreground mb-4 text-sm font-medium">Projects</h3>
+        <h3 className="text-foreground mb-4 text-sm font-medium">{t("Projects")}</h3>
         <div className="space-y-4">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
             <div className="flex-1">
-              <div className="text-foreground text-sm">Default project directory</div>
+              <div className="text-foreground text-sm">{t("Default project directory")}</div>
               <div className="text-muted text-xs">
-                Parent folder for new projects and cloned repositories
+                {t("Parent folder for new projects and cloned repositories")}
               </div>
             </div>
             <Input
@@ -897,9 +927,9 @@ export function GeneralSection() {
 
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
             <div className="flex-1">
-              <div className="text-foreground text-sm">Workspace path</div>
+              <div className="text-foreground text-sm">{t("Workspace path")}</div>
               <div className="text-muted text-xs">
-                Location for new local JJ workspace checkouts
+                {t("Location for new local JJ workspace checkouts")}
               </div>
             </div>
             <Select
@@ -925,7 +955,7 @@ export function GeneralSection() {
           {workspaceCheckoutLocationMode === "customPublic" && (
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
               <div className="flex-1">
-                <div className="text-foreground text-sm">Custom workspace directory</div>
+                <div className="text-foreground text-sm">{t("Custom workspace directory")}</div>
                 <div className="text-muted text-xs">
                   New checkouts use &lt;directory&gt;/&lt;project&gt;/&lt;workspace&gt;
                 </div>

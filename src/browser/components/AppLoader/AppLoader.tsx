@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from "motion/react";
 import App from "../../App";
 import { AuthTokenModal } from "../AuthTokenModal/AuthTokenModal";
 import { ThemeProvider } from "../../contexts/ThemeContext";
+import { LanguageProvider } from "../../contexts/LanguageContext";
 import { LoadingScreen } from "../LoadingScreen/LoadingScreen";
 import { StartupConnectionError } from "../StartupConnectionError/StartupConnectionError";
 import { useReducedMotion } from "../../hooks/useReducedMotion";
@@ -129,21 +130,23 @@ interface AppLoaderProps {
 export function AppLoader(props: AppLoaderProps) {
   return (
     <ThemeProvider>
-      <APIProvider client={props.client}>
-        <UserPreferencesStartupGate>
-          <PolicyProvider>
-            <RouterProvider>
-              <ProjectProvider>
-                <WorkspaceProvider>
-                  <UserPreferencesProvider>
-                    <AppLoaderInner />
-                  </UserPreferencesProvider>
-                </WorkspaceProvider>
-              </ProjectProvider>
-            </RouterProvider>
-          </PolicyProvider>
-        </UserPreferencesStartupGate>
-      </APIProvider>
+      <LanguageProvider>
+        <APIProvider client={props.client}>
+          <UserPreferencesStartupGate>
+            <PolicyProvider>
+              <RouterProvider>
+                <ProjectProvider>
+                  <WorkspaceProvider>
+                    <UserPreferencesProvider>
+                      <AppLoaderInner />
+                    </UserPreferencesProvider>
+                  </WorkspaceProvider>
+                </ProjectProvider>
+              </RouterProvider>
+            </PolicyProvider>
+          </UserPreferencesStartupGate>
+        </APIProvider>
+      </LanguageProvider>
     </ThemeProvider>
   );
 }

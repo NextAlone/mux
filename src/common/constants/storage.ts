@@ -48,6 +48,9 @@ export const GLOBAL_SCOPE_ID = "__global__";
  */
 export const UI_THEME_KEY = "uiTheme";
 
+/** LocalStorage key for the UI language preference (global). */
+export const UI_LANGUAGE_KEY = "uiLanguage";
+
 /**
  * LocalStorage key for the hidden Power Mode UI easter egg (global).
  */
