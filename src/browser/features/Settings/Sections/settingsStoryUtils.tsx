@@ -229,6 +229,7 @@ export function setupSecurityStory(
 export const MOCK_SERVER_AUTH_SESSIONS: ServerAuthSession[] = [
   {
     id: "session-current",
+    // i18n-ignore: Storybook fixture device label
     label: "Safari on iPhone",
     createdAtMs: 1_735_689_600_000,
     lastUsedAtMs: 4_102_444_800_000,
@@ -236,6 +237,7 @@ export const MOCK_SERVER_AUTH_SESSIONS: ServerAuthSession[] = [
   },
   {
     id: "session-macbook",
+    // i18n-ignore: Storybook fixture device label
     label: "Chrome on Mac",
     createdAtMs: 1_735_776_000_000,
     lastUsedAtMs: 4_102_444_800_000,
@@ -243,6 +245,7 @@ export const MOCK_SERVER_AUTH_SESSIONS: ServerAuthSession[] = [
   },
   {
     id: "session-tablet",
+    // i18n-ignore: Storybook fixture device label
     label: "Firefox on Android",
     createdAtMs: 1_735_862_400_000,
     lastUsedAtMs: 4_102_444_800_000,

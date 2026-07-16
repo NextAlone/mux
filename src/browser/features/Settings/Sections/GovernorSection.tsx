@@ -490,7 +490,7 @@ export function GovernorSection() {
               {t("Enter the URL of your organization's Mux Governor server.")}
             </p>
             <Input
-              placeholder="https://governor.corp.com"
+              placeholder={"https://governor.corp.com" /* i18n-ignore: example Governor endpoint */}
               value={urlInput}
               onChange={(e) => handleUrlInputChange(e.target.value)}
               onKeyDown={(e) => {

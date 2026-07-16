@@ -650,7 +650,7 @@ export const SecretsSection: React.FC = () => {
           onBlur={(e: React.FocusEvent<HTMLInputElement>) =>
             handleOpAccountNameBlur(e.target.value)
           }
-          placeholder="my-team.1password.com"
+          placeholder={"my-team.1password.com" /* i18n-ignore: example 1Password account domain */}
           className="border-border-medium bg-background-secondary h-9 w-64"
         />
       </div>
@@ -801,7 +801,7 @@ export const SecretsSection: React.FC = () => {
                   type="text"
                   value={secret.key}
                   onChange={(e) => updateSecretKey(index, e.target.value)}
-                  placeholder="SECRET_NAME"
+                  placeholder={"SECRET_NAME" /* i18n-ignore: environment variable example */}
                   aria-label={t("Secret key")}
                   disabled={saving}
                   spellCheck={false}
@@ -847,7 +847,12 @@ export const SecretsSection: React.FC = () => {
                           {t("Global")}
                         </SelectItem>
                       )}
-                      {opAvailable && <SelectItem value="op">1Password</SelectItem>}
+                      {opAvailable && (
+                        <SelectItem value="op">
+                          {/* i18n-ignore: product name */}
+                          1Password
+                        </SelectItem>
+                      )}
                     </SelectContent>
                   </Select>
                 )}
