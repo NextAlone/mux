@@ -135,13 +135,13 @@ export function MuxGatewaySessionExpiredDialog() {
       onDismiss={dismiss}
       dismissOnPrimaryAction={false}
       primaryAction={{
-        label: isStartingLogin ? "Starting login..." : "Login to mux gateway",
+        label: isStartingLogin ? t("Starting login...") : t("Login to mux gateway"),
         disabled: isStartingLogin,
         onClick: () => {
           void startMuxGatewayLogin();
         },
       }}
-      dismissLabel="Cancel"
+      dismissLabel={t("Cancel")}
     >
       <p className="text-muted text-sm">{MUX_GATEWAY_SESSION_EXPIRED_MESSAGE}</p>
 

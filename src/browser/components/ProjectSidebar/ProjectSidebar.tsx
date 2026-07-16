@@ -1427,9 +1427,13 @@ const ProjectSidebarInner: React.FC<ProjectSidebarProps> = ({
 
     if (workspacesInSection.length > 0) {
       const ok = await confirmDialog({
-        title: "Remove sub-project?",
-        description: `${workspacesInSection.length} workspace(s) in this sub-project will move back to the parent project.`,
-        confirmLabel: "Remove",
+        title: t("Remove sub-project?"),
+        description: `${t("This sub-project has")} ${workspacesInSection.length} ${t(
+          workspacesInSection.length === 1
+            ? "workspace that will move back to the parent project."
+            : "workspaces that will move back to the parent project."
+        )}`,
+        confirmLabel: t("Remove"),
         confirmVariant: "destructive",
       });
       if (!ok) {
@@ -1439,7 +1443,7 @@ const ProjectSidebarInner: React.FC<ProjectSidebarProps> = ({
 
     const result = await onRemoveProject(subProjectPath);
     if (!result.success) {
-      const error = getErrorMessage(result.error) || "Failed to remove sub-project";
+      const error = getErrorMessage(result.error) || t("Failed to remove sub-project");
       sectionRemoveError.showError(subProjectPath, error, anchor);
     }
   };
@@ -3263,7 +3267,7 @@ const ProjectSidebarInner: React.FC<ProjectSidebarProps> = ({
               archiveConfirmation?.untrackedPaths
             )}
             confirmLabel={
-              archiveConfirmation?.untrackedPaths ? "Archive and delete files" : "Archive"
+              archiveConfirmation?.untrackedPaths ? t("Archive and delete files") : t("Archive")
             }
             confirmVariant="destructive"
             onConfirm={handleArchiveWorkspaceConfirm}

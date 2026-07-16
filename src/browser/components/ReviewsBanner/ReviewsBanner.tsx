@@ -407,9 +407,8 @@ const ReviewsBannerInner: React.FC<ReviewsBannerInnerProps> = ({ workspaceId }) 
               <>
                 <span className="font-medium text-[var(--color-review-accent)]">
                   {reviewsHook.pendingCount}
-                </span>
-                {" pending review"}
-                {reviewsHook.pendingCount !== 1 && "s"}
+                </span>{" "}
+                {t(reviewsHook.pendingCount === 1 ? "pending review item" : "pending review items")}
               </>
             ) : (
               <>{t("No pending reviews")}</>

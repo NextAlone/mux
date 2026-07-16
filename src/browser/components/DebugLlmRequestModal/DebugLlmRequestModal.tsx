@@ -148,11 +148,13 @@ export const DebugLlmRequestModal: React.FC<DebugLlmRequestModalProps> = ({
                   <span className="text-foreground font-mono">{snapshot.model}</span>
                   <span>•</span>
                   <span className="text-foreground font-mono">
+                    {/* i18n-ignore: thinking= is a raw provider request field name in debug output. */}
                     thinking={snapshot.thinkingLevel}
                   </span>
                   {snapshot.mode && (
                     <>
                       <span>•</span>
+                      {/* i18n-ignore: mode= is a raw provider request field name in debug output. */}
                       <span className="text-foreground font-mono">mode={snapshot.mode}</span>
                     </>
                   )}
@@ -169,6 +171,7 @@ export const DebugLlmRequestModal: React.FC<DebugLlmRequestModalProps> = ({
                     <>
                       <span>•</span>
                       <span className="text-foreground font-mono">
+                        {/* i18n-ignore: maxTokens= is a raw provider request field name in debug output. */}
                         maxTokens={snapshot.maxOutputTokens}
                       </span>
                     </>

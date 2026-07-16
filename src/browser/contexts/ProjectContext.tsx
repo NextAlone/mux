@@ -9,6 +9,7 @@ import {
   type ReactNode,
 } from "react";
 import { useAPI } from "@/browser/contexts/API";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 import type { ProjectConfig } from "@/common/types/project";
 import type { BranchListResult } from "@/common/orpc/types";
 import type { z } from "zod";
@@ -127,6 +128,7 @@ function toNonEmptyTrimmed(value?: string | null): string | null {
 
 export function ProjectProvider(props: { children: ReactNode }) {
   const { api } = useAPI();
+  const { t } = useLanguage();
   const [allProjectsInternal, setAllProjectsInternal] = useState<Map<string, ProjectConfig>>(
     new Map()
   );
@@ -272,7 +274,7 @@ export function ProjectProvider(props: { children: ReactNode }) {
       if (!api) {
         return {
           success: false,
-          error: { type: "unknown", message: "API not connected" },
+          error: { type: "unknown", message: t("API not connected") },
         };
       }
       try {
@@ -337,7 +339,7 @@ export function ProjectProvider(props: { children: ReactNode }) {
         };
       }
     },
-    [api, refreshProjects]
+    [api, refreshProjects, t]
   );
 
   const resolveProjectPath = useCallback(

@@ -184,14 +184,16 @@ export const TutorialTooltip: React.FC<TutorialTooltipProps> = ({
 
         {/* Header */}
         <div className="mb-2 flex items-start justify-between">
-          <h3 className="text-sm font-semibold">{step.title}</h3>
+          <h3 className="text-sm font-semibold">{t(step.title)}</h3>
           <span className="text-muted text-xs">
             {currentStep}/{totalSteps}
           </span>
         </div>
 
         {/* Content */}
-        <p className="text-muted mb-4 text-xs leading-relaxed">{step.content}</p>
+        <p className="text-muted mb-4 text-xs leading-relaxed">
+          {typeof step.content === "string" ? t(step.content) : step.content}
+        </p>
 
         {/* Actions */}
         <div className="flex items-center justify-between">

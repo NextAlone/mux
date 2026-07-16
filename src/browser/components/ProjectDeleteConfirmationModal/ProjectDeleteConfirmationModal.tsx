@@ -84,7 +84,8 @@ export function ProjectDeleteConfirmationModal(
         <DialogHeader>
           <DialogTitle>
             {t("Delete “")}
-            {props.projectName}&rdquo;?
+            {props.projectName}
+            {t("”?")}
           </DialogTitle>
         </DialogHeader>
 
