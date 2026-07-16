@@ -3,6 +3,7 @@ import type { QueuedMessage as QueuedMessageType } from "@/common/types/message"
 import { Pencil, Send } from "lucide-react";
 import { ChatInputDecoration } from "@/browser/components/ChatPane/ChatInputDecoration";
 import { UserMessageContent } from "@/browser/features/Messages/UserMessageContent";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 interface QueuedMessageProps {
   message: QueuedMessageType;
@@ -34,6 +35,7 @@ export const QueuedMessage: React.FC<QueuedMessageProps> = ({
   onEdit,
   onSendImmediately,
 }) => {
+  const { t } = useLanguage();
   const [isExpanded, setIsExpanded] = useState(true);
   const [isSending, setIsSending] = useState(false);
   const preview = deriveQueuedPreview(message);
@@ -65,7 +67,8 @@ export const QueuedMessage: React.FC<QueuedMessageProps> = ({
         <>
           <Send className="text-muted group-hover:text-secondary size-3.5 transition-colors" />
           <span className="text-muted group-hover:text-secondary transition-colors">
-            Queued - {queueStatusLabel}
+            {t("Queued -")}
+            {queueStatusLabel}
           </span>
         </>
       }
@@ -92,7 +95,7 @@ export const QueuedMessage: React.FC<QueuedMessageProps> = ({
                 className="text-muted hover:text-secondary flex items-center gap-1 text-xs transition-colors"
               >
                 <Pencil className="size-3" />
-                Edit
+                {t("Edit")}
               </button>
             )}
 

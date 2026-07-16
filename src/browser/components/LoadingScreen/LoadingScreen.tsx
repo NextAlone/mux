@@ -1,8 +1,10 @@
 import MuxLogoDark from "@/browser/assets/logos/mux-logo-dark.svg?react";
 import MuxLogoLight from "@/browser/assets/logos/mux-logo-light.svg?react";
 import { useTheme } from "@/browser/contexts/ThemeContext";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 export function LoadingScreen(props: { statusText?: string }) {
+  const { t } = useLanguage();
   const { theme } = useTheme();
   const MuxLogo = theme === "dark" || theme.endsWith("-dark") ? MuxLogoDark : MuxLogoLight;
 
@@ -13,7 +15,7 @@ export function LoadingScreen(props: { statusText?: string }) {
       <div className="boot-loader__inner">
         <MuxLogo className="boot-loader__logo" aria-hidden="true" />
         <p className="boot-loader__text">
-          {props.statusText ?? "Loading Mux"}
+          {props.statusText ?? t("Loading Mux")}
           {/* Animated "..." dots — only for default text; custom statusText
               (e.g. "Reconnecting...") supplies its own punctuation. CSS in
               index.html drives the animation via boot-loader__dots::after. */}

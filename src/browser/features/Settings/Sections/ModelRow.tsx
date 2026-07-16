@@ -3,6 +3,7 @@ import { createEditKeyHandler } from "@/browser/utils/ui/keybinds";
 import { SearchableModelSelect } from "@/browser/features/Settings/Components/SearchableModelSelect";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/browser/components/Tooltip/Tooltip";
 import { Button } from "@/browser/components/Button/Button";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 import {
   Select,
   SelectContent,
@@ -48,13 +49,15 @@ function ModelTooltipContent(props: {
   aliases?: string[];
   stats: ModelStats | null;
 }) {
+  const { t } = useLanguage();
+
   return (
     <div className="max-w-xs space-y-2 text-xs">
       <div className="text-foreground font-mono">{props.fullId}</div>
 
       {props.aliases && props.aliases.length > 0 && (
         <div className="text-muted">
-          <span className="text-muted-light">Aliases: </span>
+          <span className="text-muted-light">{t("Aliases:")} </span>
           {props.aliases.join(", ")}
         </div>
       )}
@@ -63,14 +66,14 @@ function ModelTooltipContent(props: {
         <>
           <div className="border-separator-light border-t pt-2">
             <div className="grid grid-cols-2 gap-x-3 gap-y-1">
-              <div className="text-muted-light">Context Window</div>
+              <div className="text-muted-light">{t("Context Window")}</div>
               <div className="text-foreground">
                 {formatTokenCount(props.stats.max_input_tokens)}
               </div>
 
               {props.stats.max_output_tokens && (
                 <>
-                  <div className="text-muted-light">Max Output</div>
+                  <div className="text-muted-light">{t("Max Output")}</div>
                   <div className="text-foreground">
                     {formatTokenCount(props.stats.max_output_tokens)}
                   </div>
@@ -80,21 +83,21 @@ function ModelTooltipContent(props: {
           </div>
 
           <div className="border-separator-light border-t pt-2">
-            <div className="text-muted-light mb-1">Pricing (per 1M tokens)</div>
+            <div className="text-muted-light mb-1">{t("Pricing (per 1M tokens)")}</div>
             <div className="grid grid-cols-2 gap-x-3 gap-y-1">
-              <div className="text-muted-light">Input</div>
+              <div className="text-muted-light">{t("Input")}</div>
               <div className="text-foreground">
                 {formatCostPerMillion(props.stats.input_cost_per_token)}
               </div>
 
-              <div className="text-muted-light">Output</div>
+              <div className="text-muted-light">{t("Output")}</div>
               <div className="text-foreground">
                 {formatCostPerMillion(props.stats.output_cost_per_token)}
               </div>
 
               {props.stats.cache_read_input_token_cost !== undefined && (
                 <>
-                  <div className="text-muted-light">Cache Read</div>
+                  <div className="text-muted-light">{t("Cache Read")}</div>
                   <div className="text-foreground">
                     {formatCostPerMillion(props.stats.cache_read_input_token_cost)}
                   </div>
@@ -103,7 +106,7 @@ function ModelTooltipContent(props: {
 
               {props.stats.cache_creation_input_token_cost !== undefined && (
                 <>
-                  <div className="text-muted-light">Cache Write</div>
+                  <div className="text-muted-light">{t("Cache Write")}</div>
                   <div className="text-foreground">
                     {formatCostPerMillion(props.stats.cache_creation_input_token_cost)}
                   </div>
@@ -114,7 +117,9 @@ function ModelTooltipContent(props: {
         </>
       )}
 
-      {!props.stats && <div className="text-muted-light italic">No pricing data available</div>}
+      {!props.stats && (
+        <div className="text-muted-light italic">{t("No pricing data available")}</div>
+      )}
     </div>
   );
 }
@@ -129,6 +134,7 @@ function ContextWindowSlider(props: {
   enabled: boolean;
   onToggle: () => void;
 }) {
+  const { t } = useLanguage();
   const baseLabel = formatTokenCount(props.baseTokens);
 
   return (
@@ -141,7 +147,7 @@ function ContextWindowSlider(props: {
             props.onToggle();
           }}
           className="border-border-medium bg-background-tertiary flex items-center gap-px rounded-full border px-0.5 py-px"
-          aria-label={props.enabled ? "Disable 1M context (beta)" : "Enable 1M context (beta)"}
+          aria-label={t(props.enabled ? "Disable 1M context (beta)" : "Enable 1M context (beta)")}
         >
           <span
             className={cn(
@@ -162,7 +168,7 @@ function ContextWindowSlider(props: {
         </button>
       </TooltipTrigger>
       <TooltipContent side="top">
-        {props.enabled ? "1M context enabled (beta)" : "Enable 1M context (beta)"}
+        {t(props.enabled ? "1M context enabled (beta)" : "Enable 1M context (beta)")}
       </TooltipContent>
     </Tooltip>
   );
@@ -225,6 +231,7 @@ export interface ModelRowProps {
 }
 
 export function ModelRow(props: ModelRowProps) {
+  const { t } = useLanguage();
   const stats = getModelStats(props.mappedToModel ?? props.fullId);
 
   const contextBaseTokens = props.customContextWindowTokens ?? stats?.max_input_tokens ?? null;
@@ -240,9 +247,9 @@ export function ModelRow(props: ModelRowProps) {
   // The Auto label must show the priority-walk result (ignoring overrides), not the
   // currently-active route — otherwise it mirrors whatever explicit override is selected.
   const autoRouteDisplayName =
-    props.autoResolvedRoute?.displayName ?? configuredRoutes[0]?.displayName ?? "Direct";
+    props.autoResolvedRoute?.displayName ?? configuredRoutes[0]?.displayName ?? t("Direct");
   const routeDisplayName =
-    props.resolvedRoute?.displayName ?? configuredRoutes[0]?.displayName ?? "Direct";
+    props.resolvedRoute?.displayName ?? configuredRoutes[0]?.displayName ?? t("Direct");
   const routeSelectValue =
     props.resolvedRoute && !props.resolvedRoute.isAuto ? props.resolvedRoute.route : "auto";
 
@@ -295,7 +302,7 @@ export function ModelRow(props: ModelRowProps) {
                   onCancel: () => props.onCancelEdit?.(),
                 })}
                 className="bg-modal-bg border-border-medium focus:border-accent w-28 shrink-0 rounded border px-2 py-0.5 text-right font-mono text-xs focus:outline-none"
-                placeholder="context"
+                placeholder={t("context")}
                 autoFocus={props.editAutofocus === "context"}
               />
               <Button
@@ -304,7 +311,7 @@ export function ModelRow(props: ModelRowProps) {
                 onClick={props.onSaveEdit}
                 disabled={props.saving}
                 className="text-accent hover:text-accent-dark h-6 w-6"
-                title="Save changes (Enter)"
+                title={t("Save changes (Enter)")}
               >
                 <Check className="h-3.5 w-3.5" />
               </Button>
@@ -314,26 +321,26 @@ export function ModelRow(props: ModelRowProps) {
                 onClick={props.onCancelEdit}
                 disabled={props.saving}
                 className="text-muted hover:text-foreground h-6 w-6"
-                title="Cancel (Escape)"
+                title={t("Cancel (Escape)")}
               >
                 <X className="h-3.5 w-3.5" />
               </Button>
             </div>
             {props.isCustom && props.allModels && (
               <div className="mt-1.5 flex items-center gap-2">
-                <span className="text-muted w-16 shrink-0 text-xs md:w-20">Treat as</span>
+                <span className="text-muted w-16 shrink-0 text-xs md:w-20">{t("Treat as")}</span>
                 <SearchableModelSelect
                   value={props.editMappedToModel ?? ""}
                   onChange={(value) => props.onEditMappedToModelChange?.(value)}
                   models={props.allModels}
-                  placeholder="Select model..."
-                  emptyOption={{ value: "", label: "None (use own metadata)" }}
+                  placeholder={t("Select model...")}
+                  emptyOption={{ value: "", label: t("None (use own metadata)") }}
                   compact
                 />
               </div>
             )}
           </div>
-          {props.editError && <div className="text-error mt-1 text-xs">{props.editError}</div>}
+          {props.editError && <div className="text-error mt-1 text-xs">{t(props.editError)}</div>}
         </td>
       </tr>
     );
@@ -390,7 +397,7 @@ export function ModelRow(props: ModelRowProps) {
             }}
             disabled={Boolean(props.saving) || Boolean(props.hasActiveEdit)}
             className="text-muted hover:text-foreground ml-auto block text-right text-xs disabled:cursor-not-allowed disabled:opacity-60"
-            aria-label="Edit context window"
+            aria-label={t("Edit context window")}
           >
             {contextBaseTokens ? formatTokenCount(contextBaseTokens) : "—"}
           </button>
@@ -407,7 +414,7 @@ export function ModelRow(props: ModelRowProps) {
             }}
             disabled={Boolean(props.saving) || Boolean(props.hasActiveEdit)}
             className="text-muted hover:text-foreground ml-auto block text-right text-xs disabled:cursor-not-allowed disabled:opacity-60"
-            aria-label="Edit context window"
+            aria-label={t("Edit context window")}
           >
             —
           </button>
@@ -427,7 +434,9 @@ export function ModelRow(props: ModelRowProps) {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="auto">Auto ({autoRouteDisplayName})</SelectItem>
+              <SelectItem value="auto">
+                {t("Auto")} ({autoRouteDisplayName})
+              </SelectItem>
               {configuredRoutes.map((route) => (
                 <SelectItem key={route.route} value={route.route}>
                   {route.displayName}
@@ -453,7 +462,7 @@ export function ModelRow(props: ModelRowProps) {
             <SelectContent>
               {thinkingCapability.map((level) => (
                 <SelectItem key={level} value={level}>
-                  {getThinkingOptionLabel(level, props.fullId)}
+                  {t(getThinkingOptionLabel(level, props.fullId))}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -472,7 +481,7 @@ export function ModelRow(props: ModelRowProps) {
               <button
                 type="button"
                 className="text-muted hover:text-foreground p-0.5 transition-colors"
-                aria-label="Model details"
+                aria-label={t("Model details")}
               >
                 <Info className="h-3.5 w-3.5" />
               </button>
@@ -493,9 +502,9 @@ export function ModelRow(props: ModelRowProps) {
                 "relative p-0.5 transition-colors",
                 props.isHiddenFromSelector ? "text-muted-light" : "text-muted hover:text-foreground"
               )}
-              aria-label={
+              aria-label={t(
                 props.isHiddenFromSelector ? "Show in model selector" : "Hide from model selector"
-              }
+              )}
             >
               <Eye
                 className={cn(
@@ -525,16 +534,18 @@ export function ModelRow(props: ModelRowProps) {
                       : "text-muted hover:text-yellow-400"
                   )}
                   disabled={props.isDefault}
-                  aria-label={props.isDefault ? "Current default model" : "Set as default model"}
+                  aria-label={t(props.isDefault ? "Current default model" : "Set as default model")}
                 >
                   <Star className={cn("h-3.5 w-3.5", props.isDefault && "fill-current")} />
                 </button>
               </span>
             </TooltipTrigger>
             <TooltipContent side="top">
-              {props.isDefault
-                ? "Default model for new workspaces"
-                : "Set as default for new workspaces"}
+              {t(
+                props.isDefault
+                  ? "Default model for new workspaces"
+                  : "Set as default for new workspaces"
+              )}
             </TooltipContent>
           </Tooltip>
           {/* Edit/delete buttons only for custom models */}
@@ -548,7 +559,7 @@ export function ModelRow(props: ModelRowProps) {
                 }}
                 disabled={Boolean(props.saving) || Boolean(props.hasActiveEdit)}
                 className="text-muted hover:text-foreground p-0.5 transition-colors"
-                aria-label="Edit model"
+                aria-label={t("Edit model")}
               >
                 <Pencil className="h-3.5 w-3.5" />
               </button>
@@ -560,7 +571,7 @@ export function ModelRow(props: ModelRowProps) {
                 }}
                 disabled={Boolean(props.saving) || Boolean(props.hasActiveEdit)}
                 className="text-muted hover:text-error p-0.5 transition-colors"
-                aria-label="Remove model"
+                aria-label={t("Remove model")}
               >
                 <Trash2 className="h-3.5 w-3.5" />
               </button>

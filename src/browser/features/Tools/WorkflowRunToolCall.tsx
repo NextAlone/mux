@@ -67,6 +67,7 @@ import {
 } from "@/browser/stores/WorkspaceStore";
 import { workflowScriptMatchesPath } from "@/browser/utils/workflowRunScriptPaths";
 import { MarkdownRenderer } from "../Messages/MarkdownRenderer";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 type WorkflowRunToolDisplayArgs =
   | WorkflowRunToolArgs
@@ -552,10 +553,13 @@ function WorkflowEventTooltip(props: {
   displayIndex: number;
   label: string;
 }) {
+  const { t } = useLanguage();
   return (
     <div className="space-y-1">
       <div className="text-muted counter-nums-mono text-[10px]">
-        Display #{props.displayIndex} · Raw event #{props.event.sequence}
+        {t("Display #")}
+        {props.displayIndex} {t("· Raw event #")}
+        {props.event.sequence}
       </div>
       <div className="text-foreground text-[11px] leading-snug">{props.label}</div>
     </div>
@@ -647,12 +651,15 @@ function WorkflowEventRow(props: {
 }
 
 function WorkflowChildEventDetailBlock(props: { detail: unknown }) {
+  const { t } = useLanguage();
   if (props.detail === undefined) {
     return null;
   }
   return (
     <div className="mt-2 space-y-1">
-      <div className="text-muted text-[10px] tracking-wide uppercase">Workflow event details</div>
+      <div className="text-muted text-[10px] tracking-wide uppercase">
+        {t("Workflow event details")}
+      </div>
       <WorkflowJsonBlock value={props.detail} className="max-h-[180px]" />
     </div>
   );
@@ -665,6 +672,7 @@ function WorkflowChildRunRow(props: {
   depth: number;
   parentRunActive: boolean;
 }) {
+  const { t } = useLanguage();
   const event = props.row.latestEvent;
   const [open, setOpen] = useState(
     () =>
@@ -721,7 +729,7 @@ function WorkflowChildRunRow(props: {
               </span>
             </TooltipIfPresent>
             <span className={`w-fit font-mono uppercase ${getEventTypeClass(event)}`}>
-              workflow
+              {t("workflow")}
             </span>
             <span className="text-foreground flex min-w-0 items-center gap-1.5 truncate">
               {childActive && <span className="bg-plan-mode h-1.5 w-1.5 shrink-0 rounded-full" />}
@@ -731,7 +739,7 @@ function WorkflowChildRunRow(props: {
         </summary>
         <div className="border-border bg-background/40 mx-2 mb-2 rounded border p-2">
           <div className="flex min-w-0 flex-wrap items-center gap-2 text-[10px]">
-            <span className="text-plan-mode font-medium">Nested workflow</span>
+            <span className="text-plan-mode font-medium">{t("Nested workflow")}</span>
             <span className="text-foreground font-medium">{event.name}</span>
             <span className="text-muted counter-nums-mono min-w-0 truncate">{event.runId}</span>
           </div>
@@ -740,7 +748,7 @@ function WorkflowChildRunRow(props: {
           )}
           {!withinDepthLimit ? (
             <div className="text-muted mt-2 text-[11px]">
-              Nested workflow depth limit reached; showing summary only.
+              {t("Nested workflow depth limit reached; showing summary only.")}
             </div>
           ) : childRunState.error != null ? (
             <>
@@ -748,7 +756,7 @@ function WorkflowChildRunRow(props: {
               <WorkflowChildEventDetailBlock detail={fallbackDetail} />
             </>
           ) : childRunState.loading && childRun == null ? (
-            <div className="text-muted mt-2 text-[11px]">Loading nested workflow…</div>
+            <div className="text-muted mt-2 text-[11px]">{t("Loading nested workflow…")}</div>
           ) : childRun != null && childView != null ? (
             <div className="border-border/70 mt-2 border-l pl-3">
               <WorkflowTimeline
@@ -760,7 +768,7 @@ function WorkflowChildRunRow(props: {
           ) : (
             <>
               <div className="text-muted mt-2 text-[11px]">
-                Nested workflow run is not available.
+                {t("Nested workflow run is not available.")}
               </div>
               <WorkflowChildEventDetailBlock detail={fallbackDetail} />
             </>
@@ -776,6 +784,7 @@ function WorkflowTaskReportDialogContent(props: {
   title: string;
   reportMarkdown: string;
 }) {
+  const { t } = useLanguage();
   assert(
     props.reportMarkdown.trim().length > 0,
     "WorkflowTaskReportDialogContent requires non-empty report markdown"
@@ -785,7 +794,7 @@ function WorkflowTaskReportDialogContent(props: {
     <DialogContent className="flex max-h-[80vh] min-h-0 max-w-5xl flex-col overflow-hidden">
       <DialogHeader>
         <DialogTitle className="flex flex-col gap-1">
-          <span>Task report</span>
+          <span>{t("Task report")}</span>
           <span className="text-muted flex flex-wrap items-baseline gap-2 text-[11px] font-normal">
             <span>{props.title}</span>
             <code className="rounded bg-[var(--color-bg-tertiary)] px-1.5 py-0.5 font-mono text-[10px] leading-none">
@@ -827,6 +836,7 @@ function WorkflowTaskRow(props: {
   onOpenReport: () => void;
   onInspectStructuredOutput: () => void;
 }) {
+  const { t } = useLanguage();
   const [reportDialogOpen, setReportDialogOpen] = useState(false);
   const [structuredOutputExpanded, setStructuredOutputExpanded] = useState(false);
   const event = props.row.latestEvent;
@@ -916,7 +926,7 @@ function WorkflowTaskRow(props: {
           className={`${WORKFLOW_ACTION_BUTTON_CLASS} pointer-events-none inline-flex items-center px-1.5 py-0.5 text-[10px] whitespace-nowrap`}
           aria-hidden="true"
         >
-          Open
+          {t("Open")}
         </span>
       ) : null}
     </div>
@@ -929,7 +939,7 @@ function WorkflowTaskRow(props: {
       aria-label={`Open task workspace for ${event.taskId}`}
       onClick={() => props.onNavigate(event.taskId)}
     >
-      Workspace
+      {t("Workspace")}
     </button>
   ) : null;
 
@@ -952,7 +962,7 @@ function WorkflowTaskRow(props: {
                 className={`${WORKFLOW_ACTION_BUTTON_CLASS} inline-flex items-center px-1.5 py-0.5 text-[10px] whitespace-nowrap`}
                 aria-label={`Open report for ${event.taskId}`}
               >
-                Report
+                {t("Report")}
               </button>
             </DialogTrigger>
           </div>
@@ -972,7 +982,9 @@ function WorkflowTaskRow(props: {
       )}
       {canExpandStructuredOutput && structuredOutputExpanded ? (
         <div className="mx-2 mb-2 space-y-1">
-          <div className="text-muted text-[10px] tracking-wide uppercase">Structured output</div>
+          <div className="text-muted text-[10px] tracking-wide uppercase">
+            {t("Structured output")}
+          </div>
           {/* The inline JSON is height-capped, so name/focus its own scroll region for keyboard users. */}
           <WorkflowJsonBlock
             value={taskStructuredOutput}
@@ -1166,6 +1178,7 @@ export const WorkflowRunToolCall: React.FC<WorkflowRunToolCallProps> = ({
   knownRunId,
   workflowRunHint: explicitWorkflowRunHint,
 }) => {
+  const { t } = useLanguage();
   // Freshness bound for run discovery: prefer the true execution start, but fall back to
   // the model-emission timestamp for parts without execution-start tracking (history replay).
   const discoveryFreshnessBound = startedAt ?? toolCallTimestamp;
@@ -1562,18 +1575,18 @@ export const WorkflowRunToolCall: React.FC<WorkflowRunToolCallProps> = ({
           </div>
 
           {displayWorkflow && (
-            <WorkflowSection title="Script">
+            <WorkflowSection title={t("Script")}>
               <WorkflowScriptCard descriptor={displayWorkflow} compact />
             </WorkflowSection>
           )}
 
           {/* Large workflow payloads stay collapsed so completed runs remain scannable. */}
-          <WorkflowDisclosureSection title="Arguments">
+          <WorkflowDisclosureSection title={t("Arguments")}>
             <WorkflowJsonBlock value={invocationArgs} className="max-h-[180px]" />
           </WorkflowDisclosureSection>
 
           {runSource && (
-            <WorkflowDisclosureSection title="Script source">
+            <WorkflowDisclosureSection title={t("Script source")}>
               <div className="border-border bg-code-bg max-h-[260px] overflow-auto rounded border p-2">
                 <HighlightedCode language="javascript" code={runSource.trimEnd()} showLineNumbers />
               </div>
@@ -1591,7 +1604,7 @@ export const WorkflowRunToolCall: React.FC<WorkflowRunToolCallProps> = ({
                     void updateRunFromAction("interrupt");
                   }}
                 >
-                  Interrupt workflow
+                  {t("Interrupt workflow")}
                 </button>
               )}
               {canResume && (
@@ -1603,7 +1616,7 @@ export const WorkflowRunToolCall: React.FC<WorkflowRunToolCallProps> = ({
                     void updateRunFromAction("resume");
                   }}
                 >
-                  Resume workflow
+                  {t("Resume workflow")}
                 </button>
               )}
               {canRetryFromCheckpoint && (
@@ -1615,7 +1628,7 @@ export const WorkflowRunToolCall: React.FC<WorkflowRunToolCallProps> = ({
                     void updateRunFromAction("retryFromCheckpoint");
                   }}
                 >
-                  Retry from checkpoint
+                  {t("Retry from checkpoint")}
                 </button>
               )}
             </div>
@@ -1684,7 +1697,7 @@ export const WorkflowRunToolCall: React.FC<WorkflowRunToolCallProps> = ({
           )}
 
           {structuredOutput !== undefined && (
-            <WorkflowDisclosureSection title="Structured output" className="mt-2">
+            <WorkflowDisclosureSection title={t("Structured output")} className="mt-2">
               <WorkflowJsonBlock value={structuredOutput} className="max-h-[220px]" />
             </WorkflowDisclosureSection>
           )}

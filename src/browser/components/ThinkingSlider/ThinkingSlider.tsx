@@ -12,6 +12,7 @@ import { Tooltip, TooltipTrigger, TooltipContent } from "../Tooltip/Tooltip";
 import { formatKeybind, KEYBINDS } from "@/browser/utils/ui/keybinds";
 import { enforceThinkingPolicy, getAvailableThinkingLevels } from "@/common/utils/thinking/policy";
 import { cn } from "@/common/lib/utils";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 // Uses CSS variable --color-thinking-mode for theme compatibility
 // All levels are shown; policy determines which are available per model
@@ -42,6 +43,7 @@ interface ThinkingControlProps {
 }
 
 export const ThinkingSliderComponent: React.FC<ThinkingControlProps> = ({ modelString }) => {
+  const { t } = useLanguage();
   const [thinkingLevel, setThinkingLevel] = useThinkingLevel();
   // Apply the per-model minimum floor so off/low are hidden unless the user lowers it
   // in Models settings. The floor must match the backend send-path enforcement.
@@ -85,14 +87,14 @@ export const ThinkingSliderComponent: React.FC<ThinkingControlProps> = ({ modelS
     }
   };
 
-  const displayLabel = getThinkingDisplayLabel(effectiveThinkingLevel, modelString);
+  const displayLabel = t(getThinkingDisplayLabel(effectiveThinkingLevel, modelString));
 
   // Single-option policy: render non-interactive badge
   if (allowed.length <= 1) {
     const fixedLevel = allowed[0] || "off";
     const standardIndex = BASE_THINKING_LEVELS.indexOf(fixedLevel);
     const value = standardIndex === -1 ? 0 : standardIndex;
-    const tooltipMessage = `Model ${modelString} locks thinking at ${getThinkingDisplayLabel(fixedLevel, modelString)} to match its capabilities.`;
+    const tooltipMessage = `${t("Model")} ${modelString} ${t("locks thinking at")} ${t(getThinkingDisplayLabel(fixedLevel, modelString))} ${t("to match its capabilities.")}`;
 
     return (
       <Tooltip>
@@ -101,9 +103,9 @@ export const ThinkingSliderComponent: React.FC<ThinkingControlProps> = ({ modelS
             <span
               className="w-[5ch] text-center text-[11px] select-none"
               style={getTextStyle(value)}
-              aria-label={`Thinking level fixed to ${fixedLevel}`}
+              aria-label={`${t("Thinking level fixed to")} ${t(fixedLevel)}`}
             >
-              {getThinkingDisplayLabel(fixedLevel, modelString)}
+              {t(getThinkingDisplayLabel(fixedLevel, modelString))}
             </span>
           </div>
         </TooltipTrigger>
@@ -127,7 +129,7 @@ export const ThinkingSliderComponent: React.FC<ThinkingControlProps> = ({ modelS
                 ? "text-muted hover:bg-hover hover:text-foreground cursor-pointer"
                 : "text-muted/30 cursor-default"
             )}
-            aria-label="Decrease thinking level"
+            aria-label={t("Decrease thinking level")}
           >
             <ChevronLeft className="h-3 w-3" />
           </button>
@@ -142,7 +144,7 @@ export const ThinkingSliderComponent: React.FC<ThinkingControlProps> = ({ modelS
             className="hover:bg-hover w-[5ch] min-w-[5ch] shrink-0 rounded-sm bg-transparent p-0 text-center text-[11px] transition-all duration-200 select-none"
             style={textStyle}
             aria-live="polite"
-            aria-label={`Thinking level: ${effectiveThinkingLevel}. Click to cycle.`}
+            aria-label={`${t("Thinking level:")} ${t(effectiveThinkingLevel)}. ${t("Click to cycle.")}`}
           >
             {displayLabel}
           </button>
@@ -157,19 +159,19 @@ export const ThinkingSliderComponent: React.FC<ThinkingControlProps> = ({ modelS
                 ? "text-muted hover:bg-hover hover:text-foreground cursor-pointer"
                 : "text-muted/30 cursor-default"
             )}
-            aria-label="Increase thinking level"
+            aria-label={t("Increase thinking level")}
           >
             <ChevronRight className="h-3 w-3" />
           </button>
         </div>
       </TooltipTrigger>
       <TooltipContent align="center">
-        Thinking:{" "}
+        {t("Thinking:")}{" "}
         <span className="mobile-hide-shortcut-hints">
           {formatKeybind(KEYBINDS.DECREASE_THINKING)} / {formatKeybind(KEYBINDS.INCREASE_THINKING)}{" "}
-          to adjust.{" "}
+          {t("to adjust.")}{" "}
         </span>
-        Saved per workspace.
+        {t("Saved per workspace.")}
       </TooltipContent>
     </Tooltip>
   );

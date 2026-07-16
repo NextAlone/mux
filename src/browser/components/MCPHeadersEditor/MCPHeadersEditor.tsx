@@ -10,6 +10,7 @@ import {
   mcpHeaderRowsToRecord,
   type MCPHeaderRow,
 } from "@/browser/utils/mcpHeaders";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 export const MCPHeadersEditor: React.FC<{
   rows: MCPHeaderRow[];
@@ -17,6 +18,7 @@ export const MCPHeadersEditor: React.FC<{
   secretKeys: string[];
   disabled?: boolean;
 }> = (props) => {
+  const { t } = useLanguage();
   const [openSecretPickerRowId, setOpenSecretPickerRowId] = React.useState<string | null>(null);
   const sortedSecretKeys = props.secretKeys
     .slice()
@@ -57,13 +59,13 @@ export const MCPHeadersEditor: React.FC<{
     <div className="space-y-2">
       {props.rows.length === 0 ? (
         <div className="text-muted border-border-medium rounded-md border border-dashed px-3 py-3 text-center text-xs">
-          No headers configured
+          {t("No headers configured")}
         </div>
       ) : (
         <div className="[&>label]:text-muted grid grid-cols-[1fr_auto_1fr_auto] items-end gap-1 [&>label]:mb-0.5 [&>label]:text-[11px]">
-          <label>Header</label>
-          <label>Type</label>
-          <label>Value</label>
+          <label>{t("Header")}</label>
+          <label>{t("Type")}</label>
+          <label>{t("Value")}</label>
           <div />
 
           {props.rows.map((row) => (
@@ -72,7 +74,7 @@ export const MCPHeadersEditor: React.FC<{
                 type="text"
                 value={row.name}
                 onChange={(e) => updateRow(row.id, { name: e.target.value })}
-                placeholder="Authorization"
+                placeholder={t("Authorization")}
                 disabled={props.disabled}
                 spellCheck={false}
                 className="bg-modal-bg border-border-medium focus:border-accent placeholder:text-dim text-foreground w-full rounded border px-2.5 py-1.5 font-mono text-[13px] focus:outline-none disabled:opacity-50"
@@ -97,10 +99,10 @@ export const MCPHeadersEditor: React.FC<{
                 className="h-[34px]"
               >
                 <ToggleGroupItem value="text" size="sm" className="h-[26px] px-3 text-[13px]">
-                  Text
+                  {t("Text")}
                 </ToggleGroupItem>
                 <ToggleGroupItem value="secret" size="sm" className="h-[26px] px-3 text-[13px]">
-                  Secret
+                  {t("Secret")}
                 </ToggleGroupItem>
               </ToggleGroup>
 
@@ -110,7 +112,7 @@ export const MCPHeadersEditor: React.FC<{
                     type="text"
                     value={row.value}
                     onChange={(e) => updateRow(row.id, { value: e.target.value })}
-                    placeholder="MCP_TOKEN"
+                    placeholder={t("MCP_TOKEN")}
                     disabled={props.disabled}
                     spellCheck={false}
                     className="bg-modal-bg border-border-medium focus:border-accent placeholder:text-dim text-foreground w-full flex-1 rounded border px-2.5 py-1.5 font-mono text-[13px] focus:outline-none disabled:opacity-50"
@@ -124,8 +126,7 @@ export const MCPHeadersEditor: React.FC<{
                       <PopoverTrigger asChild>
                         <button
                           type="button"
-                          aria-label="Choose secret"
-                          title="Choose secret"
+                          aria-label={t("Choose secret")}
                           disabled={props.disabled}
                           className="bg-modal-bg border-border-medium focus:border-accent hover:bg-hover text-muted hover:text-foreground flex cursor-pointer items-center justify-center rounded border px-2.5 py-1.5 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
                         >
@@ -162,7 +163,7 @@ export const MCPHeadersEditor: React.FC<{
                   type="text"
                   value={row.value}
                   onChange={(e) => updateRow(row.id, { value: e.target.value })}
-                  placeholder="value"
+                  placeholder={t("value")}
                   disabled={props.disabled}
                   spellCheck={false}
                   className="bg-modal-bg border-border-medium focus:border-accent placeholder:text-dim text-foreground w-full rounded border px-2.5 py-1.5 font-mono text-[13px] focus:outline-none disabled:opacity-50"
@@ -173,8 +174,8 @@ export const MCPHeadersEditor: React.FC<{
                 type="button"
                 onClick={() => removeRow(row.id)}
                 disabled={props.disabled}
+                aria-label={t("Remove header")}
                 className="text-danger-light border-danger-light hover:bg-danger-light/10 cursor-pointer rounded border bg-transparent px-2.5 py-1.5 text-[13px] transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-50"
-                title="Remove header"
               >
                 ×
               </button>
@@ -205,7 +206,7 @@ export const MCPHeadersEditor: React.FC<{
         disabled={props.disabled}
         className="text-muted border-border-medium hover:bg-hover hover:border-border-darker hover:text-foreground w-full cursor-pointer rounded border border-dashed bg-transparent px-3 py-2 text-[13px] transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-50"
       >
-        + Add header
+        {t("+ Add header")}
       </button>
     </div>
   );

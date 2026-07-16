@@ -19,6 +19,7 @@ import {
   TooltipIfPresent,
 } from "@/browser/components/Tooltip/Tooltip";
 import { FileIcon } from "@/browser/components/FileIcon/FileIcon";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 /**
  * Compute read status for a directory by recursively checking all descendant files
@@ -380,6 +381,7 @@ export const FileTree: React.FC<FileTreeExternalProps> = ({
   getFileReadStatus,
   workspaceId,
 }) => {
+  const { t } = useLanguage();
   // Use persisted state for expand/collapse per workspace (lifted to parent to avoid O(n) re-renders)
   const [expandStateMap, setExpandStateMap] = usePersistedState<Record<string, boolean>>(
     getFileTreeExpandStateKey(workspaceId),
@@ -399,7 +401,7 @@ export const FileTree: React.FC<FileTreeExternalProps> = ({
   return (
     <>
       <div className="border-border-light text-muted font-primary flex items-center gap-2 border-b px-2 py-1 text-[11px]">
-        <span>Files</span>
+        <span>{t("Files")}</span>
         <div className="ml-auto flex items-center gap-2">
           <div data-testid="review-file-tree-view-mode">
             <ToggleGroup
@@ -430,7 +432,7 @@ export const FileTree: React.FC<FileTreeExternalProps> = ({
         data-testid="review-file-tree"
       >
         {isLoading && !root ? (
-          <div className="text-muted py-5 text-center">Loading file tree...</div>
+          <div className="text-muted py-5 text-center">{t("Loading file tree...")}</div>
         ) : root ? (
           viewMode === "flat" ? (
             collectLeafFileNodes(root).map((fileNode) => (
@@ -461,7 +463,7 @@ export const FileTree: React.FC<FileTreeExternalProps> = ({
             ))
           )
         ) : (
-          <div className="text-muted py-5 text-center">No files changed</div>
+          <div className="text-muted py-5 text-center">{t("No files changed")}</div>
         )}
       </div>
     </>

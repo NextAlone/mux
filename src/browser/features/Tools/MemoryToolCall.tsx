@@ -14,6 +14,7 @@ import {
   ErrorBox,
 } from "./Shared/ToolPrimitives";
 import { useToolExpansion, getStatusDisplay, type ToolStatus } from "./Shared/toolUtils";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 interface MemoryToolCallProps {
   args: MemoryToolArgs;
@@ -53,6 +54,7 @@ export const MemoryToolCall: React.FC<MemoryToolCallProps> = ({
   result,
   status = "pending",
 }) => {
+  const { t } = useLanguage();
   const { expanded, toggleExpanded } = useToolExpansion();
   const headerPath = getHeaderPath(args);
 
@@ -85,14 +87,14 @@ export const MemoryToolCall: React.FC<MemoryToolCallProps> = ({
 
           {result && !result.success && (
             <DetailSection>
-              <DetailLabel>Error</DetailLabel>
+              <DetailLabel>{t("Error")}</DetailLabel>
               <ErrorBox>{result.error}</ErrorBox>
             </DetailSection>
           )}
 
           {result?.success && result.output && (
             <DetailSection>
-              <DetailLabel>Result</DetailLabel>
+              <DetailLabel>{t("Result")}</DetailLabel>
               <pre className="bg-code-bg font-monospace m-0 max-h-[200px] overflow-y-auto rounded px-2 py-1.5 text-[11px] leading-[1.4] break-words whitespace-pre-wrap">
                 {result.output}
               </pre>
@@ -102,7 +104,7 @@ export const MemoryToolCall: React.FC<MemoryToolCallProps> = ({
           {status === "executing" && !result && (
             <DetailSection>
               <DetailContent>
-                Working on memory
+                {t("Working on memory")}
                 <LoadingDots />
               </DetailContent>
             </DetailSection>

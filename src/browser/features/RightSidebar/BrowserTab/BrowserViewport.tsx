@@ -21,6 +21,7 @@ import type {
   BrowserMouseInput,
   BrowserSession,
 } from "./browserBridgeTypes";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 interface BrowserViewportProps {
   panelId?: string;
@@ -69,6 +70,7 @@ interface QueuedPointerMove {
 }
 
 export function BrowserViewport(props: BrowserViewportProps) {
+  const { t } = useLanguage();
   assert(props.workspaceId.trim().length > 0, "BrowserViewport requires a workspaceId");
 
   const [hasFocus, setHasFocus] = useState(false);
@@ -494,7 +496,7 @@ export function BrowserViewport(props: BrowserViewportProps) {
               onClick={props.onRestart}
               className="bg-accent hover:bg-accent/80 text-accent-foreground inline-flex items-center rounded-md px-3 py-1.5 text-xs font-medium transition-colors"
             >
-              Restart
+              {t("Restart")}
             </button>
           )}
         </div>
@@ -516,7 +518,7 @@ export function BrowserViewport(props: BrowserViewportProps) {
         <div
           ref={surfaceRef}
           role="region"
-          aria-label="Browser viewport"
+          aria-label={t("Browser viewport")}
           aria-disabled={!interactionState.canInteract}
           tabIndex={interactionState.canInteract ? 0 : -1}
           {...(interactionState.canInteract ? { [BROWSER_VIEWPORT_ATTR]: "true" } : {})}

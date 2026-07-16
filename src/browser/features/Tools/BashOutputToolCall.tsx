@@ -18,6 +18,7 @@ import {
   OutputSection,
 } from "./Shared/ToolPrimitives";
 import { useToolExpansion, getStatusDisplay, type ToolStatus } from "./Shared/toolUtils";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 interface BashOutputToolCallProps {
   args: BashOutputToolArgs;
@@ -37,6 +38,7 @@ export const BashOutputToolCall: React.FC<BashOutputToolCallProps> = ({
   status = "pending",
   groupPosition,
 }) => {
+  const { t } = useLanguage();
   const { expanded, toggleExpanded } = useToolExpansion();
 
   // Derive process status display
@@ -51,7 +53,7 @@ export const BashOutputToolCall: React.FC<BashOutputToolCallProps> = ({
         <span className="text-text font-monospace max-w-96 truncate">{args.process_id}</span>
         <span className="text-muted ml-2 flex items-center gap-1 text-[10px] whitespace-nowrap">
           <Layers size={10} />
-          output
+          {t("output")}
           {args.timeout_secs > 0 && ` • wait ${args.timeout_secs}s`}
           {args.filter && ` • ${args.filter_exclude ? "exclude" : "filter"}: ${args.filter}`}
           {groupPosition && (
@@ -73,7 +75,7 @@ export const BashOutputToolCall: React.FC<BashOutputToolCallProps> = ({
             <>
               {result.success === false && (
                 <DetailSection>
-                  <DetailLabel>Error</DetailLabel>
+                  <DetailLabel>{t("Error")}</DetailLabel>
                   <ErrorBox>{result.error}</ErrorBox>
                 </DetailSection>
               )}
@@ -87,7 +89,7 @@ export const BashOutputToolCall: React.FC<BashOutputToolCallProps> = ({
           {status === "executing" && result === undefined && (
             <DetailSection>
               <DetailContent className="px-2 py-1.5">
-                Waiting for result
+                {t("Waiting for result")}
                 <LoadingDots />
               </DetailContent>
             </DetailSection>

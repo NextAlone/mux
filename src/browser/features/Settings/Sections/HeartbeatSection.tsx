@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 
 import { Input } from "@/browser/components/Input/Input";
 import { useAPI } from "@/browser/contexts/API";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 import {
   clampIntervalMinutes,
   formatIntervalMinutes,
@@ -24,6 +25,7 @@ interface HeartbeatDefaultsControlsProps {
 
 export function HeartbeatDefaultsControls(props: HeartbeatDefaultsControlsProps) {
   const { api } = useAPI();
+  const { t } = useLanguage();
   const loadConfig = props.loadConfig;
   const [heartbeatDefaultPrompt, setHeartbeatDefaultPrompt] = useState("");
   const [heartbeatDefaultPromptLoaded, setHeartbeatDefaultPromptLoaded] = useState(false);
@@ -177,9 +179,9 @@ export function HeartbeatDefaultsControls(props: HeartbeatDefaultsControlsProps)
       <div>
         <div className="flex items-center justify-between gap-4">
           <label htmlFor="heartbeat-default-threshold" className="min-w-0 flex-1">
-            <div className="text-foreground text-sm font-medium">Default threshold</div>
+            <div className="text-foreground text-sm font-medium">{t("Default threshold")}</div>
             <div className="text-muted mt-0.5 text-xs">
-              Default heartbeat cadence in minutes for new workspaces.
+              {t("Default heartbeat cadence in minutes for new workspaces.")}
             </div>
           </label>
           <div className="flex items-center gap-2">
@@ -199,18 +201,18 @@ export function HeartbeatDefaultsControls(props: HeartbeatDefaultsControlsProps)
               }}
               onBlur={handleHeartbeatDefaultIntervalBlur}
               className="border-border-medium bg-background-secondary h-9 w-24 text-right"
-              aria-label="Default heartbeat threshold in minutes"
+              aria-label={t("Default heartbeat threshold in minutes")}
             />
-            <span className="text-muted text-sm">min</span>
+            <span className="text-muted text-sm">{t("min")}</span>
           </div>
         </div>
       </div>
 
       <div>
         <label htmlFor="heartbeat-default-prompt" className="block">
-          <div className="text-foreground text-sm font-medium">Default prompt</div>
+          <div className="text-foreground text-sm font-medium">{t("Default prompt")}</div>
           <div className="text-muted mt-0.5 text-xs">
-            Used for workspace heartbeats when a workspace does not set its own message.
+            {t("Used for workspace heartbeats when a workspace does not set its own message.")}
           </div>
         </label>
         <textarea
@@ -226,7 +228,7 @@ export function HeartbeatDefaultsControls(props: HeartbeatDefaultsControlsProps)
           onBlur={handleHeartbeatDefaultPromptBlur}
           className="border-border-medium bg-background-secondary text-foreground focus:border-accent focus:ring-accent mt-3 min-h-[120px] w-full resize-y rounded-md border p-3 text-sm leading-relaxed focus:ring-1 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
           placeholder={HEARTBEAT_DEFAULT_MESSAGE_BODY}
-          aria-label="Default heartbeat prompt"
+          aria-label={t("Default heartbeat prompt")}
         />
       </div>
     </div>

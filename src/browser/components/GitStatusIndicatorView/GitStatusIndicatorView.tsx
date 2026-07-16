@@ -6,6 +6,7 @@ import { stopKeyboardPropagation } from "@/browser/utils/events";
 import { ToggleGroup, ToggleGroupItem } from "../ToggleGroupPrimitive/ToggleGroupPrimitive";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../Dialog/Dialog";
 import { BaseSelectorPopover } from "@/browser/features/RightSidebar/CodeReview/BaseSelectorPopover";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 // Helper for indicator colors
 const getIndicatorColor = (columnIndex: number): string => {
@@ -86,6 +87,7 @@ export const GitStatusIndicatorView: React.FC<GitStatusIndicatorViewProps> = ({
   isWorking = false,
   isRefreshing = false,
 }) => {
+  const { t } = useLanguage();
   // Handle null gitStatus (initial loading state).
   if (!gitStatus) {
     return (
@@ -165,7 +167,9 @@ export const GitStatusIndicatorView: React.FC<GitStatusIndicatorViewProps> = ({
 
     return (
       <div className="border-separator-light mb-2 border-b pb-2">
-        <div className="text-git-dirty mb-1 font-mono font-semibold">Working copy changes:</div>
+        <div className="text-git-dirty mb-1 font-mono font-semibold">
+          {t("Working copy changes:")}
+        </div>
         <div className="flex flex-col gap-px">
           {displayFiles.map((line, index) => (
             <div
@@ -178,7 +182,9 @@ export const GitStatusIndicatorView: React.FC<GitStatusIndicatorViewProps> = ({
         </div>
         {isTruncated && (
           <div className="text-muted-light mt-1 text-[10px] italic">
-            (showing {LIMIT} of {dirtyFiles.length} files)
+            {t("(showing")}
+            {LIMIT} {t(" of ")}
+            {dirtyFiles.length} {t("files)")}
           </div>
         )}
       </div>
@@ -234,7 +240,7 @@ export const GitStatusIndicatorView: React.FC<GitStatusIndicatorViewProps> = ({
     <>
       <div className="border-separator-light mb-2 flex flex-col gap-1 border-b pb-2">
         <div className="flex items-center gap-2">
-          <span className="text-muted-light">Divergence:</span>
+          <span className="text-muted-light">{t("Divergence:")}</span>
           <ToggleGroup
             type="single"
             value={mode}
@@ -242,25 +248,25 @@ export const GitStatusIndicatorView: React.FC<GitStatusIndicatorViewProps> = ({
               if (!value) return;
               onModeChange(value as GitStatusIndicatorMode);
             }}
-            aria-label="Repository status indicator mode"
+            aria-label={t("Repository status indicator mode")}
             size="sm"
           >
-            <ToggleGroupItem value="line-delta" aria-label="Show line delta" size="sm">
-              Lines
+            <ToggleGroupItem value="line-delta" aria-label={t("Show line delta")} size="sm">
+              {t("Lines")}
             </ToggleGroupItem>
-            <ToggleGroupItem value="divergence" aria-label="Show change divergence" size="sm">
-              Changes
+            <ToggleGroupItem value="divergence" aria-label={t("Show change divergence")} size="sm">
+              {t("Changes")}
             </ToggleGroupItem>
           </ToggleGroup>
         </div>
 
         <div className="flex items-center gap-2">
-          <span className="text-muted-light">Base:</span>
+          <span className="text-muted-light">{t("Base:")}</span>
           <BaseSelectorPopover value={baseRef} onChange={onBaseChange} />
         </div>
 
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px]">
-          <span className="text-muted-light">Overview:</span>
+          <span className="text-muted-light">{t("Overview:")}</span>
           {outgoingHasDelta ? (
             <span className="flex items-center gap-2">
               {gitStatus.outgoingAdditions > 0 && (
@@ -275,15 +281,16 @@ export const GitStatusIndicatorView: React.FC<GitStatusIndicatorViewProps> = ({
               )}
             </span>
           ) : (
-            <span className="text-muted">Lines: 0</span>
+            <span className="text-muted">{t("Lines: 0")}</span>
           )}
           {hasChangeDivergence ? (
             <span className="text-muted">
-              Changes: {formatCountAbbrev(gitStatus.ahead)} ahead ·{" "}
-              {formatCountAbbrev(gitStatus.behind)} behind
+              {t("Changes:")}
+              {formatCountAbbrev(gitStatus.ahead)} {t(" ahead ·")}{" "}
+              {formatCountAbbrev(gitStatus.behind)} {t("behind")}
             </span>
           ) : (
-            <span className="text-muted">Changes: 0</span>
+            <span className="text-muted">{t("Changes: 0")}</span>
           )}
         </div>
       </div>
@@ -349,7 +356,7 @@ export const GitStatusIndicatorView: React.FC<GitStatusIndicatorViewProps> = ({
           statusColor,
           isRefreshing && "animate-pulse"
         )}
-        aria-label="View repository divergence details"
+        aria-label={t("View repository divergence details")}
         onKeyDown={stopKeyboardPropagation}
         onClick={(e) => {
           e.stopPropagation();
@@ -366,7 +373,7 @@ export const GitStatusIndicatorView: React.FC<GitStatusIndicatorViewProps> = ({
       >
         <DialogHeader className="mb-1">
           <DialogTitle className="text-foreground text-sm">
-            Repository divergence details
+            {t("Repository divergence details")}
           </DialogTitle>
         </DialogHeader>
         {dialogContent}

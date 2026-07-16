@@ -6,12 +6,14 @@ import { useSettings } from "@/browser/contexts/SettingsContext";
 import { Button } from "@/browser/components/Button/Button";
 import { getMCPServersKey } from "@/common/constants/storage";
 import { readPersistedState, updatePersistedState } from "@/browser/hooks/usePersistedState";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 interface ProjectMCPOverviewProps {
   projectPath: string;
 }
 
 export const ProjectMCPOverview: React.FC<ProjectMCPOverviewProps> = (props) => {
+  const { t } = useLanguage();
   const projectPath = props.projectPath;
   const { api } = useAPI();
   const settings = useSettings();
@@ -70,7 +72,8 @@ export const ProjectMCPOverview: React.FC<ProjectMCPOverviewProps> = (props) => 
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <span className="text-foreground font-medium">
-              MCP Servers ({enabledServerNames.length} enabled)
+              {t("MCP Servers (")}
+              {enabledServerNames.length} {t("enabled)")}
             </span>
             {loading && <Loader2 className="text-muted h-4 w-4 animate-spin" />}
           </div>
@@ -78,11 +81,18 @@ export const ProjectMCPOverview: React.FC<ProjectMCPOverviewProps> = (props) => 
           {error ? (
             <div className="text-error mt-1 text-xs">{error}</div>
           ) : enabledServerNames.length === 0 ? (
-            <div className="text-muted mt-1 text-xs">No MCP servers enabled for this project.</div>
+            <div className="text-muted mt-1 text-xs">
+              {t("No MCP servers enabled for this project.")}
+            </div>
           ) : (
             <div className="text-muted mt-1 text-xs">
               {shownServerNames.join(", ")}
-              {remainingCount > 0 && <span className="text-muted/60"> +{remainingCount} more</span>}
+              {remainingCount > 0 && (
+                <span className="text-muted/60">
+                  {" "}
+                  +{remainingCount} {t(" more")}
+                </span>
+              )}
             </div>
           )}
         </div>
@@ -95,7 +105,7 @@ export const ProjectMCPOverview: React.FC<ProjectMCPOverviewProps> = (props) => 
           onClick={() => settings.open("mcp")}
         >
           <Plus />
-          Add MCP server
+          {t("Add MCP server")}
         </Button>
       </div>
     </div>

@@ -31,6 +31,7 @@ import { useReviews } from "@/browser/hooks/useReviews";
 import { formatRelativeTime } from "@/browser/utils/ui/dateTime";
 import { DiffRenderer } from "@/browser/features/Shared/DiffRenderer";
 import { matchesKeybind, formatKeybind, KEYBINDS } from "@/browser/utils/ui/keybinds";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // ERROR BOUNDARY
@@ -38,6 +39,26 @@ import { matchesKeybind, formatKeybind, KEYBINDS } from "@/browser/utils/ui/keyb
 
 interface ErrorBoundaryState {
   hasError: boolean;
+}
+
+function BannerErrorFallback(props: { onClear: () => void }) {
+  const { t } = useLanguage();
+
+  return (
+    <div className="border-border bg-surface-primary flex items-center gap-2 border-t px-3 py-1.5 text-xs">
+      <AlertTriangle className="text-warning size-3.5" />
+      <span className="text-muted">{t("Reviews data corrupted")}</span>
+      <Button
+        variant="ghost"
+        size="sm"
+        className="text-error h-5 px-2 text-xs"
+        onClick={props.onClear}
+      >
+        <Trash2 className="mr-1 size-3" />
+        {t("Clear all")}
+      </Button>
+    </div>
+  );
 }
 
 class BannerErrorBoundary extends Component<
@@ -53,22 +74,12 @@ class BannerErrorBoundary extends Component<
   render() {
     if (this.state.hasError) {
       return (
-        <div className="border-border bg-surface-primary flex items-center gap-2 border-t px-3 py-1.5 text-xs">
-          <AlertTriangle className="text-warning size-3.5" />
-          <span className="text-muted">Reviews data corrupted</span>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="text-error h-5 px-2 text-xs"
-            onClick={() => {
-              this.props.onClear();
-              this.setState({ hasError: false });
-            }}
-          >
-            <Trash2 className="mr-1 size-3" />
-            Clear all
-          </Button>
-        </div>
+        <BannerErrorFallback
+          onClear={() => {
+            this.props.onClear();
+            this.setState({ hasError: false });
+          }}
+        />
       );
     }
     return this.props.children;
@@ -96,6 +107,7 @@ const ReviewItem: React.FC<ReviewItemProps> = ({
   onRemove,
   onUpdateNote,
 }) => {
+  const { t } = useLanguage();
   const isChecked = review.status === "checked";
   const [isExpanded, setIsExpanded] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
@@ -191,7 +203,7 @@ const ReviewItem: React.FC<ReviewItemProps> = ({
               {isChecked ? <Undo2 /> : <Check />}
             </Button>
           </TooltipTrigger>
-          <TooltipContent>{isChecked ? "Mark as pending" : "Mark as done"}</TooltipContent>
+          <TooltipContent>{isChecked ? t("Mark as pending") : t("Mark as done")}</TooltipContent>
         </Tooltip>
 
         {/* Send to chat - always visible for pending items, away from delete */}
@@ -207,7 +219,7 @@ const ReviewItem: React.FC<ReviewItemProps> = ({
                 <Send />
               </Button>
             </TooltipTrigger>
-            <TooltipContent>Send to chat</TooltipContent>
+            <TooltipContent>{t("Send to chat")}</TooltipContent>
           </Tooltip>
         )}
 
@@ -240,7 +252,7 @@ const ReviewItem: React.FC<ReviewItemProps> = ({
               <Trash2 />
             </Button>
           </TooltipTrigger>
-          <TooltipContent>Remove</TooltipContent>
+          <TooltipContent>{t("Remove")}</TooltipContent>
         </Tooltip>
       </div>
 
@@ -269,11 +281,11 @@ const ReviewItem: React.FC<ReviewItemProps> = ({
                   onKeyDown={handleKeyDown}
                   className="bg-surface-secondary border-border text-secondary w-full resize-none rounded border p-2 text-xs focus:border-[var(--color-review-accent)] focus:outline-none"
                   rows={2}
-                  placeholder="Your comment..."
+                  placeholder={t("Your comment...")}
                 />
                 <div className="flex items-center justify-end gap-1">
                   <span className="text-muted mr-2 text-[10px]">
-                    {formatKeybind(KEYBINDS.SAVE_EDIT)} to save, Esc to cancel
+                    {formatKeybind(KEYBINDS.SAVE_EDIT)} {t("to save, Esc to cancel")}
                   </span>
                   <Button
                     variant="ghost"
@@ -282,7 +294,7 @@ const ReviewItem: React.FC<ReviewItemProps> = ({
                     onClick={handleCancelEdit}
                   >
                     <X className="mr-1 size-3" />
-                    Cancel
+                    {t("Cancel")}
                   </Button>
                   <Button
                     variant="secondary"
@@ -291,14 +303,14 @@ const ReviewItem: React.FC<ReviewItemProps> = ({
                     onClick={handleSaveEdit}
                   >
                     <Check className="mr-1 size-3" />
-                    Save
+                    {t("Save")}
                   </Button>
                 </div>
               </div>
             ) : (
               <div className="group/comment flex items-start gap-2">
                 <blockquote className="text-primary flex-1 border-l-2 border-[var(--color-review-accent)] pl-2 text-xs italic">
-                  {review.data.userNote || <span className="text-muted">No comment</span>}
+                  {review.data.userNote || <span className="text-muted">{t("No comment")}</span>}
                 </blockquote>
                 <Button
                   variant="ghost"
@@ -326,6 +338,7 @@ interface ReviewsBannerInnerProps {
 }
 
 const ReviewsBannerInner: React.FC<ReviewsBannerInnerProps> = ({ workspaceId }) => {
+  const { t } = useLanguage();
   const reviewsHook = useReviews(workspaceId);
   const [isExpanded, setIsExpanded] = useState(false);
   const [showAllCompleted, setShowAllCompleted] = useState(false);
@@ -399,9 +412,14 @@ const ReviewsBannerInner: React.FC<ReviewsBannerInnerProps> = ({ workspaceId }) 
                 {reviewsHook.pendingCount !== 1 && "s"}
               </>
             ) : (
-              <>No pending reviews</>
+              <>{t("No pending reviews")}</>
             )}
-            {reviewsHook.checkedCount > 0 && <> · {reviewsHook.checkedCount} completed</>}
+            {reviewsHook.checkedCount > 0 && (
+              <>
+                {" "}
+                · {reviewsHook.checkedCount} {t(" completed")}
+              </>
+            )}
           </span>
         </>
       }
@@ -411,7 +429,10 @@ const ReviewsBannerInner: React.FC<ReviewsBannerInnerProps> = ({ workspaceId }) 
           {pendingList.length > 0 && (
             <div className="space-y-1.5">
               <div className="flex items-center justify-between">
-                <div className="text-muted text-[10px]">Pending ({pendingList.length})</div>
+                <div className="text-muted text-[10px]">
+                  {t("Pending (")}
+                  {pendingList.length})
+                </div>
                 {pendingList.length > 1 && (
                   <button
                     type="button"
@@ -419,7 +440,7 @@ const ReviewsBannerInner: React.FC<ReviewsBannerInnerProps> = ({ workspaceId }) 
                     className="text-muted flex items-center gap-1 text-[10px] transition-colors hover:text-[var(--color-review-accent)]"
                   >
                     <Send className="size-3" />
-                    Attach all
+                    {t("Attach all")}
                   </button>
                 )}
               </div>
@@ -441,14 +462,17 @@ const ReviewsBannerInner: React.FC<ReviewsBannerInnerProps> = ({ workspaceId }) 
           {completedList.length > 0 && (
             <div className="space-y-1.5">
               <div className="flex items-center justify-between">
-                <div className="text-muted text-[10px]">Completed ({completedList.length})</div>
+                <div className="text-muted text-[10px]">
+                  {t("Completed (")}
+                  {completedList.length})
+                </div>
                 {completedList.length > 0 && (
                   <button
                     type="button"
                     onClick={reviewsHook.clearChecked}
                     className="text-muted hover:text-error text-[10px] transition-colors"
                   >
-                    Clear
+                    {t("Clear")}
                   </button>
                 )}
               </div>
@@ -469,7 +493,8 @@ const ReviewsBannerInner: React.FC<ReviewsBannerInnerProps> = ({ workspaceId }) 
                   onClick={() => setShowAllCompleted(true)}
                   className="text-muted hover:text-secondary w-full py-1 text-center text-xs transition-colors"
                 >
-                  Show {hiddenCompletedCount} more completed review
+                  {t("Show")}
+                  {hiddenCompletedCount} {t("more completed review")}
                   {hiddenCompletedCount !== 1 && "s"}
                 </button>
               )}
@@ -478,7 +503,7 @@ const ReviewsBannerInner: React.FC<ReviewsBannerInnerProps> = ({ workspaceId }) 
 
           {/* Empty state */}
           {pendingList.length === 0 && completedList.length === 0 && (
-            <div className="text-muted py-3 text-center text-xs">No reviews yet</div>
+            <div className="text-muted py-3 text-center text-xs">{t("No reviews yet")}</div>
           )}
         </>
       )}

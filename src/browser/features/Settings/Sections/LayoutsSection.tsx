@@ -7,6 +7,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/browser/components/To
 import { useWorkspaceContext } from "@/browser/contexts/WorkspaceContext";
 import { useUILayouts } from "@/browser/contexts/UILayoutsContext";
 import { useConfirmDialog } from "@/browser/contexts/ConfirmDialogContext";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 import { readPersistedState } from "@/browser/hooks/usePersistedState";
 import { getEffectiveSlotKeybind } from "@/browser/utils/uiLayouts";
 import { stopKeyboardPropagation } from "@/browser/utils/events";
@@ -127,6 +128,7 @@ function validateSlotKeybindOverride(params: {
   slot: LayoutSlotNumber;
   keybind: Keybind;
   existing: Array<{ slot: LayoutSlotNumber; keybind: Keybind }>;
+  t: (text: string) => string;
 }): string | null {
   const hasModifier = [
     params.keybind.ctrl,
@@ -135,12 +137,14 @@ function validateSlotKeybindOverride(params: {
     params.keybind.meta,
   ].some((v) => v === true);
   if (!hasModifier) {
-    return "Keybind must include at least one modifier key.";
+    return params.t("Keybind must include at least one modifier key.");
   }
 
   for (const core of Object.values(KEYBINDS)) {
     if (keybindConflicts(params.keybind, core)) {
-      return `Conflicts with an existing mux shortcut (${formatKeybind(core)}).`;
+      return params
+        .t("Conflicts with an existing mux shortcut ({keybind}).")
+        .replace("{keybind}", formatKeybind(core));
     }
   }
 
@@ -149,7 +153,10 @@ function validateSlotKeybindOverride(params: {
       continue;
     }
     if (keybindConflicts(params.keybind, entry.keybind)) {
-      return `Conflicts with Slot ${entry.slot} (${formatKeybind(entry.keybind)}).`;
+      return params
+        .t("Conflicts with Slot {slot} ({keybind}).")
+        .replace("{slot}", String(entry.slot))
+        .replace("{keybind}", formatKeybind(entry.keybind));
     }
   }
 
@@ -174,6 +181,7 @@ function formatWorkspaceLabel(projectName: string, namedWorkspacePath: string): 
 }
 
 export function LayoutsSection() {
+  const { t } = useLanguage();
   const {
     layoutPresets,
     loaded,
@@ -301,7 +309,7 @@ export function LayoutsSection() {
       const preset = await saveCurrentWorkspaceToSlot(
         workspaceId,
         nextSlotNumber,
-        `Layout ${nextSlotNumber}`
+        t("Layout {number}").replace("{number}", String(nextSlotNumber))
       );
       setEditingName({ slot: nextSlotNumber, value: preset.name, original: preset.name });
       setNameError(null);
@@ -334,6 +342,7 @@ export function LayoutsSection() {
       slot,
       keybind: captured,
       existing: existingKeybinds,
+      t,
     });
 
     if (error) {
@@ -352,28 +361,29 @@ export function LayoutsSection() {
   return (
     <div className="space-y-6">
       <div>
-        <h3 className="text-foreground text-sm font-medium">Layout Slots</h3>
+        <h3 className="text-foreground text-sm font-medium">{t("Layout Slots")}</h3>
         <div className="text-muted mt-1 text-xs">
-          Layouts are saved globally and can be applied to any workspace.
+          {t("Layouts are saved globally and can be applied to any workspace.")}
         </div>
         <div className="text-muted mt-1 text-xs">
-          Slots 1–9 have default Ctrl/Cmd+Alt+1..9 hotkeys. Additional layouts can be added and
-          assigned custom hotkeys.
+          {t(
+            "Slots 1–9 have default Ctrl/Cmd+Alt+1..9 hotkeys. Additional layouts can be added and assigned custom hotkeys."
+          )}
         </div>
         {selectedWorkspaceLabel ? null : (
           <div className="text-muted mt-1 text-xs">
-            Select a workspace to capture or apply layouts.
+            {t("Select a workspace to capture or apply layouts.")}
           </div>
         )}
       </div>
 
-      {!loaded ? <div className="text-muted text-sm">Loading…</div> : null}
+      {!loaded ? <div className="text-muted text-sm">{t("Loading…")}</div> : null}
       {loadFailed ? (
         <div className="text-muted text-sm">
-          Failed to load layouts from config. Using defaults.
+          {t("Failed to load layouts from config. Using defaults.")}
         </div>
       ) : null}
-      {actionError ? <div className="text-sm text-red-500">{actionError}</div> : null}
+      {actionError ? <div className="text-sm text-red-500">{t(actionError)}</div> : null}
 
       {visibleSlots.length > 0 ? (
         <div className="space-y-2">
@@ -387,9 +397,9 @@ export function LayoutsSection() {
 
             const menuItems: KebabMenuItem[] = [
               {
-                label: "Apply",
+                label: t("Apply"),
                 disabled: !workspaceId,
-                tooltip: workspaceId ? undefined : "Select a workspace to apply layouts.",
+                tooltip: workspaceId ? undefined : t("Select a workspace to apply layouts."),
                 onClick: () => {
                   setActionError(null);
                   if (!workspaceId) return;
@@ -399,9 +409,9 @@ export function LayoutsSection() {
                 },
               },
               {
-                label: "Update from current workspace",
+                label: t("Update from current workspace"),
                 disabled: !workspaceId,
-                tooltip: workspaceId ? undefined : "Select a workspace to capture its layout.",
+                tooltip: workspaceId ? undefined : t("Select a workspace to capture its layout."),
                 onClick: () => {
                   setActionError(null);
                   if (!workspaceId) {
@@ -415,12 +425,12 @@ export function LayoutsSection() {
                 },
               },
               {
-                label: "Delete layout",
+                label: t("Delete layout"),
                 onClick: () => {
                   void (async () => {
                     const ok = await confirmDialog({
-                      title: `Delete layout "${preset.name}"?`,
-                      confirmLabel: "Delete",
+                      title: t('Delete layout "{name}"?').replace("{name}", preset.name),
+                      confirmLabel: t("Delete"),
                       confirmVariant: "destructive",
                     });
                     if (!ok) return;
@@ -446,7 +456,9 @@ export function LayoutsSection() {
               >
                 <div className="flex items-center justify-between gap-3">
                   <div className="flex min-w-0 items-center gap-3">
-                    <div className="text-muted shrink-0 text-xs">Slot {slot}</div>
+                    <div className="text-muted shrink-0 text-xs">
+                      {t("Slot")} {slot}
+                    </div>
 
                     <div className="min-w-0 flex-1">
                       {isEditingName ? (
@@ -470,7 +482,10 @@ export function LayoutsSection() {
                           }}
                           onBlur={() => void submitRename(slot, editingName.value)}
                           autoFocus
-                          aria-label={`Rename layout Slot ${slot}`}
+                          aria-label={t("Rename layout Slot {slot}").replace(
+                            "{slot}",
+                            String(slot)
+                          )}
                         />
                       ) : (
                         <Tooltip disableHoverableContent>
@@ -489,12 +504,13 @@ export function LayoutsSection() {
                                 });
                                 setNameError(null);
                               }}
-                              title="Double-click to rename"
                             >
                               {preset.name}
                             </span>
                           </TooltipTrigger>
-                          <TooltipContent align="start">Double-click to rename</TooltipContent>
+                          <TooltipContent align="start">
+                            {t("Double-click to rename")}
+                          </TooltipContent>
                         </Tooltip>
                       )}
                     </div>
@@ -505,13 +521,16 @@ export function LayoutsSection() {
                       <div className="flex items-center gap-1">
                         <div className="relative">
                           <kbd className="bg-background-secondary text-foreground border-border-medium rounded border px-2 py-0.5 font-mono text-xs">
-                            Press keys…
+                            {t("Press keys…")}
                           </kbd>
                           <input
                             className="absolute inset-0 h-full w-full opacity-0"
                             autoFocus
                             onKeyDown={(e) => handleCaptureKeyDown(slot, e)}
-                            aria-label={`Set hotkey for Slot ${slot}`}
+                            aria-label={t("Set hotkey for Slot {slot}").replace(
+                              "{slot}",
+                              String(slot)
+                            )}
                           />
                         </div>
 
@@ -538,15 +557,21 @@ export function LayoutsSection() {
                                 }}
                                 aria-label={
                                   slot <= 9
-                                    ? `Reset hotkey for Slot ${slot}`
-                                    : `Clear hotkey for Slot ${slot}`
+                                    ? t("Reset hotkey for Slot {slot}").replace(
+                                        "{slot}",
+                                        String(slot)
+                                      )
+                                    : t("Clear hotkey for Slot {slot}").replace(
+                                        "{slot}",
+                                        String(slot)
+                                      )
                                 }
                               >
                                 <X />
                               </Button>
                             </TooltipTrigger>
                             <TooltipContent align="end">
-                              {slot <= 9 ? "Reset to default" : "Clear hotkey"}
+                              {t(slot <= 9 ? "Reset to default" : "Clear hotkey")}
                             </TooltipContent>
                           </Tooltip>
                         ) : null}
@@ -567,10 +592,12 @@ export function LayoutsSection() {
                               setCaptureError(null);
                             }}
                           >
-                            {effectiveKeybind ? formatKeybind(effectiveKeybind) : "No hotkey"}
+                            {effectiveKeybind ? formatKeybind(effectiveKeybind) : t("No hotkey")}
                           </kbd>
                         </TooltipTrigger>
-                        <TooltipContent align="end">Double-click to change hotkey</TooltipContent>
+                        <TooltipContent align="end">
+                          {t("Double-click to change hotkey")}
+                        </TooltipContent>
                       </Tooltip>
                     )}
 
@@ -580,13 +607,15 @@ export function LayoutsSection() {
 
                 {isCapturing ? (
                   <div className="text-muted text-xs">
-                    Press a key combo (Esc to cancel)
-                    {captureError ? <div className="mt-1 text-red-500">{captureError}</div> : null}
+                    {t("Press a key combo (Esc to cancel)")}
+                    {captureError ? (
+                      <div className="mt-1 text-red-500">{t(captureError)}</div>
+                    ) : null}
                   </div>
                 ) : null}
 
                 {isEditingName && nameError ? (
-                  <div className="text-xs text-red-500">{nameError}</div>
+                  <div className="text-xs text-red-500">{t(nameError)}</div>
                 ) : null}
               </div>
             );
@@ -602,7 +631,7 @@ export function LayoutsSection() {
         onClick={() => void handleAddLayout()}
       >
         <Plus />
-        Add layout
+        {t("Add layout")}
       </Button>
     </div>
   );

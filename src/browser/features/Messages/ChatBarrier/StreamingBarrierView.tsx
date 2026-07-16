@@ -4,6 +4,7 @@ import { CircleStopIcon } from "lucide-react";
 import { cn } from "@/common/lib/utils";
 import { TooltipIfPresent } from "@/browser/components/Tooltip/Tooltip";
 import { BaseBarrier } from "./BaseBarrier";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 export interface StreamingBarrierViewProps {
   statusText: string;
@@ -41,6 +42,7 @@ const LIVE_RATE_TOOLTIP =
  * frontends (e.g. the VS Code webview) without pulling in the desktop state layer.
  */
 export const StreamingBarrierView: React.FC<StreamingBarrierViewProps> = (props) => {
+  const { t } = useLanguage();
   return (
     // @container scopes the narrow-hint query to the barrier's own width, so it
     // tracks the chat pane (which can be narrow on wide desktops), not the viewport.
@@ -65,8 +67,10 @@ export const StreamingBarrierView: React.FC<StreamingBarrierViewProps> = (props)
                 props.tokenCount === undefined && "invisible"
               )}
             >
-              <span className="font-primary text-dim mr-1">Live</span>
-              <span>~{(props.tokenCount ?? 0).toLocaleString()} tokens</span>
+              <span className="font-primary text-dim mr-1">{t("Live")}</span>
+              <span>
+                ~{(props.tokenCount ?? 0).toLocaleString()} {t("tokens")}
+              </span>
               <span className="text-dim ml-1 inline-flex min-w-[7ch] items-baseline justify-end gap-1">
                 <span>@</span>
                 <span>{props.tps !== undefined && props.tps > 0 ? props.tps : "--"}</span>
@@ -83,10 +87,10 @@ export const StreamingBarrierView: React.FC<StreamingBarrierViewProps> = (props)
               type="button"
               onClick={props.onCancel}
               className="text-muted hover:text-foreground inline-flex h-6 cursor-pointer items-center rounded-sm px-1.5 py-0.5 text-[11px] leading-none font-medium transition-colors duration-200"
-              aria-label="Stop streaming"
+              aria-label={t("Stop streaming")}
             >
               <CircleStopIcon className="h-3.5 w-3.5 shrink-0" strokeWidth={2.2} />
-              <span className="ml-1 leading-none">Stop</span>
+              <span className="ml-1 leading-none">{t("Stop")}</span>
               {props.cancelShortcutText && (
                 <span className="border-border-medium text-muted ml-2 hidden items-center rounded border px-1 py-[1px] text-[10px] leading-none sm:inline-flex">
                   {props.cancelShortcutText}

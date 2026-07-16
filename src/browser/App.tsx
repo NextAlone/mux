@@ -124,11 +124,13 @@ import { isDesktopMode } from "@/browser/hooks/useDesktopTitlebar";
 import { prependInitialAppProxyBasePath } from "@/browser/utils/frontendBasePath";
 import { WorkspaceActiveGoalsWarningToast } from "@/browser/components/ActiveGoalsWarningToast/ActiveGoalsWarningToast";
 import { LoadingScreen } from "@/browser/components/LoadingScreen/LoadingScreen";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 function RootRouteShell(props: {
   leftSidebarCollapsed: boolean;
   onToggleLeftSidebarCollapsed: () => void;
 }) {
+  const { t } = useLanguage();
   return (
     <div className="bg-surface-primary flex flex-1 flex-col overflow-hidden">
       {props.leftSidebarCollapsed ? (
@@ -139,20 +141,21 @@ function RootRouteShell(props: {
             type="button"
             onClick={props.onToggleLeftSidebarCollapsed}
             className={`border-border-medium bg-background-secondary text-foreground hover:bg-hover rounded-md border px-3 py-1.5 text-sm transition-colors ${isDesktopMode() ? "titlebar-no-drag" : ""}`}
-            aria-label="Open sidebar menu"
+            aria-label={t("Open sidebar menu")}
           >
-            Open sidebar
+            {t("Open sidebar")}
           </button>
         </div>
       ) : null}
       <div className="flex flex-1 items-center justify-center px-6">
-        <p className="text-muted text-sm">Select or add a project to get started.</p>
+        <p className="text-muted text-sm">{t("Select or add a project to get started.")}</p>
       </div>
     </div>
   );
 }
 
 function AppInner() {
+  const { t } = useLanguage();
   // Get workspace state from context
   const {
     workspaceMetadata,
@@ -1232,7 +1235,7 @@ function AppInner() {
       }
 
       const metadata = workspaceMetadataRef.current.get(event.workspaceId);
-      const title = metadata?.title ?? metadata?.name ?? "Response complete";
+      const title = metadata?.title ?? metadata?.name ?? t("Response complete");
       const body = getResponseCompleteNotificationBody(event.finalText, event.completion);
 
       showBrowserNotification(title, {
@@ -1253,7 +1256,7 @@ function AppInner() {
     return () => {
       unsubscribe?.();
     };
-  }, [setSelectedWorkspace, workspaceStore]);
+  }, [setSelectedWorkspace, t, workspaceStore]);
 
   // Show auth modal if authentication is required
   if (status === "auth_required") {
@@ -1404,7 +1407,9 @@ function AppInner() {
             projectOptions={getTopLevelProjectEntries(userProjects).map(([projectPath]) => ({
               projectPath,
               projectName:
-                projectPath.split("/").pop() ?? projectPath.split("\\").pop() ?? "Unnamed Project",
+                projectPath.split("/").pop() ??
+                projectPath.split("\\").pop() ??
+                t("Unnamed Project"),
             }))}
             onConfirm={createMultiProjectWorkspace}
           />

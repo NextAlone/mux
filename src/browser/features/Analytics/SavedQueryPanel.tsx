@@ -14,6 +14,7 @@ import { getErrorMessage } from "@/common/utils/errors";
 import { ChartTypePicker } from "./ChartTypePicker";
 import { SavedQuerySqlDialog } from "./SavedQuerySqlDialog";
 import { substituteTimeFilter } from "./sqlTimeFilter";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 interface SavedQueryPanelProps {
   query: SavedQuery;
@@ -52,6 +53,7 @@ function normalizeChartType(value: string | null): ChartType | null {
 }
 
 function EditableLabel(props: EditableLabelProps) {
+  const { t } = useLanguage();
   const [isEditing, setIsEditing] = useState(false);
   const [draftLabel, setDraftLabel] = useState(props.label);
   const [saving, setSaving] = useState(false);
@@ -115,7 +117,7 @@ function EditableLabel(props: EditableLabelProps) {
             void commitEdit();
           }}
           className="text-muted hover:text-foreground h-7 w-7"
-          aria-label="Save panel title"
+          aria-label={t("Save panel title")}
         >
           <Check className="size-3.5" />
         </Button>
@@ -126,7 +128,7 @@ function EditableLabel(props: EditableLabelProps) {
           onMouseDown={(event) => event.preventDefault()}
           onClick={cancelEdit}
           className="text-muted hover:text-foreground h-7 w-7"
-          aria-label="Cancel renaming panel"
+          aria-label={t("Cancel renaming panel")}
         >
           <X className="size-3.5" />
         </Button>
@@ -135,7 +137,7 @@ function EditableLabel(props: EditableLabelProps) {
   }
 
   return (
-    <TooltipIfPresent tooltip="Double-click to rename panel" side="top" align="start">
+    <TooltipIfPresent tooltip={t("Double-click to rename panel")} side="top" align="start">
       <button
         type="button"
         className="min-w-0 border-none bg-transparent p-0 text-left"
@@ -150,6 +152,7 @@ function EditableLabel(props: EditableLabelProps) {
 }
 
 export function SavedQueryPanel(props: SavedQueryPanelProps) {
+  const { t } = useLanguage();
   const { data, loading, error, executeQuery } = useAnalyticsRawQuery();
   const [actionError, setActionError] = useState<string | null>(null);
   const [isSqlDialogOpen, setIsSqlDialogOpen] = useState(false);
@@ -279,7 +282,7 @@ export function SavedQueryPanel(props: SavedQueryPanelProps) {
             variant="ghost"
             size="icon"
             onClick={openSqlDialog}
-            aria-label="View or edit SQL"
+            aria-label={t("View or edit SQL")}
             className="text-muted hover:text-foreground h-7 w-7"
           >
             <Code className="size-3.5" />
@@ -289,7 +292,7 @@ export function SavedQueryPanel(props: SavedQueryPanelProps) {
             size="icon"
             onClick={handleRefresh}
             disabled={loading}
-            aria-label="Refresh saved query"
+            aria-label={t("Refresh saved query")}
             className="text-muted hover:text-foreground h-7 w-7"
           >
             <RefreshCw className={cn("size-3.5", loading && "animate-spin")} />
@@ -300,7 +303,7 @@ export function SavedQueryPanel(props: SavedQueryPanelProps) {
             onClick={() => {
               void handleDelete();
             }}
-            aria-label="Delete saved query"
+            aria-label={t("Delete saved query")}
             className="text-muted hover:text-danger h-7 w-7"
           >
             <Trash2 className="size-3.5" />
@@ -316,8 +319,8 @@ export function SavedQueryPanel(props: SavedQueryPanelProps) {
         {data && (
           <div className="text-muted text-[10px]">
             {data.rowCount.toLocaleString()}
-            {data.rowCountExact ? "" : "+"} rows · {data.durationMs}ms
-            {data.truncated && " · Results truncated"}
+            {data.rowCountExact ? "" : "+"} {t("rows ·")} {data.durationMs}ms
+            {data.truncated && ` · ${t("Results truncated")}`}
           </div>
         )}
       </div>
@@ -354,7 +357,7 @@ export function SavedQueryPanel(props: SavedQueryPanelProps) {
           )}
         </div>
       ) : (
-        <p className="text-muted mt-3 text-xs">Run the saved query to view results.</p>
+        <p className="text-muted mt-3 text-xs">{t("Run the saved query to view results.")}</p>
       )}
 
       <SavedQuerySqlDialog

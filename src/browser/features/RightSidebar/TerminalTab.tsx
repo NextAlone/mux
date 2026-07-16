@@ -2,6 +2,7 @@ import React from "react";
 import { TerminalView } from "@/browser/components/TerminalView/TerminalView";
 import type { TabType } from "@/browser/types/rightSidebar";
 import { getTerminalSessionId } from "@/browser/types/rightSidebar";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 interface TerminalTabProps {
   workspaceId: string;
@@ -26,6 +27,7 @@ interface TerminalTabProps {
  * always contains a valid sessionId (never the placeholder "terminal").
  */
 export const TerminalTab: React.FC<TerminalTabProps> = (props) => {
+  const { t } = useLanguage();
   // Extract session ID from tab type - must exist (sessions created before tab added)
   const sessionId = getTerminalSessionId(props.tabType);
 
@@ -33,7 +35,7 @@ export const TerminalTab: React.FC<TerminalTabProps> = (props) => {
     // This should never happen - RightSidebar creates session before adding tab
     return (
       <div className="flex h-full items-center justify-center text-red-400">
-        Invalid terminal tab: missing session ID
+        {t("Invalid terminal tab: missing session ID")}
       </div>
     );
   }

@@ -1,6 +1,7 @@
 import { useEffect, type ReactNode } from "react";
 import { AlertCircle, Loader2, MonitorOff } from "lucide-react";
 import { Button } from "@/browser/components/Button/Button";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 import { assertNever } from "@/common/utils/assertNever";
 import { useDesktopConnection, type UseDesktopConnectionResult } from "./useDesktopConnection";
 
@@ -11,48 +12,51 @@ interface StatusPresentation {
   action?: ReactNode;
 }
 
-function getStatusPresentation(desktop: UseDesktopConnectionResult): StatusPresentation {
+function getStatusPresentation(
+  desktop: UseDesktopConnectionResult,
+  t: (text: string) => string
+): StatusPresentation {
   switch (desktop.state) {
     case "checking":
       return {
         icon: <Loader2 aria-hidden className="h-5 w-5 animate-spin" />,
-        title: "Checking desktop availability",
-        description: "Starting desktop session…",
+        title: t("Checking desktop availability"),
+        description: t("Starting desktop session…"),
       };
     case "connecting":
       return {
         icon: <Loader2 aria-hidden className="h-5 w-5 animate-spin" />,
-        title: "Connecting to desktop",
-        description: "Establishing the live desktop stream…",
+        title: t("Connecting to desktop"),
+        description: t("Establishing the live desktop stream…"),
       };
     case "unavailable":
       return {
         icon: <MonitorOff aria-hidden className="h-8 w-8" />,
-        title: "Desktop unavailable",
-        description: desktop.reason ?? "Desktop sessions are unavailable for this workspace.",
+        title: t("Desktop unavailable"),
+        description: desktop.reason ?? t("Desktop sessions are unavailable for this workspace."),
       };
     case "disconnected":
       return {
         icon: <Loader2 aria-hidden className="h-5 w-5 animate-spin" />,
-        title: "Reconnecting…",
-        description: "Refreshing the desktop connection with a new session token.",
+        title: t("Reconnecting…"),
+        description: t("Refreshing the desktop connection with a new session token."),
       };
     case "error":
       return {
         icon: <AlertCircle aria-hidden className="text-destructive h-8 w-8" />,
-        title: "Desktop connection failed",
-        description: desktop.reason ?? "An unexpected desktop connection error occurred.",
+        title: t("Desktop connection failed"),
+        description: desktop.reason ?? t("An unexpected desktop connection error occurred."),
         action: (
           <Button onClick={desktop.connect} size="sm" variant="outline">
-            Retry
+            {t("Retry")}
           </Button>
         ),
       };
     case "idle":
       return {
         icon: <Loader2 aria-hidden className="h-5 w-5 animate-spin" />,
-        title: "Preparing desktop",
-        description: "Waiting to connect to the live desktop.",
+        title: t("Preparing desktop"),
+        description: t("Waiting to connect to the live desktop."),
       };
     case "connected":
       return {
@@ -66,7 +70,8 @@ function getStatusPresentation(desktop: UseDesktopConnectionResult): StatusPrese
 }
 
 function StatusOverlay(props: { desktop: UseDesktopConnectionResult }) {
-  const presentation = getStatusPresentation(props.desktop);
+  const { t } = useLanguage();
+  const presentation = getStatusPresentation(props.desktop, t);
 
   return (
     <div className="bg-background text-foreground flex h-full flex-1 flex-col items-center justify-center gap-3 p-6 text-center">

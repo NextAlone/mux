@@ -3,6 +3,7 @@ import { isValidBase64AttachmentData } from "@/common/utils/attachments/base64";
 import { isToolContentResult } from "@/common/utils/tools/toolContentResult";
 import { TooltipIfPresent } from "@/browser/components/Tooltip/Tooltip";
 import { ImageLightbox } from "@/browser/components/ImageLightbox";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 /**
  * Image content from MCP tool results (transformed from MCP's image type to AI SDK's media type)
@@ -77,6 +78,7 @@ interface ToolResultImagesProps {
  * Display images extracted from MCP tool results (e.g., Chrome DevTools screenshots)
  */
 export const ToolResultImages: React.FC<ToolResultImagesProps> = ({ result }) => {
+  const { t } = useLanguage();
   const images = extractImagesFromToolResult(result);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
 
@@ -91,14 +93,14 @@ export const ToolResultImages: React.FC<ToolResultImagesProps> = ({ result }) =>
     <>
       <div className="mt-2 flex flex-wrap gap-2">
         {safeImages.map((dataUrl, index) => (
-          <TooltipIfPresent key={index} tooltip="Click to view full size" side="top">
+          <TooltipIfPresent key={index} tooltip={t("Click to view full size")} side="top">
             <button
               onClick={() => setSelectedImage(dataUrl)}
               className="border-border-light bg-dark block cursor-pointer overflow-hidden rounded border p-0 transition-opacity hover:opacity-80"
             >
               <img
                 src={dataUrl}
-                alt={`Tool result image ${index + 1}`}
+                alt={`${t("Tool result image")} ${index + 1}`}
                 className="max-h-48 max-w-full object-contain"
               />
             </button>
@@ -108,8 +110,8 @@ export const ToolResultImages: React.FC<ToolResultImagesProps> = ({ result }) =>
 
       <ImageLightbox
         src={selectedImage}
-        title="Image Preview"
-        alt="Full size preview"
+        title={t("Image Preview")}
+        alt={t("Full size preview")}
         onClose={() => setSelectedImage(null)}
       />
     </>

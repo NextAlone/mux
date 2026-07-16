@@ -9,6 +9,7 @@ import { useTelemetry } from "@/browser/hooks/useTelemetry";
 import { computeTimingPercentages } from "@/browser/utils/timingPercentages";
 import { calculateAverageTPS } from "@/browser/utils/messages/StreamingTPSCalculator";
 import { formatDuration } from "@/common/utils/formatDuration";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 // Colors for timing components (matching TOKEN_COMPONENT_COLORS style)
 const TIMING_COLORS = {
@@ -134,6 +135,7 @@ export interface StatsTabProps {
 }
 
 export function StatsTab(props: StatsTabProps) {
+  const { t } = useLanguage();
   const data = useStatsData(props.workspaceId, {
     _snapshot: props._snapshot,
     _clearStats: props._clearStats,
@@ -176,8 +178,8 @@ export function StatsTab(props: StatsTabProps) {
     return (
       <div className="text-light font-primary text-[13px] leading-relaxed">
         <div className="text-secondary px-5 py-10 text-center">
-          <p>No timing data yet.</p>
-          <p>Send a message to see timing statistics.</p>
+          <p>{t("No timing data yet.")}</p>
+          <p>{t("Send a message to see timing statistics.")}</p>
         </div>
       </div>
     );
@@ -328,7 +330,7 @@ export function StatsTab(props: StatsTabProps) {
           <div data-testid="timing-header" className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-3">
               <span className="text-foreground inline-flex shrink-0 items-baseline gap-1 font-medium">
-                Timing
+                {t("Timing")}
                 {isActive && <span className="text-accent ml-1 animate-pulse text-xs">●</span>}
               </span>
               <ToggleGroup options={VIEW_MODE_OPTIONS} value={viewMode} onChange={setViewMode} />
@@ -365,16 +367,21 @@ export function StatsTab(props: StatsTabProps) {
           {viewMode === "session" && session && session.responseCount > 0 && (
             <div className="text-muted-light flex flex-wrap gap-x-3 gap-y-1 text-xs">
               <span>
-                {session.responseCount} response{session.responseCount !== 1 ? "s" : ""}
+                {session.responseCount} {t("response")}
+                {session.responseCount !== 1 ? "s" : ""}
               </span>
               {(session.totalOutputTokens > 0 || session.totalReasoningTokens > 0) && (
                 <>
                   <span>·</span>
-                  <span>{formatTokens(session.totalOutputTokens)} output tokens</span>
+                  <span>
+                    {formatTokens(session.totalOutputTokens)} {t("output tokens")}
+                  </span>
                   {session.totalReasoningTokens > 0 && (
                     <>
                       <span>·</span>
-                      <span>{formatTokens(session.totalReasoningTokens)} thinking</span>
+                      <span>
+                        {formatTokens(session.totalReasoningTokens)} {t("thinking")}
+                      </span>
                     </>
                   )}
                 </>
@@ -384,7 +391,8 @@ export function StatsTab(props: StatsTabProps) {
 
           {lastData?.invalid && viewMode === "last-request" && (
             <div className="text-muted-light text-xs">
-              Invalid timing data: {lastData.anomalies.join(", ")}
+              {t("Invalid timing data:")}
+              {lastData.anomalies.join(", ")}
             </div>
           )}
 
@@ -427,7 +435,7 @@ export function StatsTab(props: StatsTabProps) {
                 </div>
                 <div className="flex items-center gap-2">
                   {component.waiting ? (
-                    <span className="text-muted text-xs">waiting…</span>
+                    <span className="text-muted text-xs">{t("waiting…")}</span>
                   ) : component.duration !== null ? (
                     <span className="text-muted text-xs tabular-nums">
                       {formatDuration(component.duration, "precise")}
@@ -470,10 +478,11 @@ function ModelBreakdownView(props: {
   showModeBreakdown: boolean;
   setShowModeBreakdown: (value: boolean) => void;
 }) {
+  const { t } = useLanguage();
   return (
     <div className="mb-2">
       <div className="flex items-center justify-between">
-        <span className="text-foreground text-xs font-medium">By model</span>
+        <span className="text-foreground text-xs font-medium">{t("By model")}</span>
         {props.hasSplitData && (
           <label className="text-muted flex items-center gap-2 text-xs select-none">
             <input
@@ -481,7 +490,7 @@ function ModelBreakdownView(props: {
               checked={props.showModeBreakdown}
               onChange={(e) => props.setShowModeBreakdown(e.target.checked)}
             />
-            Split by agent
+            {t("Split by agent")}
           </label>
         )}
       </div>
@@ -510,7 +519,9 @@ function ModelBreakdownView(props: {
                 </span>
               </div>
               <div className="text-muted-light mt-1 flex flex-wrap gap-x-2 gap-y-1 text-[11px]">
-                <span>{entry.responseCount} req</span>
+                <span>
+                  {entry.responseCount} {t("req")}
+                </span>
                 {avgTtft !== null && (
                   <>
                     <span>·</span>
@@ -541,6 +552,7 @@ export interface TimingPanelProps {
  * Renders timing breakdown (TTFT, model time, tool execution) with session/last-request toggle.
  */
 export function TimingPanel(props: TimingPanelProps) {
+  const { t } = useLanguage();
   const data = useStatsData(props.workspaceId);
   const {
     viewMode,
@@ -574,8 +586,8 @@ export function TimingPanel(props: TimingPanelProps) {
     return (
       <div className="text-light font-primary text-[13px] leading-relaxed">
         <div className="text-secondary px-5 py-10 text-center">
-          <p>No timing data yet.</p>
-          <p>Send a message to see timing statistics.</p>
+          <p>{t("No timing data yet.")}</p>
+          <p>{t("Send a message to see timing statistics.")}</p>
         </div>
       </div>
     );
@@ -672,7 +684,7 @@ export function TimingPanel(props: TimingPanelProps) {
           <div data-testid="timing-header" className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-3">
               <span className="text-foreground inline-flex shrink-0 items-baseline gap-1 font-medium">
-                Timing
+                {t("Timing")}
                 {isActive && <span className="text-accent ml-1 animate-pulse text-xs">●</span>}
               </span>
               <ToggleGroup options={VIEW_MODE_OPTIONS} value={viewMode} onChange={setViewMode} />
@@ -707,16 +719,21 @@ export function TimingPanel(props: TimingPanelProps) {
           {viewMode === "session" && session && session.responseCount > 0 && (
             <div className="text-muted-light flex flex-wrap gap-x-3 gap-y-1 text-xs">
               <span>
-                {session.responseCount} response{session.responseCount !== 1 ? "s" : ""}
+                {session.responseCount} {t("response")}
+                {session.responseCount !== 1 ? "s" : ""}
               </span>
               {(session.totalOutputTokens > 0 || session.totalReasoningTokens > 0) && (
                 <>
                   <span>·</span>
-                  <span>{formatTokens(session.totalOutputTokens)} output tokens</span>
+                  <span>
+                    {formatTokens(session.totalOutputTokens)} {t("output tokens")}
+                  </span>
                   {session.totalReasoningTokens > 0 && (
                     <>
                       <span>·</span>
-                      <span>{formatTokens(session.totalReasoningTokens)} thinking</span>
+                      <span>
+                        {formatTokens(session.totalReasoningTokens)} {t("thinking")}
+                      </span>
                     </>
                   )}
                 </>
@@ -726,7 +743,8 @@ export function TimingPanel(props: TimingPanelProps) {
 
           {lastData?.invalid && viewMode === "last-request" && (
             <div className="text-muted-light text-xs">
-              Invalid timing data: {lastData.anomalies.join(", ")}
+              {t("Invalid timing data:")}
+              {lastData.anomalies.join(", ")}
             </div>
           )}
 
@@ -769,7 +787,7 @@ export function TimingPanel(props: TimingPanelProps) {
                 </div>
                 <div className="flex items-center gap-2">
                   {component.waiting ? (
-                    <span className="text-muted text-xs">waiting…</span>
+                    <span className="text-muted text-xs">{t("waiting…")}</span>
                   ) : component.duration !== null ? (
                     <span className="text-muted text-xs">
                       {formatDuration(component.duration, "precise")}
@@ -801,6 +819,7 @@ export interface ModelBreakdownPanelProps {
  * Shows per-model timing/token statistics with optional agent split.
  */
 export function ModelBreakdownPanel(props: ModelBreakdownPanelProps) {
+  const { t } = useLanguage();
   const data = useStatsData(props.workspaceId);
   const { session, hasAnyData, showModeBreakdown, setShowModeBreakdown } = data;
 
@@ -808,8 +827,8 @@ export function ModelBreakdownPanel(props: ModelBreakdownPanelProps) {
     return (
       <div className="text-light font-primary text-[13px] leading-relaxed">
         <div className="text-secondary px-5 py-10 text-center">
-          <p>No model data yet.</p>
-          <p>Send a message to see per-model breakdown.</p>
+          <p>{t("No model data yet.")}</p>
+          <p>{t("Send a message to see per-model breakdown.")}</p>
         </div>
       </div>
     );

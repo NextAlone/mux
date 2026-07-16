@@ -14,6 +14,7 @@ import {
 } from "@/browser/components/Dialog/Dialog";
 import { useMCPTestCache } from "@/browser/hooks/useMCPTestCache";
 import { ToolSelector } from "@/browser/components/ToolSelector/ToolSelector";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 interface WorkspaceMCPModalProps {
   workspaceId: string;
@@ -28,6 +29,7 @@ export const WorkspaceMCPModal: React.FC<WorkspaceMCPModalProps> = ({
   open,
   onOpenChange,
 }) => {
+  const { t } = useLanguage();
   const settings = useSettings();
   const { api } = useAPI();
 
@@ -264,7 +266,7 @@ export const WorkspaceMCPModal: React.FC<WorkspaceMCPModalProps> = ({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Server className="h-5 w-5" />
-            Workspace MCP Configuration
+            {t("Workspace MCP Configuration")}
           </DialogTitle>
         </DialogHeader>
 
@@ -274,34 +276,35 @@ export const WorkspaceMCPModal: React.FC<WorkspaceMCPModalProps> = ({
           </div>
         ) : !hasServers ? (
           <div className="text-muted py-8 text-center">
-            <p>No MCP servers configured for this project.</p>
+            <p>{t("No MCP servers configured for this project.")}</p>
             <p className="mt-2 text-sm">
-              Configure servers in{" "}
+              {t("Configure servers in")}{" "}
               <Button
                 type="button"
                 variant="link"
                 className="h-auto p-0 align-baseline"
                 onClick={handleOpenProjectSettings}
               >
-                Settings → MCP
+                {t("Settings → MCP")}
               </Button>{" "}
-              to use them here.
+              {t("to use them here.")}
             </p>
           </div>
         ) : (
           <div className="space-y-4">
             <div className="flex items-start justify-between gap-3">
               <p className="text-muted flex-1 pr-3 text-sm">
-                Customize which MCP servers and tools are available in this workspace. Changes only
-                affect this workspace.
+                {t(
+                  "Customize which MCP servers and tools are available in this workspace. Changes only affect this workspace."
+                )}
               </p>
               <div className="flex shrink-0 items-center gap-2 pt-0.5">
                 <Button variant="ghost" onClick={() => onOpenChange(false)}>
-                  Cancel
+                  {t("Cancel")}
                 </Button>
                 <Button onClick={() => void handleSave()} disabled={saving}>
                   {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                  Save
+                  {t("Save")}
                 </Button>
               </div>
             </div>
@@ -335,12 +338,14 @@ export const WorkspaceMCPModal: React.FC<WorkspaceMCPModalProps> = ({
                           onCheckedChange={(checked) =>
                             toggleServerEnabled(name, checked, projectDisabled)
                           }
-                          aria-label={`Toggle ${name} MCP server`}
+                          aria-label={`${t("Toggle")} ${name} ${t("MCP server")}`}
                         />
                         <div>
                           <div className="font-medium">{name}</div>
                           {projectDisabled && (
-                            <div className="text-muted text-xs">(disabled at project level)</div>
+                            <div className="text-muted text-xs">
+                              {t("(disabled at project level)")}
+                            </div>
                           )}
                         </div>
                       </div>
@@ -354,9 +359,9 @@ export const WorkspaceMCPModal: React.FC<WorkspaceMCPModalProps> = ({
                           {isLoadingTools ? (
                             <Loader2 className="h-4 w-4 animate-spin" />
                           ) : tools ? (
-                            "Refresh Tools"
+                            t("Refresh Tools")
                           ) : (
-                            "Fetch Tools"
+                            t("Fetch Tools")
                           )}
                         </Button>
                       )}
@@ -374,14 +379,15 @@ export const WorkspaceMCPModal: React.FC<WorkspaceMCPModalProps> = ({
                         />
                         {!hasNoAllowlist(name) && (
                           <div className="text-muted mt-2 text-xs">
-                            {allowedTools.length} of {tools.length} tools enabled
+                            {allowedTools.length} {t(" of ")}
+                            {tools.length} {t("tools enabled")}
                           </div>
                         )}
                       </div>
                     )}
 
                     {effectivelyEnabled && tools?.length === 0 && (
-                      <div className="text-muted mt-2 text-sm">No tools available</div>
+                      <div className="text-muted mt-2 text-sm">{t("No tools available")}</div>
                     )}
                   </div>
                 );

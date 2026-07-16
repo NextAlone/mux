@@ -3,11 +3,8 @@ import { ChevronRight, Layers3, Workflow } from "lucide-react";
 import { StatusDot, type VisualState } from "@/browser/components/AgentListItem/StatusDot";
 import { getSidebarItemPaddingLeft } from "@/browser/components/sidebarItemLayout";
 import { cn } from "@/common/lib/utils";
-import {
-  formatSidebarTaskGroupHeader,
-  formatSidebarTaskGroupItemsLabel,
-  type SidebarGroupKind,
-} from "./sidebarTaskGroups";
+import { type SidebarGroupKind } from "./sidebarTaskGroups";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 interface TaskGroupListItemProps {
   groupId: string;
@@ -43,6 +40,7 @@ function getAggregateVisualState(props: TaskGroupListItemProps): VisualState {
 }
 
 export function TaskGroupListItem(props: TaskGroupListItemProps) {
+  const { t } = useLanguage();
   const hasRunningWork = props.runningCount > 0;
   const aggregateState = getAggregateVisualState(props);
   const statusDescriptionId = `task-group-status-${props.groupId}`;
@@ -51,27 +49,39 @@ export function TaskGroupListItem(props: TaskGroupListItemProps) {
   const showProgressFraction = props.kind !== "workflow";
   const statusParts: string[] = [];
   if (props.runningCount > 0) {
-    statusParts.push(`${props.runningCount} running`);
+    statusParts.push(`${props.runningCount} ${t("running")}`);
   }
   if (props.queuedCount > 0) {
-    statusParts.push(`${props.queuedCount} queued`);
+    statusParts.push(`${props.queuedCount} ${t("queued")}`);
   }
   if (props.completedCount > 0) {
-    statusParts.push(`${props.completedCount} completed`);
+    statusParts.push(`${props.completedCount} ${t("completed")}`);
   }
   if (props.interruptedCount > 0) {
-    statusParts.push(`${props.interruptedCount} interrupted`);
+    statusParts.push(`${props.interruptedCount} ${t("interrupted")}`);
   }
   if (props.visibleCount !== props.totalCount) {
-    statusParts.push(`${props.visibleCount}/${props.totalCount} visible`);
+    statusParts.push(`${props.visibleCount}/${props.totalCount} ${t("visible")}`);
   }
+  const groupHeader =
+    props.kind === "workflow"
+      ? `${t("Workflow")} · ${props.title}`
+      : props.kind === "variants"
+        ? `${t("Variants")} · ${props.title}`
+        : `${t("Best of")} ${props.totalCount} · ${props.title}`;
+  const itemLabel =
+    props.kind === "workflow"
+      ? t("tasks")
+      : props.kind === "variants"
+        ? t("variants")
+        : t("candidates");
 
   return (
     <div
       role="button"
       tabIndex={0}
       aria-expanded={props.isExpanded}
-      aria-label={`${props.isExpanded ? "Collapse" : "Expand"} task group ${props.title}`}
+      aria-label={`${props.isExpanded ? t("Collapse") : t("Expand")} ${t("task group")} ${props.title}`}
       aria-describedby={statusDescriptionId}
       data-testid={`task-group-${props.groupId}`}
       data-running={hasRunningWork}
@@ -131,7 +141,7 @@ export function TaskGroupListItem(props: TaskGroupListItemProps) {
                 hasRunningWork ? "text-content-primary" : "text-foreground"
               )}
             >
-              {formatSidebarTaskGroupHeader(props.kind, props.totalCount, props.title)}
+              {groupHeader}
             </span>
           </span>
           {showProgressFraction && (
@@ -148,7 +158,7 @@ export function TaskGroupListItem(props: TaskGroupListItemProps) {
             statusParts.map((part) => <span key={part}>{part}</span>)
           ) : (
             <span>
-              {props.totalCount} {formatSidebarTaskGroupItemsLabel(props.kind).toLowerCase()}
+              {props.totalCount} {itemLabel}
             </span>
           )}
         </div>

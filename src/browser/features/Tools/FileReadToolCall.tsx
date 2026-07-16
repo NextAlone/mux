@@ -17,6 +17,7 @@ import {
 } from "./Shared/ToolPrimitives";
 import { useToolExpansion, getStatusDisplay, type ToolStatus } from "./Shared/toolUtils";
 import { formatBytes } from "@/common/utils/formatBytes";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 interface FileReadToolCallProps {
   args: FileReadToolArgs;
@@ -64,6 +65,7 @@ export const FileReadToolCall: React.FC<FileReadToolCallProps> = ({
   result,
   status = "pending",
 }) => {
+  const { t } = useLanguage();
   const { expanded, toggleExpanded } = useToolExpansion();
 
   const filePath = extractToolFilePath(args) ?? "";
@@ -82,9 +84,12 @@ export const FileReadToolCall: React.FC<FileReadToolCallProps> = ({
         </div>
         {result && result.success && parsedContent && (
           <span className="text-secondary ml-2 text-[10px] whitespace-nowrap">
-            <span className="hidden @sm:inline">read </span>
+            <span className="hidden @sm:inline">{t("read")} </span>
             {formatBytes(parsedContent.actualBytes)}
-            <span className="hidden @lg:inline"> of {formatBytes(result.file_size)}</span>
+            <span className="hidden @lg:inline">
+              {" "}
+              {t("of")} {formatBytes(result.file_size)}
+            </span>
           </span>
         )}
         <StatusIndicator status={status}>{getStatusDisplay(status)}</StatusIndicator>
@@ -95,19 +100,23 @@ export const FileReadToolCall: React.FC<FileReadToolCallProps> = ({
           <DetailSection>
             <div className="bg-code-bg flex flex-wrap gap-4 rounded px-2 py-1.5 text-[11px] leading-[1.4]">
               <div className="flex gap-1.5">
-                <span className="text-secondary font-medium">Path:</span>
+                <span className="text-secondary font-medium">{t("Path:")}</span>
                 <span className="text-text font-monospace break-all">{filePath}</span>
               </div>
               {args.offset != null && (
                 <div className="flex gap-1.5">
-                  <span className="text-secondary font-medium">Offset:</span>
-                  <span className="text-text font-monospace break-all">line {args.offset}</span>
+                  <span className="text-secondary font-medium">{t("Offset:")}</span>
+                  <span className="text-text font-monospace break-all">
+                    {t("line")} {args.offset}
+                  </span>
                 </div>
               )}
               {args.limit != null && (
                 <div className="flex gap-1.5">
-                  <span className="text-secondary font-medium">Limit:</span>
-                  <span className="text-text font-monospace break-all">{args.limit} lines</span>
+                  <span className="text-secondary font-medium">{t("Limit:")}</span>
+                  <span className="text-text font-monospace break-all">
+                    {args.limit} {t("lines")}
+                  </span>
                 </div>
               )}
             </div>
@@ -117,14 +126,14 @@ export const FileReadToolCall: React.FC<FileReadToolCallProps> = ({
             <>
               {result.success === false && result.error && (
                 <DetailSection>
-                  <DetailLabel>Error</DetailLabel>
+                  <DetailLabel>{t("Error")}</DetailLabel>
                   <ErrorBox>{result.error}</ErrorBox>
                 </DetailSection>
               )}
 
               {result.success && result.content && parsedContent && (
                 <DetailSection>
-                  <DetailLabel>Content</DetailLabel>
+                  <DetailLabel>{t("Content")}</DetailLabel>
                   <div className="bg-code-bg m-0 flex max-h-[200px] overflow-y-auto rounded px-2 py-1.5 text-[11px] leading-[1.4]">
                     <div className="text-secondary font-monospace mr-2 min-w-10 border-r border-white/10 pr-3 text-right opacity-40 select-none">
                       {parsedContent.lineNumbers.map((lineNum, i) => (
@@ -143,7 +152,7 @@ export const FileReadToolCall: React.FC<FileReadToolCallProps> = ({
           {status === "executing" && !result && (
             <DetailSection>
               <DetailContent>
-                Reading file
+                {t("Reading file")}
                 <LoadingDots />
               </DetailContent>
             </DetailSection>

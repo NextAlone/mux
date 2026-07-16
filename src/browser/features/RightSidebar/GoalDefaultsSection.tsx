@@ -9,6 +9,7 @@ import { cn } from "@/common/lib/utils";
 import type { WorkspaceGoalDefaultsOverride } from "@/browser/utils/goals/resolveGoalSetIntent";
 import { mergeGoalDefaults } from "@/browser/utils/goals/resolveGoalSetIntent";
 import { DEFAULT_GOAL_DEFAULTS, normalizeGoalDefaults, type GoalDefaults } from "@/constants/goals";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 /**
  * Editor for goal-creation defaults. Lives inside `GoalDefaultsModal`
@@ -68,6 +69,7 @@ function parseTurnCapValue(value: string): number | null {
 }
 
 export function GoalDefaultsSection(props: GoalDefaultsSectionProps) {
+  const { t } = useLanguage();
   const { api } = useAPI();
   const [globalDefaults, setGlobalDefaults] = useState<GoalDefaults>(() => ({
     ...DEFAULT_GOAL_DEFAULTS,
@@ -201,7 +203,7 @@ export function GoalDefaultsSection(props: GoalDefaultsSectionProps) {
 
       <details className="border-border-light rounded-md border">
         <summary className="text-muted cursor-pointer list-none p-2 text-xs font-medium uppercase">
-          All workspaces (global default)
+          {t("All workspaces (global default)")}
         </summary>
         <div className="bg-surface-primary border-border-light border-t p-3">
           <GoalDefaultsControls
@@ -237,13 +239,13 @@ export function GoalDefaultsSection(props: GoalDefaultsSectionProps) {
       <summary className="flex cursor-pointer list-none items-center justify-between gap-2 p-3 text-sm">
         <span className="text-foreground inline-flex items-center gap-1.5 font-medium">
           <Target className="h-3.5 w-3.5" aria-hidden="true" />
-          Goal defaults
+          {t("Goal defaults")}
           {hasAnyOverride && (
             <span
               className="bg-accent-soft text-accent rounded-full px-1.5 py-0.5 text-[10px] font-medium uppercase"
-              aria-label="Workspace overrides active"
+              aria-label={t("Workspace overrides active")}
             >
-              Workspace
+              {t("Workspace")}
             </span>
           )}
         </span>
@@ -273,13 +275,14 @@ interface WorkspaceOverridePanelProps {
 }
 
 function WorkspaceOverridePanel(props: WorkspaceOverridePanelProps) {
+  const { t } = useLanguage();
   return (
     <div className="flex flex-col gap-3">
       <div className="text-foreground flex items-center gap-2 text-xs font-medium uppercase">
-        This workspace
+        {t("This workspace")}
         {props.isLoading && (
           <span className="text-muted text-[10px] font-normal normal-case" aria-live="polite">
-            Loading…
+            {t("Loading…")}
           </span>
         )}
       </div>
@@ -318,6 +321,7 @@ interface BudgetOverrideRowProps {
 }
 
 function BudgetOverrideRow(props: BudgetOverrideRowProps) {
+  const { t } = useLanguage();
   const isOverriding = props.override != null;
   const [draft, setDraft] = useState(isOverriding ? formatBudgetDollars(props.override ?? 0) : "");
 
@@ -343,7 +347,7 @@ function BudgetOverrideRow(props: BudgetOverrideRowProps) {
 
   return (
     <OverrideRow
-      label="Default budget"
+      label={t("Default budget")}
       helperInherit={`Inherits $${formatBudgetDollars(props.inheritValue)} from All workspaces`}
       isOverriding={isOverriding}
       onToggleOverride={(next) => {
@@ -358,7 +362,7 @@ function BudgetOverrideRow(props: BudgetOverrideRowProps) {
         <div className="flex items-center gap-1">
           <span className="text-muted text-sm">$</span>
           <Input
-            aria-label="Workspace default goal budget in dollars"
+            aria-label={t("Workspace default goal budget in dollars")}
             type="text"
             inputMode="decimal"
             value={draft}
@@ -380,6 +384,7 @@ interface TurnCapOverrideRowProps {
 }
 
 function TurnCapOverrideRow(props: TurnCapOverrideRowProps) {
+  const { t } = useLanguage();
   // The override is tri-state from the user's perspective but the schema
   // we send is binary (`null` = inherit, positive integer = override).
   // We track an explicit "is overriding" UI flag locally so the user can
@@ -412,7 +417,7 @@ function TurnCapOverrideRow(props: TurnCapOverrideRowProps) {
 
   return (
     <OverrideRow
-      label="Default turn cap"
+      label={t("Default turn cap")}
       helperInherit={
         props.inheritValue == null
           ? "Inherits no turn cap from All workspaces"
@@ -434,7 +439,7 @@ function TurnCapOverrideRow(props: TurnCapOverrideRowProps) {
       disabled={props.disabled}
       input={
         <Input
-          aria-label="Workspace default goal turn cap"
+          aria-label={t("Workspace default goal turn cap")}
           type="number"
           inputMode="numeric"
           min={1}
@@ -457,10 +462,11 @@ interface ExplicitBudgetOverrideRowProps {
 }
 
 function ExplicitBudgetOverrideRow(props: ExplicitBudgetOverrideRowProps) {
+  const { t } = useLanguage();
   const isOverriding = props.override != null;
   return (
     <OverrideRow
-      label="Always require explicit budget"
+      label={t("Always require explicit budget")}
       helperInherit={`Inherits ${props.inheritValue ? "ON" : "OFF"} from All workspaces`}
       isOverriding={isOverriding}
       onToggleOverride={(next) => {
@@ -474,7 +480,7 @@ function ExplicitBudgetOverrideRow(props: ExplicitBudgetOverrideRowProps) {
       input={
         <label className="text-foreground inline-flex items-center gap-1.5 text-sm">
           <input
-            aria-label="Workspace always-require-explicit-budget"
+            aria-label={t("Workspace always-require-explicit-budget")}
             type="checkbox"
             checked={props.override ?? false}
             onChange={(event) => props.onChange(event.target.checked)}

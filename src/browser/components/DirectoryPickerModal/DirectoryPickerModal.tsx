@@ -15,6 +15,7 @@ import { DirectoryTree } from "../DirectoryTree/DirectoryTree";
 import { useAPI } from "@/browser/contexts/API";
 import { formatKeybind, isMac } from "@/browser/utils/ui/keybinds";
 import { getErrorMessage } from "@/common/utils/errors";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 const OPEN_KEYBIND = { key: "o", ctrl: true };
 
@@ -31,6 +32,7 @@ export const DirectoryPickerModal: React.FC<DirectoryPickerModalProps> = ({
   onClose,
   onSelectPath,
 }) => {
+  const { t } = useLanguage();
   const { api } = useAPI();
   const [root, setRoot] = useState<FileTreeNode | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -57,7 +59,7 @@ export const DirectoryPickerModal: React.FC<DirectoryPickerModalProps> = ({
         const result = await api.general.listDirectory({ path });
 
         if (!result.success) {
-          const errorMessage = typeof result.error === "string" ? result.error : "Unknown error";
+          const errorMessage = typeof result.error === "string" ? result.error : t("Unknown error");
           // Detect "no such file or directory" to offer folder creation
           const isNotFound =
             errorMessage.includes("ENOENT") || errorMessage.includes("no such file or directory");
@@ -82,7 +84,7 @@ export const DirectoryPickerModal: React.FC<DirectoryPickerModalProps> = ({
         setIsLoading(false);
       }
     },
-    [api]
+    [api, t]
   );
 
   // Sync pathInput with initialPath when modal opens (component stays mounted)
@@ -118,7 +120,7 @@ export const DirectoryPickerModal: React.FC<DirectoryPickerModalProps> = ({
       try {
         const result = await api.general.listDirectory({ path: trimmedInput });
         if (!result.success) {
-          const errorMessage = typeof result.error === "string" ? result.error : "Unknown error";
+          const errorMessage = typeof result.error === "string" ? result.error : t("Unknown error");
           const isNotFound =
             errorMessage.includes("ENOENT") || errorMessage.includes("no such file or directory");
           if (isNotFound) {
@@ -150,7 +152,7 @@ export const DirectoryPickerModal: React.FC<DirectoryPickerModalProps> = ({
 
     onSelectPath(root.path);
     onClose();
-  }, [onClose, onSelectPath, root, pathInput, api]);
+  }, [onClose, onSelectPath, root, pathInput, api, t]);
 
   const handleCreateFolder = useCallback(async () => {
     const trimmedPath = pathInput.trim();
@@ -162,7 +164,7 @@ export const DirectoryPickerModal: React.FC<DirectoryPickerModalProps> = ({
     try {
       const createResult = await api.general.createDirectory({ path: trimmedPath });
       if (!createResult.success) {
-        setError(createResult.error ?? "Failed to create folder");
+        setError(createResult.error ?? t("Failed to create folder"));
         setCanCreateFolder(false);
         return;
       }
@@ -170,13 +172,13 @@ export const DirectoryPickerModal: React.FC<DirectoryPickerModalProps> = ({
       setCanCreateFolder(false);
       void loadDirectory(createResult.data.normalizedPath);
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : "An unexpected error occurred";
+      const errorMessage = err instanceof Error ? err.message : t("An unexpected error occurred");
       setError(`Failed to create folder: ${errorMessage}`);
       setCanCreateFolder(false);
     } finally {
       setIsLoading(false);
     }
-  }, [pathInput, api, loadDirectory]);
+  }, [pathInput, api, loadDirectory, t]);
 
   const handleOpenChange = useCallback(
     (open: boolean) => {
@@ -221,8 +223,10 @@ export const DirectoryPickerModal: React.FC<DirectoryPickerModalProps> = ({
     <Dialog open={isOpen} onOpenChange={handleOpenChange}>
       <DialogContent showCloseButton={false}>
         <DialogHeader>
-          <DialogTitle>Select Project Directory</DialogTitle>
-          <DialogDescription>Navigate to select a directory for your project</DialogDescription>
+          <DialogTitle>{t("Select Project Directory")}</DialogTitle>
+          <DialogDescription>
+            {t("Navigate to select a directory for your project")}
+          </DialogDescription>
         </DialogHeader>
         <div className="mb-3">
           <Input
@@ -232,7 +236,7 @@ export const DirectoryPickerModal: React.FC<DirectoryPickerModalProps> = ({
               setCanCreateFolder(false);
             }}
             onKeyDown={handlePathInputKeyDown}
-            placeholder="Enter path..."
+            placeholder={t("Enter path...")}
             className="bg-modal-bg border-border-medium h-9 font-mono text-sm"
           />
         </div>
@@ -280,7 +284,7 @@ export const DirectoryPickerModal: React.FC<DirectoryPickerModalProps> = ({
                 });
               }}
             />
-            Show hidden files
+            {t("Show hidden files")}
           </label>
         </div>
         {error && (
@@ -293,7 +297,7 @@ export const DirectoryPickerModal: React.FC<DirectoryPickerModalProps> = ({
                 disabled={isLoading}
                 className="h-6 px-2 py-0 text-xs"
               >
-                Create Folder
+                {t("Create Folder")}
               </Button>
             )}
           </div>
@@ -315,14 +319,15 @@ export const DirectoryPickerModal: React.FC<DirectoryPickerModalProps> = ({
         </div>
         <DialogFooter>
           <Button variant="secondary" onClick={onClose} disabled={isLoading}>
-            Cancel
+            {t("Cancel")}
           </Button>
           <Button
             onClick={() => void handleConfirm()}
             disabled={isLoading || !root}
-            title={`Open folder (${shortcutLabel})`}
+            title={`${t("Open folder")} (${shortcutLabel})`}
           >
-            Open ({shortcutLabel})
+            {t("Open (")}
+            {shortcutLabel})
           </Button>
         </DialogFooter>
       </DialogContent>

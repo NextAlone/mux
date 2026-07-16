@@ -4,6 +4,7 @@ import { TokenMeter } from "./TokenMeter";
 import { HorizontalThresholdSlider, type AutoCompactionConfig } from "./ThresholdSlider";
 import { formatTokens, type TokenMeterData } from "@/common/utils/tokens/tokenMeterUtils";
 import { Toggle1MContext } from "@/browser/components/Toggle1MContext/Toggle1MContext";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 interface ContextUsageBarProps {
   data: TokenMeterData;
@@ -22,6 +23,7 @@ const ContextUsageBarComponent: React.FC<ContextUsageBarProps> = ({
   showTitle = true,
   testId,
 }) => {
+  const { t } = useLanguage();
   const totalDisplay = formatTokens(data.totalTokens);
   const maxDisplay = data.maxTokens ? ` / ${formatTokens(data.maxTokens)}` : "";
   const percentageDisplay = data.maxTokens ? ` (${data.totalPercentage.toFixed(1)}%)` : "";
@@ -37,7 +39,7 @@ const ContextUsageBarComponent: React.FC<ContextUsageBarProps> = ({
       <div className="flex items-baseline justify-between">
         {showTitle && (
           <span className="text-foreground inline-flex items-baseline gap-1 font-medium">
-            Context Usage
+            {t("Context Usage")}
           </span>
         )}
         <span className="text-muted text-xs tabular-nums">
@@ -58,15 +60,17 @@ const ContextUsageBarComponent: React.FC<ContextUsageBarProps> = ({
 
       {showWarning && (
         <div className="text-subtle mt-2 text-[11px] italic">
-          Unknown model limits - showing relative usage only
+          {t("Unknown model limits - showing relative usage only")}
         </div>
       )}
       {contextWarning && (
         <div className="text-warning mt-2 flex items-start gap-1 text-[11px]">
           <AlertTriangle aria-hidden="true" className="mt-0.5 h-3 w-3 shrink-0" />
           <span>
-            Compaction model context ({formatTokens(contextWarning.compactionModelMaxTokens)}) is
-            smaller than auto-compact threshold ({formatTokens(contextWarning.thresholdTokens)})
+            {t("Compaction model context (")}
+            {formatTokens(contextWarning.compactionModelMaxTokens)}
+            {t(") is smaller than auto-compact threshold (")}
+            {formatTokens(contextWarning.thresholdTokens)})
           </span>
         </div>
       )}

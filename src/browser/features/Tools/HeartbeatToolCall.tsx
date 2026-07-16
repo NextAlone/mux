@@ -25,6 +25,7 @@ import {
   resolveHeartbeatSchedulePolicy,
   type HeartbeatContextMode,
 } from "@/constants/heartbeat";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 /**
  * Transcript card for the `heartbeat` tool — the agent's recurring, idle-gated
@@ -140,27 +141,30 @@ const REQUEST_ACTION_LABELS: Record<HeartbeatToolArgs["action"], string> = {
 // result with settings:null). Surfaces what the agent requested so the expanded card is
 // never blank — the generic renderer used to show the raw args here.
 const RequestedArgs: React.FC<{ args: HeartbeatToolArgs }> = (props) => {
+  const { t } = useLanguage();
   const args = props.args;
   const requestedMessage = args.message ?? "";
   return (
     <div className="bg-code-bg space-y-3 rounded px-3 py-2.5 text-[11px] leading-relaxed">
-      <div className="text-secondary text-[10px] tracking-wide uppercase">Requested</div>
+      <div className="text-secondary text-[10px] tracking-wide uppercase">{t("Requested")}</div>
       <dl className="grid grid-cols-2 gap-x-6 gap-y-3">
-        <HeartbeatStat label="Action" value={REQUEST_ACTION_LABELS[args.action]} />
+        <HeartbeatStat label={t("Action")} value={REQUEST_ACTION_LABELS[args.action]} />
         {args.enabled != null && (
-          <HeartbeatStat label="State" value={args.enabled ? "Enable" : "Pause"} />
+          <HeartbeatStat label={t("State")} value={args.enabled ? "Enable" : "Pause"} />
         )}
         {args.intervalMs != null && (
           <HeartbeatStat
-            label="Cadence"
+            label={t("Cadence")}
             value={
-              <span className="counter-nums">every {formatHeartbeatInterval(args.intervalMs)}</span>
+              <span className="counter-nums">
+                {t("every")} {formatHeartbeatInterval(args.intervalMs)}
+              </span>
             }
           />
         )}
         {args.contextMode != null && (
           <HeartbeatStat
-            label="Context"
+            label={t("Context")}
             value={CONTEXT_MODES[args.contextMode]?.label ?? args.contextMode}
           />
         )}
@@ -168,7 +172,7 @@ const RequestedArgs: React.FC<{ args: HeartbeatToolArgs }> = (props) => {
       {requestedMessage.length > 0 && (
         <div>
           <div className="text-secondary mb-1 text-[10px] tracking-wide uppercase">
-            Check-in prompt
+            {t("Check-in prompt")}
           </div>
           <div className="text-foreground border-l-2 border-white/10 pl-2.5 break-words whitespace-pre-wrap italic">
             {requestedMessage}
@@ -188,6 +192,7 @@ interface HeartbeatToolCallProps {
 }
 
 export const HeartbeatToolCall: React.FC<HeartbeatToolCallProps> = (props) => {
+  const { t } = useLanguage();
   const status = props.status ?? "pending";
   const { expanded, toggleExpanded } = useToolExpansion(props.defaultExpanded ?? false);
 
@@ -259,7 +264,7 @@ export const HeartbeatToolCall: React.FC<HeartbeatToolCallProps> = (props) => {
 
               <dl className="grid grid-cols-2 gap-x-6 gap-y-3">
                 <HeartbeatStat
-                  label="State"
+                  label={t("State")}
                   value={
                     <span className={live ? "text-success" : "text-warning"}>
                       {live ? "Enabled" : "Paused"}
@@ -267,16 +272,17 @@ export const HeartbeatToolCall: React.FC<HeartbeatToolCallProps> = (props) => {
                   }
                 />
                 <HeartbeatStat
-                  label="Cadence"
+                  label={t("Cadence")}
                   value={
                     <span className="counter-nums">
-                      every {formatHeartbeatInterval(settings.intervalMs)}
+                      {t("every")}
+                      {formatHeartbeatInterval(settings.intervalMs)}
                     </span>
                   }
                 />
-                <HeartbeatStat label="Context" value={ctx.label} />
+                <HeartbeatStat label={t("Context")} value={ctx.label} />
                 <HeartbeatStat
-                  label="Trigger"
+                  label={t("Trigger")}
                   value={schedulePolicy.trigger === "interval" ? "Fixed interval" : "When idle"}
                 />
               </dl>
@@ -299,7 +305,7 @@ export const HeartbeatToolCall: React.FC<HeartbeatToolCallProps> = (props) => {
               {hasCustomMessage ? (
                 <div>
                   <div className="text-secondary mb-1 text-[10px] tracking-wide uppercase">
-                    Check-in prompt
+                    {t("Check-in prompt")}
                   </div>
                   {/* Custom messages come from a multiline textarea and can contain long
                       URLs/paths — preserve newlines and break long tokens so the card never
@@ -311,7 +317,7 @@ export const HeartbeatToolCall: React.FC<HeartbeatToolCallProps> = (props) => {
                 </div>
               ) : (
                 <div className="text-muted text-[10.5px] italic">
-                  Uses the default check-in prompt.
+                  {t("Uses the default check-in prompt.")}
                 </div>
               )}
             </div>
@@ -319,13 +325,13 @@ export const HeartbeatToolCall: React.FC<HeartbeatToolCallProps> = (props) => {
 
           {success?.action === "unset" && (
             <div className="text-muted px-3 py-2 text-[11px]">
-              Recurring check-ins removed for this workspace.
+              {t("Recurring check-ins removed for this workspace.")}
             </div>
           )}
 
           {success?.action === "get" && !settings && (
             <div className="text-muted px-3 py-2 text-[11px] italic">
-              No heartbeat is configured for this workspace.
+              {t("No heartbeat is configured for this workspace.")}
             </div>
           )}
 
@@ -333,7 +339,7 @@ export const HeartbeatToolCall: React.FC<HeartbeatToolCallProps> = (props) => {
 
           {status === "executing" && (
             <div className="text-muted px-3 py-2 text-[11px] italic">
-              Updating heartbeat settings…
+              {t("Updating heartbeat settings…")}
             </div>
           )}
         </ToolDetails>

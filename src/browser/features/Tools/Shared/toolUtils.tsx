@@ -5,6 +5,7 @@ import {
   useStickyExpand,
   type UseStickyExpandOptions,
 } from "@/browser/features/Messages/useStickyExpand";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 import { LoadingDots } from "./ToolPrimitives";
 
 /**
@@ -105,47 +106,52 @@ export function getStatusDisplay(status: ToolStatus): React.ReactNode {
     case "executing":
       return (
         <>
-          <LoadingDots /> <span className="status-text">executing</span>
+          <LoadingDots /> <LocalizedStatusText text="executing" />
         </>
       );
     case "completed":
       return (
         <>
           <Check aria-hidden="true" className="mr-1 inline-block h-3 w-3 align-[-2px]" />
-          <span className="status-text">completed</span>
+          <LocalizedStatusText text="completed" />
         </>
       );
     case "failed":
       return (
         <>
           <X aria-hidden="true" className="mr-1 inline-block h-3 w-3 align-[-2px]" />
-          <span className="status-text">failed</span>
+          <LocalizedStatusText text="failed" />
         </>
       );
     case "interrupted":
       return (
         <>
           <AlertTriangle aria-hidden="true" className="mr-1 inline-block h-3 w-3 align-[-2px]" />
-          <span className="status-text">interrupted</span>
+          <LocalizedStatusText text="interrupted" />
         </>
       );
     case "redacted":
       return (
         <>
           <EyeOff aria-hidden="true" className="mr-1 inline-block h-3 w-3 align-[-2px]" />
-          <span className="status-text">redacted</span>
+          <LocalizedStatusText text="redacted" />
         </>
       );
     case "backgrounded":
       return (
         <>
           <CircleDot aria-hidden="true" className="mr-1 inline-block h-3 w-3 align-[-2px]" />
-          <span className="status-text">backgrounded</span>
+          <LocalizedStatusText text="backgrounded" />
         </>
       );
     default:
-      return <span className="status-text">pending</span>;
+      return <LocalizedStatusText text="pending" />;
   }
+}
+
+function LocalizedStatusText(props: { text: string }) {
+  const { t } = useLanguage();
+  return <span className="status-text">{t(props.text)}</span>;
 }
 
 /**

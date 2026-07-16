@@ -7,6 +7,7 @@ import {
   getModelProvider,
   normalizeToCanonical,
 } from "@/common/utils/ai/models";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 interface ModelDisplayProps {
   modelString: string;
@@ -45,6 +46,7 @@ function getRouteDisplayName(
  * When metadata says the request was routed through a gateway/provider, show that as "via …".
  */
 export const ModelDisplay: React.FC<ModelDisplayProps> = (props) => {
+  const { t } = useLanguage();
   const canonicalModel = normalizeToCanonical(props.modelString);
   const originProvider = getModelProvider(canonicalModel);
   const displayName = formatModelStringForDisplay(canonicalModel);
@@ -63,7 +65,9 @@ export const ModelDisplay: React.FC<ModelDisplayProps> = (props) => {
       <ProviderIcon provider={originProvider} className={iconClass} data-model-icon />
       <span className="inline">{displayName}</span>
       {routeDisplayName ? (
-        <span className="text-muted ml-1 inline">via {routeDisplayName}</span>
+        <span className="text-muted ml-1 inline">
+          {t("via")} {routeDisplayName}
+        </span>
       ) : null}
     </span>
   );
@@ -82,7 +86,8 @@ export const ModelDisplay: React.FC<ModelDisplayProps> = (props) => {
         {routeDisplayName ? (
           <>
             <br />
-            via {routeDisplayName}
+            {t("via")}
+            {routeDisplayName}
           </>
         ) : null}
       </TooltipContent>

@@ -9,6 +9,7 @@ import { clearGitStatus, invalidateGitStatus, useGitStatus } from "@/browser/sto
 import { createLRUCache } from "@/browser/utils/lruCache";
 import { buildSwitchBookmarkCommand, buildRemoteBookmarkListCommand } from "./bookmarkCommands";
 import { repoRootBashOptions } from "@/browser/utils/executeBash";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 // LRU cache for persisting bookmark names across app restarts.
 const bookmarkCache = createLRUCache<string>({
@@ -42,6 +43,7 @@ interface RemoteState {
  * Remotes appear as expandable groups that lazy-load their bookmarks.
  */
 export function BookmarkSelector({ workspaceId, workspaceName, className }: BookmarkSelectorProps) {
+  const { t } = useLanguage();
   const { api } = useAPI();
   // null = bookmark is not known yet (for example a stopped runtime with no passive git data),
   // false = explicitly confirmed not a jj repo, string = current bookmark.
@@ -421,7 +423,7 @@ export function BookmarkSelector({ workspaceId, workspaceName, className }: Book
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search bookmarks..."
+              placeholder={t("Search bookmarks...")}
               className="text-foreground placeholder:text-muted w-full bg-transparent font-mono text-[11px] outline-none"
             />
           </div>
@@ -464,7 +466,9 @@ export function BookmarkSelector({ workspaceId, workspaceName, className }: Book
                               <Loader2 className="h-3 w-3 animate-spin" />
                             </div>
                           ) : remoteBookmarks.length === 0 ? (
-                            <div className="text-muted py-1.5 pl-2 text-[10px]">No bookmarks</div>
+                            <div className="text-muted py-1.5 pl-2 text-[10px]">
+                              {t("No bookmarks")}
+                            </div>
                           ) : (
                             <>
                               {remoteBookmarks.map((bookmark) => {
@@ -489,7 +493,7 @@ export function BookmarkSelector({ workspaceId, workspaceName, className }: Book
                               })}
                               {state?.truncated && !search && (
                                 <div className="text-muted px-2 py-1 text-[10px] italic">
-                                  +more bookmarks (use search)
+                                  {t("+more bookmarks (use search)")}
                                 </div>
                               )}
                             </>
@@ -510,7 +514,9 @@ export function BookmarkSelector({ workspaceId, workspaceName, className }: Book
                 <Loader2 className="h-3 w-3 animate-spin" />
               </div>
             ) : filteredLocalBookmarks.length === 0 ? (
-              <div className="text-muted py-2 text-center text-[10px]">No matching bookmarks</div>
+              <div className="text-muted py-2 text-center text-[10px]">
+                {t("No matching bookmarks")}
+              </div>
             ) : (
               <>
                 {filteredLocalBookmarks.map((bookmark) => (
@@ -530,7 +536,7 @@ export function BookmarkSelector({ workspaceId, workspaceName, className }: Book
                 ))}
                 {localBookmarksTruncated && !search && (
                   <div className="text-muted px-2 py-1 text-[10px] italic">
-                    +more bookmarks (use search)
+                    {t("+more bookmarks (use search)")}
                   </div>
                 )}
               </>
@@ -546,12 +552,14 @@ export function BookmarkSelector({ workspaceId, workspaceName, className }: Book
             <button
               onClick={handleCopy}
               className="text-muted hover:text-foreground flex h-3.5 w-3.5 shrink-0 items-center justify-center opacity-0 transition-opacity group-hover:opacity-100"
-              aria-label="Copy bookmark name"
+              aria-label={t("Copy bookmark name")}
             >
               {copied ? <Check className="h-2.5 w-2.5" /> : <Copy className="h-2.5 w-2.5" />}
             </button>
           </TooltipTrigger>
-          <TooltipContent side="bottom">{copied ? "Copied!" : "Copy bookmark name"}</TooltipContent>
+          <TooltipContent side="bottom">
+            {copied ? t("Copied!") : t("Copy bookmark name")}
+          </TooltipContent>
         </Tooltip>
       )}
 

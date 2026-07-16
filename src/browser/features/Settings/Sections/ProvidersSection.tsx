@@ -37,6 +37,7 @@ import { getAllowedProvidersForUi } from "@/browser/utils/policyUi";
 import { ProviderIcon, ProviderWithIcon } from "@/browser/components/ProviderIcon/ProviderIcon";
 import { getStoredAuthToken } from "@/browser/components/AuthTokenModal/AuthTokenModal";
 import { useAPI } from "@/browser/contexts/API";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 import { useSettings } from "@/browser/contexts/SettingsContext";
 import { useProvidersConfig } from "@/browser/hooks/useProvidersConfig";
 import {
@@ -117,6 +118,23 @@ function isCustomProviderType(value: string): value is CustomProviderType {
     value === "anthropic-compatible" ||
     value === "google-compatible"
   );
+}
+
+function localizeCustomProviderIdError(reason: string, t: (text: string) => string): string {
+  const reserved = /^Custom provider id "(.+)" is reserved\.$/.exec(reason);
+  if (reserved?.[1]) {
+    return t('Custom provider id "{id}" is reserved.').replace("{id}", reserved[1]);
+  }
+
+  const conflict = /^Custom provider id "(.+)" conflicts with a built-in provider\.$/.exec(reason);
+  if (conflict?.[1]) {
+    return t('Custom provider id "{id}" conflicts with a built-in provider.').replace(
+      "{id}",
+      conflict[1]
+    );
+  }
+
+  return t(reason);
 }
 
 function getServerAuthToken(): string | null {
@@ -273,6 +291,7 @@ interface RoutePriorityItem {
 }
 
 function SortableRoutePriorityItem(props: { item: RoutePriorityItem }) {
+  const { t } = useLanguage();
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: props.item.route,
   });
@@ -291,7 +310,7 @@ function SortableRoutePriorityItem(props: { item: RoutePriorityItem }) {
       <button
         type="button"
         className="text-muted hover:text-foreground cursor-grab rounded p-0.5 active:cursor-grabbing"
-        aria-label={`Reorder ${props.item.displayName}`}
+        aria-label={t("Reorder {name}").replace("{name}", props.item.displayName)}
         {...attributes}
         {...(listeners ?? {})}
       >
@@ -306,7 +325,7 @@ function SortableRoutePriorityItem(props: { item: RoutePriorityItem }) {
       ) : (
         <span className="text-foreground text-xs font-medium">{props.item.displayName}</span>
       )}
-      {isDragging && <span className="text-muted ml-auto text-[10px]">Moving…</span>}
+      {isDragging && <span className="text-muted ml-auto text-[10px]">{t("Moving…")}</span>}
     </li>
   );
 }
@@ -318,6 +337,7 @@ function GatewayRoutePriorityList({
   routePriority: string[];
   onChangeRoutePriority: (priority: string[]) => void;
 }) {
+  const { t } = useLanguage();
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: {
@@ -331,7 +351,7 @@ function GatewayRoutePriorityList({
       if (route === "direct") {
         return {
           route,
-          displayName: "Direct",
+          displayName: t("Direct"),
           provider: null,
         };
       }
@@ -350,7 +370,7 @@ function GatewayRoutePriorityList({
         provider: route as ProviderName,
       };
     });
-  }, [routePriority]);
+  }, [routePriority, t]);
 
   const handleDragEnd = useCallback(
     (event: DragEndEvent) => {
@@ -373,8 +393,10 @@ function GatewayRoutePriorityList({
   return (
     <div className="border-border-medium bg-background-secondary/50 space-y-2 rounded-md border px-3 py-2">
       <div>
-        <div className="text-foreground text-xs font-medium">Route priority</div>
-        <div className="text-muted text-xs">Drag to choose gateway order for auto routing.</div>
+        <div className="text-foreground text-xs font-medium">{t("Route priority")}</div>
+        <div className="text-muted text-xs">
+          {t("Drag to choose gateway order for auto routing.")}
+        </div>
       </div>
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
         <SortableContext items={routePriority} strategy={verticalListSortingStrategy}>
@@ -390,6 +412,7 @@ function GatewayRoutePriorityList({
 }
 
 export function ProvidersSection() {
+  const { t } = useLanguage();
   const policyState = usePolicy();
   const effectivePolicy =
     policyState.status.state === "enforced" ? (policyState.policy ?? null) : null;
@@ -1541,7 +1564,10 @@ export function ProvidersSection() {
       }
 
       const confirmed = window.confirm(
-        `Remove custom provider "${provider}"? This deletes its saved settings.`
+        t('Remove custom provider "{provider}"? This deletes its saved settings.').replace(
+          "{provider}",
+          provider
+        )
       );
       if (!confirmed) {
         return;
@@ -1605,6 +1631,7 @@ export function ProvidersSection() {
       refreshWorkspaceMetadata,
       selectedWorkspace,
       setProvidersExpandedProvider,
+      t,
       workspaceMetadata,
     ]
   );
@@ -1612,20 +1639,20 @@ export function ProvidersSection() {
   return (
     <div className="space-y-2">
       <p className="text-muted mb-4 text-xs">
-        Configure API keys and endpoints for AI providers. Keys are stored in{" "}
+        {t("Configure API keys and endpoints for AI providers. Keys are stored in")}{" "}
         <code className="text-accent">~/.mux/providers.jsonc</code>
       </p>
 
       {policyState.status.state === "enforced" && (
         <div className="border-border-medium bg-background-secondary/50 text-muted flex items-center gap-2 rounded-md border px-3 py-2 text-xs">
           <ShieldCheck className="h-4 w-4" aria-hidden />
-          <span>Your settings are controlled by a policy.</span>
+          <span>{t("Your settings are controlled by a policy.")}</span>
         </div>
       )}
 
       {customProviderNotice && (
         <div className="border-warning/40 bg-warning/10 text-warning rounded-md border px-3 py-2 text-xs">
-          {customProviderNotice}
+          {t(customProviderNotice)}
         </div>
       )}
 
@@ -1644,7 +1671,7 @@ export function ProvidersSection() {
         return (
           <div key={section.key} className="space-y-2">
             <div className="text-muted text-xs font-medium tracking-wide uppercase">
-              {section.label}
+              {t(section.label)}
             </div>
             {section.key === "gateway" && displayedRoutePriority.length > 0 && (
               <GatewayRoutePriorityList
@@ -1674,11 +1701,9 @@ export function ProvidersSection() {
                 : configured
                   ? "bg-success"
                   : "bg-border-medium";
-              const statusDotTitle = !enabled
-                ? "Disabled"
-                : configured
-                  ? "Configured"
-                  : "Not configured";
+              const statusDotTitle = t(
+                !enabled ? "Disabled" : configured ? "Configured" : "Not configured"
+              );
 
               return (
                 <div
@@ -1717,18 +1742,19 @@ export function ProvidersSection() {
                     <div className="border-border-medium space-y-3 border-t px-4 py-3">
                       {isBuiltInProvider(provider) && isCustomProvider && (
                         <div className="border-warning/40 bg-warning/10 text-warning rounded-md border px-3 py-2 text-xs">
-                          This custom provider id now matches a built-in provider. Mux will keep
-                          using your custom configuration.
+                          {t(
+                            "This custom provider id now matches a built-in provider. Mux will keep using your custom configuration."
+                          )}
                         </div>
                       )}
                       {provider !== "mux-gateway" && (
                         <div className="flex items-center justify-between gap-3">
                           <div>
                             <label className="text-foreground block text-xs font-medium">
-                              Enabled
+                              {t("Enabled")}
                             </label>
                             <span className="text-muted text-xs">
-                              Disable this provider without deleting saved credentials.
+                              {t("Disable this provider without deleting saved credentials.")}
                             </span>
                           </div>
                           <Switch
@@ -1736,7 +1762,10 @@ export function ProvidersSection() {
                             onCheckedChange={(nextChecked) =>
                               handleProviderEnabledChange(provider, nextChecked)
                             }
-                            aria-label={`Toggle ${provider} provider`}
+                            aria-label={t("Toggle {provider} provider").replace(
+                              "{provider}",
+                              providerDisplayName
+                            )}
                             disabled={!api}
                           />
                         </div>
@@ -1752,7 +1781,7 @@ export function ProvidersSection() {
                             }
                             className="text-muted hover:text-accent inline-flex items-center gap-1 text-xs transition-colors"
                           >
-                            Get API Key
+                            {t("Get API Key")}
                             <ExternalLink className="h-2.5 w-2.5" />
                           </button>
                           {configured &&
@@ -1761,9 +1790,11 @@ export function ProvidersSection() {
                             !(provider === "openai" && codexOauthIsConnected) &&
                             (apiKeySource === "env" || apiKeySource === "file") && (
                               <div className="text-muted text-xs">
-                                {apiKeySource === "file"
-                                  ? "Set by API key file."
-                                  : "Set by env vars."}
+                                {t(
+                                  apiKeySource === "file"
+                                    ? "Set by API key file."
+                                    : "Set by env vars."
+                                )}
                               </div>
                             )}
                         </div>
@@ -1772,7 +1803,7 @@ export function ProvidersSection() {
                       {gatewayRouteTargets.length > 0 && (
                         <div>
                           <label className="text-foreground block text-xs font-medium">
-                            Routes to
+                            {t("Routes to")}
                           </label>
                           <span className="text-muted text-xs">
                             {gatewayRouteTargets
@@ -1788,9 +1819,11 @@ export function ProvidersSection() {
                         <div className="space-y-2">
                           <div>
                             <label className="text-foreground block text-xs font-medium">
-                              Authentication
+                              {t("Authentication")}
                             </label>
-                            <span className="text-muted text-xs">{muxGatewayAuthStatusText}</span>
+                            <span className="text-muted text-xs">
+                              {t(muxGatewayAuthStatusText)}
+                            </span>
                           </div>
 
                           <div className="space-y-2">
@@ -1802,20 +1835,20 @@ export function ProvidersSection() {
                                 }}
                                 disabled={muxGatewayLoginInProgress}
                               >
-                                {muxGatewayLoginButtonLabel}
+                                {t(muxGatewayLoginButtonLabel)}
                               </Button>
 
                               {muxGatewayLoginStatus === "waiting" && muxGatewayAuthorizeUrl && (
                                 <Button
                                   size="sm"
-                                  aria-label="Copy and open Mux Gateway authorization page"
+                                  aria-label={t("Copy and open Mux Gateway authorization page")}
                                   onClick={() => {
                                     void navigator.clipboard.writeText(muxGatewayAuthorizeUrl);
                                     window.open(muxGatewayAuthorizeUrl, "_blank", "noopener");
                                   }}
                                   className="h-8 px-3 text-xs"
                                 >
-                                  Copy & Open Mux Gateway
+                                  {t("Copy & Open Mux Gateway")}
                                 </Button>
                               )}
 
@@ -1825,7 +1858,7 @@ export function ProvidersSection() {
                                   size="sm"
                                   onClick={cancelMuxGatewayLogin}
                                 >
-                                  Cancel
+                                  {t("Cancel")}
                                 </Button>
                               )}
 
@@ -1835,7 +1868,7 @@ export function ProvidersSection() {
                                   size="sm"
                                   onClick={clearMuxGatewayCredentials}
                                 >
-                                  Log out
+                                  {t("Log out")}
                                 </Button>
                               )}
                             </div>
@@ -1843,13 +1876,13 @@ export function ProvidersSection() {
                             {muxGatewayLoginStatus === "waiting" && (
                               <p className="text-muted inline-flex items-center gap-2 text-xs">
                                 <Loader2 aria-hidden className="h-3.5 w-3.5 animate-spin" />
-                                Waiting for authorization...
+                                {t("Waiting for authorization...")}
                               </p>
                             )}
 
                             {muxGatewayLoginStatus === "error" && muxGatewayLoginError && (
                               <p className="text-destructive text-xs">
-                                Login failed: {muxGatewayLoginError}
+                                {t("Login failed:")} {t(muxGatewayLoginError)}
                               </p>
                             )}
                           </div>
@@ -1861,10 +1894,10 @@ export function ProvidersSection() {
                           <div className="flex items-center justify-between gap-2">
                             <div>
                               <label className="text-foreground block text-xs font-medium">
-                                Account
+                                {t("Account")}
                               </label>
                               <span className="text-muted text-xs">
-                                Balance and limits from Mux Gateway
+                                {t("Balance and limits from Mux Gateway")}
                               </span>
                             </div>
                             <Button
@@ -1875,12 +1908,12 @@ export function ProvidersSection() {
                               }}
                               disabled={muxGatewayAccountLoading}
                             >
-                              {muxGatewayAccountLoading ? "Refreshing..." : "Refresh"}
+                              {t(muxGatewayAccountLoading ? "Refreshing..." : "Refresh")}
                             </Button>
                           </div>
 
                           <div className="flex items-center justify-between gap-4">
-                            <span className="text-muted text-xs">Balance</span>
+                            <span className="text-muted text-xs">{t("Balance")}</span>
                             <span className="text-foreground font-mono text-xs">
                               {formatMuxGatewayBalance(
                                 muxGatewayAccountStatus?.remaining_microdollars
@@ -1889,7 +1922,9 @@ export function ProvidersSection() {
                           </div>
 
                           <div className="flex items-center justify-between gap-4">
-                            <span className="text-muted text-xs">Concurrent requests per user</span>
+                            <span className="text-muted text-xs">
+                              {t("Concurrent requests per user")}
+                            </span>
                             <span className="text-foreground font-mono text-xs">
                               {muxGatewayAccountStatus?.ai_gateway_concurrent_requests_per_user ??
                                 "—"}
@@ -1897,7 +1932,7 @@ export function ProvidersSection() {
                           </div>
 
                           {muxGatewayAccountError && (
-                            <p className="text-destructive text-xs">{muxGatewayAccountError}</p>
+                            <p className="text-destructive text-xs">{t(muxGatewayAccountError)}</p>
                           )}
                         </div>
                       )}
@@ -1906,10 +1941,10 @@ export function ProvidersSection() {
                         <div className="space-y-2">
                           <div>
                             <label className="text-foreground block text-xs font-medium">
-                              Authentication
+                              {t("Authentication")}
                             </label>
                             <span className="text-muted text-xs">
-                              {copilotIsLoggedIn ? "Logged in" : "Not logged in"}
+                              {t(copilotIsLoggedIn ? "Logged in" : "Not logged in")}
                             </span>
                           </div>
 
@@ -1922,38 +1957,42 @@ export function ProvidersSection() {
                                 }}
                                 disabled={copilotLoginInProgress}
                               >
-                                {copilotLoginStatus === "error"
-                                  ? "Try again"
-                                  : copilotLoginInProgress
-                                    ? "Waiting for authorization..."
-                                    : copilotIsLoggedIn
-                                      ? "Re-login with GitHub"
-                                      : "Login with GitHub"}
+                                {t(
+                                  copilotLoginStatus === "error"
+                                    ? "Try again"
+                                    : copilotLoginInProgress
+                                      ? "Waiting for authorization..."
+                                      : copilotIsLoggedIn
+                                        ? "Re-login with GitHub"
+                                        : "Login with GitHub"
+                                )}
                               </Button>
 
                               {copilotLoginInProgress && (
                                 <Button variant="secondary" size="sm" onClick={cancelCopilotLogin}>
-                                  Cancel
+                                  {t("Cancel")}
                                 </Button>
                               )}
 
                               {copilotIsLoggedIn && (
                                 <Button variant="ghost" size="sm" onClick={clearCopilotCredentials}>
-                                  Log out
+                                  {t("Log out")}
                                 </Button>
                               )}
                             </div>
 
                             {copilotLoginStatus === "waiting" && copilotUserCode && (
                               <div className="bg-background-tertiary space-y-2 rounded-md p-3">
-                                <p className="text-muted text-xs">Enter this code on GitHub:</p>
+                                <p className="text-muted text-xs">
+                                  {t("Enter this code on GitHub:")}
+                                </p>
                                 <div className="flex items-center gap-2">
                                   <code className="text-foreground text-lg font-bold tracking-widest">
                                     {copilotUserCode}
                                   </code>
                                   <Button
                                     size="sm"
-                                    aria-label="Copy and open GitHub verification page"
+                                    aria-label={t("Copy and open GitHub verification page")}
                                     onClick={() => {
                                       void navigator.clipboard.writeText(copilotUserCode);
                                       if (copilotVerificationUri) {
@@ -1963,19 +2002,19 @@ export function ProvidersSection() {
                                     className="h-8 px-3 text-xs"
                                     disabled={!copilotVerificationUri}
                                   >
-                                    Copy & Open GitHub
+                                    {t("Copy & Open GitHub")}
                                   </Button>
                                 </div>
                                 <p className="text-muted inline-flex items-center gap-2 text-xs">
                                   <Loader2 aria-hidden className="h-3.5 w-3.5 animate-spin" />
-                                  Waiting for authorization...
+                                  {t("Waiting for authorization...")}
                                 </p>
                               </div>
                             )}
 
                             {copilotLoginStatus === "error" && copilotLoginError && (
                               <p className="text-destructive text-xs">
-                                Login failed: {copilotLoginError}
+                                {t("Login failed:")} {t(copilotLoginError)}
                               </p>
                             )}
                           </div>
@@ -1993,9 +2032,9 @@ export function ProvidersSection() {
                         return (
                           <div key={fieldConfig.key}>
                             <label className="text-muted mb-1 block text-xs">
-                              {fieldConfig.label}
+                              {t(fieldConfig.label)}
                               {fieldConfig.optional && (
-                                <span className="text-dim"> (optional)</span>
+                                <span className="text-dim"> {t("(optional)")}</span>
                               )}
                             </label>
                             {isEditing ? (
@@ -2008,7 +2047,7 @@ export function ProvidersSection() {
                                   }
                                   value={editValue}
                                   onChange={(e) => setEditValue(e.target.value)}
-                                  placeholder={fieldConfig.placeholder}
+                                  placeholder={t(fieldConfig.placeholder)}
                                   className="bg-modal-bg border-border-medium focus:border-accent flex-1 rounded border px-2 py-1.5 font-mono text-xs focus:outline-none"
                                   autoFocus
                                   onKeyDown={createEditKeyHandler({
@@ -2022,7 +2061,8 @@ export function ProvidersSection() {
                                     size="icon"
                                     onClick={() => setShowPassword(!showPassword)}
                                     className="text-muted hover:text-foreground h-6 w-6"
-                                    title={showPassword ? "Hide password" : "Show password"}
+                                    aria-label={t(showPassword ? "Hide password" : "Show password")}
+                                    tooltip={t(showPassword ? "Hide password" : "Show password")}
                                   >
                                     {showPassword ? (
                                       <EyeOff className="h-4 w-4" />
@@ -2074,19 +2114,19 @@ export function ProvidersSection() {
                                           ) : (
                                             <>
                                               <KeyRound className="h-3 w-3" />
-                                              Linked to 1Password
+                                              {t("Linked to 1Password")}
                                             </>
                                           )
                                         ) : (
                                           "••••••••"
                                         )
                                       ) : config?.[provider]?.apiKeySource === "keyless" ? (
-                                        "No API key required"
+                                        t("No API key required")
                                       ) : (
-                                        "Not set"
+                                        t("Not set")
                                       )
                                     ) : (
-                                      (fieldDisplayValue ?? "Default")
+                                      (fieldDisplayValue ?? t("Default"))
                                     )}
                                   </span>
                                   <div className="flex gap-2">
@@ -2099,7 +2139,7 @@ export function ProvidersSection() {
                                         onClick={() => handleClearField(provider, fieldConfig.key)}
                                         className="text-muted hover:text-error h-auto px-1 py-0 text-xs"
                                       >
-                                        Clear
+                                        {t("Clear")}
                                       </Button>
                                     )}
                                     <Button
@@ -2110,7 +2150,7 @@ export function ProvidersSection() {
                                       }
                                       className="text-accent hover:text-accent-light h-auto px-1 py-0 text-xs"
                                     >
-                                      {fieldIsSet || fieldValue ? "Change" : "Set"}
+                                      {t(fieldIsSet || fieldValue ? "Change" : "Set")}
                                     </Button>
                                     {opAvailable && fieldConfig.key === "apiKey" && (
                                       <Button
@@ -2118,7 +2158,8 @@ export function ProvidersSection() {
                                         size="sm"
                                         onClick={() => setOpPickerProvider(provider)}
                                         className="text-muted hover:text-foreground h-auto px-1 py-0 text-xs"
-                                        title="Link to 1Password"
+                                        aria-label={t("Link to 1Password")}
+                                        tooltip={t("Link to 1Password")}
                                       >
                                         <KeyRound className="h-3.5 w-3.5" />
                                       </Button>
@@ -2128,7 +2169,9 @@ export function ProvidersSection() {
                                 {fieldConfig.key === "baseUrl" &&
                                   config?.[provider]?.baseUrlSource === "env" &&
                                   config?.[provider]?.baseUrlResolved && (
-                                    <div className="text-muted mt-1 text-xs">Set by env vars.</div>
+                                    <div className="text-muted mt-1 text-xs">
+                                      {t("Set by env vars.")}
+                                    </div>
                                   )}
                                 {opPickerProvider === provider && fieldConfig.key === "apiKey" && (
                                   <OnePasswordPicker
@@ -2170,21 +2213,25 @@ export function ProvidersSection() {
                         <>
                           <div className="border-border-light border-t pt-3">
                             <div className="mb-1 flex items-center gap-1">
-                              <label className="text-muted block text-xs">Prompt cache TTL</label>
+                              <label className="text-muted block text-xs">
+                                {t("Prompt cache TTL")}
+                              </label>
                               <TooltipProvider>
                                 <Tooltip>
                                   <TooltipTrigger asChild>
-                                    <HelpIndicator aria-label="Anthropic prompt cache TTL help">
+                                    <HelpIndicator
+                                      aria-label={t("Anthropic prompt cache TTL help")}
+                                    >
                                       ?
                                     </HelpIndicator>
                                   </TooltipTrigger>
                                   <TooltipContent>
                                     <div className="max-w-[280px]">
-                                      <div className="font-semibold">Prompt cache TTL</div>
+                                      <div className="font-semibold">{t("Prompt cache TTL")}</div>
                                       <div className="mt-1">
-                                        Default is <span className="font-semibold">5m</span>. Use{" "}
-                                        <span className="font-semibold">1h</span> for longer
-                                        workflows at a higher cache-write cost.
+                                        {t("Default is")} <span className="font-semibold">5m</span>.{" "}
+                                        {t("Use")} <span className="font-semibold">1h</span>{" "}
+                                        {t("for longer workflows at a higher cache-write cost.")}
                                       </div>
                                     </div>
                                   </TooltipContent>
@@ -2216,30 +2263,33 @@ export function ProvidersSection() {
                                 <SelectValue />
                               </SelectTrigger>
                               <SelectContent>
-                                <SelectItem value="default">Default (5m)</SelectItem>
-                                <SelectItem value="1h">1 hour</SelectItem>
+                                <SelectItem value="default">{t("Default (5m)")}</SelectItem>
+                                <SelectItem value="1h">{t("1 hour")}</SelectItem>
                               </SelectContent>
                             </Select>
                           </div>
 
                           <div className="border-border-light border-t pt-3">
                             <div className="mb-1 flex items-center gap-1">
-                              <label className="text-muted block text-xs">Beta features</label>
+                              <label className="text-muted block text-xs">
+                                {t("Beta features")}
+                              </label>
                               <TooltipProvider>
                                 <Tooltip>
                                   <TooltipTrigger asChild>
-                                    <HelpIndicator aria-label="Anthropic beta features help">
+                                    <HelpIndicator aria-label={t("Anthropic beta features help")}>
                                       ?
                                     </HelpIndicator>
                                   </TooltipTrigger>
                                   <TooltipContent>
                                     <div className="max-w-[260px]">
-                                      <div className="font-semibold">Anthropic beta features</div>
+                                      <div className="font-semibold">
+                                        {t("Anthropic beta features")}
+                                      </div>
                                       <div className="mt-1">
-                                        Controls Anthropic beta features such as the older Sonnet 1M
-                                        context beta and prompt caching. Disable for zero data
-                                        retention (ZDR) environments where beta features are not
-                                        eligible.
+                                        {t(
+                                          "Controls Anthropic beta features such as the older Sonnet 1M context beta and prompt caching. Disable for zero data retention (ZDR) environments where beta features are not eligible."
+                                        )}
                                       </div>
                                     </div>
                                   </TooltipContent>
@@ -2267,8 +2317,8 @@ export function ProvidersSection() {
                                 <SelectValue />
                               </SelectTrigger>
                               <SelectContent>
-                                <SelectItem value="enabled">enabled</SelectItem>
-                                <SelectItem value="disabled">disabled</SelectItem>
+                                <SelectItem value="enabled">{t("enabled")}</SelectItem>
+                                <SelectItem value="disabled">{t("disabled")}</SelectItem>
                               </SelectContent>
                             </Select>
                           </div>
@@ -2287,13 +2337,15 @@ export function ProvidersSection() {
                                   ChatGPT (Codex) OAuth
                                 </label>
                                 <span className="text-muted text-xs">
-                                  {codexOauthStatus === "starting"
-                                    ? "Starting..."
-                                    : codexOauthStatus === "waiting"
-                                      ? "Waiting for login..."
-                                      : codexOauthIsConnected
-                                        ? "Connected"
-                                        : "Not connected"}
+                                  {t(
+                                    codexOauthStatus === "starting"
+                                      ? "Starting..."
+                                      : codexOauthStatus === "waiting"
+                                        ? "Waiting for login..."
+                                        : codexOauthIsConnected
+                                          ? "Connected"
+                                          : "Not connected"
+                                  )}
                                 </span>
                               </div>
 
@@ -2306,7 +2358,7 @@ export function ProvidersSection() {
                                     }}
                                     disabled={!api || codexOauthLoginInProgress}
                                   >
-                                    Connect (Browser)
+                                    {t("Connect (Browser)")}
                                   </Button>
                                 )}
                                 <Button
@@ -2317,7 +2369,7 @@ export function ProvidersSection() {
                                   }}
                                   disabled={!api || codexOauthLoginInProgress}
                                 >
-                                  Connect (Device)
+                                  {t("Connect (Device)")}
                                 </Button>
 
                                 {codexOauthStatus === "waiting" &&
@@ -2325,20 +2377,20 @@ export function ProvidersSection() {
                                   codexOauthAuthorizeUrl && (
                                     <Button
                                       size="sm"
-                                      aria-label="Copy and open OpenAI authorization page"
+                                      aria-label={t("Copy and open OpenAI authorization page")}
                                       onClick={() => {
                                         void navigator.clipboard.writeText(codexOauthAuthorizeUrl);
                                         window.open(codexOauthAuthorizeUrl, "_blank", "noopener");
                                       }}
                                       className="h-8 px-3 text-xs"
                                     >
-                                      Copy & Open OpenAI
+                                      {t("Copy & Open OpenAI")}
                                     </Button>
                                   )}
 
                                 {codexOauthLoginInProgress && (
                                   <Button variant="secondary" size="sm" onClick={cancelCodexOauth}>
-                                    Cancel
+                                    {t("Cancel")}
                                   </Button>
                                 )}
 
@@ -2351,7 +2403,7 @@ export function ProvidersSection() {
                                     }}
                                     disabled={!api || codexOauthLoginInProgress}
                                   >
-                                    Disconnect
+                                    {t("Disconnect")}
                                   </Button>
                                 )}
                               </div>
@@ -2359,7 +2411,7 @@ export function ProvidersSection() {
                               {codexOauthDeviceFlow && (
                                 <div className="bg-background-tertiary space-y-2 rounded-md p-3">
                                   <p className="text-muted text-xs">
-                                    Enter this code on the OpenAI verification page:
+                                    {t("Enter this code on the OpenAI verification page:")}
                                   </p>
                                   <div className="flex items-center gap-2">
                                     <code className="text-foreground text-lg font-bold tracking-widest">
@@ -2367,7 +2419,7 @@ export function ProvidersSection() {
                                     </code>
                                     <Button
                                       size="sm"
-                                      aria-label="Copy and open OpenAI verification page"
+                                      aria-label={t("Copy and open OpenAI verification page")}
                                       onClick={() => {
                                         void navigator.clipboard.writeText(
                                           codexOauthDeviceFlow.userCode
@@ -2380,12 +2432,12 @@ export function ProvidersSection() {
                                       }}
                                       className="h-8 px-3 text-xs"
                                     >
-                                      Copy & Open OpenAI
+                                      {t("Copy & Open OpenAI")}
                                     </Button>
                                   </div>
                                   <p className="text-muted inline-flex items-center gap-2 text-xs">
                                     <Loader2 aria-hidden className="h-3.5 w-3.5 animate-spin" />
-                                    Waiting for authorization...
+                                    {t("Waiting for authorization...")}
                                   </p>
                                 </div>
                               )}
@@ -2393,22 +2445,24 @@ export function ProvidersSection() {
                               {codexOauthStatus === "waiting" && !codexOauthDeviceFlow && (
                                 <p className="text-muted inline-flex items-center gap-2 text-xs">
                                   <Loader2 aria-hidden className="h-3.5 w-3.5 animate-spin" />
-                                  Waiting for authorization...
+                                  {t("Waiting for authorization...")}
                                 </p>
                               )}
 
                               {codexOauthStatus === "error" && codexOauthError && (
-                                <p className="text-destructive text-xs">{codexOauthError}</p>
+                                <p className="text-destructive text-xs">{t(codexOauthError)}</p>
                               )}
 
                               <div className="border-border-light space-y-2 border-t pt-3">
                                 <div>
                                   <label className="text-muted block text-xs">
-                                    Default auth (when both are set)
+                                    {t("Default auth (when both are set)")}
                                   </label>
                                   <p className="text-muted text-xs">
-                                    Applies to models that support both ChatGPT OAuth and API keys
-                                    (e.g. <code className="text-accent">gpt-5.5</code>).
+                                    {t(
+                                      "Applies to models that support both ChatGPT OAuth and API keys (e.g."
+                                    )}{" "}
+                                    <code className="text-accent">gpt-5.5</code>).
                                   </p>
                                 </div>
 
@@ -2437,37 +2491,41 @@ export function ProvidersSection() {
                                     size="sm"
                                     className="h-7 px-3 text-[13px]"
                                   >
-                                    Use ChatGPT OAuth by default
+                                    {t("Use ChatGPT OAuth by default")}
                                   </ToggleGroupItem>
                                   <ToggleGroupItem
                                     value="apiKey"
                                     size="sm"
                                     className="h-7 px-3 text-[13px]"
                                   >
-                                    Use OpenAI API key by default
+                                    {t("Use OpenAI API key by default")}
                                   </ToggleGroupItem>
                                 </ToggleGroup>
 
                                 <p className="text-muted text-xs">
-                                  ChatGPT OAuth uses subscription billing (costs included). API key
-                                  uses OpenAI platform billing.
+                                  {t(
+                                    "ChatGPT OAuth uses subscription billing (costs included). API key uses OpenAI platform billing."
+                                  )}
                                 </p>
 
                                 {!codexOauthDefaultAuthIsEditable && (
                                   <p className="text-muted text-xs">
-                                    Connect ChatGPT OAuth and set an OpenAI API key to change this
-                                    setting.
+                                    {t(
+                                      "Connect ChatGPT OAuth and set an OpenAI API key to change this setting."
+                                    )}
                                   </p>
                                 )}
                               </div>
 
                               <div className="border-border-light border-t pt-3">
                                 <div className="mb-1 flex items-center gap-1">
-                                  <label className="text-muted block text-xs">Service tier</label>
+                                  <label className="text-muted block text-xs">
+                                    {t("Service tier")}
+                                  </label>
                                   <TooltipProvider>
                                     <Tooltip>
                                       <TooltipTrigger asChild>
-                                        <HelpIndicator aria-label="OpenAI service tier help">
+                                        <HelpIndicator aria-label={t("OpenAI service tier help")}>
                                           ?
                                         </HelpIndicator>
                                       </TooltipTrigger>
@@ -2476,33 +2534,33 @@ export function ProvidersSection() {
                                           {openaiServiceTierMode === "codexOauth" ? (
                                             <>
                                               <div className="font-semibold">
-                                                Codex OAuth service tier
+                                                {t("Codex OAuth service tier")}
                                               </div>
                                               <div className="mt-1">
-                                                <span className="font-semibold">Normal</span>: use
-                                                the subscription default.
+                                                <span className="font-semibold">{t("Normal")}</span>
+                                                : {t("use the subscription default.")}
                                               </div>
                                               <div>
-                                                <span className="font-semibold">Fast</span>: send{" "}
-                                                <code>service_tier=priority</code>.
+                                                <span className="font-semibold">{t("Fast")}</span>:{" "}
+                                                {t("send")} <code>service_tier=priority</code>.
                                               </div>
                                             </>
                                           ) : (
                                             <>
                                               <div className="font-semibold">
-                                                OpenAI API service tier
+                                                {t("OpenAI API service tier")}
                                               </div>
                                               <div className="mt-1">
-                                                <span className="font-semibold">Auto</span>: omit{" "}
-                                                <code>service_tier</code>.
+                                                <span className="font-semibold">{t("Auto")}</span>:{" "}
+                                                {t("omit")} <code>service_tier</code>.
                                               </div>
                                               <div>
-                                                <span className="font-semibold">Fast</span>: send{" "}
-                                                <code>service_tier=priority</code>.
+                                                <span className="font-semibold">{t("Fast")}</span>:{" "}
+                                                {t("send")} <code>service_tier=priority</code>.
                                               </div>
                                               <div>
-                                                <span className="font-semibold">Slow</span>: send{" "}
-                                                <code>service_tier=flex</code>.
+                                                <span className="font-semibold">{t("Slow")}</span>:{" "}
+                                                {t("send")} <code>service_tier=flex</code>.
                                               </div>
                                             </>
                                           )}
@@ -2550,7 +2608,7 @@ export function ProvidersSection() {
                                   <SelectContent>
                                     {openaiServiceTierOptions.map((option) => (
                                       <SelectItem key={option.value} value={option.value}>
-                                        {option.label}
+                                        {t(option.label)}
                                       </SelectItem>
                                     ))}
                                   </SelectContent>
@@ -2559,25 +2617,32 @@ export function ProvidersSection() {
 
                               <div className="border-border-light border-t pt-3">
                                 <div className="mb-1 flex items-center gap-1">
-                                  <label className="text-muted block text-xs">Wire format</label>
+                                  <label className="text-muted block text-xs">
+                                    {t("Wire format")}
+                                  </label>
                                   <TooltipProvider>
                                     <Tooltip>
                                       <TooltipTrigger asChild>
-                                        <HelpIndicator aria-label="OpenAI wire format help">
+                                        <HelpIndicator aria-label={t("OpenAI wire format help")}>
                                           ?
                                         </HelpIndicator>
                                       </TooltipTrigger>
                                       <TooltipContent>
                                         <div className="max-w-[260px]">
-                                          <div className="font-semibold">OpenAI wire format</div>
+                                          <div className="font-semibold">
+                                            {t("OpenAI wire format")}
+                                          </div>
                                           <div className="mt-1">
-                                            <span className="font-semibold">responses</span>: modern
-                                            API with persistence and built-in tools (default).
+                                            <span className="font-semibold">responses</span>:{" "}
+                                            {t(
+                                              "modern API with persistence and built-in tools (default)."
+                                            )}
                                           </div>
                                           <div>
-                                            <span className="font-semibold">chat completions</span>:
-                                            legacy /chat/completions endpoint. Use if your provider
-                                            doesn&apos;t support the Responses API (e.g. Azure Gov).
+                                            <span className="font-semibold">chat completions</span>:{" "}
+                                            {t(
+                                              "legacy /chat/completions endpoint. Use if your provider doesn't support the Responses API (e.g. Azure Gov)."
+                                            )}
                                           </div>
                                         </div>
                                       </TooltipContent>
@@ -2614,12 +2679,14 @@ export function ProvidersSection() {
                                   <div className="flex items-center justify-between gap-3">
                                     <div>
                                       <label className="text-foreground block text-xs font-medium">
-                                        WebSocket transport
+                                        {t("WebSocket transport")}
                                       </label>
                                       <span className="text-muted text-xs">
-                                        {openaiServiceTierMode === "codexOauth"
-                                          ? "Uses Codex Responses WebSocket with automatic HTTP fallback. Enabled by default."
-                                          : "Experimental: uses OpenAI's Responses WebSocket transport for streaming Responses API requests. Unsupported endpoints may fail."}
+                                        {t(
+                                          openaiServiceTierMode === "codexOauth"
+                                            ? "Uses Codex Responses WebSocket with automatic HTTP fallback. Enabled by default."
+                                            : "Experimental: uses OpenAI's Responses WebSocket transport for streaming Responses API requests. Unsupported endpoints may fail."
+                                        )}
                                       </span>
                                     </div>
                                     <Switch
@@ -2648,7 +2715,7 @@ export function ProvidersSection() {
                                               : "",
                                         });
                                       }}
-                                      aria-label="WebSocket transport"
+                                      aria-label={t("WebSocket transport")}
                                     />
                                   </div>
                                 </div>
@@ -2657,28 +2724,33 @@ export function ProvidersSection() {
                               <div className="border-border-light border-t pt-3">
                                 <div className="mb-1 flex items-center gap-1">
                                   <label className="text-muted block text-xs">
-                                    Response storage
+                                    {t("Response storage")}
                                   </label>
                                   <TooltipProvider>
                                     <Tooltip>
                                       <TooltipTrigger asChild>
-                                        <HelpIndicator aria-label="OpenAI response storage help">
+                                        <HelpIndicator
+                                          aria-label={t("OpenAI response storage help")}
+                                        >
                                           ?
                                         </HelpIndicator>
                                       </TooltipTrigger>
                                       <TooltipContent>
                                         <div className="max-w-[260px]">
                                           <div className="font-semibold">
-                                            OpenAI response storage
+                                            {t("OpenAI response storage")}
                                           </div>
                                           <div className="mt-1">
-                                            <span className="font-semibold">enabled</span>: OpenAI
-                                            stores responses for retrieval and context (default).
+                                            <span className="font-semibold">{t("enabled")}</span>:{" "}
+                                            {t(
+                                              "OpenAI stores responses for retrieval and context (default)."
+                                            )}
                                           </div>
                                           <div>
-                                            <span className="font-semibold">disabled</span>:
-                                            responses are not stored. Required for zero data
-                                            retention (ZDR) endpoints.
+                                            <span className="font-semibold">{t("disabled")}</span>:{" "}
+                                            {t(
+                                              "responses are not stored. Required for zero data retention (ZDR) endpoints."
+                                            )}
                                           </div>
                                         </div>
                                       </TooltipContent>
@@ -2704,8 +2776,8 @@ export function ProvidersSection() {
                                     <SelectValue />
                                   </SelectTrigger>
                                   <SelectContent>
-                                    <SelectItem value="enabled">enabled</SelectItem>
-                                    <SelectItem value="disabled">disabled</SelectItem>
+                                    <SelectItem value="enabled">{t("enabled")}</SelectItem>
+                                    <SelectItem value="disabled">{t("disabled")}</SelectItem>
                                   </SelectContent>
                                 </Select>
                               </div>
@@ -2718,10 +2790,10 @@ export function ProvidersSection() {
                           <div className="flex items-center justify-between gap-3">
                             <div>
                               <label className="text-foreground block text-xs font-medium">
-                                Remove custom provider
+                                {t("Remove custom provider")}
                               </label>
                               <span className="text-muted text-xs">
-                                Delete this provider from saved settings.
+                                {t("Delete this provider from saved settings.")}
                               </span>
                             </div>
                             <Button
@@ -2732,12 +2804,12 @@ export function ProvidersSection() {
                               }}
                               disabled={!api || customProviderRemoving === provider}
                             >
-                              {customProviderRemoving === provider ? "Removing..." : "Remove"}
+                              {t(customProviderRemoving === provider ? "Removing..." : "Remove")}
                             </Button>
                           </div>
                           {customProviderRemoveErrors[provider] && (
                             <p className="text-destructive text-xs">
-                              {customProviderRemoveErrors[provider]}
+                              {t(customProviderRemoveErrors[provider])}
                             </p>
                           )}
                         </div>
@@ -2752,10 +2824,12 @@ export function ProvidersSection() {
                 <div className="flex items-center justify-between gap-3">
                   <div>
                     <div className="text-foreground text-xs font-medium">
-                      API-compatible providers
+                      {t("API-compatible providers")}
                     </div>
                     <div className="text-muted text-xs">
-                      Add providers that expose OpenAI-compatible or Anthropic-compatible APIs.
+                      {t(
+                        "Add providers that expose OpenAI-compatible or Anthropic-compatible APIs."
+                      )}
                     </div>
                   </div>
                   <Button
@@ -2779,14 +2853,14 @@ export function ProvidersSection() {
                       });
                     }}
                   >
-                    {customProviderFormOpen ? "Cancel" : "Add provider"}
+                    {t(customProviderFormOpen ? "Cancel" : "Add provider")}
                   </Button>
                 </div>
 
                 {customProviderFormOpen && (
                   <form className="space-y-3" onSubmit={handleCustomProviderFormSubmit}>
                     <div className="block space-y-1">
-                      <span className="text-muted text-xs">Provider API format</span>
+                      <span className="text-muted text-xs">{t("Provider API format")}</span>
                       <Select
                         value={customProviderType}
                         onValueChange={(next) => {
@@ -2795,13 +2869,13 @@ export function ProvidersSection() {
                           }
                         }}
                       >
-                        <SelectTrigger aria-label="Provider API format" className="w-full">
+                        <SelectTrigger aria-label={t("Provider API format")} className="w-full">
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
                           {CUSTOM_PROVIDER_TYPE_OPTIONS.map((option) => (
                             <SelectItem key={option.value} value={option.value}>
-                              {option.label}
+                              {t(option.label)}
                             </SelectItem>
                           ))}
                         </SelectContent>
@@ -2809,7 +2883,7 @@ export function ProvidersSection() {
                     </div>
 
                     <label className="block space-y-1">
-                      <span className="text-muted text-xs">Provider ID</span>
+                      <span className="text-muted text-xs">{t("Provider ID")}</span>
                       <input
                         value={customProviderId}
                         onChange={(event) => {
@@ -2824,13 +2898,13 @@ export function ProvidersSection() {
                       />
                       {showCustomProviderIdError && (
                         <span className="text-destructive block text-xs">
-                          {customProviderIdValidation.reason}
+                          {localizeCustomProviderIdError(customProviderIdValidation.reason, t)}
                         </span>
                       )}
                     </label>
 
                     <label className="block space-y-1">
-                      <span className="text-muted text-xs">Display name</span>
+                      <span className="text-muted text-xs">{t("Display name")}</span>
                       <input
                         value={customProviderDisplayName}
                         onChange={(event) => {
@@ -2845,13 +2919,13 @@ export function ProvidersSection() {
                       />
                       {showCustomProviderDisplayNameError && (
                         <span className="text-destructive block text-xs">
-                          {customProviderDisplayNameError}
+                          {t(customProviderDisplayNameError)}
                         </span>
                       )}
                     </label>
 
                     <label className="block space-y-1">
-                      <span className="text-muted text-xs">Base URL</span>
+                      <span className="text-muted text-xs">{t("Base URL")}</span>
                       <input
                         value={customProviderBaseUrl}
                         onChange={(event) => {
@@ -2866,24 +2940,24 @@ export function ProvidersSection() {
                       />
                       {showCustomProviderBaseUrlError && (
                         <span className="text-destructive block text-xs">
-                          {customProviderBaseUrlError}
+                          {t(customProviderBaseUrlError)}
                         </span>
                       )}
                     </label>
 
                     <label className="block space-y-1">
-                      <span className="text-muted text-xs">API key (optional)</span>
+                      <span className="text-muted text-xs">{t("API key (optional)")}</span>
                       <input
                         type="password"
                         value={customProviderApiKey}
                         onChange={(event) => setCustomProviderApiKey(event.target.value)}
-                        placeholder="Enter API key"
+                        placeholder={t("Enter API key")}
                         className="bg-modal-bg border-border-medium focus:border-accent w-full rounded border px-2 py-1.5 font-mono text-xs focus:outline-none"
                       />
                     </label>
 
                     <label className="block space-y-1">
-                      <span className="text-muted text-xs">API key file (optional)</span>
+                      <span className="text-muted text-xs">{t("API key file (optional)")}</span>
                       <input
                         value={customProviderApiKeyFile}
                         onChange={(event) => setCustomProviderApiKeyFile(event.target.value)}
@@ -2893,7 +2967,7 @@ export function ProvidersSection() {
                     </label>
 
                     <label className="block space-y-1">
-                      <span className="text-muted text-xs">Initial model ID (optional)</span>
+                      <span className="text-muted text-xs">{t("Initial model ID (optional)")}</span>
                       <input
                         value={customProviderInitialModelId}
                         onChange={(event) => setCustomProviderInitialModelId(event.target.value)}
@@ -2903,12 +2977,12 @@ export function ProvidersSection() {
                     </label>
 
                     {customProviderSubmitError && (
-                      <p className="text-destructive text-xs">{customProviderSubmitError}</p>
+                      <p className="text-destructive text-xs">{t(customProviderSubmitError)}</p>
                     )}
 
                     <div className="flex justify-end">
                       <Button type="submit" size="sm" disabled={!api || customProviderSubmitting}>
-                        {customProviderSubmitting ? "Adding..." : "Add custom provider"}
+                        {t(customProviderSubmitting ? "Adding..." : "Add custom provider")}
                       </Button>
                     </div>
                   </form>
@@ -2921,8 +2995,9 @@ export function ProvidersSection() {
 
       {config && !hasAnyConfiguredProvider && (
         <div className="border-warning/40 bg-warning/10 text-warning rounded-md border px-3 py-2 text-xs">
-          No providers are currently enabled. You won&apos;t be able to send messages until you
-          enable a provider.
+          {t(
+            "No providers are currently enabled. You won't be able to send messages until you enable a provider."
+          )}
         </div>
       )}
     </div>

@@ -14,6 +14,7 @@ import { matchesKeybind, formatKeybind, KEYBINDS } from "@/browser/utils/ui/keyb
 import { stopKeyboardPropagation } from "@/browser/utils/events";
 import { cn } from "@/common/lib/utils";
 import type { Review } from "@/common/types/review";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -63,6 +64,7 @@ export const InlineReviewNote: React.FC<InlineReviewNoteProps> = ({
   className,
   editRequestId,
 }) => {
+  const { t } = useLanguage();
   const [isEditing, setIsEditing] = useState(false);
   const [editValue, setEditValue] = useState(review.data.userNote);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -212,13 +214,13 @@ export const InlineReviewNote: React.FC<InlineReviewNoteProps> = ({
                     <button
                       type="button"
                       onClick={handleStartEdit}
-                      aria-label="Edit comment"
+                      aria-label={t("Edit comment")}
                       className="text-muted hover:text-secondary flex items-center justify-center rounded p-0.5 transition-colors"
                     >
                       <Pencil className="size-3" />
                     </button>
                   </TooltipTrigger>
-                  <TooltipContent>Edit comment</TooltipContent>
+                  <TooltipContent>{t("Edit comment")}</TooltipContent>
                 </Tooltip>
               )}
               {canComplete && (
@@ -227,13 +229,13 @@ export const InlineReviewNote: React.FC<InlineReviewNoteProps> = ({
                     <button
                       type="button"
                       onClick={() => actions?.onComplete?.(review.id)}
-                      aria-label="Mark as done"
+                      aria-label={t("Mark as done")}
                       className="text-muted hover:text-success flex items-center justify-center rounded p-0.5 transition-colors"
                     >
                       <Check className="size-3" />
                     </button>
                   </TooltipTrigger>
-                  <TooltipContent>Mark as done</TooltipContent>
+                  <TooltipContent>{t("Mark as done")}</TooltipContent>
                 </Tooltip>
               )}
               {canUncheck && (
@@ -242,13 +244,13 @@ export const InlineReviewNote: React.FC<InlineReviewNoteProps> = ({
                     <button
                       type="button"
                       onClick={() => actions?.onUncheck?.(review.id)}
-                      aria-label="Uncheck"
+                      aria-label={t("Uncheck")}
                       className="text-muted hover:text-warning flex items-center justify-center rounded p-0.5 transition-colors"
                     >
                       <Check className="size-3" />
                     </button>
                   </TooltipTrigger>
-                  <TooltipContent>Uncheck (back to pending)</TooltipContent>
+                  <TooltipContent>{t("Uncheck (back to pending)")}</TooltipContent>
                 </Tooltip>
               )}
               {canAttach && (
@@ -257,13 +259,13 @@ export const InlineReviewNote: React.FC<InlineReviewNoteProps> = ({
                     <button
                       type="button"
                       onClick={() => actions?.onAttach?.(review.id)}
-                      aria-label="Attach to message"
+                      aria-label={t("Attach to message")}
                       className="text-muted hover:text-review-accent flex items-center justify-center rounded p-0.5 transition-colors"
                     >
                       <MessageSquare className="size-3" />
                     </button>
                   </TooltipTrigger>
-                  <TooltipContent>Attach to message</TooltipContent>
+                  <TooltipContent>{t("Attach to message")}</TooltipContent>
                 </Tooltip>
               )}
               {canDetach && (
@@ -272,13 +274,13 @@ export const InlineReviewNote: React.FC<InlineReviewNoteProps> = ({
                     <button
                       type="button"
                       onClick={() => actions?.onDetach?.(review.id)}
-                      aria-label="Detach from message"
+                      aria-label={t("Detach from message")}
                       className="text-muted hover:text-secondary flex items-center justify-center rounded p-0.5 transition-colors"
                     >
                       <Unlink className="size-3" />
                     </button>
                   </TooltipTrigger>
-                  <TooltipContent>Detach from message</TooltipContent>
+                  <TooltipContent>{t("Detach from message")}</TooltipContent>
                 </Tooltip>
               )}
               {canDelete && (
@@ -287,13 +289,13 @@ export const InlineReviewNote: React.FC<InlineReviewNoteProps> = ({
                     <button
                       type="button"
                       onClick={() => actions?.onDelete?.(review.id)}
-                      aria-label="Delete review"
+                      aria-label={t("Delete review")}
                       className="text-muted hover:text-error flex items-center justify-center rounded p-0.5 transition-colors"
                     >
                       <Trash2 className="size-3" />
                     </button>
                   </TooltipTrigger>
-                  <TooltipContent>Delete review</TooltipContent>
+                  <TooltipContent>{t("Delete review")}</TooltipContent>
                 </Tooltip>
               )}
             </div>
@@ -312,7 +314,7 @@ export const InlineReviewNote: React.FC<InlineReviewNoteProps> = ({
                   onKeyDown={handleKeyDown}
                   className="text-primary w-full resize-none rounded border border-[var(--color-review-accent)]/40 bg-[var(--color-review-accent)]/10 px-1.5 py-1 text-[11px] focus:border-[var(--color-review-accent)]/60 focus:outline-none"
                   rows={2}
-                  placeholder="Your comment..."
+                  placeholder={t("Your comment...")}
                 />
                 <div className="flex items-center justify-end gap-1">
                   <span className="text-muted text-[9px]">
@@ -324,7 +326,7 @@ export const InlineReviewNote: React.FC<InlineReviewNoteProps> = ({
                     className="h-5 px-1.5 text-[10px]"
                     onClick={handleCancelEdit}
                   >
-                    Cancel
+                    {t("Cancel")}
                   </Button>
                   <Button
                     variant="secondary"
@@ -332,7 +334,7 @@ export const InlineReviewNote: React.FC<InlineReviewNoteProps> = ({
                     className="h-5 px-1.5 text-[10px]"
                     onClick={handleSaveEdit}
                   >
-                    Save
+                    {t("Save")}
                   </Button>
                 </div>
               </div>

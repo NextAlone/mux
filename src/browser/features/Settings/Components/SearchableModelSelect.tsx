@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { Check, ChevronDown } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/browser/components/Popover/Popover";
 import { ProviderIcon } from "@/browser/components/ProviderIcon/ProviderIcon";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 import { stopKeyboardPropagation } from "@/browser/utils/events";
 import { cn } from "@/common/lib/utils";
 import { getModelName, getModelProvider } from "@/common/utils/ai/models";
@@ -15,6 +16,7 @@ export function SearchableModelSelect(props: {
   emptyOption?: { value: string; label: string };
   compact?: boolean;
 }) {
+  const { t } = useLanguage();
   const [isOpen, setIsOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [highlightedIndex, setHighlightedIndex] = useState(0);
@@ -23,8 +25,8 @@ export function SearchableModelSelect(props: {
 
   const displayValue =
     props.emptyOption && !props.value
-      ? props.emptyOption.label
-      : (getModelName(props.value) ?? props.placeholder ?? "Select model");
+      ? t(props.emptyOption.label)
+      : (getModelName(props.value) ?? t(props.placeholder ?? "Select model"));
   const selectedProvider = props.value ? getModelProvider(props.value) : "";
 
   // Filter models based on search
@@ -40,7 +42,7 @@ export function SearchableModelSelect(props: {
   if (props.emptyOption) {
     items.push({
       value: props.emptyOption.value,
-      label: props.emptyOption.label,
+      label: t(props.emptyOption.label),
       isMuted: true,
     });
   }
@@ -144,7 +146,7 @@ export function SearchableModelSelect(props: {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Search models..."
+            placeholder={t("Search models...")}
             className="text-foreground placeholder:text-muted w-full bg-transparent text-xs outline-none"
           />
         </div>
@@ -152,7 +154,7 @@ export function SearchableModelSelect(props: {
         {/* Scrollable list */}
         <div ref={listRef} className="max-h-[280px] overflow-y-auto p-1">
           {items.length === 0 ? (
-            <div className="text-muted py-2 text-center text-[10px]">No matching models</div>
+            <div className="text-muted py-2 text-center text-[10px]">{t("No matching models")}</div>
           ) : (
             items.map((item, index) => (
               <button

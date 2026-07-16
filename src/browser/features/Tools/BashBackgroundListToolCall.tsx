@@ -18,6 +18,7 @@ import {
 import { useToolExpansion, getStatusDisplay, type ToolStatus } from "./Shared/toolUtils";
 import { formatDuration } from "@/common/utils/formatDuration";
 import { cn } from "@/common/lib/utils";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 interface BashBackgroundListToolCallProps {
   args: BashBackgroundListArgs;
@@ -42,6 +43,7 @@ export const BashBackgroundListToolCall: React.FC<BashBackgroundListToolCallProp
   result,
   status = "pending",
 }) => {
+  const { t } = useLanguage();
   const { expanded, toggleExpanded } = useToolExpansion(false);
 
   const processes = result?.success ? result.processes : [];
@@ -104,7 +106,7 @@ export const BashBackgroundListToolCall: React.FC<BashBackgroundListToolCallProp
           {status === "executing" && !result && (
             <DetailSection>
               <div className="text-[11px]">
-                Listing processes
+                {t("Listing processes")}
                 <LoadingDots />
               </div>
             </DetailSection>

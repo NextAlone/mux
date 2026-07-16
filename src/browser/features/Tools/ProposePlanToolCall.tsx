@@ -77,6 +77,7 @@ import {
   X,
 } from "lucide-react";
 import { getErrorMessage } from "@/common/utils/errors";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 /**
  * Check if the result is a successful file-based propose_plan result.
@@ -153,6 +154,7 @@ interface ProposePlanToolCallProps {
 }
 
 export const ProposePlanToolCall: React.FC<ProposePlanToolCallProps> = (props) => {
+  const { t } = useLanguage();
   const {
     args,
     result,
@@ -834,11 +836,11 @@ export const ProposePlanToolCall: React.FC<ProposePlanToolCallProps> = (props) =
         <div className="text-plan-mode font-mono text-[13px] font-semibold">{planTitle}</div>
         {annotateMode && (
           <div className="bg-accent/10 text-accent rounded px-1.5 py-0.5 font-mono text-[10px] font-medium">
-            Annotating
+            {t("Annotating")}
           </div>
         )}
         {isEphemeralPreview && (
-          <div className="text-muted font-mono text-[10px] italic">preview only</div>
+          <div className="text-muted font-mono text-[10px] italic">{t("preview only")}</div>
         )}
       </ToolChrome>
 
@@ -848,9 +850,9 @@ export const ProposePlanToolCall: React.FC<ProposePlanToolCallProps> = (props) =
       {/* Completion guidance: only for completed tool calls without errors, not ephemeral previews */}
       {!isEphemeralPreview && status === "completed" && !errorMessage && (
         <ToolChrome className="plan-divider text-muted mt-3 border-t pt-3 text-[11px] leading-normal italic">
-          Respond with revisions or switch to the Exec agent (
-          <span className="font-primary not-italic">{formatKeybind(KEYBINDS.CYCLE_AGENT)}</span> to
-          cycle) and ask to implement.
+          {t("Respond with revisions or switch to the Exec agent (")}
+          <span className="font-primary not-italic">{formatKeybind(KEYBINDS.CYCLE_AGENT)}</span>
+          {t("to cycle) and ask to implement.")}
         </ToolChrome>
       )}
 

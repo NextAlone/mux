@@ -2,6 +2,7 @@ import { useState } from "react";
 import { ArrowDown, ArrowUp, Plus, X } from "lucide-react";
 
 import { Button } from "@/browser/components/Button/Button";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 import {
   Select,
   SelectContent,
@@ -26,6 +27,7 @@ const SELECT_TRIGGER_CLASS =
  * never trigger fallback.
  */
 export function ModelFallbacksEditor() {
+  const { t } = useLanguage();
   const { modelFallbacks, setFallbackChain } = useModelFallbacks();
   const { models } = useModelsFromSettings();
   // Draft source model for a chain being created (entries with empty chains
@@ -61,15 +63,15 @@ export function ModelFallbacksEditor() {
       <div key={source} className="border-border-medium space-y-2 rounded-md border px-3 py-2.5">
         <div className="flex items-center justify-between gap-2">
           <div className="min-w-0">
-            <span className="text-muted text-xs">If </span>
+            <span className="text-muted text-xs">{t("If")} </span>
             <span className="text-foreground font-mono text-xs">{source}</span>
-            <span className="text-muted text-xs"> refuses, try in order:</span>
+            <span className="text-muted text-xs"> {t("refuses, try in order:")}</span>
           </div>
           <Button
             type="button"
             variant="ghost"
             size="sm"
-            aria-label={`Remove fallback chain for ${source}`}
+            aria-label={t("Remove fallback chain for {model}").replace("{model}", source)}
             onClick={() => {
               setFallbackChain(source, []);
               setDraftSource(null);
@@ -77,7 +79,7 @@ export function ModelFallbacksEditor() {
             className="text-muted hover:text-error h-6 shrink-0 px-1.5 text-xs"
           >
             <X className="h-3.5 w-3.5" />
-            Remove chain
+            {t("Remove chain")}
           </Button>
         </div>
         <ol className="space-y-1">
@@ -91,7 +93,9 @@ export function ModelFallbacksEditor() {
                 type="button"
                 variant="ghost"
                 size="sm"
-                aria-label={`Move ${model} earlier in ${source} fallback chain`}
+                aria-label={t("Move {model} earlier in {source} fallback chain")
+                  .replace("{model}", model)
+                  .replace("{source}", source)}
                 disabled={index === 0}
                 onClick={() => moveModel(source, index, -1)}
                 className="h-6 w-6 shrink-0 p-0"
@@ -102,7 +106,9 @@ export function ModelFallbacksEditor() {
                 type="button"
                 variant="ghost"
                 size="sm"
-                aria-label={`Move ${model} later in ${source} fallback chain`}
+                aria-label={t("Move {model} later in {source} fallback chain")
+                  .replace("{model}", model)
+                  .replace("{source}", source)}
                 disabled={index === chain.length - 1}
                 onClick={() => moveModel(source, index, 1)}
                 className="h-6 w-6 shrink-0 p-0"
@@ -113,7 +119,9 @@ export function ModelFallbacksEditor() {
                 type="button"
                 variant="ghost"
                 size="sm"
-                aria-label={`Remove ${model} from ${source} fallback chain`}
+                aria-label={t("Remove {model} from {source} fallback chain")
+                  .replace("{model}", model)
+                  .replace("{source}", source)}
                 onClick={() =>
                   setFallbackChain(
                     source,
@@ -138,10 +146,10 @@ export function ModelFallbacksEditor() {
             }}
           >
             <SelectTrigger
-              aria-label={`Add fallback model for ${source}`}
+              aria-label={t("Add fallback model for {model}").replace("{model}", source)}
               className={SELECT_TRIGGER_CLASS}
             >
-              <SelectValue placeholder="Add fallback model…" />
+              <SelectValue placeholder={t("Add fallback model…")} />
             </SelectTrigger>
             <SelectContent>
               {addCandidates.map((model) => (
@@ -158,11 +166,13 @@ export function ModelFallbacksEditor() {
 
   return (
     <div className="space-y-3">
-      <div className="text-muted text-xs font-medium tracking-wide uppercase">Model Fallbacks</div>
+      <div className="text-muted text-xs font-medium tracking-wide uppercase">
+        {t("Model Fallbacks")}
+      </div>
       <p className="text-muted text-xs">
-        When a model refuses to respond, retry the turn — or continue from partial output — on the
-        next model in its fallback chain. Applies only to refusals — never to quota, auth, or
-        network errors. Up to {MODEL_FALLBACK_CHAIN_LIMIT} fallback models per chain.
+        {t(
+          "When a model refuses to respond, retry the turn — or continue from partial output — on the next model in its fallback chain. Applies only to refusals — never to quota, auth, or network errors. Up to {limit} fallback models per chain."
+        ).replace("{limit}", String(MODEL_FALLBACK_CHAIN_LIMIT))}
       </p>
 
       {entries.map(([source, entry]) => renderChainRow(source, entry.models))}
@@ -176,10 +186,10 @@ export function ModelFallbacksEditor() {
         <div className="flex items-center gap-2">
           <Select value="" onValueChange={(model) => setDraftSource(model)}>
             <SelectTrigger
-              aria-label="Add fallback chain for model"
+              aria-label={t("Add fallback chain for model")}
               className={SELECT_TRIGGER_CLASS}
             >
-              <SelectValue placeholder="Add fallback chain for model…" />
+              <SelectValue placeholder={t("Add fallback chain for model…")} />
             </SelectTrigger>
             <SelectContent>
               {sourceCandidates.map((model) => (

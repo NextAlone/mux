@@ -14,6 +14,7 @@ import {
   ToggleGroup,
   ToggleGroupItem,
 } from "@/browser/components/ToggleGroupPrimitive/ToggleGroupPrimitive";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 interface VersionRecord {
   buildTime?: unknown;
@@ -64,6 +65,7 @@ function parseVersionInfo(version: unknown): { gitDescribe: string; buildTime: s
 }
 
 export function AboutDialog() {
+  const { t } = useLanguage();
   const { isOpen, close } = useAboutDialog();
   const { api } = useAPI();
   const { theme } = useTheme();
@@ -196,7 +198,7 @@ export function AboutDialog() {
         aria-describedby={undefined}
         className="titlebar-no-drag space-y-4"
       >
-        <DialogTitle>About</DialogTitle>
+        <DialogTitle>{t("About")}</DialogTitle>
 
         <div className="border-border-medium bg-modal-bg flex justify-center rounded-md border py-6">
           <MuxLogo className="h-14 w-auto" aria-hidden="true" />
@@ -204,30 +206,30 @@ export function AboutDialog() {
 
         <div className="space-y-1 text-sm">
           <div className="flex items-center justify-between gap-4">
-            <span className="text-muted">Version</span>
+            <span className="text-muted">{t("Version")}</span>
             <span className="text-foreground font-mono">{gitDescribe}</span>
           </div>
           <div className="flex items-center justify-between gap-4">
-            <span className="text-muted">Built</span>
+            <span className="text-muted">{t("Built")}</span>
             <span className="text-foreground text-right text-xs">{buildTime}</span>
           </div>
         </div>
 
         <div className="border-border-medium space-y-3 border-t pt-3">
-          <div className="text-foreground text-sm font-medium">Updates</div>
+          <div className="text-foreground text-sm font-medium">{t("Updates")}</div>
 
           {!isDesktop ? (
             <div className="text-muted text-xs">
-              Desktop updates are available in the Electron app only.
+              {t("Desktop updates are available in the Electron app only.")}
             </div>
           ) : !canUseUpdateApi ? (
-            <div className="text-muted text-xs">Connecting to desktop update service…</div>
+            <div className="text-muted text-xs">{t("Connecting to desktop update service…")}</div>
           ) : (
             <>
               {channel !== null && (
                 <div className="space-y-2">
                   <div className="flex items-center gap-2">
-                    <span className="text-muted text-xs">Channel</span>
+                    <span className="text-muted text-xs">{t("Channel")}</span>
                     <ToggleGroup
                       type="single"
                       value={channel}
@@ -237,14 +239,14 @@ export function AboutDialog() {
                         }
                       }}
                       disabled={channelLoading}
-                      aria-label="Update channel"
+                      aria-label={t("Update channel")}
                       size="sm"
                     >
                       <ToggleGroupItem value="stable" size="sm">
-                        Stable
+                        {t("Stable")}
                       </ToggleGroupItem>
                       <ToggleGroupItem value="nightly" size="sm">
-                        Nightly
+                        {t("Nightly")}
                       </ToggleGroupItem>
                     </ToggleGroup>
                   </div>
@@ -263,17 +265,18 @@ export function AboutDialog() {
                 onClick={handleCheckForUpdates}
               >
                 {isChecking ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
-                Check for Updates
+                {t("Check for Updates")}
               </Button>
 
               {updateStatus.type === "checking" && (
-                <div className="text-muted text-xs">Checking for updates…</div>
+                <div className="text-muted text-xs">{t("Checking for updates…")}</div>
               )}
 
               {updateStatus.type === "available" && (
                 <div className="flex items-center justify-between gap-3">
                   <div className="text-foreground text-xs">
-                    Update available: <span className="font-mono">{updateStatus.info.version}</span>
+                    {t("Update available:")}
+                    <span className="font-mono">{updateStatus.info.version}</span>
                   </div>
                   <Button
                     size="sm"
@@ -285,21 +288,23 @@ export function AboutDialog() {
                     ) : (
                       <Download className="h-3.5 w-3.5" />
                     )}
-                    Download
+                    {t("Download")}
                   </Button>
                 </div>
               )}
 
               {updateStatus.type === "downloading" && (
                 <div className="text-muted text-xs">
-                  Downloading update: {updateStatus.percent}%
+                  {t("Downloading update:")}
+                  {updateStatus.percent}%
                 </div>
               )}
 
               {updateStatus.type === "downloaded" && (
                 <div className="flex items-center justify-between gap-3">
                   <div className="text-foreground text-xs">
-                    Ready to install: <span className="font-mono">{updateStatus.info.version}</span>
+                    {t("Ready to install:")}
+                    <span className="font-mono">{updateStatus.info.version}</span>
                   </div>
                   <Button size="sm" onClick={handleInstall} disabled={pendingAction === "install"}>
                     {pendingAction === "install" ? (
@@ -313,11 +318,13 @@ export function AboutDialog() {
               )}
 
               {updateStatus.type === "up-to-date" && (
-                <div className="text-muted text-xs">Mux is up to date.</div>
+                <div className="text-muted text-xs">{t("Mux is up to date.")}</div>
               )}
 
               {updateStatus.type === "idle" && (
-                <div className="text-muted text-xs">Run a manual check to look for updates.</div>
+                <div className="text-muted text-xs">
+                  {t("Run a manual check to look for updates.")}
+                </div>
               )}
 
               {updateStatus.type === "error" && (
@@ -341,7 +348,7 @@ export function AboutDialog() {
                         ) : (
                           <Download className="h-3.5 w-3.5" />
                         )}
-                        Retry download
+                        {t("Retry download")}
                       </Button>
                     )}
                     {updateStatus.phase === "install" && (
@@ -355,7 +362,7 @@ export function AboutDialog() {
                         ) : (
                           <RefreshCw className="h-3.5 w-3.5" />
                         )}
-                        Try install again
+                        {t("Try install again")}
                       </Button>
                     )}
                     <Button
@@ -379,7 +386,7 @@ export function AboutDialog() {
             rel="noopener noreferrer"
             className="titlebar-no-drag text-accent inline-block text-xs hover:underline"
           >
-            View all releases
+            {t("View all releases")}
           </a>
         </div>
       </DialogContent>

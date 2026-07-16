@@ -3,12 +3,14 @@ import { useSettings } from "@/browser/contexts/SettingsContext";
 import { Button } from "@/browser/components/Button/Button";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/browser/components/Tooltip/Tooltip";
 import { formatKeybind, KEYBINDS } from "@/browser/utils/ui/keybinds";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 interface SettingsButtonProps {
   onBeforeOpenSettings?: () => void;
 }
 
 export function SettingsButton(props: SettingsButtonProps) {
+  const { t } = useLanguage();
   const { isOpen, open, close } = useSettings();
 
   return (
@@ -29,7 +31,7 @@ export function SettingsButton(props: SettingsButtonProps) {
             open();
           }}
           className="border-border-light text-muted-foreground hover:border-border-medium/80 hover:bg-toggle-bg/70 h-5 w-5 border"
-          aria-label={isOpen ? "Close settings" : "Open settings"}
+          aria-label={isOpen ? t("Close settings") : t("Open settings")}
           data-testid="settings-button"
         >
           {isOpen ? (
@@ -40,7 +42,9 @@ export function SettingsButton(props: SettingsButtonProps) {
         </Button>
       </TooltipTrigger>
       <TooltipContent>
-        {isOpen ? "Close settings" : `Open settings (${formatKeybind(KEYBINDS.OPEN_SETTINGS)})`}
+        {isOpen
+          ? t("Close settings")
+          : `${t("Open settings")} (${formatKeybind(KEYBINDS.OPEN_SETTINGS)})`}
       </TooltipContent>
     </Tooltip>
   );

@@ -4,6 +4,7 @@ import { formatCompactNumber, formatUsd } from "@/browser/features/Analytics/ana
 import { HeaderButton } from "../Shared/ToolPrimitives";
 import { isNumericType } from "./chartHeuristics";
 import type { ChartType, ColumnMeta, DrillDownContext } from "./types";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 const INITIAL_ROW_LIMIT = 50;
 
@@ -64,12 +65,13 @@ function formatCellValue(column: ColumnMeta, value: unknown): string {
 }
 
 export function ResultTable(props: ResultTableProps): JSX.Element {
+  const { t } = useLanguage();
   const [showAllRows, setShowAllRows] = useState(false);
 
   if (props.columns.length === 0) {
     return (
       <div className="border-border-medium text-muted rounded border border-dashed px-2 py-3 text-[11px]">
-        Query returned no columns.
+        {t("Query returned no columns.")}
       </div>
     );
   }
@@ -77,7 +79,7 @@ export function ResultTable(props: ResultTableProps): JSX.Element {
   if (props.rows.length === 0) {
     return (
       <div className="border-border-medium text-muted rounded border border-dashed px-2 py-3 text-[11px]">
-        Query returned no rows.
+        {t("Query returned no rows.")}
       </div>
     );
   }
@@ -154,7 +156,9 @@ export function ResultTable(props: ResultTableProps): JSX.Element {
       {!showAllRows && props.rows.length > INITIAL_ROW_LIMIT && (
         <div className="mt-2">
           <HeaderButton type="button" onClick={() => setShowAllRows(true)}>
-            Show all {props.rows.length.toLocaleString()} rows
+            {t("Show all")}
+            {props.rows.length.toLocaleString()}
+            {t("rows")}
           </HeaderButton>
         </div>
       )}

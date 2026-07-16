@@ -10,6 +10,7 @@ import {
 import { Button } from "@/browser/components/Button/Button";
 import { stopKeyboardPropagation } from "@/browser/utils/events";
 import { isEditableElement, KEYBINDS, matchesKeybind } from "@/browser/utils/ui/keybinds";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 interface StartHereModalProps {
   isOpen: boolean;
@@ -18,6 +19,7 @@ interface StartHereModalProps {
 }
 
 export const StartHereModal: React.FC<StartHereModalProps> = ({ isOpen, onClose, onConfirm }) => {
+  const { t } = useLanguage();
   const [isExecuting, setIsExecuting] = useState(false);
 
   const handleCancel = useCallback(() => {
@@ -72,14 +74,16 @@ export const StartHereModal: React.FC<StartHereModalProps> = ({ isOpen, onClose,
     <Dialog open={isOpen} onOpenChange={handleOpenChange}>
       <DialogContent showCloseButton={false} onKeyDown={handleDialogKeyDown}>
         <DialogHeader>
-          <DialogTitle>Start Here</DialogTitle>
+          <DialogTitle>{t("Start Here")}</DialogTitle>
           <DialogDescription>
-            This will start a new context from this message and preserve earlier chat history.
+            {t(
+              "This will start a new context from this message and preserve earlier chat history."
+            )}
           </DialogDescription>
         </DialogHeader>
         <DialogFooter className="justify-center">
           <Button variant="secondary" onClick={handleCancel} disabled={isExecuting}>
-            Cancel
+            {t("Cancel")}
             <span
               aria-hidden="true"
               className="ml-2 inline-flex items-center rounded border border-current/25 px-1.5 py-0.5 font-mono text-[10px] leading-none opacity-60"
@@ -88,7 +92,7 @@ export const StartHereModal: React.FC<StartHereModalProps> = ({ isOpen, onClose,
             </span>
           </Button>
           <Button onClick={() => void handleConfirm()} disabled={isExecuting}>
-            {isExecuting ? "Starting..." : "OK"}
+            {isExecuting ? t("Starting...") : t("OK")}
             <span
               aria-hidden="true"
               className="ml-2 inline-flex items-center rounded border border-current/25 px-1.5 py-0.5 font-mono text-[10px] leading-none opacity-60"

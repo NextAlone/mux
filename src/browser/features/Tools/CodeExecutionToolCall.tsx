@@ -16,6 +16,7 @@ import { cn } from "@/common/lib/utils";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/browser/components/Tooltip/Tooltip";
 import { resolveCodeExecutionViewMode, type CodeExecutionViewMode } from "./codeExecutionViewMode";
 import { normalizeCodeModeExecResult } from "./codeModeResult";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 interface CodeExecutionToolCallProps {
   args: { code: string } | string;
@@ -72,6 +73,7 @@ export const CodeExecutionToolCall: React.FC<CodeExecutionToolCallProps> = ({
   nestedCalls,
   nestedTools,
 }) => {
+  const { t } = useLanguage();
   const isCodeMode = typeof args === "string";
   const code = isCodeMode ? args : args.code;
   const displayResult = isCodeMode
@@ -134,14 +136,14 @@ export const CodeExecutionToolCall: React.FC<CodeExecutionToolCallProps> = ({
       {/* Legend with title and view toggles */}
       <legend className="flex items-center gap-1.5 px-1.5">
         <span className="text-foreground text-xs font-medium">
-          {isCodeMode && title === "Code Execution" ? "Code Mode" : title}
+          {isCodeMode && title === "Code Execution" ? t("Code Mode") : t(title)}
         </span>
         <div className="flex items-center">
           <div className="mr-0.5">
             <ViewToggle
               active={effectiveViewMode === "result"}
               onClick={() => toggleView("result")}
-              tooltip="Show Result"
+              tooltip={t("Show Result")}
               variant={resultVariant}
             >
               {isInterrupted ? (
@@ -160,14 +162,14 @@ export const CodeExecutionToolCall: React.FC<CodeExecutionToolCallProps> = ({
           <ViewToggle
             active={effectiveViewMode === "code"}
             onClick={() => toggleView("code")}
-            tooltip="Show Code"
+            tooltip={t("Show Code")}
           >
             <CodeIcon className="h-3.5 w-3.5" />
           </ViewToggle>
           <ViewToggle
             active={effectiveViewMode === "console"}
             onClick={() => toggleView("console")}
-            tooltip="Show Console"
+            tooltip={t("Show Console")}
           >
             <TerminalIcon className="h-3.5 w-3.5" />
           </ViewToggle>
@@ -188,7 +190,7 @@ export const CodeExecutionToolCall: React.FC<CodeExecutionToolCallProps> = ({
           {consoleOutput.length > 0 ? (
             <ConsoleOutputDisplay output={consoleOutput} />
           ) : (
-            <span className="text-muted text-xs italic">No console output</span>
+            <span className="text-muted text-xs italic">{t("No console output")}</span>
           )}
         </div>
       )}
@@ -199,7 +201,7 @@ export const CodeExecutionToolCall: React.FC<CodeExecutionToolCallProps> = ({
             formattedResult ? (
               <DetailContent className="p-2">{formattedResult}</DetailContent>
             ) : (
-              <div className="text-muted text-xs italic">(no return value)</div>
+              <div className="text-muted text-xs italic">{t("(no return value)")}</div>
             )
           ) : (
             <DetailContent className="border border-red-500/30 bg-red-500/10 p-2 text-red-400">
@@ -207,11 +209,11 @@ export const CodeExecutionToolCall: React.FC<CodeExecutionToolCallProps> = ({
             </DetailContent>
           )
         ) : isInterrupted ? (
-          <div className="text-xs text-yellow-400 italic">Execution interrupted</div>
+          <div className="text-xs text-yellow-400 italic">{t("Execution interrupted")}</div>
         ) : isBackgrounded ? (
-          <div className="text-muted text-xs italic">Execution backgrounded</div>
+          <div className="text-muted text-xs italic">{t("Execution backgrounded")}</div>
         ) : (
-          <div className="text-muted text-xs italic">Execution in progress...</div>
+          <div className="text-muted text-xs italic">{t("Execution in progress...")}</div>
         ))}
     </fieldset>
   );

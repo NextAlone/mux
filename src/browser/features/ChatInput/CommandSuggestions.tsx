@@ -4,6 +4,7 @@ import { cn } from "@/common/lib/utils";
 import type { SlashSuggestion } from "@/browser/utils/slashCommands/types";
 import { FileIcon } from "@/browser/components/FileIcon/FileIcon";
 import { isInputMethodCompositionKeyEvent } from "./imeComposition";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 // Keys for navigating slash command suggestions.
 // Enter or Tab accepts the highlighted suggestion; Shift+Enter inserts a newline.
@@ -96,6 +97,7 @@ export const CommandSuggestions: React.FC<CommandSuggestionsProps> = ({
   highlightQuery,
   isFileSuggestion = false,
 }) => {
+  const { t } = useLanguage();
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [position, setPosition] = useState<{ top: number; left: number; width: number } | null>(
     null
@@ -302,8 +304,9 @@ export const CommandSuggestions: React.FC<CommandSuggestionsProps> = ({
         </div>
       ))}
       <div className="border-border-light bg-dark text-placeholder [&_span]:text-medium shrink-0 border-t px-2.5 py-1 text-center text-[10px] [&_span]:font-medium">
-        <span>Enter</span> or <span>Tab</span> to complete • <span>↑↓</span> to navigate •{" "}
-        <span>Esc</span> to dismiss
+        <span>{t("Enter")}</span> {t("or")} <span>{t("Tab")}</span> {t("to complete •")}{" "}
+        <span>↑↓</span> {t("to navigate •")} <span>{t("Esc")}</span>
+        {t("to dismiss")}
       </div>
     </div>
   );

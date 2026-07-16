@@ -9,6 +9,7 @@ import { Tooltip, TooltipTrigger, TooltipContent } from "@/browser/components/To
 import { formatKeybind, KEYBINDS } from "@/browser/utils/ui/keybinds";
 import { cn } from "@/common/lib/utils";
 import type { VoiceInputState } from "@/browser/hooks/useVoiceInput";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 interface VoiceInputButtonProps {
   state: VoiceInputState;
@@ -29,6 +30,7 @@ const STATE_COLORS: Record<Exclude<VoiceInputState, "recording">, string> = {
 };
 
 export const VoiceInputButton: React.FC<VoiceInputButtonProps> = (props) => {
+  const { t } = useLanguage();
   if (!props.shouldShowUI) return null;
 
   // Allow stop/cancel controls while actively recording or transcribing,
@@ -80,28 +82,30 @@ export const VoiceInputButton: React.FC<VoiceInputButtonProps> = (props) => {
       <TooltipContent>
         {needsHttps ? (
           <>
-            Voice input requires a secure connection.
+            {t("Voice input requires a secure connection.")}
             <br />
-            Use HTTPS or access via localhost.
+            {t("Use HTTPS or access via localhost.")}
           </>
         ) : notConfigured ? (
           <>
-            Voice input requires a Mux Gateway login or an OpenAI API key.
+            {t("Voice input requires a Mux Gateway login or an OpenAI API key.")}
             <br />
-            Configure in Settings → Providers.
+            {t("Configure in Settings → Providers.")}
           </>
         ) : (
           <>
-            <strong>Voice input</strong> —{" "}
-            <span className="mobile-hide-shortcut-hints">press space on empty input</span>
+            <strong>{t("Voice input")}</strong> —{" "}
+            <span className="mobile-hide-shortcut-hints">{t("press space on empty input")}</span>
             <br />
             <span className="mobile-hide-shortcut-hints">
-              or {formatKeybind(KEYBINDS.TOGGLE_VOICE_INPUT)} anytime
+              {t("or")}
+              {formatKeybind(KEYBINDS.TOGGLE_VOICE_INPUT)}
+              {t("anytime")}
             </span>
             <br />
             <br />
             <span className="mobile-hide-shortcut-hints">
-              While recording: space sends, esc cancels
+              {t("While recording: space sends, esc cancels")}
             </span>
           </>
         )}

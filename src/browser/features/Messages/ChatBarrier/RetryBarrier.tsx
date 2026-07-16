@@ -10,6 +10,7 @@ import { getSendOptionsFromStorage } from "@/browser/utils/messages/sendOptions"
 import { applyCompactionOverrides } from "@/browser/utils/messages/compactionOptions";
 import { formatSendMessageError } from "@/common/utils/errors/formatSendError";
 import { getErrorMessage } from "@/common/utils/errors";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 interface RetryBarrierProps {
   workspaceId: string;
@@ -17,6 +18,7 @@ interface RetryBarrierProps {
 }
 
 export const RetryBarrier: React.FC<RetryBarrierProps> = (props) => {
+  const { t } = useLanguage();
   const { api } = useAPI();
   const workspaceState = useWorkspaceState(props.workspaceId);
   const [countdown, setCountdown] = useState(0);
@@ -267,7 +269,7 @@ export const RetryBarrier: React.FC<RetryBarrierProps> = (props) => {
         void handleManualRetry();
       }}
     >
-      Retry
+      {t("Retry")}
     </button>
   );
 
@@ -283,17 +285,17 @@ export const RetryBarrier: React.FC<RetryBarrierProps> = (props) => {
       statusText = (
         <>
           {reasonPrefix}
-          Retrying... (attempt {retryAttempt})
+          {t("Retrying... (attempt")}
+          {retryAttempt})
         </>
       );
     } else {
       statusText = (
         <>
           {reasonPrefix}
-          Retrying in <span className="text-warning font-mono font-semibold">
-            {countdown}s
-          </span>{" "}
-          (attempt {retryAttempt})
+          {t("Retrying in")}
+          <span className="text-warning font-mono font-semibold">{countdown}s</span> {t("(attempt")}
+          {retryAttempt})
         </>
       );
     }
@@ -303,18 +305,19 @@ export const RetryBarrier: React.FC<RetryBarrierProps> = (props) => {
         className="border-warning font-primary text-warning hover:bg-warning-overlay cursor-pointer rounded border bg-transparent px-4 py-2 text-xs font-semibold whitespace-nowrap transition-all duration-200 hover:-translate-y-px active:translate-y-0 disabled:cursor-not-allowed disabled:opacity-50"
         onClick={handleStopAutoRetry}
       >
-        Stop <span className="mobile-hide-shortcut-hints">({stopKeybind})</span>
+        {t("Stop")}
+        <span className="mobile-hide-shortcut-hints">({stopKeybind})</span>
       </button>
     );
   }
 
   const details = manualRetryError ? (
     <div className="font-primary text-foreground/80 pl-8 text-[12px]">
-      <span className="text-warning font-semibold">Retry failed:</span> {manualRetryError}
+      <span className="text-warning font-semibold">{t("Retry failed:")}</span> {manualRetryError}
     </div>
   ) : autoRetryStatus?.type === "auto-retry-abandoned" ? (
     <div className="font-primary text-foreground/80 pl-8 text-[12px]">
-      <span className="text-warning font-semibold">Auto-retry stopped:</span>{" "}
+      <span className="text-warning font-semibold">{t("Auto-retry stopped:")}</span>{" "}
       {autoRetryStatus.reason}
     </div>
   ) : null;

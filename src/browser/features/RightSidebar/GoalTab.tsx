@@ -35,6 +35,7 @@ import {
   RowActionButton,
 } from "@/browser/features/RightSidebar/GoalBoardSections";
 import { useGoalBoard } from "@/browser/features/RightSidebar/useGoalBoard";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 /**
  * Inputs accepted by the in-tab "Set goal" form. Mirrors the slash-command
@@ -93,6 +94,7 @@ const parseTurnCapInput = parseGoalTurnCapInput;
 type EditingField = "objective" | "budget" | "turnCap";
 
 export function GoalTab(props: GoalTabProps) {
+  const { t } = useLanguage();
   const [isSummaryInputOpen, setIsSummaryInputOpen] = useState(false);
   const [editingField, setEditingField] = useState<EditingField | null>(null);
   const [editValue, setEditValue] = useState("");
@@ -269,7 +271,7 @@ export function GoalTab(props: GoalTabProps) {
     return (
       <section
         className="flex h-full flex-col gap-4 overflow-y-auto p-4"
-        aria-label="Workspace goal"
+        aria-label={t("Workspace goal")}
       >
         {props.onCreate ? (
           // Empty-state primary action: a goal-creation form with full
@@ -281,7 +283,7 @@ export function GoalTab(props: GoalTabProps) {
         ) : (
           <div className="text-muted border-border-light flex flex-col items-center justify-center gap-2 rounded-md border border-dashed p-6 text-center text-sm">
             <Target className="h-5 w-5" aria-hidden="true" />
-            <p>No goal is set for this workspace.</p>
+            <p>{t("No goal is set for this workspace.")}</p>
           </div>
         )}
         {/*
@@ -411,7 +413,10 @@ export function GoalTab(props: GoalTabProps) {
     activeMode === "running" ? "text-success" : isStalledActive ? "text-warning" : "text-muted";
 
   return (
-    <section className="flex h-full flex-col gap-4 overflow-y-auto p-4" aria-label="Workspace goal">
+    <section
+      className="flex h-full flex-col gap-4 overflow-y-auto p-4"
+      aria-label={t("Workspace goal")}
+    >
       <header className={cn("rounded-md border p-3", headerToneClass)}>
         <div
           className={cn(
@@ -431,7 +436,7 @@ export function GoalTab(props: GoalTabProps) {
             <textarea
               ref={objectiveInputRef}
               id="goal-objective-editor"
-              aria-label="Goal objective"
+              aria-label={t("Goal objective")}
               className="border-border bg-surface-primary text-foreground focus:border-accent min-h-20 w-full rounded-md border p-2 text-sm leading-5 font-semibold outline-none"
               value={editValue}
               autoFocus
@@ -455,7 +460,7 @@ export function GoalTab(props: GoalTabProps) {
                 disabled={isSubmitting}
                 onClick={() => void submitEditor()}
               >
-                Save
+                {t("Save")}
               </button>
               <button
                 type="button"
@@ -463,10 +468,10 @@ export function GoalTab(props: GoalTabProps) {
                 disabled={isSubmitting}
                 onClick={closeEditor}
               >
-                Cancel
+                {t("Cancel")}
               </button>
               <span className="text-muted ml-auto text-[10px]">
-                Renames in place — accounting and goal ID are preserved.
+                {t("Renames in place — accounting and goal ID are preserved.")}
               </span>
             </div>
           </div>
@@ -479,11 +484,11 @@ export function GoalTab(props: GoalTabProps) {
               <button
                 type="button"
                 className="text-muted hover:text-foreground inline-flex shrink-0 items-center gap-1 text-xs underline"
-                aria-label="Edit goal objective"
+                aria-label={t("Edit goal objective")}
                 onClick={(event) => openObjectiveEditor(event.currentTarget)}
               >
                 <Pencil className="h-3 w-3" aria-hidden="true" />
-                Edit
+                {t("Edit")}
               </button>
             )}
           </div>
@@ -492,17 +497,18 @@ export function GoalTab(props: GoalTabProps) {
 
       {isPendingPersistence && (
         <p className="border-border-light bg-surface-secondary text-muted rounded-md border p-3 text-sm leading-5">
-          This goal is queued while the current stream finishes. It will become editable once it is
-          saved.
+          {t(
+            "This goal is queued while the current stream finishes. It will become editable once it is saved."
+          )}
         </p>
       )}
 
       {props.goal.status === "complete" && props.goal.completionSummary && (
         <section
           className="border-border-light bg-surface-secondary rounded-md border p-3"
-          aria-label="Completion summary"
+          aria-label={t("Completion summary")}
         >
-          <h3 className="text-foreground mb-1 text-sm font-semibold">Completion summary</h3>
+          <h3 className="text-foreground mb-1 text-sm font-semibold">{t("Completion summary")}</h3>
           <p className="text-muted text-sm leading-5">{props.goal.completionSummary}</p>
         </section>
       )}
@@ -543,7 +549,7 @@ export function GoalTab(props: GoalTabProps) {
           onEdit={(event) => openTurnCapEditor(event.currentTarget)}
         />
         <div className="bg-surface-secondary rounded-md p-3">
-          <dt className="text-muted text-xs">Elapsed</dt>
+          <dt className="text-muted text-xs">{t("Elapsed")}</dt>
           <dd className="counter-nums text-foreground mt-1 text-base leading-tight font-medium">
             {formatGoalElapsed(props.goal.startedAtMs)}
           </dd>
@@ -602,7 +608,7 @@ export function GoalTab(props: GoalTabProps) {
               disabled={isSubmitting}
               onClick={closeEditor}
             >
-              Cancel
+              {t("Cancel")}
             </button>
           </div>
         </div>
@@ -614,11 +620,11 @@ export function GoalTab(props: GoalTabProps) {
             <button
               type="button"
               className="border-border-light bg-surface-secondary text-foreground hover:bg-surface-tertiary inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm"
-              aria-label="Pause goal"
+              aria-label={t("Pause goal")}
               onClick={() => void setStatus("paused")}
             >
               <Pause className="h-3.5 w-3.5" aria-hidden="true" />
-              Pause
+              {t("Pause")}
             </button>
           )}
           {/* For paused (lifecycle-active) goals, Resume is the obvious
@@ -631,22 +637,22 @@ export function GoalTab(props: GoalTabProps) {
             <button
               type="button"
               className="border-success/40 bg-success/10 text-success hover:bg-success/20 inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm"
-              aria-label="Resume goal"
+              aria-label={t("Resume goal")}
               onClick={() => void setStatus("active")}
             >
               <Play className="h-3.5 w-3.5" aria-hidden="true" />
-              Resume
+              {t("Resume")}
             </button>
           )}
           {canComplete && (
             <button
               type="button"
               className="border-border-light bg-surface-secondary text-foreground hover:bg-surface-tertiary inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm"
-              aria-label="Mark goal complete"
+              aria-label={t("Mark goal complete")}
               onClick={(event) => openSummaryInput(event.currentTarget)}
             >
               <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" />
-              Mark complete
+              {t("Mark complete")}
             </button>
           )}
           {/* Completed-goal action pair: Reopen on the left as the
@@ -661,16 +667,16 @@ export function GoalTab(props: GoalTabProps) {
               <button
                 type="button"
                 className="border-border-light bg-surface-secondary text-foreground hover:bg-surface-tertiary inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm"
-                aria-label="Reopen goal"
+                aria-label={t("Reopen goal")}
                 onClick={() => void setStatus("active")}
               >
                 <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />
-                Reopen
+                {t("Reopen")}
               </button>
               <button
                 type="button"
                 className="bg-accent text-accent-foreground hover:bg-accent-dark inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm"
-                aria-label="Archive goal"
+                aria-label={t("Archive goal")}
                 onClick={() => {
                   // Route through `archiveGoal` so the goal lands in the
                   // Archived board section instead of the legacy
@@ -692,7 +698,7 @@ export function GoalTab(props: GoalTabProps) {
                 }}
               >
                 <Inbox className="h-3.5 w-3.5" aria-hidden="true" />
-                Archive
+                {t("Archive")}
               </button>
             </>
           )}
@@ -707,9 +713,9 @@ export function GoalTab(props: GoalTabProps) {
           destructive action. */}
       {canEdit && lifecycle !== "complete" && (
         <div className="-mt-1">
-          <RowActionButton aria-label="Clear goal" onClick={() => void clearGoal()}>
+          <RowActionButton aria-label={t("Clear goal")} onClick={() => void clearGoal()}>
             <Trash2 className="h-3 w-3" aria-hidden="true" />
-            Clear goal
+            {t("Clear goal")}
           </RowActionButton>
         </div>
       )}
@@ -718,20 +724,20 @@ export function GoalTab(props: GoalTabProps) {
         <div
           className="border-border-light bg-surface-secondary rounded-md border p-3"
           role="group"
-          aria-label="Complete goal"
+          aria-label={t("Complete goal")}
           onKeyDown={trapSummaryFocus}
         >
           <label
             className="text-foreground mb-2 block text-sm font-medium"
             htmlFor="goal-completion-summary"
           >
-            Completion summary
+            {t("Completion summary")}
           </label>
           <textarea
             ref={inputRef}
             id="goal-completion-summary"
             className="border-border bg-surface-primary text-foreground focus:border-accent min-h-20 w-full rounded-md border p-2 text-sm outline-none"
-            aria-label="Goal completion summary"
+            aria-label={t("Goal completion summary")}
             value={summary}
             onChange={(event) => setSummary(event.target.value)}
           />
@@ -742,7 +748,7 @@ export function GoalTab(props: GoalTabProps) {
               disabled={isSubmitting}
               onClick={() => void submitSummary()}
             >
-              Save summary
+              {t("Save summary")}
             </button>
             <button
               type="button"
@@ -750,7 +756,7 @@ export function GoalTab(props: GoalTabProps) {
               disabled={isSubmitting}
               onClick={closeSummaryInput}
             >
-              Cancel
+              {t("Cancel")}
             </button>
           </div>
         </div>
@@ -774,11 +780,11 @@ export function GoalTab(props: GoalTabProps) {
             <button
               type="button"
               className="text-muted hover:text-foreground inline-flex items-center gap-1 underline"
-              aria-label="Change goal defaults"
+              aria-label={t("Change goal defaults")}
               onClick={() => setIsDefaultsModalOpen(true)}
             >
               <Settings2 className="h-3 w-3" aria-hidden="true" />
-              Change defaults
+              {t("Change defaults")}
             </button>
           </div>
           <GoalDefaultsModal
@@ -821,6 +827,7 @@ interface BudgetTileProps {
  *   shows "no budget" — the tile is then a single-value Cost card.
  */
 function BudgetTile(props: BudgetTileProps) {
+  const { t } = useLanguage();
   // `status` is intentionally unread — the lifecycle's
   // `budget_limited` state can be triggered by EITHER hitting the
   // budget OR hitting the turn cap (see `hasReachedAnyLimit` in
@@ -854,15 +861,15 @@ function BudgetTile(props: BudgetTileProps) {
   return (
     <div className="bg-surface-secondary col-span-2 rounded-md p-3">
       <div className="flex items-baseline justify-between gap-2">
-        <dt className="text-muted text-xs">Budget</dt>
+        <dt className="text-muted text-xs">{t("Budget")}</dt>
         {canEdit && (
           <button
             type="button"
             className="text-muted hover:text-foreground text-xs underline"
-            aria-label="Edit goal budget"
+            aria-label={t("Edit goal budget")}
             onClick={onEdit}
           >
-            Edit
+            {t("Edit")}
           </button>
         )}
       </div>
@@ -871,7 +878,7 @@ function BudgetTile(props: BudgetTileProps) {
           <span>{formatGoalCents(costCents)}</span>
           {hasBudget && (
             <>
-              <span className="text-muted text-sm font-normal"> of </span>
+              <span className="text-muted text-sm font-normal"> {t("of")} </span>
               <span className="text-muted text-sm font-normal">{formatGoalCents(budgetCents)}</span>
             </>
           )}
@@ -890,7 +897,7 @@ function BudgetTile(props: BudgetTileProps) {
       {hasBudget && budgetCents > 0 && (
         <div
           role="progressbar"
-          aria-label="Budget used"
+          aria-label={t("Budget used")}
           aria-valuemin={0}
           aria-valuemax={100}
           aria-valuenow={percent}
@@ -929,6 +936,7 @@ interface TurnsTileProps {
  * matches.
  */
 function TurnsTile(props: TurnsTileProps) {
+  const { t } = useLanguage();
   const { turnsUsed, turnCap, canEdit, onEdit } = props;
   const hasCap = turnCap != null;
   // Reserve "over" for strict inequality. Exact saturation renders
@@ -940,15 +948,15 @@ function TurnsTile(props: TurnsTileProps) {
   return (
     <div className="bg-surface-secondary rounded-md p-3">
       <div className="flex items-baseline justify-between gap-2">
-        <dt className="text-muted text-xs">Turns</dt>
+        <dt className="text-muted text-xs">{t("Turns")}</dt>
         {canEdit && (
           <button
             type="button"
             className="text-muted hover:text-foreground text-xs underline"
-            aria-label="Edit goal turn cap"
+            aria-label={t("Edit goal turn cap")}
             onClick={onEdit}
           >
-            Edit
+            {t("Edit")}
           </button>
         )}
       </div>
@@ -991,6 +999,7 @@ interface GoalCreateFormProps {
  * and only emitting `budgetCents` when the user typed something.
  */
 function GoalCreateForm(props: GoalCreateFormProps) {
+  const { t } = useLanguage();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Defaults modal is per-form because the empty-state lives outside the
@@ -1085,7 +1094,7 @@ function GoalCreateForm(props: GoalCreateFormProps) {
   return (
     <form
       className="border-border-light bg-surface-secondary flex flex-col gap-3 rounded-md border p-3"
-      aria-label="Create workspace goal"
+      aria-label={t("Create workspace goal")}
       onSubmit={(event) => {
         event.preventDefault();
         void submit();
@@ -1093,16 +1102,17 @@ function GoalCreateForm(props: GoalCreateFormProps) {
     >
       <div className="text-muted flex items-center gap-1.5 text-xs font-medium uppercase">
         <Target className="h-3.5 w-3.5" aria-hidden="true" />
-        Set a goal
+        {t("Set a goal")}
       </div>
       <p className="text-muted text-xs leading-5">
-        Describe what success looks like. Equivalent to{" "}
-        <code className="font-mono">/goal &lt;objective&gt;</code> in chat.
+        {t("Describe what success looks like. Equivalent to")}{" "}
+        <code className="font-mono">/goal &lt;objective&gt;</code>
+        {t("in chat.")}
       </p>
 
       <div className="flex flex-col gap-1">
         <label className="text-foreground text-sm font-medium" htmlFor="goal-create-objective">
-          Objective
+          {t("Objective")}
         </label>
         <textarea
           ref={objectiveRef}
@@ -1113,7 +1123,7 @@ function GoalCreateForm(props: GoalCreateFormProps) {
           // text, so dropping below ~5 lines starts truncating the
           // example phrases the placeholder is meant to teach.
           className="border-border bg-surface-primary text-foreground focus:border-accent min-h-28 w-full rounded-md border p-2 text-sm outline-none"
-          aria-label="Goal objective"
+          aria-label={t("Goal objective")}
           placeholder={GOAL_OBJECTIVE_PLACEHOLDER}
           defaultValue=""
           onKeyDown={(event) => {
@@ -1131,26 +1141,28 @@ function GoalCreateForm(props: GoalCreateFormProps) {
       <div className="grid grid-cols-2 gap-2">
         <div className="flex flex-col gap-1">
           <label className="text-foreground text-sm font-medium" htmlFor="goal-create-budget">
-            Budget <span className="text-muted text-xs font-normal">(optional)</span>
+            {t("Budget")}
+            <span className="text-muted text-xs font-normal">{t("(optional)")}</span>
           </label>
           <input
             ref={budgetRef}
             id="goal-create-budget"
             className="border-border bg-surface-primary text-foreground focus:border-accent w-full rounded-md border p-2 text-sm outline-none"
-            aria-label="Goal budget"
+            aria-label={t("Goal budget")}
             placeholder={budgetPlaceholder}
             defaultValue=""
           />
         </div>
         <div className="flex flex-col gap-1">
           <label className="text-foreground text-sm font-medium" htmlFor="goal-create-turncap">
-            Turn cap <span className="text-muted text-xs font-normal">(optional)</span>
+            {t("Turn cap")}{" "}
+            <span className="text-muted text-xs font-normal">{t("(optional)")}</span>
           </label>
           <input
             ref={turnCapRef}
             id="goal-create-turncap"
             className="border-border bg-surface-primary text-foreground focus:border-accent w-full rounded-md border p-2 text-sm outline-none"
-            aria-label="Goal turn cap"
+            aria-label={t("Goal turn cap")}
             placeholder={turnCapPlaceholder}
             inputMode="numeric"
             defaultValue=""
@@ -1168,11 +1180,11 @@ function GoalCreateForm(props: GoalCreateFormProps) {
           <button
             type="button"
             className="hover:text-foreground inline-flex items-center gap-1 underline"
-            aria-label="Change goal defaults"
+            aria-label={t("Change goal defaults")}
             onClick={() => setIsDefaultsModalOpen(true)}
           >
             <Settings2 className="h-3 w-3" aria-hidden="true" />
-            Change defaults
+            {t("Change defaults")}
           </button>
         </div>
       )}
@@ -1188,7 +1200,7 @@ function GoalCreateForm(props: GoalCreateFormProps) {
           type="submit"
           className="bg-accent text-accent-foreground rounded-md px-3 py-1.5 text-sm disabled:opacity-60"
           disabled={isSubmitting}
-          aria-label="Set goal"
+          aria-label={t("Set goal")}
         >
           {isSubmitting ? "Setting goal…" : "Set goal"}
         </button>

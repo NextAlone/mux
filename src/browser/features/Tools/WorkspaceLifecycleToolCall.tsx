@@ -34,6 +34,7 @@ import type {
   TaskWorkspaceLifecycleTargetResult,
   TaskWorkspaceLifecycleToolArgs,
 } from "@/common/types/tools";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 /**
  * Transcript card for `task_workspace_lifecycle` — the tool a parent/orchestrator
@@ -216,13 +217,14 @@ const Dot: React.FC<{ tone: Tone }> = (props) => (
 const HeaderBadge: React.FC<{ rows: TaskWorkspaceLifecycleTargetResult[]; executing: boolean }> = (
   props
 ) => {
+  const { t } = useLanguage();
   const base =
     "inline-flex shrink-0 items-center gap-2 rounded-full px-2 py-0.5 text-[10px] font-medium leading-none";
 
   if (props.executing) {
     return (
       <span className={cn(base, "bg-white/5 text-secondary")}>
-        <LoadingDots>Working</LoadingDots>
+        <LoadingDots>{t("Working")}</LoadingDots>
       </span>
     );
   }
@@ -308,6 +310,7 @@ const WorkspaceRow: React.FC<{
   action: TaskWorkspaceLifecycleToolArgs["action"];
   last: boolean;
 }> = (props) => {
+  const { t } = useLanguage();
   const row = props.row;
   const meta = STATUS_META[row.status];
   const Icon = meta.Icon;
@@ -358,7 +361,7 @@ const WorkspaceRow: React.FC<{
           />
         )}
         {row.activeTaskIds && row.activeTaskIds.length > 0 && (
-          <DetailList label="Active turns" items={row.activeTaskIds} />
+          <DetailList label={t("Active turns")} items={row.activeTaskIds} />
         )}
         {hint && <div className="text-muted mt-1 text-[10.5px] italic">{hint}</div>}
       </div>
@@ -375,6 +378,7 @@ const RequestedTargets: React.FC<{
   meta: ActionMeta;
   executing: boolean;
 }> = (props) => {
+  const { t } = useLanguage();
   const targets = Array.isArray(props.args.targets) ? props.args.targets : [];
   return (
     <div className="bg-code-bg rounded px-3 py-2 text-[11px]">
@@ -385,7 +389,9 @@ const RequestedTargets: React.FC<{
           <LoadingDots />
         </div>
       ) : (
-        <div className="text-secondary mb-1.5 text-[10px] tracking-wide uppercase">Requested</div>
+        <div className="text-secondary mb-1.5 text-[10px] tracking-wide uppercase">
+          {t("Requested")}
+        </div>
       )}
       <ul className="space-y-0.5">
         {targets.map((t, i) => (

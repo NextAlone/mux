@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { AlertTriangle, X } from "lucide-react";
 import { cn } from "@/common/lib/utils";
 import { usePersistedState } from "@/browser/hooks/usePersistedState";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 const ROSETTA_BANNER_DISMISSED_KEY = "rosettaBannerDismissedAt";
 const DISMISS_DURATION_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
@@ -11,6 +12,7 @@ const DISMISS_DURATION_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
  * Users can dismiss it, but it will re-appear after 30 days.
  */
 export const RosettaBanner: React.FC = () => {
+  const { t } = useLanguage();
   const [dismissedAt, setDismissedAt] = usePersistedState<number | null>(
     ROSETTA_BANNER_DISMISSED_KEY,
     null
@@ -67,14 +69,14 @@ export const RosettaBanner: React.FC = () => {
       <div className="flex items-center gap-2">
         <AlertTriangle className="text-warning size-4 shrink-0" />
         <span>
-          Mux is running under Rosetta. For better performance,{" "}
+          {t("Mux is running under Rosetta. For better performance,")}{" "}
           <a
             href="https://mux.coder.com/install#downloads"
             target="_blank"
             rel="noopener noreferrer"
             className="underline hover:no-underline"
           >
-            download the native Apple Silicon version
+            {t("download the native Apple Silicon version")}
           </a>
           .
         </span>
@@ -83,7 +85,7 @@ export const RosettaBanner: React.FC = () => {
         type="button"
         onClick={() => setDismissedAt(Date.now())}
         className="hover:text-warning/80 shrink-0 p-1 transition-colors"
-        aria-label="Dismiss Rosetta warning"
+        aria-label={t("Dismiss Rosetta warning")}
       >
         <X className="size-4" />
       </button>

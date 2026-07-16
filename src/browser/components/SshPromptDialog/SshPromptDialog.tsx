@@ -14,8 +14,10 @@ import {
 import { Button } from "@/browser/components/Button/Button";
 import { Input } from "@/browser/components/Input/Input";
 import type { SshPromptEvent, SshPromptRequest } from "@/common/orpc/schemas/ssh";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 export function SshPromptDialog() {
+  const { t } = useLanguage();
   const { api } = useAPI();
   const [pendingQueue, setPendingQueue] = useState<SshPromptRequest[]>([]);
   const pending = pendingQueue[0] ?? null;
@@ -124,26 +126,30 @@ export function SshPromptDialog() {
         {pending?.kind === "host-key" ? (
           <>
             <DialogHeader>
-              <DialogTitle>Unknown SSH Host</DialogTitle>
+              <DialogTitle>{t("Unknown SSH Host")}</DialogTitle>
               <DialogDescription>
                 {pending.prompt ?? (
                   <>
-                    The authenticity of host{" "}
-                    <code className="text-foreground font-semibold">{pending.host}</code> cannot be
-                    established.
+                    {t("The authenticity of host")}{" "}
+                    <code className="text-foreground font-semibold">{pending.host}</code>{" "}
+                    {t("cannot be established.")}
                   </>
                 )}
               </DialogDescription>
             </DialogHeader>
 
             <div className="bg-background-secondary border-border rounded p-3 font-mono text-sm">
-              <div className="text-muted">{pending.keyType} key fingerprint:</div>
+              <div className="text-muted">
+                {pending.keyType} {t(" key fingerprint:")}
+              </div>
               <div className="text-foreground mt-1 break-all select-all">{pending.fingerprint}</div>
             </div>
 
             <WarningBox>
-              <WarningTitle>Host Key Verification</WarningTitle>
-              <WarningText>Accepting will add the host to your known_hosts file.</WarningText>
+              <WarningTitle>{t("Host Key Verification")}</WarningTitle>
+              <WarningText>
+                {t("Accepting will add the host to your known_hosts file.")}
+              </WarningText>
             </WarningBox>
 
             <DialogFooter className="justify-center">
@@ -154,7 +160,7 @@ export function SshPromptDialog() {
                   void respond("no");
                 }}
               >
-                Reject
+                {t("Reject")}
               </Button>
               <Button
                 variant="default"
@@ -163,14 +169,14 @@ export function SshPromptDialog() {
                   void respond("yes");
                 }}
               >
-                {responding ? "Connecting..." : "Accept & Connect"}
+                {responding ? t("Connecting...") : t("Accept & Connect")}
               </Button>
             </DialogFooter>
           </>
         ) : pending?.kind === "credential" ? (
           <>
             <DialogHeader>
-              <DialogTitle>SSH Authentication Required</DialogTitle>
+              <DialogTitle>{t("SSH Authentication Required")}</DialogTitle>
               <DialogDescription>{pending.prompt}</DialogDescription>
             </DialogHeader>
 
@@ -200,10 +206,10 @@ export function SshPromptDialog() {
                     void respond("");
                   }}
                 >
-                  Cancel
+                  {t("Cancel")}
                 </Button>
                 <Button type="submit" variant="default" disabled={responding}>
-                  {responding ? "Submitting..." : "Submit"}
+                  {responding ? t("Submitting...") : t("Submit")}
                 </Button>
               </DialogFooter>
             </form>

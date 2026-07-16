@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { AlertTriangle, Check } from "lucide-react";
 import React, { useEffect, useCallback } from "react";
 import { cn } from "@/common/lib/utils";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 const toastTypeStyles: Record<"success" | "error", string> = {
   success: "bg-toast-success-bg border border-accent-dark text-toast-success-text",
@@ -34,11 +35,26 @@ export const SolutionLabel: React.FC<{ children: ReactNode }> = ({ children }) =
 const wrapperClassName =
   "pointer-events-none absolute right-[15px] bottom-full left-[15px] z-[1000] mb-2 [&>*]:pointer-events-auto";
 
+function translateToastNode(node: ReactNode, t: (text: string) => string): ReactNode {
+  if (typeof node === "string") return t(node);
+  if (Array.isArray(node)) {
+    return (node as readonly ReactNode[]).map((child) => translateToastNode(child, t));
+  }
+  if (!React.isValidElement<{ children?: ReactNode }>(node) || node.props.children == null) {
+    return node;
+  }
+
+  // Toast helpers are created outside React, so translate their static rich-text
+  // fragments here while leaving dynamic error details and command examples intact.
+  return React.cloneElement(node, undefined, translateToastNode(node.props.children, t));
+}
+
 export const ChatInputToast: React.FC<ChatInputToastProps> = ({
   toast,
   onDismiss,
   wrap = true,
 }) => {
+  const { t } = useLanguage();
   const [isLeaving, setIsLeaving] = React.useState(false);
 
   // Avoid carrying the fade-out animation state across toast changes.
@@ -94,17 +110,17 @@ export const ChatInputToast: React.FC<ChatInputToastProps> = ({
       <div className="flex items-start gap-1.5">
         <AlertTriangle aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0" />
         <div className="flex-1">
-          {toast.title && <div className="mb-1.5 font-semibold">{toast.title}</div>}
-          <div className="text-light mt-1.5 leading-[1.4]">{toast.message}</div>
+          {toast.title && <div className="mb-1.5 font-semibold">{t(toast.title)}</div>}
+          <div className="text-light mt-1.5 leading-[1.4]">{t(toast.message)}</div>
           {toast.solution && (
             <div className="bg-dark font-monospace text-code-type mt-2 rounded px-2 py-1.5 text-[11px]">
-              {toast.solution}
+              {translateToastNode(toast.solution, t)}
             </div>
           )}
         </div>
         <button
           onClick={handleDismiss}
-          aria-label="Dismiss"
+          aria-label={t("Dismiss")}
           className="flex h-4 w-4 cursor-pointer items-center justify-center border-0 bg-transparent p-0 text-base leading-none text-inherit opacity-60 transition-opacity hover:opacity-100"
         >
           ×
@@ -130,12 +146,12 @@ export const ChatInputToast: React.FC<ChatInputToastProps> = ({
         ) : (
           <AlertTriangle aria-hidden="true" className="h-4 w-4 shrink-0" />
         )}
-        {toast.title && <span className="flex-1 text-[11px] font-semibold">{toast.title}</span>}
+        {toast.title && <span className="flex-1 text-[11px] font-semibold">{t(toast.title)}</span>}
         {!toast.title && <span className="flex-1" />}
         {toast.type === "error" && (
           <button
             onClick={handleDismiss}
-            aria-label="Dismiss"
+            aria-label={t("Dismiss")}
             className="flex h-4 w-4 cursor-pointer items-center justify-center border-0 bg-transparent p-0 text-base leading-none text-inherit opacity-60 transition-opacity hover:opacity-100"
           >
             ×
@@ -143,7 +159,7 @@ export const ChatInputToast: React.FC<ChatInputToastProps> = ({
         )}
       </div>
       {/* Message on its own line */}
-      <div className="mt-1.5 opacity-90">{toast.message}</div>
+      <div className="mt-1.5 opacity-90">{t(toast.message)}</div>
     </div>
   );
 

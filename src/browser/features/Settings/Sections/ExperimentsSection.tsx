@@ -27,6 +27,7 @@ import {
 import type { ApiServerStatus, DesktopPrereqStatus } from "@/common/orpc/types";
 import { Input } from "@/browser/components/Input/Input";
 import { useAPI, type APIClient } from "@/browser/contexts/API";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 import { useTelemetry } from "@/browser/hooks/useTelemetry";
 import { AdvisorToolExperimentConfig } from "./AdvisorToolExperimentConfig";
 import { HeartbeatDefaultsControls } from "./HeartbeatSection";
@@ -52,6 +53,7 @@ interface ExperimentRowProps {
 }
 
 function ExperimentRow(props: ExperimentRowProps) {
+  const { t } = useLanguage();
   const [enabled, setEnabled] = useExperiment(props.experimentId);
   const remote = useRemoteExperimentValue(props.experimentId);
   const telemetry = useTelemetry();
@@ -74,12 +76,12 @@ function ExperimentRow(props: ExperimentRowProps) {
   return (
     <div className="flex items-center justify-between py-3">
       <div className="flex-1 pr-4">
-        <div className="text-foreground text-sm font-medium">{props.name}</div>
-        <div className="text-muted mt-0.5 text-xs">{props.description}</div>
+        <div className="text-foreground text-sm font-medium">{t(props.name)}</div>
+        <div className="text-muted mt-0.5 text-xs">{t(props.description)}</div>
         {availabilityMessage && (
           <div className="text-muted mt-1 flex items-center gap-1 text-xs">
             <Info aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
-            <span>{availabilityMessage}</span>
+            <span>{t(availabilityMessage)}</span>
           </div>
         )}
       </div>
@@ -87,14 +89,15 @@ function ExperimentRow(props: ExperimentRowProps) {
         checked={enabled}
         disabled={disabled}
         onCheckedChange={handleToggle}
-        aria-label={`Toggle ${props.name}`}
-        title={availabilityMessage ?? undefined}
+        aria-label={t("Toggle {name}").replace("{name}", t(props.name))}
+        title={availabilityMessage ? t(availabilityMessage) : undefined}
       />
     </div>
   );
 }
 
 export function PortableDesktopExperimentWarning() {
+  const { t } = useLanguage();
   const enabled = useExperimentValue(EXPERIMENT_IDS.PORTABLE_DESKTOP);
   const { api } = useAPI();
   const [prereqStatus, setPrereqStatus] = useState<DesktopPrereqStatus | null>(null);
@@ -185,8 +188,10 @@ export function PortableDesktopExperimentWarning() {
         <AlertTriangle aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0" />
         <div className="space-y-2">
           <div>
-            The <code className="font-mono">portabledesktop</code> binary was not found in PATH, so
-            Portable Desktop is currently disabled. Install it from{" "}
+            {t("The")} <code className="font-mono">portabledesktop</code>{" "}
+            {t(
+              "binary was not found in PATH, so Portable Desktop is currently disabled. Install it from"
+            )}{" "}
             <a
               href={PORTABLE_DESKTOP_INSTALL_URL}
               target="_blank"
@@ -195,8 +200,9 @@ export function PortableDesktopExperimentWarning() {
             >
               {PORTABLE_DESKTOP_INSTALL_URL}
             </a>{" "}
-            to enable this feature. If you installed it into a location that mux can already see,
-            choose Check again. If you changed PATH after mux launched, restart mux to pick it up.
+            {t(
+              "to enable this feature. If you installed it into a location that mux can already see, choose Check again. If you changed PATH after mux launched, restart mux to pick it up."
+            )}
           </div>
           <div className="flex flex-wrap gap-2">
             <Button
@@ -207,7 +213,7 @@ export function PortableDesktopExperimentWarning() {
               }}
               disabled={restarting}
             >
-              {loading ? "Checking…" : "Check again"}
+              {t(loading ? "Checking…" : "Check again")}
             </Button>
             <Button
               variant="outline"
@@ -217,10 +223,10 @@ export function PortableDesktopExperimentWarning() {
               }}
               disabled={loading || restarting}
             >
-              {restarting ? "Restarting…" : "Restart Mux"}
+              {t(restarting ? "Restarting…" : "Restart Mux")}
             </Button>
           </div>
-          {error && <div className="text-[11px]">{error}</div>}
+          {error && <div className="text-[11px]">{t(error)}</div>}
         </div>
       </div>
     </div>
@@ -255,6 +261,7 @@ function formatTailscaleBindHostLabel(host: ApiServerStatus["tailscaleBindHosts"
 }
 
 function ConfigurableBindUrlControls() {
+  const { t } = useLanguage();
   const enabled = useExperimentValue(EXPERIMENT_IDS.CONFIGURABLE_BIND_URL);
   const { api } = useAPI();
 
@@ -416,7 +423,7 @@ function ConfigurableBindUrlControls() {
   if (!api) {
     return (
       <div className="bg-background-secondary px-4 py-3">
-        <div className="text-muted text-xs">Connect to mux to configure this setting.</div>
+        <div className="text-muted text-xs">{t("Connect to mux to configure this setting.")}</div>
       </div>
     );
   }
@@ -436,24 +443,26 @@ function ConfigurableBindUrlControls() {
   return (
     <div className="bg-background-secondary space-y-4 px-4 py-3">
       <div className="text-warning text-xs">
-        Exposes mux’s API server to your LAN/VPN. Devices on your local network can connect if they
-        have the auth token. Traffic is unencrypted HTTP; enable only on trusted networks (Tailscale
-        recommended).
+        {t(
+          "Exposes mux’s API server to your LAN/VPN. Devices on your local network can connect if they have the auth token. Traffic is unencrypted HTTP; enable only on trusted networks (Tailscale recommended)."
+        )}
       </div>
 
       <div className="space-y-3">
         <div className="flex items-center justify-between gap-4">
           <div>
-            <div className="text-foreground text-sm">Bind host</div>
-            <div className="text-muted text-xs">Where mux listens for HTTP + WS connections</div>
+            <div className="text-foreground text-sm">{t("Bind host")}</div>
+            <div className="text-muted text-xs">
+              {t("Where mux listens for HTTP + WS connections")}
+            </div>
           </div>
           <Select value={hostMode} onValueChange={(value) => setHostMode(value as BindHostMode)}>
             <SelectTrigger className="border-border-medium bg-background-secondary hover:bg-hover h-9 w-64 cursor-pointer rounded-md border px-3 text-sm transition-colors">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="localhost">Localhost only (127.0.0.1)</SelectItem>
-              <SelectItem value="all">All interfaces (0.0.0.0)</SelectItem>
+              <SelectItem value="localhost">{t("Localhost only (127.0.0.1)")}</SelectItem>
+              <SelectItem value="all">{t("All interfaces (0.0.0.0)")}</SelectItem>
               {tailscaleBindHosts.length > 0 ? (
                 tailscaleBindHosts.map((host) => (
                   <SelectItem
@@ -465,10 +474,10 @@ function ConfigurableBindUrlControls() {
                 ))
               ) : (
                 <SelectItem value="tailscale-unavailable" disabled>
-                  {loading ? "Loading Tailscale devices…" : "Tailscale device not detected"}
+                  {t(loading ? "Loading Tailscale devices…" : "Tailscale device not detected")}
                 </SelectItem>
               )}
-              <SelectItem value="custom">Custom…</SelectItem>
+              <SelectItem value="custom">{t("Custom…")}</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -476,13 +485,13 @@ function ConfigurableBindUrlControls() {
         {hostMode === "custom" && (
           <div className="flex items-center justify-between gap-4">
             <div>
-              <div className="text-foreground text-sm">Custom host</div>
-              <div className="text-muted text-xs">Example: 192.168.1.10 or 100.x.y.z</div>
+              <div className="text-foreground text-sm">{t("Custom host")}</div>
+              <div className="text-muted text-xs">{t("Example: 192.168.1.10 or 100.x.y.z")}</div>
             </div>
             <Input
               value={customHost}
               onChange={(e: React.ChangeEvent<HTMLInputElement>) => setCustomHost(e.target.value)}
-              placeholder="e.g. 192.168.1.10"
+              placeholder={t("e.g. 192.168.1.10")}
               className="border-border-medium bg-background-secondary h-9 w-64"
             />
           </div>
@@ -490,9 +499,9 @@ function ConfigurableBindUrlControls() {
 
         <div className="flex items-center justify-between gap-4">
           <div>
-            <div className="text-foreground text-sm">Port</div>
+            <div className="text-foreground text-sm">{t("Port")}</div>
             <div className="text-muted text-xs">
-              Use a fixed port to avoid changing URLs each time mux restarts
+              {t("Use a fixed port to avoid changing URLs each time mux restarts")}
             </div>
           </div>
           <Select value={portMode} onValueChange={(value) => setPortMode(value as PortMode)}>
@@ -500,8 +509,8 @@ function ConfigurableBindUrlControls() {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="random">Random (changes on restart)</SelectItem>
-              <SelectItem value="fixed">Fixed…</SelectItem>
+              <SelectItem value="random">{t("Random (changes on restart)")}</SelectItem>
+              <SelectItem value="fixed">{t("Fixed…")}</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -509,13 +518,13 @@ function ConfigurableBindUrlControls() {
         {portMode === "fixed" && (
           <div className="flex items-center justify-between gap-4">
             <div>
-              <div className="text-foreground text-sm">Fixed port</div>
+              <div className="text-foreground text-sm">{t("Fixed port")}</div>
               <div className="text-muted text-xs">1–65535</div>
             </div>
             <Input
               value={fixedPort}
               onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFixedPort(e.target.value)}
-              placeholder="e.g. 9999"
+              placeholder={t("e.g. 9999")}
               className="border-border-medium bg-background-secondary h-9 w-64"
             />
           </div>
@@ -523,25 +532,27 @@ function ConfigurableBindUrlControls() {
 
         <div className="flex items-center justify-between gap-4">
           <div>
-            <div className="text-foreground text-sm">Serve mux web UI</div>
+            <div className="text-foreground text-sm">{t("Serve mux web UI")}</div>
             <div className="text-muted text-xs">
-              Serve the mux web interface at / (browser mode)
+              {t("Serve the mux web interface at / (browser mode)")}
             </div>
           </div>
           <Switch
             checked={serveWebUi}
             onCheckedChange={(value) => setServeWebUi(value)}
-            aria-label="Toggle serving mux web UI"
+            aria-label={t("Toggle serving mux web UI")}
           />
         </div>
 
         <div className="flex items-center justify-between">
           <div className="text-muted text-xs">
-            {loading
-              ? "Loading server status…"
-              : status?.running
-                ? "Server is running"
-                : "Server is not running"}
+            {t(
+              loading
+                ? "Loading server status…"
+                : status?.running
+                  ? "Server is running"
+                  : "Server is not running"
+            )}
           </div>
           <div className="flex items-center gap-2">
             <Button
@@ -554,7 +565,7 @@ function ConfigurableBindUrlControls() {
               }}
               disabled={loading || saving}
             >
-              Refresh
+              {t("Refresh")}
             </Button>
             <Button
               variant="default"
@@ -566,22 +577,22 @@ function ConfigurableBindUrlControls() {
               }}
               disabled={loading || saving}
             >
-              {saving ? "Applying…" : "Apply"}
+              {t(saving ? "Applying…" : "Apply")}
             </Button>
           </div>
         </div>
 
-        {error && <div className="text-error text-xs">{error}</div>}
+        {error && <div className="text-error text-xs">{t(error)}</div>}
       </div>
 
       {status && (
         <div className="space-y-2">
-          <div className="text-foreground text-sm font-medium">Connection info</div>
+          <div className="text-foreground text-sm font-medium">{t("Connection info")}</div>
 
           {localDocsUrl && (
             <div className="flex items-start justify-between gap-2">
               <div className="flex-1">
-                <div className="text-muted text-xs">Local docs URL</div>
+                <div className="text-muted text-xs">{t("Local docs URL")}</div>
                 <div className="font-mono text-xs break-all">{localDocsUrl}</div>
               </div>
               <CopyButton text={localDocsUrl} />
@@ -593,7 +604,7 @@ function ConfigurableBindUrlControls() {
               {networkDocsUrls.map((docsUrl) => (
                 <div key={docsUrl} className="flex items-start justify-between gap-2">
                   <div className="flex-1">
-                    <div className="text-muted text-xs">Network docs URL</div>
+                    <div className="text-muted text-xs">{t("Network docs URL")}</div>
                     <div className="font-mono text-xs break-all">{docsUrl}</div>
                   </div>
                   <CopyButton text={docsUrl} />
@@ -602,7 +613,7 @@ function ConfigurableBindUrlControls() {
             </div>
           ) : (
             <div className="text-muted text-xs">
-              No network URLs detected (bind host may still be localhost).
+              {t("No network URLs detected (bind host may still be localhost).")}
             </div>
           )}
 
@@ -611,7 +622,7 @@ function ConfigurableBindUrlControls() {
               {(localWebUiUrlWithToken ?? localWebUiUrl) && (
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex-1">
-                    <div className="text-muted text-xs">Local web UI URL</div>
+                    <div className="text-muted text-xs">{t("Local web UI URL")}</div>
                     <div className="font-mono text-xs break-all">
                       {localWebUiUrlWithToken ?? localWebUiUrl}
                     </div>
@@ -625,7 +636,7 @@ function ConfigurableBindUrlControls() {
                   {(encodedToken ? networkWebUiUrlsWithToken : networkWebUiUrls).map((uiUrl) => (
                     <div key={uiUrl} className="flex items-start justify-between gap-2">
                       <div className="flex-1">
-                        <div className="text-muted text-xs">Network web UI URL</div>
+                        <div className="text-muted text-xs">{t("Network web UI URL")}</div>
                         <div className="font-mono text-xs break-all">{uiUrl}</div>
                       </div>
                       <CopyButton text={uiUrl} />
@@ -634,20 +645,20 @@ function ConfigurableBindUrlControls() {
                 </div>
               ) : (
                 <div className="text-muted text-xs">
-                  No network URLs detected for the web UI (bind host may still be localhost).
+                  {t("No network URLs detected for the web UI (bind host may still be localhost).")}
                 </div>
               )}
             </>
           ) : (
             <div className="text-muted text-xs">
-              Web UI serving is disabled (enable “Serve mux web UI” and Apply to access /).
+              {t("Web UI serving is disabled (enable “Serve mux web UI” and Apply to access /).")}
             </div>
           )}
 
           {status.token && (
             <div className="flex items-start justify-between gap-2">
               <div className="flex-1">
-                <div className="text-muted text-xs">Auth token</div>
+                <div className="text-muted text-xs">{t("Auth token")}</div>
                 <div className="font-mono text-xs break-all">{status.token}</div>
               </div>
               <CopyButton text={status.token} />
@@ -689,6 +700,7 @@ function MemorySubExperimentRows() {
 }
 
 export function ExperimentsSection() {
+  const { t } = useLanguage();
   const allExperiments = getExperimentList();
   const { api } = useAPI();
   const advisorToolEnabled = useExperimentValue(EXPERIMENT_IDS.ADVISOR_TOOL);
@@ -761,7 +773,7 @@ export function ExperimentsSection() {
   return (
     <div className="space-y-2">
       <p className="text-muted mb-4 text-xs">
-        Experimental features that are still in development. Enable at your own risk.
+        {t("Experimental features that are still in development. Enable at your own risk.")}
       </p>
       <div className="divide-border-light divide-y">
         {experiments.map((exp) => {
@@ -807,7 +819,7 @@ export function ExperimentsSection() {
       </div>
       {experiments.length === 0 && (
         <p className="text-muted py-4 text-center text-sm">
-          No experiments available at this time.
+          {t("No experiments available at this time.")}
         </p>
       )}
     </div>

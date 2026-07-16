@@ -5,6 +5,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/browser/components/SelectPrimitive/SelectPrimitive";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 interface SelectOption {
   value: string;
@@ -34,6 +35,7 @@ export function Select({
   id,
   "aria-label": ariaLabel,
 }: SelectProps) {
+  const { t } = useLanguage();
   // Normalize options to SelectOption format
   const normalizedOptions: SelectOption[] = options.map((opt) =>
     typeof opt === "string" ? { value: opt, label: opt } : opt
@@ -47,7 +49,7 @@ export function Select({
       <SelectContent>
         {normalizedOptions.map((opt) => (
           <SelectItem key={opt.value} value={opt.value}>
-            {opt.label}
+            {t(opt.label)}
           </SelectItem>
         ))}
       </SelectContent>

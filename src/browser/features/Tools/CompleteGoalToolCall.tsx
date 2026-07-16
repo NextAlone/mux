@@ -25,6 +25,7 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/browser/components/Tooltip/Tooltip";
 import { useOptionalWorkspaceSidebarState } from "@/browser/stores/WorkspaceStore";
 import type { GoalRecordV1, GoalSnapshot, GoalStatus } from "@/common/types/goal";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 interface CompleteGoalToolCallProps {
   args: { summary: string };
@@ -100,6 +101,7 @@ export const CompleteGoalToolCall: React.FC<CompleteGoalToolCallProps> = ({
   status = "pending",
   workspaceId,
 }) => {
+  const { t } = useLanguage();
   const { expanded, toggleExpanded } = useToolExpansion();
   const sidebarState = useOptionalWorkspaceSidebarState(workspaceId);
   const errorResult = isToolErrorResult(result) ? result : null;
@@ -141,7 +143,7 @@ export const CompleteGoalToolCall: React.FC<CompleteGoalToolCallProps> = ({
           </TooltipTrigger>
           <TooltipContent>complete_goal</TooltipContent>
         </Tooltip>
-        <span className="font-medium whitespace-nowrap">Goal complete</span>
+        <span className="font-medium whitespace-nowrap">{t("Goal complete")}</span>
         {summary && <span className="text-foreground min-w-0 truncate italic">“{summary}”</span>}
         <StatusIndicator status={status}>{getStatusDisplay(status)}</StatusIndicator>
       </ToolHeader>
@@ -153,7 +155,7 @@ export const CompleteGoalToolCall: React.FC<CompleteGoalToolCallProps> = ({
           {summary && (
             <div className="mb-2">
               <div className="text-secondary text-[10px] tracking-wide uppercase">
-                Completion summary
+                {t("Completion summary")}
               </div>
               <div className="text-foreground text-[11px] leading-relaxed">{summary}</div>
             </div>
@@ -162,13 +164,15 @@ export const CompleteGoalToolCall: React.FC<CompleteGoalToolCallProps> = ({
           {goal && (
             <div className="bg-code-bg space-y-2 rounded px-3 py-2 text-[11px] leading-relaxed">
               <div>
-                <div className="text-secondary text-[10px] tracking-wide uppercase">Objective</div>
+                <div className="text-secondary text-[10px] tracking-wide uppercase">
+                  {t("Objective")}
+                </div>
                 <div className="text-foreground">{goal.objective}</div>
               </div>
               <dl className="grid grid-cols-1 gap-x-4 gap-y-1 @sm:grid-cols-2">
-                <GoalToolStat label="Final status" value={goalStatusLabel(goal.status)} />
+                <GoalToolStat label={t("Final status")} value={goalStatusLabel(goal.status)} />
                 <GoalToolStat
-                  label="Cost"
+                  label={t("Cost")}
                   value={
                     <span className="counter-nums">
                       {formatGoalBudgetSummary(goal.costCents, goal.budgetCents)}
@@ -176,7 +180,7 @@ export const CompleteGoalToolCall: React.FC<CompleteGoalToolCallProps> = ({
                   }
                 />
                 <GoalToolStat
-                  label="Turns"
+                  label={t("Turns")}
                   value={
                     <span className="counter-nums">
                       {formatGoalTurns(goal.turnsUsed, goal.turnCap)}
@@ -184,7 +188,7 @@ export const CompleteGoalToolCall: React.FC<CompleteGoalToolCallProps> = ({
                   }
                 />
                 <GoalToolStat
-                  label="Elapsed"
+                  label={t("Elapsed")}
                   value={
                     <span className="counter-nums">{formatGoalElapsed(goal.startedAtMs)}</span>
                   }

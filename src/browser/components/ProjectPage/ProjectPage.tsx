@@ -32,6 +32,7 @@ import {
 import { Button } from "@/browser/components/Button/Button";
 import { Skeleton } from "@/browser/components/Skeleton/Skeleton";
 import { isDesktopMode } from "@/browser/hooks/useDesktopTitlebar";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 interface ProjectPageProps {
   projectPath: string;
@@ -71,6 +72,7 @@ export const ProjectPage: React.FC<ProjectPageProps> = ({
   pendingDraftId,
   onWorkspaceCreated,
 }) => {
+  const { t } = useLanguage();
   const { api } = useAPI();
   const chatInputRef = useRef<ChatInputAPI | null>(null);
   const pendingAgentsInitSendRef = useRef(false);
@@ -269,8 +271,8 @@ export const ProjectPage: React.FC<ProjectPageProps> = ({
                 variant="ghost"
                 size="icon"
                 onClick={onToggleLeftSidebarCollapsed}
-                title="Open sidebar"
-                aria-label="Open sidebar menu"
+                title={t("Open sidebar")}
+                aria-label={t("Open sidebar menu")}
                 className={cn(
                   "hidden mobile-menu-btn h-6 w-6 shrink-0 text-muted hover:text-foreground",
                   isDesktopMode() && "titlebar-no-drag"

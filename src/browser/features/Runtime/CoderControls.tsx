@@ -19,6 +19,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/browser/components/SelectPrimitive/SelectPrimitive";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 export interface CoderControlsProps {
   /** Whether Coder is enabled for this workspace */
@@ -148,6 +149,7 @@ export type CoderWorkspaceFormProps = Omit<
 };
 
 export function CoderWorkspaceForm(props: CoderWorkspaceFormProps) {
+  const { t } = useLanguage();
   const {
     coderConfig,
     onCoderConfigChange,
@@ -283,7 +285,8 @@ export function CoderWorkspaceForm(props: CoderWorkspaceFormProps) {
     >
       {showLoginInfo && (
         <div className={cn("text-muted-foreground px-2 py-1.5 text-xs", headerBorderClass)}>
-          Logged in as <span className="text-foreground font-medium">{username}</span> on{" "}
+          {t("Logged in as")}
+          <span className="text-foreground font-medium">{username}</span> {t("on")}{" "}
           <span className="text-foreground font-medium">{deploymentUrl}</span>
         </div>
       )}
@@ -292,7 +295,7 @@ export function CoderWorkspaceForm(props: CoderWorkspaceFormProps) {
         <div
           className="border-border-medium flex flex-col gap-1 border-r p-2 pr-3"
           role="group"
-          aria-label="Coder workspace mode"
+          aria-label={t("Coder workspace mode")}
           data-testid="coder-mode-toggle"
         >
           <Tooltip>
@@ -309,10 +312,10 @@ export function CoderWorkspaceForm(props: CoderWorkspaceFormProps) {
                 )}
                 aria-pressed={mode === "new"}
               >
-                New
+                {t("New")}
               </button>
             </TooltipTrigger>
-            <TooltipContent>Create a new Coder workspace from a template</TooltipContent>
+            <TooltipContent>{t("Create a new Coder workspace from a template")}</TooltipContent>
           </Tooltip>
           <Tooltip>
             <TooltipTrigger asChild>
@@ -328,10 +331,10 @@ export function CoderWorkspaceForm(props: CoderWorkspaceFormProps) {
                 )}
                 aria-pressed={mode === "existing"}
               >
-                Existing
+                {t("Existing")}
               </button>
             </TooltipTrigger>
-            <TooltipContent>Connect to an existing Coder workspace</TooltipContent>
+            <TooltipContent>{t("Connect to an existing Coder workspace")}</TooltipContent>
           </Tooltip>
         </div>
 
@@ -340,7 +343,7 @@ export function CoderWorkspaceForm(props: CoderWorkspaceFormProps) {
         {mode === "new" && (
           <div className="flex flex-col gap-1 p-2 pl-3">
             <div className="flex h-7 items-center gap-2">
-              <label className="text-muted-foreground w-16 text-xs">Template</label>
+              <label className="text-muted-foreground w-16 text-xs">{t("Template")}</label>
               {loadingTemplates ? (
                 <Loader2 className="text-muted h-4 w-4 animate-spin" />
               ) : (
@@ -400,7 +403,7 @@ export function CoderWorkspaceForm(props: CoderWorkspaceFormProps) {
               </p>
             )}
             <div className="flex h-7 items-center gap-2">
-              <label className="text-muted-foreground w-16 text-xs">Preset</label>
+              <label className="text-muted-foreground w-16 text-xs">{t("Preset")}</label>
               {loadingPresets ? (
                 <Loader2 className="text-muted h-4 w-4 animate-spin" />
               ) : (
@@ -439,7 +442,7 @@ export function CoderWorkspaceForm(props: CoderWorkspaceFormProps) {
         {mode === "existing" && (
           <div className="flex w-[17rem] flex-col gap-1 p-2 pl-3">
             <div className="flex min-h-[3.75rem] items-center gap-2">
-              <label className="text-muted-foreground w-16 text-xs">Workspace</label>
+              <label className="text-muted-foreground w-16 text-xs">{t("Workspace")}</label>
               {loadingWorkspaces ? (
                 <Loader2 className="text-muted h-4 w-4 animate-spin" />
               ) : (

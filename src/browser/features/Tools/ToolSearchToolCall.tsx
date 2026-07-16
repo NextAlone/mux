@@ -16,6 +16,7 @@ import {
   useToolExpansion,
   type ToolStatus,
 } from "./Shared/toolUtils";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 /**
  * Transcript card for the `tool_catalog_search` tool (tool-search experiment), the
@@ -66,6 +67,7 @@ interface ToolSearchToolCallProps {
 }
 
 export const ToolSearchToolCall: React.FC<ToolSearchToolCallProps> = (props) => {
+  const { t } = useLanguage();
   const status = props.status ?? "pending";
   const { expanded, toggleExpanded } = useToolExpansion(props.defaultExpanded ?? false);
 
@@ -93,7 +95,8 @@ export const ToolSearchToolCall: React.FC<ToolSearchToolCallProps> = (props) => 
 
           {view.kind === "matches" && matches.length === 0 && (
             <div className="text-muted px-1 py-1 text-[11px] italic">
-              No deferred tools matched “{view.result.query}”
+              {t("No deferred tools matched “")}
+              {view.result.query}”
               {view.result.totalDeferred > 0 &&
                 ` (${view.result.totalDeferred} deferred ${view.result.totalDeferred === 1 ? "tool" : "tools"} available)`}
             </div>

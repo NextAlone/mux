@@ -1,4 +1,5 @@
 import React from "react";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 interface ContextCollapseIndicatorProps {
   lineCount: number;
@@ -24,6 +25,7 @@ export const ContextCollapseIndicator: React.FC<ContextCollapseIndicatorProps> =
   position,
   mode = "collapse",
 }) => {
+  const { t } = useLanguage();
   const verb = mode === "collapse" ? "Collapse" : "Show";
   const ariaLabel =
     mode === "collapse" ? `Collapse context ${position}` : `Show context ${position}`;
@@ -52,7 +54,8 @@ export const ContextCollapseIndicator: React.FC<ContextCollapseIndicatorProps> =
           />
         </svg>
         <span className="text-[10px] font-medium">
-          {verb} {lineCount} line{lineCount === 1 ? "" : "s"} {position}
+          {verb} {lineCount} {t("line")}
+          {lineCount === 1 ? "" : "s"} {position}
         </span>
         <svg
           className="text-border shrink-0"

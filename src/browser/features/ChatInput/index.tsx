@@ -219,6 +219,7 @@ import { normalizeAgentId } from "@/common/utils/agentIds";
 import { isGoalRunning } from "@/common/types/goal";
 import { appendStagedAttachmentNotice, getStagedAttachments } from "./stagedAttachments";
 import { WORKSPACE_DEFAULTS } from "@/constants/workspaceDefaults";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 // localStorage quotas are environment-dependent and relatively small.
 // Be conservative here so we can warn the user before writes start failing.
@@ -277,6 +278,7 @@ interface OpenAIFastModeToggleProps {
 }
 
 const OpenAIFastModeToggle: React.FC<OpenAIFastModeToggleProps> = (props) => {
+  const { t } = useLanguage();
   if (!shouldShowOpenAIFastModeToggle(props.modelString)) {
     return null;
   }
@@ -292,7 +294,7 @@ const OpenAIFastModeToggle: React.FC<OpenAIFastModeToggleProps> = (props) => {
           onClick={() => props.onCheckedChange(!checked)}
           disabled={props.disabled}
           aria-pressed={checked}
-          aria-label="Toggle OpenAI fast mode"
+          aria-label={t("Toggle OpenAI fast mode")}
           className={cn(
             "hover:bg-hover hover:border-border-light inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-sm border border-transparent bg-transparent transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-50",
             checked ? "text-accent" : "text-muted/50 hover:text-muted"
@@ -302,15 +304,17 @@ const OpenAIFastModeToggle: React.FC<OpenAIFastModeToggleProps> = (props) => {
         </button>
       </TooltipTrigger>
       <TooltipContent>
-        <strong>OpenAI fast mode</strong>
+        <strong>{t("OpenAI fast mode")}</strong>
         <br />
-        {checked ? "On" : "Off"} - sends service_tier=priority
+        {checked ? t("On") : t("Off")}
+        {t("- sends service_tier=priority")}
       </TooltipContent>
     </Tooltip>
   );
 };
 
 const ChatInputInner: React.FC<ChatInputProps> = (props) => {
+  const { t } = useLanguage();
   const { api } = useAPI();
   const policyState = usePolicy();
   const effectivePolicy =
@@ -1592,14 +1596,14 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
             .map((p) => {
               // Determine file type from extension or mark as directory
               const getFileType = (path: string): string => {
-                if (path.endsWith("/")) return "Directory";
+                if (path.endsWith("/")) return t("Directory");
                 const lastDot = path.lastIndexOf(".");
                 const lastSlash = path.lastIndexOf("/");
                 // Only use extension if it's after the last slash (in the filename)
                 if (lastDot > lastSlash && lastDot < path.length - 1) {
                   return path.slice(lastDot + 1).toUpperCase();
                 }
-                return "File";
+                return t("File");
               };
               return {
                 id: `file:${p}`,
@@ -1631,6 +1635,7 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
     workspaceId,
     atMentionProjectPath,
     atMentionCursorNonce,
+    t,
   ]);
 
   // Watch input/cursor for inline $skill references
@@ -2038,14 +2043,17 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
 
       pushToast({
         type: "success",
-        message: `Thinking effort set to ${levelDescriptions[level]}`,
+        message: t("Thinking effort set to {level}").replace(
+          "{level}",
+          t(levelDescriptions[level])
+        ),
       });
     };
 
     window.addEventListener(CUSTOM_EVENTS.THINKING_LEVEL_TOAST, handler as EventListener);
     return () =>
       window.removeEventListener(CUSTOM_EVENTS.THINKING_LEVEL_TOAST, handler as EventListener);
-  }, [variant, props, pushToast]);
+  }, [variant, props, pushToast, t]);
 
   // Show the backend's one-shot child-budget warning on the matching parent workspace.
   useEffect(() => {
@@ -2184,12 +2192,20 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
       // Tell users when we auto-resize so the attachment dimensions are never surprising.
       const message =
         resized.length === 1
-          ? `Image resized from ${firstResizeInfo.originalWidth}×${firstResizeInfo.originalHeight} to ${firstResizeInfo.newWidth}×${firstResizeInfo.newHeight}`
-          : `${resized.length} images resized to fit provider limits`;
+          ? t("Image resized from {before} to {after}")
+              .replace(
+                "{before}",
+                `${firstResizeInfo.originalWidth}×${firstResizeInfo.originalHeight}`
+              )
+              .replace("{after}", `${firstResizeInfo.newWidth}×${firstResizeInfo.newHeight}`)
+          : t("{count} images resized to fit provider limits").replace(
+              "{count}",
+              String(resized.length)
+            );
 
       pushToast({ type: "info", message });
     },
-    [pushToast]
+    [pushToast, t]
   );
 
   const processAttachmentFilesForComposer = useCallback(
@@ -2200,7 +2216,7 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
           variant === "workspace"
             ? async (file, dataBase64) => {
                 if (!api) {
-                  throw new Error("Not connected to server");
+                  throw new Error(t("Not connected to server"));
                 }
                 if (workspaceId == null) {
                   throw new Error("ZIP attachments can be added after opening a workspace.");
@@ -2222,7 +2238,7 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
         setProcessingAttachmentCount((count) => Math.max(0, count - 1));
       });
     },
-    [api, variant, workspaceId]
+    [api, variant, workspaceId, t]
   );
 
   // Handle paste events to extract attachments
@@ -2255,7 +2271,7 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
           console.error("Failed to process pasted attachment:", error);
           pushToast({
             type: "error",
-            message: error instanceof Error ? error.message : "Failed to process attachment",
+            message: error instanceof Error ? error.message : t("Failed to process attachment"),
           });
         });
     },
@@ -2265,6 +2281,7 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
       pushToast,
       setAttachments,
       showResizeToast,
+      t,
     ]
   );
 
@@ -2303,7 +2320,9 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
       for (const outcome of outcomes) {
         if (!outcome.ok) {
           const msg =
-            outcome.error instanceof Error ? outcome.error.message : "Failed to process attachment";
+            outcome.error instanceof Error
+              ? outcome.error.message
+              : t("Failed to process attachment");
           console.error("Failed to process attached file:", outcome.error);
           pushToast({ type: "error", message: msg });
         }
@@ -2505,7 +2524,7 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
           console.error("Failed to resolve dropped file paths:", error);
           pushToast({
             type: "error",
-            message: error instanceof Error ? error.message : "Failed to resolve dropped files",
+            message: error instanceof Error ? error.message : t("Failed to resolve dropped files"),
           });
         }
       }
@@ -2521,7 +2540,7 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
           console.error("Failed to process dropped attachment:", error);
           pushToast({
             type: "error",
-            message: error instanceof Error ? error.message : "Failed to process attachment",
+            message: error instanceof Error ? error.message : t("Failed to process attachment"),
           });
         });
     },
@@ -2534,6 +2553,7 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
       setAttachments,
       setInput,
       showResizeToast,
+      t,
     ]
   );
 
@@ -2697,7 +2717,7 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
 
       if (skillInvocation) {
         if (!api) {
-          pushToast({ type: "error", message: "Not connected to server" });
+          pushToast({ type: "error", message: t("Not connected to server") });
           return;
         }
 
@@ -2809,7 +2829,7 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
         : undefined;
 
       if (!api) {
-        pushToast({ type: "error", message: "Not connected to server" });
+        pushToast({ type: "error", message: t("Not connected to server") });
         return;
       }
       setSendingCount((c) => c + 1);
@@ -2834,12 +2854,12 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
 
           pushToast({
             type: "error",
-            title: "PDF not supported",
+            title: t("PDF not supported"),
             message:
-              `Model ${policyModel} does not support PDF input.` +
+              t("Model {model} does not support PDF input.").replace("{model}", policyModel) +
               (pdfCapableExamples.length > 0
-                ? ` Try e.g.: ${pdfCapableExamples.join(", ")}${examplesSuffix}`
-                : " Choose a model with PDF support."),
+                ? ` ${t("Try e.g.:")} ${pdfCapableExamples.join(", ")}${examplesSuffix}`
+                : ` ${t("Choose a model with PDF support.")}`),
           });
           setSendingCount((c) => c - 1);
           return;
@@ -2853,8 +2873,12 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
               const actualMb = (bytes / (1024 * 1024)).toFixed(1);
               pushToast({
                 type: "error",
-                title: "PDF too large",
-                message: `${attachment.filename ?? "PDF"} is ${actualMb}MB, but ${policyModel} allows up to ${caps.maxPdfSizeMb}MB per PDF.`,
+                title: t("PDF too large"),
+                message: t("{file} is {size}MB, but {model} allows up to {limit}MB per PDF.")
+                  .replace("{file}", attachment.filename ?? "PDF")
+                  .replace("{size}", actualMb)
+                  .replace("{model}", policyModel)
+                  .replace("{limit}", String(caps.maxPdfSizeMb)),
               });
               setSendingCount((c) => c - 1);
               return;
@@ -3098,7 +3122,7 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
         setToast(
           createErrorToast({
             type: "unknown",
-            raw: error instanceof Error ? error.message : "Failed to send message",
+            raw: error instanceof Error ? error.message : t("Failed to send message"),
           })
         );
         // Restore draft on error
@@ -3306,12 +3330,12 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
     // Workspace variant placeholders
     if (editingMessageForUi) {
       if (isMobileTouch) {
-        return "Edit your message...";
+        return t("Edit your message...");
       }
       const cancelHint = vimEnabled
-        ? `${formatKeybind(KEYBINDS.CANCEL_EDIT)}×2 to cancel`
-        : `${formatKeybind(KEYBINDS.CANCEL_EDIT)} to cancel`;
-      return `Edit your message... (${cancelHint}, ${formatKeybind(KEYBINDS.SEND_MESSAGE)} to send)`;
+        ? `${formatKeybind(KEYBINDS.CANCEL_EDIT)}×2 ${t("to cancel")}`
+        : `${formatKeybind(KEYBINDS.CANCEL_EDIT)} ${t("to cancel")}`;
+      return `${t("Edit your message...")} (${cancelHint}, ${formatKeybind(KEYBINDS.SEND_MESSAGE)} ${t("to send")})`;
     }
     if (disabled) {
       const disabledReason = props.disabledReason;
@@ -3321,9 +3345,9 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
     }
     if (isCompacting) {
       if (isMobileTouch) {
-        return "Compacting...";
+        return t("Compacting...");
       }
-      return `Compacting... (${formatKeybind(interruptKeybind)} cancel | ${formatKeybind(KEYBINDS.SEND_MESSAGE)} to queue)`;
+      return `${t("Compacting...")} (${formatKeybind(interruptKeybind)} ${t("cancel")} | ${formatKeybind(KEYBINDS.SEND_MESSAGE)} ${t("to queue")})`;
     }
 
     // Tip carousel: rotates the placeholder through a curated list of
@@ -3434,7 +3458,7 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
             onSelectSuggestion={handleAtMentionSelect}
             onDismiss={() => setShowAtMentionSuggestions(false)}
             isVisible={showAtMentionSuggestions}
-            ariaLabel="File path suggestions"
+            ariaLabel={t("File path suggestions")}
             listId={atMentionListId}
             anchorRef={variant === "creation" ? inputRef : undefined}
             highlightQuery={lastAtMentionQueryRef.current ?? ""}
@@ -3447,7 +3471,7 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
             onSelectSuggestion={handleSkillSelect}
             onDismiss={() => setShowSkillSuggestions(false)}
             isVisible={showSkillSuggestions}
-            ariaLabel="Skill suggestions"
+            ariaLabel={t("Skill suggestions")}
             listId={skillListId}
             anchorRef={variant === "creation" ? inputRef : undefined}
             highlightQuery={lastSkillQueryRef.current ?? ""}
@@ -3460,7 +3484,7 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
             onSelectSuggestion={handleCommandSelect}
             onDismiss={() => setShowCommandSuggestions(false)}
             isVisible={showCommandSuggestions}
-            ariaLabel="Slash command suggestions"
+            ariaLabel={t("Slash command suggestions")}
             listId={commandListId}
             anchorRef={variant === "creation" ? inputRef : undefined}
           />
@@ -3471,7 +3495,7 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
             onSelectSuggestion={handleSymbolSelect}
             onDismiss={() => setShowSymbolSuggestions(false)}
             isVisible={showSymbolSuggestions}
-            ariaLabel="Symbol shortcuts"
+            ariaLabel={t("Symbol shortcuts")}
             listId={symbolListId}
             anchorRef={variant === "creation" ? inputRef : undefined}
             highlightQuery={lastSymbolQueryRef.current}
@@ -3518,9 +3542,11 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
                             ? COMMAND_SUGGESTION_KEYS
                             : undefined
                   }
-                  placeholder={placeholder}
+                  placeholder={t(placeholder)}
                   disabled={!editingMessageForUi && (disabled || sendInFlightBlocksInput)}
-                  aria-label={editingMessageForUi ? "Edit your last message" : "Message Claude"}
+                  aria-label={
+                    editingMessageForUi ? t("Edit your last message") : t("Message Claude")
+                  }
                   aria-autocomplete="list"
                   aria-controls={
                     showAtMentionSuggestions && atMentionSuggestions.length > 0
@@ -3546,15 +3572,15 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
                   <div className="mobile-hide-shortcut-hints text-muted @container pointer-events-none absolute right-2 bottom-3 left-2 flex flex-nowrap items-center gap-4 overflow-hidden text-[11px] whitespace-nowrap">
                     <span className="shrink-0">
                       <span className="font-mono">{formatKeybind(KEYBINDS.FOCUS_CHAT)}</span>
-                      <span> - focus chat</span>
+                      <span> {t("- focus chat")}</span>
                     </span>
                     <span className="shrink-0 [@container(max-width:520px)]:hidden">
                       <span className="font-mono">{formatKeybind(KEYBINDS.CYCLE_MODEL)}</span>
-                      <span> - change model</span>
+                      <span> {t("- change model")}</span>
                     </span>
                     <span className="shrink-0 [@container(max-width:640px)]:hidden">
                       <span className="font-mono">{formatKeybind(KEYBINDS.CYCLE_AGENT)}</span>
-                      <span> - change agent</span>
+                      <span> {t("- change agent")}</span>
                     </span>
                   </div>
                 )}
@@ -3569,10 +3595,11 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
             {/* Editing indicator - workspace only */}
             {variant === "workspace" && editingMessageForUi && (
               <div className="text-edit-mode text-[11px] font-medium">
-                Editing message{" "}
+                {t("Editing message")}{" "}
                 <span className="mobile-hide-shortcut-hints">
                   ({formatKeybind(KEYBINDS.CANCEL_EDIT)}
-                  {vimEnabled ? "×2" : ""} to cancel)
+                  {vimEnabled ? "×2" : ""}
+                  {t("to cancel)")}
                 </span>
               </div>
             )}
@@ -3598,12 +3625,13 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
                     className="w-[clamp(5.5rem,28vw,8rem)] min-w-0"
                     tooltipExtraContent={
                       <>
-                        <strong>Click to edit</strong>
+                        <strong>{t("Click to edit")}</strong>
                         <br />
-                        <strong>{formatKeybind(KEYBINDS.CYCLE_MODEL)}</strong> to cycle models
+                        <strong>{formatKeybind(KEYBINDS.CYCLE_MODEL)}</strong>
+                        {t("to cycle models")}
                         <br />
                         <br />
-                        <strong>Abbreviations:</strong>
+                        <strong>{t("Abbreviations:")}</strong>
                         {MODEL_ABBREVIATION_EXAMPLES.map((ex) => (
                           <React.Fragment key={ex.abbrev}>
                             <br />• <code>/model {ex.abbrev}</code> - {ex.displayName}
@@ -3611,7 +3639,7 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
                         ))}
                         <br />
                         <br />
-                        <strong>Full format:</strong>
+                        <strong>{t("Full format:")}</strong>
                         <br />
                         <code>/model provider:model-name</code>
                         <br />
@@ -3710,7 +3738,7 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
                         onTouchMove={sendModeMenuTouchHandlers.onTouchMove}
                         onTouchCancel={sendModeMenuTouchHandlers.onTouchEnd}
                         disabled={!canSend}
-                        aria-label="Send message"
+                        aria-label={t("Send message")}
                         aria-expanded={canChooseDispatchMode ? isSendModeMenuOpen : undefined}
                         aria-haspopup={canChooseDispatchMode ? "menu" : undefined}
                         size="xs"
@@ -3728,22 +3756,24 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
                       </Button>
                     </TooltipTrigger>
                     <TooltipContent align="start" className="max-w-80 whitespace-normal">
-                      <strong>Send message ({formatKeybind(KEYBINDS.SEND_MESSAGE)})</strong>
+                      <strong>
+                        {t("Send message")} ({formatKeybind(KEYBINDS.SEND_MESSAGE)})
+                      </strong>
                       {variant === "workspace" && (
                         <>
                           <br />
                           <br />
-                          <strong>Right-click or long-press for advanced send modes:</strong>
+                          <strong>{t("Right-click or long-press for advanced send modes:")}</strong>
                           {runningGoalActive && !editingMessageForUi && (
                             <>
                               <br />
-                              Manual sends pause the current goal; use Resume to continue it.
+                              {t("Manual sends pause the current goal; use Resume to continue it.")}
                             </>
                           )}
                           {SEND_DISPATCH_MODES.map((entry) => (
                             <React.Fragment key={entry.mode}>
                               <br />
-                              {entry.label}: <kbd>{formatKeybind(entry.keybind)}</kbd>
+                              {t(entry.label)}: <kbd>{formatKeybind(entry.keybind)}</kbd>
                             </React.Fragment>
                           ))}
                         </>
@@ -3767,7 +3797,7 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
                             );
                           }}
                         >
-                          <span className="whitespace-nowrap">{entry.label}</span>
+                          <span className="whitespace-nowrap">{t(entry.label)}</span>
                           <kbd className="bg-background-secondary text-foreground border-border-medium rounded border px-1.5 py-px font-mono text-[10px] whitespace-nowrap">
                             {formatKeybind(entry.keybind)}
                           </kbd>
@@ -3784,10 +3814,12 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
 
       <ConfirmationModal
         isOpen={pendingBoundaryEditConfirmation !== null}
-        title="Edit Message Before Context Boundary?"
-        description="Sending this edit will discard the latest compaction or reset summary and every message after the edited one, then continue from the rewritten history."
+        title={t("Edit Message Before Context Boundary?")}
+        description={t(
+          "Sending this edit will discard the latest compaction or reset summary and every message after the edited one, then continue from the rewritten history."
+        )}
         warning="This action cannot be undone."
-        confirmLabel="Edit and Send"
+        confirmLabel={t("Edit and Send")}
         onConfirm={handleBoundaryEditConfirm}
         onCancel={handleBoundaryEditCancel}
       />
@@ -3795,10 +3827,10 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
       {/* Confirmation modal for destructive commands (currently only /clear). */}
       <ConfirmationModal
         isOpen={pendingDestructiveCommand}
-        title="Clear Chat History?"
-        description="This will remove all messages from the conversation."
+        title={t("Clear Chat History?")}
+        description={t("This will remove all messages from the conversation.")}
         warning="This action cannot be undone."
-        confirmLabel="Clear"
+        confirmLabel={t("Clear")}
         onConfirm={handleDestructiveCommandConfirm}
         onCancel={handleDestructiveCommandCancel}
       />

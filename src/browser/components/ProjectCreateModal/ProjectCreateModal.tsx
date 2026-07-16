@@ -16,6 +16,7 @@ import {
 } from "@/browser/components/ToggleGroupPrimitive/ToggleGroupPrimitive";
 import type { ProjectConfig } from "@/node/config";
 import { useAPI } from "@/browser/contexts/API";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 type ApiClient = ReturnType<typeof useAPI>["api"];
 
@@ -123,6 +124,7 @@ export const ProjectCreateForm = React.forwardRef<ProjectCreateFormHandle, Proje
     },
     ref
   ) {
+    const { t } = useLanguage();
     const { api } = useAPI();
     const [path, setPath] = useState(initialPath ?? "");
     const [error, setErrorState] = useState("");
@@ -165,7 +167,7 @@ export const ProjectCreateForm = React.forwardRef<ProjectCreateFormHandle, Proje
         setPath(selectedPath);
         setError("");
       },
-      errorLabel: "Failed to pick directory:",
+      errorLabel: t("Failed to pick directory:"),
     });
 
     const handleSelect = useCallback(async (): Promise<boolean> => {
@@ -210,18 +212,18 @@ export const ProjectCreateForm = React.forwardRef<ProjectCreateFormHandle, Proje
 
         // Backend validation error - show inline
         const errorMessage =
-          typeof result.error === "string" ? result.error : "Failed to add project";
+          typeof result.error === "string" ? result.error : t("Failed to add project");
         setError(errorMessage);
         return false;
       } catch (err) {
         // Unexpected error
-        const errorMessage = err instanceof Error ? err.message : "An unexpected error occurred";
+        const errorMessage = err instanceof Error ? err.message : t("An unexpected error occurred");
         setError(`Failed to add project: ${errorMessage}`);
         return false;
       } finally {
         setCreating(false);
       }
-    }, [api, isCreating, onClose, onSuccess, path, reset, setCreating, setError]);
+    }, [api, isCreating, onClose, onSuccess, path, reset, setCreating, setError, t]);
 
     const handleKeyDown = useCallback(
       (e: React.KeyboardEvent) => {
@@ -245,7 +247,7 @@ export const ProjectCreateForm = React.forwardRef<ProjectCreateFormHandle, Proje
     return (
       <>
         <div className="space-y-1">
-          <label className="text-muted text-xs">Path</label>
+          <label className="text-muted text-xs">{t("Path")}</label>
           <div className="flex gap-2">
             <input
               type="text"
@@ -267,7 +269,7 @@ export const ProjectCreateForm = React.forwardRef<ProjectCreateFormHandle, Proje
                 disabled={isCreating}
                 className="shrink-0"
               >
-                Browse…
+                {t("Browse…")}
               </Button>
             )}
           </div>
@@ -279,11 +281,11 @@ export const ProjectCreateForm = React.forwardRef<ProjectCreateFormHandle, Proje
           <DialogFooter>
             {showCancelButton && (
               <Button variant="secondary" onClick={handleCancel} disabled={isCreating}>
-                Cancel
+                {t("Cancel")}
               </Button>
             )}
             <Button onClick={() => void handleSelect()} disabled={isCreating}>
-              {isCreating ? "Adding..." : submitLabel}
+              {isCreating ? t("Adding...") : t(submitLabel)}
             </Button>
           </DialogFooter>
         )}
@@ -382,6 +384,7 @@ function processTerminalOutput(raw: string): string {
 
 const ProjectCloneForm = React.forwardRef<ProjectCloneFormHandle, ProjectCloneFormProps>(
   function ProjectCloneForm(props, ref) {
+    const { t } = useLanguage();
     const { api } = useAPI();
     const [repoUrl, setRepoUrl] = useState("");
     const [cloneParentDir, setCloneParentDir] = useState(props.defaultProjectDir);
@@ -485,7 +488,7 @@ const ProjectCloneForm = React.forwardRef<ProjectCloneFormHandle, ProjectCloneFo
         setHasEditedCloneParentDir(true);
         setError("");
       },
-      errorLabel: "Failed to pick clone directory:",
+      errorLabel: t("Failed to pick clone directory:"),
     });
 
     const handleClone = useCallback(async (): Promise<boolean> => {
@@ -563,7 +566,7 @@ const ProjectCloneForm = React.forwardRef<ProjectCloneFormHandle, ProjectCloneFo
           return false;
         }
 
-        const errorMessage = err instanceof Error ? err.message : "An unexpected error occurred";
+        const errorMessage = err instanceof Error ? err.message : t("An unexpected error occurred");
         setError(`Failed to clone project: ${errorMessage}`);
         return false;
       } finally {
@@ -572,7 +575,7 @@ const ProjectCloneForm = React.forwardRef<ProjectCloneFormHandle, ProjectCloneFo
           setCreating(false);
         }
       }
-    }, [api, isCreating, props, repoUrl, reset, setCreating, setError, trimmedCloneParentDir]);
+    }, [api, isCreating, props, repoUrl, reset, setCreating, setError, t, trimmedCloneParentDir]);
 
     const handleAddExistingProject = useCallback(async () => {
       if (!api || !destinationExistsPath) {
@@ -594,7 +597,7 @@ const ProjectCloneForm = React.forwardRef<ProjectCloneFormHandle, ProjectCloneFo
 
         if (!result.success) {
           const errorMessage =
-            typeof result.error === "string" ? result.error : "Failed to add existing project";
+            typeof result.error === "string" ? result.error : t("Failed to add existing project");
           setError(errorMessage);
           return;
         }
@@ -613,7 +616,7 @@ const ProjectCloneForm = React.forwardRef<ProjectCloneFormHandle, ProjectCloneFo
           setIsAddingProject(false);
         }
       }
-    }, [api, destinationExistsPath, props, reset, setError]);
+    }, [api, destinationExistsPath, props, reset, setError, t]);
 
     const handleRetry = useCallback(() => {
       setError("");
@@ -652,11 +655,11 @@ const ProjectCloneForm = React.forwardRef<ProjectCloneFormHandle, ProjectCloneFo
           <div className="space-y-3">
             <div className="space-y-1">
               <label className="text-muted text-xs">
-                {hasCloneFailure ? "Clone failed" : "Cloning repository…"}
+                {hasCloneFailure ? t("Clone failed") : t("Cloning repository…")}
               </label>
               <div className="bg-modal-bg border-border-medium max-h-40 overflow-y-auto rounded border p-3">
                 <pre className="text-muted font-mono text-xs break-all whitespace-pre-wrap">
-                  {cloneOutput.length > 0 ? cloneOutput : "Starting clone…"}
+                  {cloneOutput.length > 0 ? cloneOutput : t("Starting clone…")}
                 </pre>
                 <div ref={progressEndRef} />
               </div>
@@ -664,14 +667,15 @@ const ProjectCloneForm = React.forwardRef<ProjectCloneFormHandle, ProjectCloneFo
 
             {destinationPreview && (
               <p className="text-muted text-xs">
-                Cloning to <span className="text-foreground font-mono">{destinationPreview}</span>
+                {t("Cloning to")}
+                <span className="text-foreground font-mono">{destinationPreview}</span>
               </p>
             )}
           </div>
         ) : (
           <div className="space-y-3">
             <div className="space-y-1">
-              <label className="text-muted text-xs">Repo URL</label>
+              <label className="text-muted text-xs">{t("Repo URL")}</label>
               <input
                 type="text"
                 value={repoUrl}
@@ -680,7 +684,7 @@ const ProjectCloneForm = React.forwardRef<ProjectCloneFormHandle, ProjectCloneFo
                   setError("");
                 }}
                 onKeyDown={handleKeyDown}
-                placeholder="owner/repo or https://github.com/..."
+                placeholder={t("owner/repo or https://github.com/...")}
                 autoFocus={props.autoFocus ?? true}
                 disabled={isCreating}
                 className="border-border-medium bg-modal-bg text-foreground placeholder:text-muted focus:border-accent w-full rounded border px-3 py-2 font-mono text-sm focus:outline-none disabled:opacity-50"
@@ -688,7 +692,7 @@ const ProjectCloneForm = React.forwardRef<ProjectCloneFormHandle, ProjectCloneFo
             </div>
 
             <div className="space-y-1">
-              <label className="text-muted text-xs">Location</label>
+              <label className="text-muted text-xs">{t("Location")}</label>
               <div className="flex gap-2">
                 <input
                   type="text"
@@ -700,7 +704,7 @@ const ProjectCloneForm = React.forwardRef<ProjectCloneFormHandle, ProjectCloneFo
                     setError("");
                   }}
                   onKeyDown={handleKeyDown}
-                  placeholder={props.defaultProjectDir || "Select clone location"}
+                  placeholder={props.defaultProjectDir || t("Select clone location")}
                   disabled={isCreating}
                   className="border-border-medium bg-modal-bg text-foreground placeholder:text-muted focus:border-accent min-w-0 flex-1 rounded border px-3 py-2 font-mono text-sm focus:outline-none disabled:opacity-50"
                 />
@@ -711,7 +715,7 @@ const ProjectCloneForm = React.forwardRef<ProjectCloneFormHandle, ProjectCloneFo
                     disabled={isCreating}
                     className="shrink-0"
                   >
-                    Browse…
+                    {t("Browse…")}
                   </Button>
                 )}
               </div>
@@ -719,7 +723,7 @@ const ProjectCloneForm = React.forwardRef<ProjectCloneFormHandle, ProjectCloneFo
 
             {repoName && destinationPreview && (
               <p className="text-muted text-xs">
-                Will clone to{" "}
+                {t("Will clone to")}{" "}
                 <span className="text-foreground font-mono">{destinationPreview}</span>
               </p>
             )}
@@ -736,7 +740,7 @@ const ProjectCloneForm = React.forwardRef<ProjectCloneFormHandle, ProjectCloneFo
                 onClick={() => void handleAddExistingProject()}
                 disabled={isAddingProject}
               >
-                {isAddingProject ? "Adding project…" : "Add this project instead"}
+                {isAddingProject ? t("Adding project…") : t("Add this project instead")}
               </button>
             )}
           </div>
@@ -745,11 +749,11 @@ const ProjectCloneForm = React.forwardRef<ProjectCloneFormHandle, ProjectCloneFo
         {!props.hideFooter && (
           <DialogFooter>
             <Button variant="secondary" onClick={handleCancel}>
-              Cancel
+              {t("Cancel")}
             </Button>
             {!isCreating && (
               <Button onClick={hasCloneFailure ? handleRetry : () => void handleClone()}>
-                {hasCloneFailure ? "Back to form" : "Clone Project"}
+                {hasCloneFailure ? t("Back to form") : t("Clone Project")}
               </Button>
             )}
           </DialogFooter>
@@ -775,6 +779,7 @@ function ProjectAddFormFooter(props: {
   cloneFormRef: React.RefObject<ProjectCloneFormHandle | null>;
   onClose?: () => void;
 }) {
+  const { t } = useLanguage();
   const handleSubmit = () => {
     if (props.mode === "pick-folder") {
       void props.createFormRef.current?.submit();
@@ -783,17 +788,17 @@ function ProjectAddFormFooter(props: {
     }
   };
 
-  const actionLabel = props.mode === "pick-folder" ? "Add Project" : "Clone Project";
+  const actionLabel = t(props.mode === "pick-folder" ? "Add Project" : "Clone Project");
 
   return (
     <DialogFooter className={props.showCancelButton ? "justify-between" : undefined}>
       {props.showCancelButton && (
         <Button variant="secondary" onClick={props.onClose} disabled={props.isCreating}>
-          Cancel
+          {t("Cancel")}
         </Button>
       )}
       <Button onClick={handleSubmit} disabled={props.isCreating}>
-        {props.isCreating ? (props.mode === "pick-folder" ? "Adding…" : "Cloning…") : actionLabel}
+        {props.isCreating ? t(props.mode === "pick-folder" ? "Adding…" : "Cloning…") : actionLabel}
       </Button>
     </DialogFooter>
   );
@@ -819,6 +824,7 @@ interface ProjectAddFormProps {
 
 export const ProjectAddForm = React.forwardRef<ProjectAddFormHandle, ProjectAddFormProps>(
   function ProjectAddForm(props, ref) {
+    const { t } = useLanguage();
     const { api } = useAPI();
     const [mode, setMode] = useState<ProjectCreateMode>("pick-folder");
     const [isCreating, setIsCreating] = useState(false);
@@ -938,11 +944,11 @@ export const ProjectAddForm = React.forwardRef<ProjectAddFormHandle, ProjectAddF
           >
             <ToggleGroupItem value="pick-folder" size="sm" className="h-7 gap-1.5 px-3 text-[13px]">
               <FolderOpen className="h-3.5 w-3.5" />
-              Local folder
+              {t("Local folder")}
             </ToggleGroupItem>
             <ToggleGroupItem value="clone" size="sm" className="h-7 gap-1.5 px-3 text-[13px]">
               <Github className="h-3.5 w-3.5" />
-              Clone repo
+              {t("Clone repo")}
             </ToggleGroupItem>
           </ToggleGroup>
 
@@ -1004,6 +1010,7 @@ export const ProjectCreateModal: React.FC<ProjectCreateModalProps> = ({
   onClose,
   onSuccess,
 }) => {
+  const { t } = useLanguage();
   const [isCreating, setIsCreating] = useState(false);
 
   const handleOpenChange = useCallback(
@@ -1019,8 +1026,8 @@ export const ProjectCreateModal: React.FC<ProjectCreateModalProps> = ({
     <Dialog open={isOpen} onOpenChange={handleOpenChange}>
       <DialogContent showCloseButton={false}>
         <DialogHeader>
-          <DialogTitle>Add Project</DialogTitle>
-          <DialogDescription>Pick a folder or clone a project repository</DialogDescription>
+          <DialogTitle>{t("Add Project")}</DialogTitle>
+          <DialogDescription>{t("Pick a folder or clone a project repository")}</DialogDescription>
         </DialogHeader>
 
         <ProjectAddForm

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { AlertTriangle, X } from "lucide-react";
 
 import { usePersistedState } from "@/browser/hooks/usePersistedState";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 const WINDOWS_TOOLCHAIN_BANNER_DISMISSED_KEY = "windowsToolchainBannerDismissedAt";
 const DISMISS_DURATION_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
@@ -11,6 +12,7 @@ const DISMISS_DURATION_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
  * Users can dismiss it, but it will re-appear after 30 days.
  */
 export function WindowsToolchainBanner() {
+  const { t } = useLanguage();
   const [dismissedAt, setDismissedAt] = usePersistedState<number | null>(
     WINDOWS_TOOLCHAIN_BANNER_DISMISSED_KEY,
     null
@@ -57,24 +59,25 @@ export function WindowsToolchainBanner() {
       <div className="flex items-center gap-2">
         <AlertTriangle className="text-warning size-4 shrink-0" />
         <span>
-          Your default shell appears to be WSL. Mux requires Git for Windows (Git Bash) on Windows
-          for reliable git + path handling.
+          {t(
+            "Your default shell appears to be WSL. Mux requires Git for Windows (Git Bash) on Windows for reliable git + path handling."
+          )}
           <a
             href="https://mux.coder.com/install#windows"
             target="_blank"
             rel="noopener noreferrer"
             className="underline hover:no-underline"
           >
-            Install Git for Windows
+            {t("Install Git for Windows")}
           </a>{" "}
-          and restart Mux.
+          {t("and restart Mux.")}
         </span>
       </div>
       <button
         type="button"
         onClick={() => setDismissedAt(now)}
         className="hover:text-warning/80 shrink-0 p-1 transition-colors"
-        aria-label="Dismiss Windows toolchain warning"
+        aria-label={t("Dismiss Windows toolchain warning")}
       >
         <X className="size-4" />
       </button>

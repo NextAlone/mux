@@ -5,6 +5,7 @@ import { cn } from "@/common/lib/utils";
 import type { DevToolsRunSummary, DevToolsStep } from "@/common/types/devtools";
 import { formatDuration } from "@/common/utils/formatDuration";
 import { DevToolsStepCard } from "./DevToolsStepCard";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 interface DevToolsRunCardProps {
   run: DevToolsRunSummary;
@@ -13,6 +14,7 @@ interface DevToolsRunCardProps {
 }
 
 export function DevToolsRunCard(props: DevToolsRunCardProps) {
+  const { t } = useLanguage();
   const { api } = useAPI();
 
   const [expanded, setExpanded] = useState(false);
@@ -69,7 +71,8 @@ export function DevToolsRunCard(props: DevToolsRunCardProps) {
           <span className="text-muted min-w-0 truncate text-[10px]">{props.run.modelId}</span>
         )}
         <span className="text-muted shrink-0 text-[10px]">
-          {props.run.stepCount} step{props.run.stepCount !== 1 ? "s" : ""}
+          {props.run.stepCount} {t("step")}
+          {props.run.stepCount !== 1 ? "s" : ""}
         </span>
         {props.run.totalDurationMs != null && (
           <span className="text-muted shrink-0 text-[10px]">
@@ -95,7 +98,7 @@ export function DevToolsRunCard(props: DevToolsRunCardProps) {
               ))}
             </div>
           ) : (
-            <p className="text-muted py-1 text-[10px]">No steps recorded</p>
+            <p className="text-muted py-1 text-[10px]">{t("No steps recorded")}</p>
           )}
         </div>
       )}

@@ -20,6 +20,7 @@ import { resolveSectionColor, SECTION_COLOR_PALETTE } from "@/common/constants/u
 import { HexColorPicker } from "react-colorful";
 import { useContextMenuPosition } from "../../hooks/useContextMenuPosition";
 import { PositionedMenu, PositionedMenuItem } from "../PositionedMenu/PositionedMenu";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 interface SectionHeaderProps {
   section: SectionConfig;
@@ -50,6 +51,7 @@ export const SectionHeader: React.FC<SectionHeaderProps> = ({
   onAutoCreateAbandon,
   onAutoCreateRenameCancel,
 }) => {
+  const { t } = useLanguage();
   const [isEditing, setIsEditing] = useState(false);
   const [editValue, setEditValue] = useState(section.name);
   const [hasEditedName, setHasEditedName] = useState(false);
@@ -118,7 +120,7 @@ export const SectionHeader: React.FC<SectionHeaderProps> = ({
       <button
         onClick={onToggleExpand}
         className="text-secondary hover:text-foreground flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center rounded border-none bg-transparent p-0 transition-colors"
-        aria-label={isExpanded ? "Collapse sub-project" : "Expand sub-project"}
+        aria-label={isExpanded ? t("Collapse sub-project") : t("Expand sub-project")}
         aria-expanded={isExpanded}
       >
         <span className="relative flex h-3.5 w-3.5 items-center justify-center">
@@ -198,12 +200,12 @@ export const SectionHeader: React.FC<SectionHeaderProps> = ({
             <button
               onClick={onAddWorkspace}
               className="text-secondary hover:text-foreground hover:bg-hover flex h-5 w-5 cursor-pointer items-center justify-center rounded border-none bg-transparent p-0 text-sm transition-colors"
-              aria-label="New chat in sub-project"
+              aria-label={t("New chat in sub-project")}
             >
               <Plus className="h-4 w-4" />
             </button>
           </TooltipTrigger>
-          <TooltipContent>New chat</TooltipContent>
+          <TooltipContent>{t("New chat")}</TooltipContent>
         </Tooltip>
 
         {/* Sub-project actions kebab sits immediately to the right of New chat */}
@@ -226,12 +228,12 @@ export const SectionHeader: React.FC<SectionHeaderProps> = ({
                 sectionMenu.onContextMenu(e);
               }}
               className="text-muted hover:text-foreground hover:bg-hover flex h-5 w-5 cursor-pointer items-center justify-center rounded border-none bg-transparent p-0 transition-colors"
-              aria-label="Sub-project actions"
+              aria-label={t("Sub-project actions")}
             >
               <EllipsisVertical className="h-3.5 w-3.5" />
             </button>
           </TooltipTrigger>
-          <TooltipContent>Sub-project actions</TooltipContent>
+          <TooltipContent>{t("Sub-project actions")}</TooltipContent>
         </Tooltip>
 
         <PositionedMenu
@@ -246,7 +248,7 @@ export const SectionHeader: React.FC<SectionHeaderProps> = ({
         >
           <PositionedMenuItem
             icon={<Palette />}
-            label="Change color"
+            label={t("Change color")}
             onClick={() => {
               setShowColorPicker((open) => !open);
             }}
@@ -267,7 +269,7 @@ export const SectionHeader: React.FC<SectionHeaderProps> = ({
                         sectionColor === color ? "border-white" : "border-transparent"
                       )}
                       style={{ backgroundColor: color }}
-                      aria-label={`Set sub-project color to ${name}`}
+                      aria-label={`${t("Set sub-project color to")} ${t(name)}`}
                     />
                   </TooltipIfPresent>
                 ))}
@@ -299,7 +301,7 @@ export const SectionHeader: React.FC<SectionHeaderProps> = ({
           )}
           <PositionedMenuItem
             icon={<Pencil />}
-            label="Rename"
+            label={t("Rename")}
             onClick={() => {
               startEditing();
               setShowColorPicker(false);
@@ -308,7 +310,7 @@ export const SectionHeader: React.FC<SectionHeaderProps> = ({
           />
           <PositionedMenuItem
             icon={<Trash2 />}
-            label="Remove sub-project"
+            label={t("Remove sub-project")}
             variant="destructive"
             onClick={(event) => {
               onDelete(event.currentTarget);

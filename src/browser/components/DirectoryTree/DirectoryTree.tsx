@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Folder, FolderUp } from "lucide-react";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 interface DirectoryTreeEntry {
   name: string;
@@ -18,6 +19,7 @@ interface DirectoryTreeProps {
 }
 
 export const DirectoryTree: React.FC<DirectoryTreeProps> = (props) => {
+  const { t } = useLanguage();
   const {
     currentPath,
     entries,
@@ -148,7 +150,7 @@ export const DirectoryTree: React.FC<DirectoryTreeProps> = (props) => {
       onKeyDown={handleKeyDown}
     >
       {isLoading && !currentPath ? (
-        <div className="text-muted py-4 text-center">Loading directories...</div>
+        <div className="text-muted py-4 text-center">{t("Loading directories...")}</div>
       ) : (
         <ul className="m-0 list-none p-0">
           {currentPath && (
@@ -165,7 +167,7 @@ export const DirectoryTree: React.FC<DirectoryTreeProps> = (props) => {
           )}
 
           {!isLoading && !hasEntries ? (
-            <li className="text-muted px-2 py-1.5">No subdirectories found</li>
+            <li className="text-muted px-2 py-1.5">{t("No subdirectories found")}</li>
           ) : null}
 
           {entries.map((entry, idx) => {
@@ -186,7 +188,7 @@ export const DirectoryTree: React.FC<DirectoryTreeProps> = (props) => {
           })}
 
           {isLoading && currentPath && !hasEntries ? (
-            <li className="text-muted px-2 py-1.5">Loading directories...</li>
+            <li className="text-muted px-2 py-1.5">{t("Loading directories...")}</li>
           ) : null}
         </ul>
       )}

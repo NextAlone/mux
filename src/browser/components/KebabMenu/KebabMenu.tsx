@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { Tooltip, TooltipTrigger, TooltipContent, TooltipIfPresent } from "../Tooltip/Tooltip";
 import { cn } from "@/common/lib/utils";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 export interface KebabMenuItem {
   label: string;
@@ -28,6 +29,7 @@ interface KebabMenuProps {
  * by parent containers with overflow constraints.
  */
 export const KebabMenu: React.FC<KebabMenuProps> = ({ items, className }) => {
+  const { t } = useLanguage();
   const [isOpen, setIsOpen] = useState(false);
   const [dropdownPosition, setDropdownPosition] = useState({ top: 0, left: 0 });
   const buttonRef = useRef<HTMLButtonElement>(null);
@@ -90,7 +92,7 @@ export const KebabMenu: React.FC<KebabMenuProps> = ({ items, className }) => {
               ⋮
             </button>
           </TooltipTrigger>
-          <TooltipContent align="center">More actions</TooltipContent>
+          <TooltipContent align="center">{t("More actions")}</TooltipContent>
         </Tooltip>
       </div>
 
@@ -123,7 +125,7 @@ export const KebabMenu: React.FC<KebabMenuProps> = ({ items, className }) => {
                   {item.emoji && (
                     <span className="w-4 shrink-0 text-center text-[13px]">{item.emoji}</span>
                   )}
-                  <span className="flex-1">{item.label}</span>
+                  <span className="flex-1">{t(item.label)}</span>
                 </button>
               );
 

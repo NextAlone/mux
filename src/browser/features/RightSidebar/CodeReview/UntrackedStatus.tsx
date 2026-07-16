@@ -4,6 +4,7 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import { cn } from "@/common/lib/utils";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 interface UntrackedStatusProps {
   workspaceId: string;
@@ -18,6 +19,7 @@ export const UntrackedStatus: React.FC<UntrackedStatusProps> = ({
   refreshTrigger,
   onRefresh,
 }) => {
+  const { t } = useLanguage();
   const [untrackedFiles, setUntrackedFiles] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
@@ -94,9 +96,9 @@ export const UntrackedStatus: React.FC<UntrackedStatusProps> = ({
           ▶
         </span>
         <span className="text-info-yellow text-xs font-medium">
-          {count} untracked {count === 1 ? "file" : "files"}
+          {count} {t("untracked")} {count === 1 ? "file" : "files"}
         </span>
-        <span className="text-muted text-[11px]">not included in diff</span>
+        <span className="text-muted text-[11px]">{t("not included in diff")}</span>
       </button>
 
       {/* Expandable file list */}
@@ -113,7 +115,8 @@ export const UntrackedStatus: React.FC<UntrackedStatusProps> = ({
             ))}
             {hiddenCount > 0 && (
               <div className="text-muted py-0.5 text-[11px] italic">
-                and {hiddenCount} more {hiddenCount === 1 ? "file" : "files"}...
+                {t("and")}
+                {hiddenCount} {t("more")} {hiddenCount === 1 ? "file" : "files"}...
               </div>
             )}
           </div>

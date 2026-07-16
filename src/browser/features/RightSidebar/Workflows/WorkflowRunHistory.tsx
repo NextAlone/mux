@@ -5,6 +5,7 @@ import type { WorkflowRunRecord, WorkflowRunStatus } from "@/common/types/workfl
 
 import { stringifyWorkflowArgValue } from "./projectWorkflowRun";
 import { WORKFLOW_STATUS_META, WORKFLOW_TONE_VAR, formatWorkflowTimeAgo } from "./workflowDisplay";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 function primaryArgValue(args: unknown): string {
   if (args != null && typeof args === "object" && !Array.isArray(args)) {
@@ -12,6 +13,14 @@ function primaryArgValue(args: unknown): string {
     return values.length > 0 ? stringifyWorkflowArgValue(values[0]) : "";
   }
   return stringifyWorkflowArgValue(args);
+}
+
+function localizedTimeAgo(value: string, t: (text: string) => string): string {
+  const formatted = formatWorkflowTimeAgo(value);
+  if (formatted === "just now") return t("just now");
+  const match = /^(\d+)([mhd]) ago$/.exec(formatted);
+  // i18n-ignore: bounded translated relative-time keys
+  return match ? t(`{count}${match[2]} ago`).replace("{count}", match[1]) : formatted;
 }
 
 const HistoryStatusIcon: React.FC<{ status: WorkflowRunStatus }> = (props) => {
@@ -33,13 +42,15 @@ interface WorkflowRunHistoryProps {
 
 /** Compact, clickable list of prior runs (everything but the focused run). */
 export const WorkflowRunHistory: React.FC<WorkflowRunHistoryProps> = (props) => {
+  const { t } = useLanguage();
   if (props.runs.length === 0) {
     return null;
   }
   return (
     <div className="flex flex-col gap-2 pt-1">
       <div className="text-muted flex items-center gap-1.5 text-[11px] font-semibold tracking-wide uppercase">
-        <History className="h-3 w-3" /> Run history
+        <History className="h-3 w-3" />
+        {t("Run history")}
       </div>
       <div className="flex flex-col gap-1">
         {props.runs.map((run) => {
@@ -61,7 +72,7 @@ export const WorkflowRunHistory: React.FC<WorkflowRunHistoryProps> = (props) => 
                 <span className="text-muted truncate text-[11px]">{primaryArgValue(run.args)}</span>
               </span>
               <span className="text-muted shrink-0 text-[11px]">
-                {formatWorkflowTimeAgo(run.updatedAt)}
+                {localizedTimeAgo(run.updatedAt, t)}
               </span>
             </button>
           );

@@ -3,6 +3,7 @@ import { Slot } from "@radix-ui/react-slot";
 import { cva, type VariantProps } from "class-variance-authority";
 import { getTextContent, TooltipIfPresent } from "@/browser/components/Tooltip/Tooltip";
 import { cn } from "@/common/lib/utils";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 const buttonVariants = cva(
   "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-all active:scale-[0.98] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
@@ -57,6 +58,7 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
     },
     ref
   ) => {
+    const { t } = useLanguage();
     const Comp = asChild ? Slot : "button";
     // Shared controls intentionally reinterpret `title` as our custom tooltip surface so callers
     // can keep using the prop they naturally reach for without falling back to a truncating native
@@ -72,7 +74,8 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
       ariaLabelledBy != null ||
       childElement?.props["aria-label"] != null ||
       childElement?.props["aria-labelledby"] != null;
-    const visibleLabel = getTextContent(children).trim();
+    const translatedChildren = typeof children === "string" ? t(children) : children;
+    const visibleLabel = getTextContent(translatedChildren).trim();
     const tooltipLabel = getTextContent(resolvedTooltip).trim();
     // Icon-only buttons historically relied on `title` for an accessible name; preserve that
     // fallback when `title` is upgraded into our shared tooltip surface.
@@ -88,7 +91,7 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
         aria-labelledby={ariaLabelledBy}
         {...props}
       >
-        {children}
+        {translatedChildren}
       </Comp>
     );
 

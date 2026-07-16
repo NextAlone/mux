@@ -19,6 +19,7 @@ import { getStatusDisplay, useToolExpansion, type ToolStatus } from "./Shared/to
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/browser/components/Tooltip/Tooltip";
 import { useCopyToClipboard } from "@/browser/hooks/useCopyToClipboard";
 import { cn } from "@/common/lib/utils";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 type TaskApplyGitPatchSuccessResult = Extract<TaskApplyGitPatchToolResult, { success: true }>;
 type TaskApplyGitPatchFailureResult = Extract<TaskApplyGitPatchToolResult, { success: false }>;
@@ -208,6 +209,7 @@ export const TaskApplyGitPatchProjectResultCard: React.FC<{
   projectResult: ParsedProjectResult;
   isDryRun: boolean;
 }> = ({ projectResult, isDryRun }) => {
+  const { t } = useLanguage();
   const shownConflictPaths = projectResult.conflictPaths?.slice(0, MAX_CONFLICT_PATHS_SHOWN);
   const remainingConflictPaths =
     projectResult.conflictPaths && shownConflictPaths
@@ -234,7 +236,7 @@ export const TaskApplyGitPatchProjectResultCard: React.FC<{
 
       {projectResult.headCommitSha && (
         <div className="flex min-w-0 items-center gap-1.5">
-          <span className="text-secondary shrink-0 font-medium">HEAD:</span>
+          <span className="text-secondary shrink-0 font-medium">{t("HEAD:")}</span>
           <CopyableCode
             value={projectResult.headCommitSha}
             displayValue={formatShortSha(projectResult.headCommitSha)}
@@ -245,7 +247,7 @@ export const TaskApplyGitPatchProjectResultCard: React.FC<{
 
       {projectResult.appliedCommits && projectResult.appliedCommits.length > 0 && (
         <div className="flex flex-col gap-1">
-          <span className="text-secondary font-medium">Changes</span>
+          <span className="text-secondary font-medium">{t("Changes")}</span>
           <div className="flex flex-col gap-1">
             {projectResult.appliedCommits.map((commit, index) => (
               <div
@@ -278,7 +280,7 @@ export const TaskApplyGitPatchProjectResultCard: React.FC<{
           <div className="flex flex-col gap-1">
             {projectResult.failedPatchSubject && (
               <div className="flex min-w-0 items-start gap-1.5">
-                <span className="text-secondary shrink-0 font-medium">Failed patch:</span>
+                <span className="text-secondary shrink-0 font-medium">{t("Failed patch:")}</span>
                 <span className="text-text min-w-0 break-words">
                   {projectResult.failedPatchSubject}
                 </span>
@@ -286,11 +288,14 @@ export const TaskApplyGitPatchProjectResultCard: React.FC<{
             )}
             {shownConflictPaths && shownConflictPaths.length > 0 && (
               <div className="flex min-w-0 items-start gap-1.5">
-                <span className="text-secondary shrink-0 font-medium">Conflicts:</span>
+                <span className="text-secondary shrink-0 font-medium">{t("Conflicts:")}</span>
                 <span className="text-text min-w-0 font-mono break-words">
                   {shownConflictPaths.join(", ")}
                   {remainingConflictPaths > 0 && (
-                    <span className="text-secondary"> +{remainingConflictPaths} more</span>
+                    <span className="text-secondary">
+                      {" "}
+                      +{remainingConflictPaths} {t("more")}
+                    </span>
                   )}
                 </span>
               </div>
@@ -311,6 +316,7 @@ export const TaskApplyGitPatchToolCall: React.FC<TaskApplyGitPatchToolCallProps>
   result,
   status = "pending",
 }) => {
+  const { t } = useLanguage();
   const unwrappedResult = unwrapJsonContainer(result);
 
   const successResult =
@@ -373,9 +379,11 @@ export const TaskApplyGitPatchToolCall: React.FC<TaskApplyGitPatchToolCallProps>
       <ToolHeader onClick={toggleExpanded}>
         <ExpandIcon expanded={expanded}>▶</ExpandIcon>
         <ToolIcon toolName="task_apply_git_patch" />
-        <ToolName>Apply task change</ToolName>
+        <ToolName>{t("Apply task change")}</ToolName>
         <span className="text-muted ml-1 max-w-40 truncate text-[10px]">{taskId}</span>
-        {isDryRun && <span className="text-backgrounded text-[10px] font-medium">dry-run</span>}
+        {isDryRun && (
+          <span className="text-backgrounded text-[10px] font-medium">{t("dry-run")}</span>
+        )}
         {successResult && (
           <span className="text-secondary ml-2 text-[10px] whitespace-nowrap">
             {projectResults && projectResults.length > 1 && appliedProjectCount != null
@@ -392,10 +400,10 @@ export const TaskApplyGitPatchToolCall: React.FC<TaskApplyGitPatchToolCallProps>
       {expanded && (
         <ToolDetails>
           <DetailSection>
-            <DetailLabel>Task change source</DetailLabel>
+            <DetailLabel>{t("Task change source")}</DetailLabel>
             <div className="bg-code-bg flex flex-wrap gap-4 rounded px-2 py-1.5 text-[11px] leading-[1.4]">
               <div className="flex min-w-0 items-center gap-1.5">
-                <span className="text-secondary shrink-0 font-medium">Task ID:</span>
+                <span className="text-secondary shrink-0 font-medium">{t("Task ID:")}</span>
                 <CopyableCode
                   value={taskId}
                   tooltipLabel="Copy task ID"
@@ -406,7 +414,7 @@ export const TaskApplyGitPatchToolCall: React.FC<TaskApplyGitPatchToolCallProps>
           </DetailSection>
 
           <DetailSection>
-            <DetailLabel>Options</DetailLabel>
+            <DetailLabel>{t("Options")}</DetailLabel>
             <div className="bg-code-bg flex flex-wrap gap-4 rounded px-2 py-1.5 text-[11px] leading-[1.4]">
               <div className="flex items-center gap-1.5">
                 <span className="text-secondary font-medium">project_path:</span>
@@ -436,7 +444,7 @@ export const TaskApplyGitPatchToolCall: React.FC<TaskApplyGitPatchToolCallProps>
           {status === "executing" && !result && (
             <DetailSection>
               <DetailContent>
-                Applying task change
+                {t("Applying task change")}
                 <LoadingDots />
               </DetailContent>
             </DetailSection>
@@ -445,7 +453,7 @@ export const TaskApplyGitPatchToolCall: React.FC<TaskApplyGitPatchToolCallProps>
           {successResult && (
             <>
               <DetailSection>
-                <DetailLabel>Result</DetailLabel>
+                <DetailLabel>{t("Result")}</DetailLabel>
                 <div className="bg-code-bg flex flex-wrap gap-4 rounded px-2 py-1.5 text-[11px] leading-[1.4]">
                   <div className="flex items-center gap-1.5">
                     <span className="text-secondary font-medium">
@@ -462,7 +470,7 @@ export const TaskApplyGitPatchToolCall: React.FC<TaskApplyGitPatchToolCallProps>
 
               {projectResults && projectResults.length > 0 ? (
                 <DetailSection>
-                  <DetailLabel>Projects</DetailLabel>
+                  <DetailLabel>{t("Projects")}</DetailLabel>
                   <div className="flex flex-col gap-2">
                     {projectResults.map((projectResult) => (
                       <TaskApplyGitPatchProjectResultCard
@@ -477,7 +485,7 @@ export const TaskApplyGitPatchToolCall: React.FC<TaskApplyGitPatchToolCallProps>
                 fallbackAppliedCommits &&
                 fallbackAppliedCommits.length > 0 && (
                   <DetailSection>
-                    <DetailLabel>Changes</DetailLabel>
+                    <DetailLabel>{t("Changes")}</DetailLabel>
                     <div className="bg-code-bg flex flex-col gap-1 rounded px-2 py-1.5 text-[11px] leading-[1.4]">
                       {fallbackAppliedCommits.map((commit, index) => (
                         <div
@@ -505,7 +513,7 @@ export const TaskApplyGitPatchToolCall: React.FC<TaskApplyGitPatchToolCallProps>
               )}
               {successResult.note && (
                 <DetailSection>
-                  <DetailLabel>Note</DetailLabel>
+                  <DetailLabel>{t("Note")}</DetailLabel>
                   <DetailContent className="px-2 py-1.5">{successResult.note}</DetailContent>
                 </DetailSection>
               )}
@@ -516,7 +524,7 @@ export const TaskApplyGitPatchToolCall: React.FC<TaskApplyGitPatchToolCallProps>
             <>
               {projectResults && projectResults.length > 0 && (
                 <DetailSection>
-                  <DetailLabel>Projects</DetailLabel>
+                  <DetailLabel>{t("Projects")}</DetailLabel>
                   <div className="flex flex-col gap-2">
                     {projectResults.map((projectResult) => (
                       <TaskApplyGitPatchProjectResultCard
@@ -531,7 +539,7 @@ export const TaskApplyGitPatchToolCall: React.FC<TaskApplyGitPatchToolCallProps>
 
               <DetailSection>
                 <DetailLabel className="flex items-center justify-between gap-2">
-                  <span>Error</span>
+                  <span>{t("Error")}</span>
                   <HeaderButton
                     type="button"
                     onClick={() => void copyErrorToClipboard(errorResult.error)}
@@ -545,7 +553,7 @@ export const TaskApplyGitPatchToolCall: React.FC<TaskApplyGitPatchToolCallProps>
 
               {errorNote && (
                 <DetailSection>
-                  <DetailLabel>Note</DetailLabel>
+                  <DetailLabel>{t("Note")}</DetailLabel>
                   <DetailContent className="px-2 py-1.5">{errorNote}</DetailContent>
                 </DetailSection>
               )}

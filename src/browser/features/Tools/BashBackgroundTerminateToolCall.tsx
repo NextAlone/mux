@@ -5,6 +5,7 @@ import type {
 } from "@/common/types/tools";
 import { ToolContainer, ToolHeader, StatusIndicator, ToolIcon } from "./Shared/ToolPrimitives";
 import { getStatusDisplay, type ToolStatus } from "./Shared/toolUtils";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 interface BashBackgroundTerminateToolCallProps {
   args: BashBackgroundTerminateArgs;
@@ -17,6 +18,7 @@ export const BashBackgroundTerminateToolCall: React.FC<BashBackgroundTerminateTo
   result,
   status = "pending",
 }) => {
+  const { t } = useLanguage();
   const statusDisplay = getStatusDisplay(status);
 
   return (
@@ -27,7 +29,7 @@ export const BashBackgroundTerminateToolCall: React.FC<BashBackgroundTerminateTo
           {result?.success === true ? (result.display_name ?? args.process_id) : args.process_id}
         </span>
         {result?.success === true && (
-          <span className="text-text-secondary text-[10px]">terminated</span>
+          <span className="text-text-secondary text-[10px]">{t("terminated")}</span>
         )}
         {result?.success === false && (
           <span className="text-danger text-[10px]">{result.error}</span>

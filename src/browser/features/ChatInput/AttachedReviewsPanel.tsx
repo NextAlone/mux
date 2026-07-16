@@ -3,6 +3,7 @@ import { X } from "lucide-react";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/browser/components/Tooltip/Tooltip";
 import { ReviewBlockFromData } from "../Shared/ReviewBlock";
 import type { Review } from "@/common/types/review";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 export interface AttachedReviewsPanelProps {
   reviews: Review[];
@@ -25,6 +26,7 @@ export const AttachedReviewsPanel: React.FC<AttachedReviewsPanelProps> = ({
   onDelete,
   onUpdateNote,
 }) => {
+  const { t } = useLanguage();
   if (reviews.length === 0) return null;
 
   return (
@@ -32,7 +34,9 @@ export const AttachedReviewsPanel: React.FC<AttachedReviewsPanelProps> = ({
       {/* Header with count and clear all button */}
       <div className="flex items-center justify-between text-xs">
         <span className="text-muted font-medium">
-          {reviews.length} review{reviews.length !== 1 && "s"} attached
+          {reviews.length} {t("review")}
+          {reviews.length !== 1 && "s"}
+          {t("attached")}
         </span>
         {onDetachAll && reviews.length > 1 && (
           <Tooltip>
@@ -43,10 +47,10 @@ export const AttachedReviewsPanel: React.FC<AttachedReviewsPanelProps> = ({
                 className="text-muted hover:text-error flex items-center gap-1 text-xs transition-colors"
               >
                 <X className="size-3" />
-                Clear all
+                {t("Clear all")}
               </button>
             </TooltipTrigger>
-            <TooltipContent>Remove all reviews from message</TooltipContent>
+            <TooltipContent>{t("Remove all reviews from message")}</TooltipContent>
           </Tooltip>
         )}
       </div>

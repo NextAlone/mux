@@ -17,6 +17,7 @@ import {
   type ToolStatus,
 } from "./Shared/toolUtils";
 import { JsonHighlight } from "./Shared/HighlightedCode";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 interface WebSearchToolCallProps {
   args: { query?: string }; // Anthropic puts query in args
@@ -65,6 +66,7 @@ export const WebSearchToolCall: React.FC<WebSearchToolCallProps> = ({
   result,
   status = "pending",
 }) => {
+  const { t } = useLanguage();
   const { expanded, toggleExpanded } = useToolExpansion();
   const query = extractQuery(args, result);
   const resultCount = getResultCount(result);
@@ -79,7 +81,7 @@ export const WebSearchToolCall: React.FC<WebSearchToolCallProps> = ({
         </div>
         {result !== undefined && resultCount > 0 && (
           <span className="text-secondary ml-2 text-[10px] whitespace-nowrap">
-            {resultCount} result{resultCount !== 1 ? "s" : ""}
+            {resultCount} {t("result")}
           </span>
         )}
         <StatusIndicator status={status}>{getStatusDisplay(status)}</StatusIndicator>
@@ -91,7 +93,7 @@ export const WebSearchToolCall: React.FC<WebSearchToolCallProps> = ({
             <div className="bg-code-bg flex flex-wrap gap-4 rounded px-2 py-1.5 text-[11px] leading-[1.4]">
               {query && (
                 <div className="flex min-w-0 gap-1.5">
-                  <span className="text-secondary font-medium">Query:</span>
+                  <span className="text-secondary font-medium">{t("Query:")}</span>
                   <span className="text-text">{query}</span>
                 </div>
               )}
@@ -100,7 +102,7 @@ export const WebSearchToolCall: React.FC<WebSearchToolCallProps> = ({
 
           {result != null && (
             <DetailSection>
-              <DetailLabel>Results</DetailLabel>
+              <DetailLabel>{t("Results")}</DetailLabel>
               <div className="bg-code-bg max-h-[300px] overflow-y-auto rounded px-3 py-2 text-[12px]">
                 <JsonHighlight value={result} />
               </div>
@@ -110,7 +112,7 @@ export const WebSearchToolCall: React.FC<WebSearchToolCallProps> = ({
           {status === "executing" && !result && (
             <DetailSection>
               <div className="text-secondary text-[11px]">
-                Searching
+                {t("Searching")}
                 <LoadingDots />
               </div>
             </DetailSection>

@@ -40,6 +40,7 @@ import {
 } from "lucide-react";
 import { EmojiIcon } from "@/browser/components/icons/EmojiIcon/EmojiIcon";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/browser/components/Tooltip/Tooltip";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 /**
  * Shared styled components for tool UI
@@ -412,6 +413,7 @@ export const OutputSection: React.FC<OutputSectionProps> = ({
   emptyMessage = "No output",
   note,
 }) => {
+  const { t } = useLanguage();
   const hasOutput = typeof output === "string" && output.length > 0;
   const showLabel = hasOutput || Boolean(note);
 
@@ -427,13 +429,13 @@ export const OutputSection: React.FC<OutputSectionProps> = ({
   return (
     <DetailSection>
       <DetailLabel className="flex items-center gap-1">
-        <span>Output</span>
+        <span>{t("Output")}</span>
         {note && (
           <Tooltip>
             <TooltipTrigger asChild>
               <button
                 type="button"
-                aria-label="View notice"
+                aria-label={t("View notice")}
                 className="text-muted hover:text-secondary translate-y-[-1px] rounded p-0.5 transition-colors"
               >
                 <Info size={12} />

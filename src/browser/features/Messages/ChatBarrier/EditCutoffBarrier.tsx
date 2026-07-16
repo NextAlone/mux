@@ -1,6 +1,7 @@
 import React from "react";
 import { AlertTriangle } from "lucide-react";
 import { cn } from "@/common/lib/utils";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 interface EditCutoffBarrierProps {
   className?: string;
@@ -11,6 +12,7 @@ interface EditCutoffBarrierProps {
  * Messages below this barrier will be removed when the edit is submitted.
  */
 export const EditCutoffBarrier: React.FC<EditCutoffBarrierProps> = ({ className }) => {
+  const { t } = useLanguage();
   return (
     <div className={cn("flex items-center gap-3 py-3 my-4", className)}>
       <div
@@ -21,7 +23,7 @@ export const EditCutoffBarrier: React.FC<EditCutoffBarrierProps> = ({ className 
       />
       <div className="border-edit-mode/30 bg-edit-mode/10 text-edit-mode flex items-center gap-2 rounded-md border px-3 py-1.5 text-[11px] font-medium">
         <AlertTriangle aria-hidden="true" className="h-4 w-4" />
-        <span>Messages below will be removed when you submit</span>
+        <span>{t("Messages below will be removed when you submit")}</span>
       </div>
       <div
         className="h-px flex-1"

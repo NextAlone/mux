@@ -1,4 +1,5 @@
 import { useExperimentValue } from "@/browser/hooks/useExperiments";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 import { KEYBINDS, formatKeybind, isKeybindDeprecated } from "@/browser/utils/ui/keybinds";
 import { EXPERIMENT_IDS } from "@/common/constants/experiments";
 
@@ -203,6 +204,7 @@ const KEYBIND_DISPLAY_ALTERNATES: Partial<
 };
 
 export function KeybindsSection() {
+  const { t } = useLanguage();
   const workspaceHeartbeatsEnabled = useExperimentValue(EXPERIMENT_IDS.WORKSPACE_HEARTBEATS);
   const visibleKeybindGroups = KEYBIND_GROUPS.map((group) => ({
     ...group,
@@ -218,14 +220,14 @@ export function KeybindsSection() {
     <div className="space-y-6">
       {visibleKeybindGroups.map((group) => (
         <div key={group.label}>
-          <h3 className="text-foreground mb-3 text-sm font-medium">{group.label}</h3>
+          <h3 className="text-foreground mb-3 text-sm font-medium">{t(group.label)}</h3>
           <div className="space-y-1">
             {group.keys.map((key) => (
               <div
                 key={key}
                 className="flex items-center justify-between rounded px-2 py-1.5 text-sm"
               >
-                <span className="text-muted">{KEYBIND_LABELS[key]}</span>
+                <span className="text-muted">{t(KEYBIND_LABELS[key])}</span>
                 <kbd className="bg-background-secondary text-foreground border-border-medium rounded border px-2 py-0.5 font-mono text-xs">
                   {[key, ...(KEYBIND_DISPLAY_ALTERNATES[key] ?? [])]
                     .map((keybindId) => formatKeybind(KEYBINDS[keybindId]))

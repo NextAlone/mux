@@ -16,6 +16,7 @@ import {
 import { focusInstructionsTab } from "@/browser/utils/instructionsTabFocus";
 import { cn } from "@/common/lib/utils";
 import { getErrorMessage } from "@/common/utils/errors";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 /** UI label used everywhere the user sees this feature. */
 export const CHAT_INSTRUCTIONS_LABEL = "Chat Instructions";
@@ -168,6 +169,7 @@ interface ChatInstructionsEditorProps {
 }
 
 export function ChatInstructionsEditor(props: ChatInstructionsEditorProps) {
+  const { t } = useLanguage();
   const state = useChatInstructions(props.workspaceId);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
@@ -205,12 +207,12 @@ export function ChatInstructionsEditor(props: ChatInstructionsEditorProps) {
   // Render a quiet hint when there's no save in progress; only flash the
   // "Saving…" label after the >1s delay.
   const statusText = state.loading
-    ? "Loading…"
+    ? t("Loading…")
     : state.savingVisible
-      ? "Saving…"
+      ? t("Saving…")
       : state.enabled
-        ? "Saved · in effect every turn"
-        : "Saved · disabled (not sent to the agent)";
+        ? t("Saved · in effect every turn")
+        : t("Saved · disabled (not sent to the agent)");
 
   return (
     <div className={cn("space-y-1.5", props.className)}>
@@ -221,14 +223,14 @@ export function ChatInstructionsEditor(props: ChatInstructionsEditorProps) {
         onChange={(event) => state.setContent(event.currentTarget.value)}
         placeholder={
           props.placeholder ??
-          "Add chat-scoped instructions that should be appended to the system prompt…"
+          t("Add chat-scoped instructions that should be appended to the system prompt…")
         }
         className={cn(
           "border-border bg-background text-foreground placeholder:text-muted min-h-[72px] w-full resize-none overflow-hidden rounded border px-3 py-2 text-xs leading-5 outline-none focus:ring-1 focus:ring-[var(--color-accent)]",
           !state.enabled && "opacity-60",
           props.textareaClassName
         )}
-        aria-label={`${CHAT_INSTRUCTIONS_LABEL} editor`}
+        aria-label={`${t(CHAT_INSTRUCTIONS_LABEL)} ${t("editor")}`}
         disabled={state.loading}
       />
       <div className="text-muted flex min-h-4 items-center justify-between gap-2 text-[10px]">
@@ -239,9 +241,9 @@ export function ChatInstructionsEditor(props: ChatInstructionsEditorProps) {
             checked={state.enabled}
             disabled={state.loading}
             onChange={(event) => state.setEnabled(event.currentTarget.checked)}
-            aria-label="Enable Chat Instructions"
+            aria-label={t("Enable Chat Instructions")}
           />
-          <span>{state.enabled ? "Enabled" : "Disabled"}</span>
+          <span>{state.enabled ? t("Enabled") : t("Disabled")}</span>
         </label>
         <span className="min-w-0 truncate">{statusText}</span>
         {state.error && (
@@ -255,14 +257,16 @@ export function ChatInstructionsEditor(props: ChatInstructionsEditorProps) {
 }
 
 export function ChatInstructionsPanel(props: { workspaceId: string }) {
+  const { t } = useLanguage();
   return (
     <section className="border-border border-b px-3 py-3">
       <div className="mb-2 flex items-baseline justify-between gap-3">
         <div>
           <h3 className="text-xs font-medium">{CHAT_INSTRUCTIONS_LABEL}</h3>
           <p className="text-muted mt-0.5 text-[10px]">
-            Workspace-scoped instructions appended to the system prompt for every chat turn. Toggle
-            off to keep the text around without sending it.
+            {t(
+              "Workspace-scoped instructions appended to the system prompt for every chat turn. Toggle off to keep the text around without sending it."
+            )}
           </p>
         </div>
       </div>

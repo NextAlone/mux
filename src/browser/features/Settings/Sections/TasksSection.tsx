@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useAPI } from "@/browser/contexts/API";
 import { useWorkspaceContext } from "@/browser/contexts/WorkspaceContext";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/browser/components/Tooltip/Tooltip";
 import { Input } from "@/browser/components/Input/Input";
 import { Switch } from "@/browser/components/Switch/Switch";
@@ -189,27 +190,30 @@ function getTasksSectionSaveBody(
   return saveBody;
 }
 
-function renderPolicySummary(agent: AgentDefinitionDescriptor): React.ReactNode {
+function renderPolicySummary(
+  agent: AgentDefinitionDescriptor,
+  t: (text: string) => string
+): React.ReactNode {
   const isCompact = agent.id === "compact";
 
   const baseDescription = (() => {
     if (isCompact) {
       return {
-        title: "Base: compact",
-        note: "Internal no-tools mode.",
+        title: t("Base: compact"),
+        note: t("Internal no-tools mode."),
       };
     }
 
     if (agent.base) {
       return {
-        title: `Base: ${agent.base}`,
-        note: "Inherits prompt/tools from base.",
+        title: t("Base: {base}").replace("{base}", agent.base),
+        note: t("Inherits prompt/tools from base."),
       };
     }
 
     return {
-      title: "Base: (none)",
-      note: "No base agent configured.",
+      title: t("Base: (none)"),
+      note: t("No base agent configured."),
     };
   })();
 
@@ -236,11 +240,13 @@ function renderPolicySummary(agent: AgentDefinitionDescriptor): React.ReactNode 
       <Tooltip key="tools">
         <TooltipTrigger asChild>
           <span className="cursor-help underline decoration-dotted underline-offset-2">
-            {toolRuleCount > 0 ? `tools: ${toolRuleCount}` : "tools: inherited"}
+            {toolRuleCount > 0
+              ? t("tools: {count}").replace("{count}", String(toolRuleCount))
+              : t("tools: inherited")}
           </span>
         </TooltipTrigger>
         <TooltipContent align="start" className="max-w-80 whitespace-normal">
-          <div className="font-medium">Tools</div>
+          <div className="font-medium">{t("Tools")}</div>
           {toolRuleCount > 0 ? (
             <ul className="mt-1 space-y-0.5">
               {toolAdd.map((pattern) => (
@@ -255,7 +261,7 @@ function renderPolicySummary(agent: AgentDefinitionDescriptor): React.ReactNode 
               ))}
             </ul>
           ) : (
-            <div className="text-muted mt-1 text-xs">Inherited from base.</div>
+            <div className="text-muted mt-1 text-xs">{t("Inherited from base.")}</div>
           )}
         </TooltipContent>
       </Tooltip>
@@ -384,15 +390,16 @@ interface AiDefaultsControlsProps {
 }
 
 function AiDefaultsControls(props: AiDefaultsControlsProps) {
+  const { t } = useLanguage();
   const allowedThinkingLevels = getThinkingPolicyForModel(props.effectiveModel);
-  const inheritLabel = props.inheritLabel ?? "Inherit";
-  const resetModelLabel = props.resetModelLabel ?? "Reset";
-  const resetThinkingLabel = props.resetThinkingLabel ?? "Reset";
+  const inheritLabel = t(props.inheritLabel ?? "Inherit");
+  const resetModelLabel = t(props.resetModelLabel ?? "Reset");
+  const resetThinkingLabel = t(props.resetThinkingLabel ?? "Reset");
 
   return (
     <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
       <div className="space-y-1">
-        <div className="text-muted text-xs">Model</div>
+        <div className="text-muted text-xs">{t("Model")}</div>
         <div className="flex items-center gap-2">
           {/* Match the Reasoning dropdown styling for inherit defaults. */}
           <ModelSelector
@@ -417,12 +424,12 @@ function AiDefaultsControls(props: AiDefaultsControlsProps) {
           ) : null}
         </div>
         {props.modelValue === INHERIT && props.inheritedModelDescription ? (
-          <div className="text-muted text-xs">{props.inheritedModelDescription}</div>
+          <div className="text-muted text-xs">{t(props.inheritedModelDescription)}</div>
         ) : null}
       </div>
 
       <div className="space-y-1">
-        <div className="text-muted text-xs">Reasoning</div>
+        <div className="text-muted text-xs">{t("Reasoning")}</div>
         <div className="flex items-center gap-2">
           <Select value={props.thinkingValue} onValueChange={props.onThinkingChange}>
             <SelectTrigger className="border-border-medium bg-modal-bg h-9">
@@ -432,7 +439,7 @@ function AiDefaultsControls(props: AiDefaultsControlsProps) {
               <SelectItem value={INHERIT}>{inheritLabel}</SelectItem>
               {allowedThinkingLevels.map((level) => (
                 <SelectItem key={level} value={level}>
-                  {getThinkingOptionLabel(level, props.effectiveModel)}
+                  {t(getThinkingOptionLabel(level, props.effectiveModel))}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -450,7 +457,7 @@ function AiDefaultsControls(props: AiDefaultsControlsProps) {
           ) : null}
         </div>
         {props.thinkingValue === INHERIT && props.inheritedThinkingDescription ? (
-          <div className="text-muted text-xs">{props.inheritedThinkingDescription}</div>
+          <div className="text-muted text-xs">{t(props.inheritedThinkingDescription)}</div>
         ) : null}
       </div>
     </div>
@@ -459,6 +466,7 @@ function AiDefaultsControls(props: AiDefaultsControlsProps) {
 
 export function TasksSection() {
   const { api } = useAPI();
+  const { t } = useLanguage();
   const { selectedWorkspace } = useWorkspaceContext();
 
   const selectedWorkspaceRef = useRef(selectedWorkspace);
@@ -873,12 +881,12 @@ export function TasksSection() {
     if (!options.some((option) => option.id === newWorkspaceDefaultAgentId)) {
       options.unshift({
         id: newWorkspaceDefaultAgentId,
-        label: `${newWorkspaceDefaultAgentId} (unavailable)`,
+        label: `${newWorkspaceDefaultAgentId} ${t("(unavailable)")}`,
       });
     }
 
     return options;
-  }, [newWorkspaceDefaultAgentId, uiAgents]);
+  }, [newWorkspaceDefaultAgentId, t, uiAgents]);
 
   const renderAgentDefaults = (agent: AgentDefinitionDescriptor) => {
     const entry = agentAiDefaults[agent.id];
@@ -928,19 +936,19 @@ export function TasksSection() {
               void copyToClipboard(agentDefinitionPath);
             }}
           >
-            {agent.scope}
+            {t(agent.scope)}
           </button>
         </TooltipTrigger>
         <TooltipContent align="start" className="max-w-80 whitespace-normal">
-          <div className="font-medium">Agent file</div>
+          <div className="font-medium">{t("Agent file")}</div>
           <div className="mt-1">
             <code>{agentDefinitionPath}</code>
           </div>
-          <div className="text-muted mt-2 text-xs">Click to copy</div>
+          <div className="text-muted mt-2 text-xs">{t("Click to copy")}</div>
         </TooltipContent>
       </Tooltip>
     ) : (
-      <span>{agent.scope}</span>
+      <span>{t(agent.scope)}</span>
     );
 
     return (
@@ -950,9 +958,9 @@ export function TasksSection() {
       >
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0 flex-1">
-            <div className="text-foreground text-sm font-medium">{agent.name}</div>
+            <div className="text-foreground text-sm font-medium">{t(agent.name)}</div>
             <div className="text-muted text-xs">
-              {agent.id} • {scopeNode} • {renderPolicySummary(agent)}
+              {agent.id} • {scopeNode} • {renderPolicySummary(agent, t)}
               {agent.uiSelectable && agent.subagentRunnable ? (
                 <>
                   {" "}
@@ -960,11 +968,11 @@ export function TasksSection() {
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <span className="cursor-help underline decoration-dotted underline-offset-2">
-                        sub-agent
+                        {t("sub-agent")}
                       </span>
                     </TooltipTrigger>
                     <TooltipContent align="start" className="max-w-80 whitespace-normal">
-                      Can be invoked as a sub-agent.
+                      {t("Can be invoked as a sub-agent.")}
                     </TooltipContent>
                   </Tooltip>
                 </>
@@ -972,26 +980,28 @@ export function TasksSection() {
             </div>
 
             {agent.description ? (
-              <div className="text-muted mt-1 text-xs">{agent.description}</div>
+              <div className="text-muted mt-1 text-xs">{t(agent.description)}</div>
             ) : null}
           </div>
 
           <div className="flex shrink-0 flex-col items-end gap-2">
             <div className="flex items-center gap-3">
-              {enablementHint ? <div className="text-muted text-xs">{enablementHint}</div> : null}
+              {enablementHint ? (
+                <div className="text-muted text-xs">{t(enablementHint)}</div>
+              ) : null}
               <Tooltip>
                 <TooltipTrigger asChild>
                   <div className="flex items-center gap-2">
-                    <div className="text-muted text-xs">Enabled</div>
+                    <div className="text-muted text-xs">{t("Enabled")}</div>
                     <Switch
                       checked={enabledValue}
                       disabled={enablementLocked}
                       onCheckedChange={(checked) => setAgentEnabled(agent.id, checked)}
-                      aria-label={`Toggle ${agent.id} enabled`}
+                      aria-label={t("Toggle {agent} enabled").replace("{agent}", agent.id)}
                     />
                   </div>
                 </TooltipTrigger>
-                <TooltipContent>{enablementTitle}</TooltipContent>
+                <TooltipContent>{t(enablementTitle)}</TooltipContent>
               </Tooltip>
               {enabledOverride !== undefined ? (
                 <Button
@@ -1001,7 +1011,7 @@ export function TasksSection() {
                   className="px-2"
                   onClick={() => resetAgentEnabled(agent.id)}
                 >
-                  Reset
+                  {t("Reset")}
                 </Button>
               ) : null}
             </div>
@@ -1010,15 +1020,15 @@ export function TasksSection() {
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <div className="flex items-center gap-2">
-                      <div className="text-muted text-xs">Advisor</div>
+                      <div className="text-muted text-xs">{t("Advisor")}</div>
                       <Switch
                         checked={advisorSwitchState.checked}
                         onCheckedChange={(checked) => setAgentAdvisorEnabled(agent.id, checked)}
-                        aria-label={`Toggle ${agent.id} advisor`}
+                        aria-label={t("Toggle {agent} advisor").replace("{agent}", agent.id)}
                       />
                     </div>
                   </TooltipTrigger>
-                  <TooltipContent>{advisorSwitchState.title}</TooltipContent>
+                  <TooltipContent>{t(advisorSwitchState.title)}</TooltipContent>
                 </Tooltip>
                 {advisorEnabledOverride !== undefined ? (
                   <Button
@@ -1028,7 +1038,7 @@ export function TasksSection() {
                     className="px-2"
                     onClick={() => resetAgentAdvisorEnabled(agent.id)}
                   >
-                    Reset
+                    {t("Reset")}
                   </Button>
                 ) : null}
               </div>
@@ -1074,17 +1084,18 @@ export function TasksSection() {
       <div
         key="exec-subagent"
         role="group"
-        aria-label="Exec defaults"
+        aria-label={t("Exec defaults")}
         className="border-border-medium bg-background-secondary rounded-md border p-3"
       >
         <div className="min-w-0 flex-1">
-          <div className="text-foreground text-sm font-medium">Exec</div>
+          <div className="text-foreground text-sm font-medium">{t("Exec")}</div>
           <div className="text-muted text-xs">
-            {agent.id} • {agent.scope} • {renderPolicySummary(agent)}
+            {agent.id} • {t(agent.scope)} • {renderPolicySummary(agent, t)}
           </div>
           <div className="text-muted mt-1 text-xs">
-            Unset fields inherit from UI Exec defaults. Enabled and advisor settings stay shared
-            with UI Exec.
+            {t(
+              "Unset fields inherit from UI Exec defaults. Enabled and advisor settings stay shared with UI Exec."
+            )}
           </div>
         </div>
 
@@ -1094,11 +1105,17 @@ export function TasksSection() {
           effectiveModel={effectiveModel}
           models={models}
           hiddenModelsForSelector={hiddenModelsForSelector}
-          inheritLabel="Inherit from UI Exec"
-          resetModelLabel="Inherit from UI Exec"
-          resetThinkingLabel="Inherit from UI Exec"
-          inheritedModelDescription={`Inherits from UI Exec: ${inheritedExecModel}`}
-          inheritedThinkingDescription={`Inherits from UI Exec: ${inheritedThinkingLabel}`}
+          inheritLabel={t("Inherit from UI Exec")}
+          resetModelLabel={t("Inherit from UI Exec")}
+          resetThinkingLabel={t("Inherit from UI Exec")}
+          inheritedModelDescription={t("Inherits from UI Exec: {value}").replace(
+            "{value}",
+            inheritedExecModel
+          )}
+          inheritedThinkingDescription={t("Inherits from UI Exec: {value}").replace(
+            "{value}",
+            t(inheritedThinkingLabel)
+          )}
           showThinkingResetButton
           onModelChange={(value) => setSubagentModel("exec", value)}
           onThinkingChange={(value) => setSubagentThinking("exec", value)}
@@ -1123,22 +1140,22 @@ export function TasksSection() {
         <div className="flex items-start justify-between gap-3">
           <div>
             <div className="text-foreground text-sm font-medium">{agentId}</div>
-            <div className="text-muted text-xs">Not discovered in the current workspace</div>
+            <div className="text-muted text-xs">{t("Not discovered in the current workspace")}</div>
           </div>
           {advisorToolEnabled ? (
             <div className="flex shrink-0 items-center gap-3">
               <Tooltip>
                 <TooltipTrigger asChild>
                   <div className="flex items-center gap-2">
-                    <div className="text-muted text-xs">Advisor</div>
+                    <div className="text-muted text-xs">{t("Advisor")}</div>
                     <Switch
                       checked={advisorSwitchState.checked}
                       onCheckedChange={(checked) => setAgentAdvisorEnabled(agentId, checked)}
-                      aria-label={`Toggle ${agentId} advisor`}
+                      aria-label={t("Toggle {agent} advisor").replace("{agent}", agentId)}
                     />
                   </div>
                 </TooltipTrigger>
-                <TooltipContent>{advisorSwitchState.title}</TooltipContent>
+                <TooltipContent>{t(advisorSwitchState.title)}</TooltipContent>
               </Tooltip>
               {advisorEnabledOverride !== undefined ? (
                 <Button
@@ -1148,7 +1165,7 @@ export function TasksSection() {
                   className="px-2"
                   onClick={() => resetAgentAdvisorEnabled(agentId)}
                 >
-                  Reset
+                  {t("Reset")}
                 </Button>
               ) : null}
             </div>
@@ -1171,13 +1188,13 @@ export function TasksSection() {
   return (
     <div className="space-y-6">
       <div>
-        <h3 className="text-foreground mb-4 text-sm font-medium">Task Settings</h3>
+        <h3 className="text-foreground mb-4 text-sm font-medium">{t("Task Settings")}</h3>
         <div className="space-y-4">
           <div className="flex items-center justify-between gap-4">
             <div className="flex-1">
-              <div className="text-foreground text-sm">Default new-workspace agent</div>
+              <div className="text-foreground text-sm">{t("Default new-workspace agent")}</div>
               <div className="text-muted text-xs">
-                Applies when a project does not have its own agent preference yet.
+                {t("Applies when a project does not have its own agent preference yet.")}
               </div>
             </div>
             <Select
@@ -1185,12 +1202,12 @@ export function TasksSection() {
               onValueChange={setNewWorkspaceDefaultAgentId}
             >
               <SelectTrigger className="border-border-medium bg-background-secondary h-9 w-56">
-                <SelectValue placeholder="Select agent" />
+                <SelectValue placeholder={t("Select agent")} />
               </SelectTrigger>
               <SelectContent>
                 {newWorkspaceDefaultAgentOptions.map((option) => (
                   <SelectItem key={option.id} value={option.id}>
-                    {option.label}
+                    {t(option.label)}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -1199,9 +1216,9 @@ export function TasksSection() {
 
           <div className="flex items-center justify-between gap-4">
             <div className="flex-1">
-              <div className="text-foreground text-sm">Max Parallel Agent Tasks</div>
+              <div className="text-foreground text-sm">{t("Max Parallel Agent Tasks")}</div>
               <div className="text-muted text-xs">
-                Default {TASK_SETTINGS_LIMITS.maxParallelAgentTasks.default}, range{" "}
+                {t("Default")} {TASK_SETTINGS_LIMITS.maxParallelAgentTasks.default}, {t("range")}{" "}
                 {TASK_SETTINGS_LIMITS.maxParallelAgentTasks.min}–
                 {TASK_SETTINGS_LIMITS.maxParallelAgentTasks.max}
               </div>
@@ -1220,9 +1237,9 @@ export function TasksSection() {
 
           <div className="flex items-center justify-between gap-4">
             <div className="flex-1">
-              <div className="text-foreground text-sm">Max Task Nesting Depth</div>
+              <div className="text-foreground text-sm">{t("Max Task Nesting Depth")}</div>
               <div className="text-muted text-xs">
-                Default {TASK_SETTINGS_LIMITS.maxTaskNestingDepth.default}, range{" "}
+                {t("Default")} {TASK_SETTINGS_LIMITS.maxTaskNestingDepth.default}, {t("range")}{" "}
                 {TASK_SETTINGS_LIMITS.maxTaskNestingDepth.min}–
                 {TASK_SETTINGS_LIMITS.maxTaskNestingDepth.max}
               </div>
@@ -1242,65 +1259,70 @@ export function TasksSection() {
           <div className="flex items-center justify-between gap-4">
             <div className="flex-1">
               <div className="text-foreground text-sm">
-                Plan: Implement replaces conversation with plan
+                {t("Plan: Implement replaces conversation with plan")}
               </div>
               <div className="text-muted text-xs">
-                When enabled, clicking Implement on a plan proposal clears previous messages and
-                shows the plan before switching to Exec.
+                {t(
+                  "When enabled, clicking Implement on a plan proposal clears previous messages and shows the plan before switching to Exec."
+                )}
               </div>
             </div>
             <Switch
               checked={taskSettings.proposePlanImplementReplacesChatHistory ?? false}
               onCheckedChange={setProposePlanImplementReplacesChatHistory}
-              aria-label="Toggle plan Implement replaces conversation with plan"
+              aria-label={t("Toggle plan Implement replaces conversation with plan")}
             />
           </div>
 
           <div className="flex items-center justify-between gap-4">
             <div className="flex-1">
               <div className="text-foreground text-sm">
-                Preserve subagents until the workspace gets archived
+                {t("Preserve subagents until the workspace gets archived")}
               </div>
               <div className="text-muted text-xs">
-                Completed sub-agent workspaces stay visible and expandable until an ancestor
-                workspace is archived, then cleanup runs automatically.
+                {t(
+                  "Completed sub-agent workspaces stay visible and expandable until an ancestor workspace is archived, then cleanup runs automatically."
+                )}
               </div>
             </div>
             <Switch
               checked={taskSettings.preserveSubagentsUntilArchive ?? false}
               onCheckedChange={setPreserveSubagentsUntilArchive}
-              aria-label="Toggle preserve subagents until archive"
+              aria-label={t("Toggle preserve subagents until archive")}
             />
           </div>
         </div>
 
-        {saveError ? <div className="text-danger-light mt-4 text-xs">{saveError}</div> : null}
+        {saveError ? <div className="text-danger-light mt-4 text-xs">{t(saveError)}</div> : null}
       </div>
 
       <div>
-        <h3 className="text-foreground mb-1 text-sm font-medium">Agent Defaults</h3>
+        <h3 className="text-foreground mb-1 text-sm font-medium">{t("Agent Defaults")}</h3>
         <div className="text-muted text-xs">
-          Defaults apply globally. Changing model/reasoning in a workspace creates a workspace
-          override.
+          {t(
+            "Defaults apply globally. Changing model/reasoning in a workspace creates a workspace override."
+          )}
         </div>
         {agentsLoadFailed ? (
           <div className="text-danger-light mt-3 text-xs">
-            Failed to load agent definitions for this workspace.
+            {t("Failed to load agent definitions for this workspace.")}
           </div>
         ) : null}
-        {!agentsLoaded ? <div className="text-muted mt-3 text-xs">Loading agents…</div> : null}
+        {!agentsLoaded ? (
+          <div className="text-muted mt-3 text-xs">{t("Loading agents…")}</div>
+        ) : null}
       </div>
 
       {uiAgents.length > 0 ? (
         <div>
-          <h4 className="text-foreground mb-3 text-sm font-medium">UI agents</h4>
+          <h4 className="text-foreground mb-3 text-sm font-medium">{t("UI agents")}</h4>
           <div className="space-y-4">{uiAgents.map(renderAgentDefaults)}</div>
         </div>
       ) : null}
 
       {subagents.length > 0 || execSubagentAgent ? (
         <div>
-          <h4 className="text-foreground mb-3 text-sm font-medium">Sub-agents</h4>
+          <h4 className="text-foreground mb-3 text-sm font-medium">{t("Sub-agents")}</h4>
           <div className="space-y-4">
             {execSubagentAgent ? renderExecSubagentDefaults(execSubagentAgent) : null}
             {subagents.map(renderAgentDefaults)}
@@ -1310,14 +1332,14 @@ export function TasksSection() {
 
       {internalAgents.length > 0 ? (
         <div>
-          <h4 className="text-foreground mb-3 text-sm font-medium">Internal</h4>
+          <h4 className="text-foreground mb-3 text-sm font-medium">{t("Internal")}</h4>
           <div className="space-y-4">{internalAgents.map(renderAgentDefaults)}</div>
         </div>
       ) : null}
 
       {unknownAgentIds.length > 0 ? (
         <div>
-          <h4 className="text-foreground mb-3 text-sm font-medium">Unknown agents</h4>
+          <h4 className="text-foreground mb-3 text-sm font-medium">{t("Unknown agents")}</h4>
           <div className="space-y-4">{unknownAgentIds.map(renderUnknownAgentDefaults)}</div>
         </div>
       ) : null}

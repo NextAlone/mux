@@ -6,6 +6,7 @@ import { getAllowedProvidersForUi } from "@/browser/utils/policyUi";
 import { hasProviderIcon, ProviderIcon } from "../ProviderIcon/ProviderIcon";
 import { useSettings } from "@/browser/contexts/SettingsContext";
 import { Tooltip, TooltipContent, TooltipTrigger } from "../Tooltip/Tooltip";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 interface ConfiguredProvidersBarProps {
   providersConfig: ProvidersConfigMap;
@@ -16,6 +17,7 @@ interface ConfiguredProvidersBarProps {
  * Displayed above ChatInput on the Project page.
  */
 export function ConfiguredProvidersBar(props: ConfiguredProvidersBarProps) {
+  const { t } = useLanguage();
   const policyState = usePolicy();
   const effectivePolicy =
     policyState.status.state === "enforced" ? (policyState.policy ?? null) : null;
@@ -61,7 +63,7 @@ export function ConfiguredProvidersBar(props: ConfiguredProvidersBarProps) {
         className="text-muted-foreground/70 hover:text-foreground inline-flex items-center gap-1 text-xs transition-colors"
       >
         <Settings className="h-3 w-3" />
-        <span>Providers</span>
+        <span>{t("Providers")}</span>
       </button>
     </div>
   );

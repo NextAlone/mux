@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useActiveGoalCount } from "@/browser/stores/WorkspaceStore";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 const ACTIVE_GOAL_WARNING_THRESHOLD = 3;
 const AUTO_DISMISS_MS = 5_000;
@@ -11,6 +12,7 @@ interface ActiveGoalsWarningToastProps {
 }
 
 export function ActiveGoalsWarningToast(props: ActiveGoalsWarningToastProps) {
+  const { t } = useLanguage();
   const [toastCount, setToastCount] = useState<number | null>(null);
   const wasAboveThresholdRef = useRef(false);
 
@@ -54,8 +56,10 @@ export function ActiveGoalsWarningToast(props: ActiveGoalsWarningToastProps) {
       >
         <span className="bg-warning mt-1 inline-block h-2 w-2 shrink-0 rounded-full" />
         <span>
-          You have {toastCount} active goals running concurrently. Goal continuations will fire
-          serially across workspaces.
+          {t("You have")} {toastCount}{" "}
+          {t(
+            "active goals running concurrently. Goal continuations will fire serially across workspaces."
+          )}
         </span>
       </div>
     </div>

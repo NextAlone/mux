@@ -15,6 +15,7 @@ import { useAPI, type APIClient } from "@/browser/contexts/API";
 import { ArchivedWorkspaces } from "@/browser/components/ArchivedWorkspaces/ArchivedWorkspaces";
 import { Button } from "@/browser/components/Button/Button";
 import { Skeleton } from "@/browser/components/Skeleton/Skeleton";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 interface ScratchPageProps {
   leftSidebarCollapsed: boolean;
@@ -33,6 +34,7 @@ async function listArchivedScratchWorkspaces(api: APIClient | null) {
 }
 
 export function ScratchPage(props: ScratchPageProps) {
+  const { t } = useLanguage();
   const { api } = useAPI();
   const [archivedWorkspaces, setArchivedWorkspaces] = useState<FrontendWorkspaceMetadata[]>([]);
   const didAutoFocusRef = useRef(false);
@@ -76,7 +78,7 @@ export function ScratchPage(props: ScratchPageProps) {
                 variant="ghost"
                 size="icon"
                 onClick={props.onToggleLeftSidebarCollapsed}
-                aria-label="Open sidebar menu"
+                aria-label={t("Open sidebar menu")}
                 className={cn(
                   "hidden mobile-menu-btn h-6 w-6 shrink-0 text-muted hover:text-foreground",
                   isDesktopMode() && "titlebar-no-drag"

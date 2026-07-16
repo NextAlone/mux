@@ -36,6 +36,7 @@ import type {
 import { getToolOutputUiOnly } from "@/common/utils/tools/toolOutputUiOnly";
 import { getErrorMessage } from "@/common/utils/errors";
 import { formatSendMessageError } from "@/common/utils/errors/formatSendError";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 const OTHER_VALUE = "__other__";
 
@@ -223,6 +224,7 @@ export function AskUserQuestionToolCall(props: {
   toolCallId: string;
   workspaceId?: string;
 }): JSX.Element {
+  const { t } = useLanguage();
   const { api } = useAPI();
 
   // A live, blocking question must never be hidden behind a collapsed "tools"
@@ -579,7 +581,7 @@ export function AskUserQuestionToolCall(props: {
           <ToolName>{title}</ToolName>
           {props.status === "executing" && (
             <div className="text-secondary text-[10px] leading-tight">
-              Answer below, or type a message in chat to cancel.
+              {t("Answer below, or type a message in chat to cancel.")}
             </div>
           )}
         </div>
@@ -627,12 +629,13 @@ export function AskUserQuestionToolCall(props: {
                     )}
                     onClick={() => setActiveIndex(summaryIndex)}
                   >
-                    Summary
+                    {t("Summary")}
                     {isComplete && !isOnSummary && <Check aria-hidden="true" className="h-3 w-3" />}
                   </button>
                   {totalCount > 0 && (
                     <span className="text-muted counter-nums ml-auto text-[10px]">
-                      {answeredCount}/{totalCount} answered
+                      {answeredCount}/{totalCount}
+                      {t("answered")}
                     </span>
                   )}
                 </div>
@@ -754,7 +757,7 @@ export function AskUserQuestionToolCall(props: {
                       {currentDraft.selected.includes(OTHER_VALUE) && (
                         <div className="mt-1.5 px-2">
                           <AutoResizeTextarea
-                            placeholder="Type your answer"
+                            placeholder={t("Type your answer")}
                             value={currentDraft.otherText}
                             onChange={(value) => {
                               setDraftAnswers((prev) => ({
@@ -778,12 +781,16 @@ export function AskUserQuestionToolCall(props: {
 
                 {isOnSummary && (
                   <div className="flex flex-col gap-2">
-                    <div className="text-foreground text-sm font-medium">Review your answers</div>
+                    <div className="text-foreground text-sm font-medium">
+                      {t("Review your answers")}
+                    </div>
                     {unansweredCount > 0 && (
                       <div className="border-warning/30 bg-warning/10 text-warning flex items-center gap-1.5 rounded border px-2 py-1 text-[11px]">
                         <AlertTriangle aria-hidden="true" className="h-3 w-3 shrink-0" />
                         <span>
-                          {unansweredCount} question{unansweredCount > 1 ? "s" : ""} not answered
+                          {unansweredCount} {t("question")}
+                          {unansweredCount > 1 ? "s" : ""}
+                          {t("not answered")}
                         </span>
                       </div>
                     )}
@@ -828,7 +835,7 @@ export function AskUserQuestionToolCall(props: {
                                 {answered ? (
                                   <span className="text-foreground">{answerText}</span>
                                 ) : (
-                                  <span className="text-muted italic">Not answered</span>
+                                  <span className="text-muted italic">{t("Not answered")}</span>
                                 )}
                               </div>
                               {descriptions.length > 0 && (
@@ -853,7 +860,7 @@ export function AskUserQuestionToolCall(props: {
                 {successResult && (
                   <div className="flex flex-col gap-1.5">
                     <div className="text-secondary text-[10px] tracking-wide uppercase">
-                      User answered
+                      {t("User answered")}
                     </div>
                     {Object.entries(successResult.answers).map(([question, answer]) => {
                       const questionDef = successResult.questions.find(
@@ -893,7 +900,7 @@ export function AskUserQuestionToolCall(props: {
             {props.status === "executing" && (
               <div className="flex items-center justify-between gap-3 border-t border-white/5 pt-2">
                 <div className="text-muted min-w-0 flex-1 text-[10px] italic">
-                  Tip: type a message in chat to cancel these questions.
+                  {t("Tip: type a message in chat to cancel these questions.")}
                 </div>
                 {isOnSummary ? (
                   <Button
@@ -910,7 +917,7 @@ export function AskUserQuestionToolCall(props: {
                     size="sm"
                     variant="outline"
                   >
-                    Next
+                    {t("Next")}
                   </Button>
                 )}
               </div>

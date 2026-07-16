@@ -11,6 +11,7 @@ import { inferAxes, inferChartType } from "../Tools/analyticsQuery/chartHeuristi
 import type { ChartType } from "../Tools/analyticsQuery/types";
 import { ChartTypePicker } from "./ChartTypePicker";
 import { substituteTimeFilter, TIME_FILTER_PLACEHOLDER } from "./sqlTimeFilter";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 export const SAMPLE_QUERIES = [
   {
@@ -43,6 +44,7 @@ interface SqlExplorerProps {
 }
 
 export function SqlExplorer(props: SqlExplorerProps) {
+  const { t } = useLanguage();
   const [sql, setSql] = useState(SAMPLE_QUERIES[0].sql);
   const { data, loading, error, executeQuery } = useAnalyticsRawQuery();
   const [chartTypeOverride, setChartTypeOverride] = useState<ChartType | null>(null);
@@ -121,7 +123,7 @@ export function SqlExplorer(props: SqlExplorerProps) {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Database className="text-muted size-4" />
-          <h2 className="text-sm font-semibold">SQL Explorer</h2>
+          <h2 className="text-sm font-semibold">{t("SQL Explorer")}</h2>
         </div>
         <div className="relative">
           <Button
@@ -130,7 +132,7 @@ export function SqlExplorer(props: SqlExplorerProps) {
             onClick={() => setShowSamples(!showSamples)}
             className="text-muted hover:text-foreground h-7 gap-1 px-2 text-[11px]"
           >
-            Sample Queries
+            {t("Sample Queries")}
             <ChevronDown
               className={cn("size-3 transition-transform", showSamples && "rotate-180")}
             />
@@ -172,7 +174,7 @@ export function SqlExplorer(props: SqlExplorerProps) {
             }}
           />
           <div className="absolute right-2 bottom-2 flex items-center gap-2">
-            <span className="text-muted text-[10px]">Ctrl/Cmd+Enter to run</span>
+            <span className="text-muted text-[10px]">{t("Ctrl/Cmd+Enter to run")}</span>
             <Button
               size="sm"
               onClick={() => {
@@ -182,14 +184,15 @@ export function SqlExplorer(props: SqlExplorerProps) {
               className="h-7 gap-1.5 px-3 text-xs"
             >
               <Play className={cn("size-3 fill-current", loading && "animate-pulse")} />
-              Run Query
+              {t("Run Query")}
             </Button>
           </div>
         </div>
 
         <div className="text-muted text-[10px]">
-          Use <code className="text-foreground">{TIME_FILTER_PLACEHOLDER}</code> in a WHERE clause
-          to filter by the selected date range (7D/30D/90D/All).
+          {t("Use")}
+          <code className="text-foreground">{TIME_FILTER_PLACEHOLDER}</code>
+          {t("in a WHERE clause to filter by the selected date range (7D/30D/90D/All).")}
         </div>
 
         {error && (
@@ -208,15 +211,15 @@ export function SqlExplorer(props: SqlExplorerProps) {
               />
               <div className="text-muted text-[10px]">
                 {data.rowCount.toLocaleString()}
-                {data.rowCountExact ? "" : "+"} rows · {data.durationMs}ms
-                {data.truncated && " · Results truncated"}
+                {data.rowCountExact ? "" : "+"} {t("rows ·")} {data.durationMs}ms
+                {data.truncated && ` · ${t("Results truncated")}`}
               </div>
             </div>
 
             {props.onSaveQuery && lastExecutedSql && (
               <div className="border-border-light flex flex-wrap items-center justify-between gap-2 border-t pt-3">
                 <div className="text-muted text-xs">
-                  Pin this query to the dashboard as a saved panel.
+                  {t("Pin this query to the dashboard as a saved panel.")}
                 </div>
                 {saveLabel === null ? (
                   <Button
@@ -229,14 +232,14 @@ export function SqlExplorer(props: SqlExplorerProps) {
                     className="h-7 gap-1.5 px-2.5 text-[11px]"
                   >
                     <Pin className="size-3" />
-                    Save as Panel
+                    {t("Save as Panel")}
                   </Button>
                 ) : (
                   <div className="flex min-w-[240px] items-center gap-1">
                     <input
                       value={saveLabel}
                       onChange={(event) => setSaveLabel(event.target.value)}
-                      placeholder="Panel title"
+                      placeholder={t("Panel title")}
                       className="border-border-medium bg-background text-foreground h-7 min-w-0 flex-1 rounded border px-2 text-xs focus:outline-none"
                       onKeyDown={(event) => {
                         if (event.key === "Enter") {
@@ -259,7 +262,7 @@ export function SqlExplorer(props: SqlExplorerProps) {
                         void handleSave();
                       }}
                       className="text-muted hover:text-foreground h-7 w-7"
-                      aria-label="Save panel"
+                      aria-label={t("Save panel")}
                     >
                       <Check className="size-3.5" />
                     </Button>
@@ -269,7 +272,7 @@ export function SqlExplorer(props: SqlExplorerProps) {
                       disabled={saving}
                       onClick={handleCancelSave}
                       className="text-muted hover:text-foreground h-7 w-7"
-                      aria-label="Cancel saving panel"
+                      aria-label={t("Cancel saving panel")}
                     >
                       <X className="size-3.5" />
                     </Button>

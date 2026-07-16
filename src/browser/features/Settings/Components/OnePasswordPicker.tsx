@@ -3,6 +3,7 @@ import { ChevronLeft, ChevronRight, KeyRound, Loader2 } from "lucide-react";
 
 import { Button } from "@/browser/components/Button/Button";
 import { useAPI } from "@/browser/contexts/API";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 import assert from "@/common/utils/assert";
 import { getErrorMessage } from "@/common/utils/errors";
 
@@ -36,6 +37,7 @@ interface OnePasswordPickerProps {
 
 export function OnePasswordPicker(props: OnePasswordPickerProps) {
   const { api } = useAPI();
+  const { t } = useLanguage();
 
   const [step, setStep] = useState<PickerStep>({ kind: "vault" });
   const [vaults, setVaults] = useState<OnePasswordVault[]>([]);
@@ -233,17 +235,17 @@ export function OnePasswordPicker(props: OnePasswordPickerProps) {
 
   const headerLabel =
     step.kind === "vault"
-      ? "Select a Vault"
+      ? t("Select a Vault")
       : step.kind === "item"
-        ? `Vault: ${step.vault.title}`
-        : `Item: ${step.item.title}`;
+        ? `${t("Vault:")} ${step.vault.title}`
+        : `${t("Item:")} ${step.item.title}`;
 
   const emptyLabel =
     step.kind === "vault"
-      ? "No vaults found."
+      ? t("No vaults found.")
       : step.kind === "item"
-        ? "No items found in this vault."
-        : "No fields found for this item.";
+        ? t("No items found in this vault.")
+        : t("No fields found for this item.");
 
   const showBackButton = step.kind !== "vault";
 
@@ -259,7 +261,7 @@ export function OnePasswordPicker(props: OnePasswordPickerProps) {
               className="text-muted hover:text-foreground h-auto px-1 py-0 text-xs"
             >
               <ChevronLeft className="h-3.5 w-3.5" />
-              Back
+              {t("Back")}
             </Button>
           )}
           <span className="text-muted text-xs font-medium">{headerLabel}</span>
@@ -270,7 +272,7 @@ export function OnePasswordPicker(props: OnePasswordPickerProps) {
           onClick={props.onCancel}
           className="text-muted hover:text-foreground h-auto px-1 py-0 text-xs"
         >
-          Cancel
+          {t("Cancel")}
         </Button>
       </div>
 
@@ -278,10 +280,10 @@ export function OnePasswordPicker(props: OnePasswordPickerProps) {
         {loading ? (
           <div className="text-muted flex items-center gap-2 px-2 py-1.5 text-xs">
             <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            Loading 1Password data...
+            {t("Loading 1Password data...")}
           </div>
         ) : error ? (
-          <div className="text-error px-2 py-1.5 text-xs">{error}</div>
+          <div className="text-error px-2 py-1.5 text-xs">{t(error)}</div>
         ) : step.kind === "vault" ? (
           vaults.length === 0 ? (
             <div className="text-muted px-2 py-1.5 text-xs">{emptyLabel}</div>

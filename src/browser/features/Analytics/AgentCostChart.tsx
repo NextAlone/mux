@@ -8,6 +8,7 @@ import {
   formatCompactNumber,
   formatUsd,
 } from "./analyticsUtils";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 interface AgentCostChartProps {
   data: AgentCostItem[] | null;
@@ -33,6 +34,7 @@ function AgentCostTooltipContent(props: {
   active?: boolean;
   payload?: Array<{ payload?: unknown }>;
 }) {
+  const { t } = useLanguage();
   if (!props.active || !props.payload || props.payload.length === 0) {
     return null;
   }
@@ -51,15 +53,15 @@ function AgentCostTooltipContent(props: {
     >
       <div className="text-foreground mb-1 font-medium">{row.agentId}</div>
       <div className="text-muted flex items-center justify-between gap-2">
-        <span>Cost</span>
+        <span>{t("Cost")}</span>
         <span className="text-foreground font-mono">{formatUsd(row.costUsd)}</span>
       </div>
       <div className="text-muted flex items-center justify-between gap-2">
-        <span>Tokens</span>
+        <span>{t("Tokens")}</span>
         <span className="text-foreground font-mono">{formatCompactNumber(row.tokenCount)}</span>
       </div>
       <div className="text-muted flex items-center justify-between gap-2">
-        <span>Responses</span>
+        <span>{t("Responses")}</span>
         <span className="text-foreground font-mono">{formatCompactNumber(row.responseCount)}</span>
       </div>
     </div>
@@ -67,22 +69,25 @@ function AgentCostTooltipContent(props: {
 }
 
 export function AgentCostChart(props: AgentCostChartProps) {
+  const { t } = useLanguage();
   const rows = [...(props.data ?? [])].sort((a, b) => b.costUsd - a.costUsd).slice(0, 10);
 
   return (
     <div className="bg-background-secondary border-border-medium rounded-lg border p-4">
-      <h2 className="text-foreground text-sm font-semibold">Agent cost breakdown</h2>
-      <p className="text-muted mt-1 text-xs">Top agents by cumulative spend.</p>
+      <h2 className="text-foreground text-sm font-semibold">{t("Agent cost breakdown")}</h2>
+      <p className="text-muted mt-1 text-xs">{t("Top agents by cumulative spend.")}</p>
 
       {props.error ? (
-        <p className="text-danger mt-3 text-xs">Failed to load agent breakdown: {props.error}</p>
+        <p className="text-danger mt-3 text-xs">
+          {t("Failed to load agent breakdown:")} {props.error}
+        </p>
       ) : props.loading ? (
         <div className="mt-3">
           <Skeleton variant="shimmer" className="h-72 w-full" />
         </div>
       ) : rows.length === 0 ? (
         <div className="text-muted mt-3 rounded border border-dashed px-3 py-10 text-center text-sm">
-          No agent-level spend data available.
+          {t("No agent-level spend data available.")}
         </div>
       ) : (
         <div className="mt-3 h-72 w-full">

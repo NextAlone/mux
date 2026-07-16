@@ -61,7 +61,10 @@ import {
   type WorkspaceCheckoutLocationMode,
 } from "@/common/config/workspaceCheckoutLocation";
 
-function getTerminalFontAvailabilityWarning(config: TerminalFontConfig): string | undefined {
+function getTerminalFontAvailabilityWarning(
+  config: TerminalFontConfig,
+  t: (text: string) => string
+): string | undefined {
   if (typeof document === "undefined") {
     return undefined;
   }
@@ -91,11 +94,13 @@ function getTerminalFontAvailabilityWarning(config: TerminalFontConfig): string 
     if (normalizedPrimary.endsWith("Nerd Font") && !normalizedPrimary.endsWith("Nerd Font Mono")) {
       const monoCandidate = `${normalizedPrimary} Mono`;
       if (isFontFamilyAvailableInBrowser(monoCandidate, config.fontSize)) {
-        return `Font "${normalizedPrimary}" not found. Try "${monoCandidate}".`;
+        return t('Font "{font}" not found. Try "{candidate}".')
+          .replace("{font}", normalizedPrimary)
+          .replace("{candidate}", monoCandidate);
       }
     }
 
-    return `Font "${normalizedPrimary}" not found in this browser.`;
+    return t('Font "{font}" not found in this browser.').replace("{font}", normalizedPrimary);
   }
 
   return undefined;
@@ -190,7 +195,7 @@ export function GeneralSection() {
     DEFAULT_TERMINAL_FONT_CONFIG
   );
   const terminalFontConfig = normalizeTerminalFontConfig(rawTerminalFontConfig);
-  const terminalFontWarning = getTerminalFontAvailabilityWarning(terminalFontConfig);
+  const terminalFontWarning = getTerminalFontAvailabilityWarning(terminalFontConfig, t);
 
   const terminalFontPreviewFamily = appendTerminalIconFallback(terminalFontConfig.fontFamily);
   const terminalFontPreviewText = [
@@ -645,7 +650,7 @@ export function GeneralSection() {
             <Switch
               checked={chatTranscriptFullWidth}
               onCheckedChange={handleChatTranscriptFullWidthChange}
-              aria-label="Toggle full-width chat transcript"
+              aria-label={t("Toggle full-width chat transcript")}
             />
           </div>
 
@@ -661,7 +666,7 @@ export function GeneralSection() {
             <Switch
               checked={sidebarAgeGrouping}
               onCheckedChange={setSidebarAgeGrouping}
-              aria-label="Toggle sidebar workspace age grouping"
+              aria-label={t("Toggle sidebar workspace age grouping")}
             />
           </div>
 
@@ -778,7 +783,7 @@ export function GeneralSection() {
             <Switch
               checked={llmDebugLogs}
               onCheckedChange={handleLlmDebugLogsChange}
-              aria-label="Toggle API Debug Logs"
+              aria-label={t("Toggle API Debug Logs")}
             />
           </div>
         </div>
@@ -817,13 +822,15 @@ export function GeneralSection() {
               onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                 handleCustomCommandChange(e.target.value)
               }
-              placeholder="e.g., nvim"
+              placeholder={t("e.g., nvim")}
               className="border-border-medium bg-background-secondary h-9 w-40"
             />
           </div>
           {isBrowserMode && (
             <div className="text-warning text-xs">
-              Custom editors are not supported in browser mode. Use VS Code or Cursor instead.
+              {t(
+                "Custom editors are not supported in browser mode. Use VS Code or Cursor instead."
+              )}
             </div>
           )}
         </div>
@@ -831,9 +838,11 @@ export function GeneralSection() {
 
       <div className="flex items-center justify-between gap-4">
         <div className="flex-1">
-          <div className="text-foreground text-sm">Coder workspace on archive</div>
+          <div className="text-foreground text-sm">{t("Coder workspace on archive")}</div>
           <div className="text-muted text-xs">
-            Action to take on dedicated Coder workspaces when archiving a chat. Delete is permanent.
+            {t(
+              "Action to take on dedicated Coder workspaces when archiving a chat. Delete is permanent."
+            )}
           </div>
         </div>
         <Select
@@ -849,7 +858,7 @@ export function GeneralSection() {
           <SelectContent>
             {ARCHIVE_BEHAVIOR_OPTIONS.map((option) => (
               <SelectItem key={option.value} value={option.value}>
-                {option.label}
+                {t(option.label)}
               </SelectItem>
             ))}
           </SelectContent>
@@ -858,10 +867,11 @@ export function GeneralSection() {
 
       <div className="flex items-center justify-between gap-4">
         <div className="flex-1">
-          <div className="text-foreground text-sm">Checkout archive behavior</div>
+          <div className="text-foreground text-sm">{t("Checkout archive behavior")}</div>
           <div className="text-muted text-xs">
-            Control whether archived mux-managed checkouts stay on disk, are deleted, or are
-            snapshotted so they can be restored on unarchive.
+            {t(
+              "Control whether archived mux-managed checkouts stay on disk, are deleted, or are snapshotted so they can be restored on unarchive."
+            )}
           </div>
         </div>
         <Select
@@ -877,7 +887,7 @@ export function GeneralSection() {
           <SelectContent>
             {WORKTREE_ARCHIVE_BEHAVIOR_OPTIONS.map((option) => (
               <SelectItem key={option.value} value={option.value}>
-                {option.label}
+                {t(option.label)}
               </SelectItem>
             ))}
           </SelectContent>
@@ -887,9 +897,9 @@ export function GeneralSection() {
       {isBrowserMode && sshHostLoaded && (
         <div className="flex items-center justify-between">
           <div>
-            <div className="text-foreground text-sm">SSH Host</div>
+            <div className="text-foreground text-sm">{t("SSH Host")}</div>
             <div className="text-muted text-xs">
-              SSH hostname for &apos;Open in Editor&apos; deep links
+              {t("SSH hostname for 'Open in Editor' deep links")}
             </div>
           </div>
           <Input
@@ -945,7 +955,7 @@ export function GeneralSection() {
               <SelectContent>
                 {WORKSPACE_CHECKOUT_LOCATION_OPTIONS.map((option) => (
                   <SelectItem key={option.value} value={option.value}>
-                    {option.label}
+                    {t(option.label)}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -957,7 +967,7 @@ export function GeneralSection() {
               <div className="flex-1">
                 <div className="text-foreground text-sm">{t("Custom workspace directory")}</div>
                 <div className="text-muted text-xs">
-                  New checkouts use &lt;directory&gt;/&lt;project&gt;/&lt;workspace&gt;
+                  {t("New checkouts use <directory>/<project>/<workspace>")}
                 </div>
               </div>
               <Input

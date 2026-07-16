@@ -16,6 +16,7 @@ import {
   TOKEN_CATEGORY_COLORS,
   formatCompactNumber,
 } from "./analyticsUtils";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 interface TokensByModelChartProps {
   data: TokensByModelItem[] | null;
@@ -35,6 +36,7 @@ function TokensByModelTooltipContent(props: {
   active?: boolean;
   payload?: Array<{ payload?: unknown }>;
 }) {
+  const { t } = useLanguage();
   if (!props.active || !props.payload || props.payload.length === 0) {
     return null;
   }
@@ -53,39 +55,39 @@ function TokensByModelTooltipContent(props: {
     >
       <div className="text-foreground mb-1 font-medium">{row.model}</div>
       <div className="text-muted flex items-center justify-between gap-4">
-        <span>Input</span>
+        <span>{t("Input")}</span>
         <span className="text-foreground font-mono">{formatCompactNumber(row.inputTokens)}</span>
       </div>
       <div className="text-muted flex items-center justify-between gap-4">
-        <span>Cached</span>
+        <span>{t("Cached")}</span>
         <span className="text-foreground font-mono">{formatCompactNumber(row.cachedTokens)}</span>
       </div>
       {row.cacheCreateTokens > 0 ? (
         <div className="text-muted flex items-center justify-between gap-4">
-          <span>Cache write</span>
+          <span>{t("Cache write")}</span>
           <span className="text-foreground font-mono">
             {formatCompactNumber(row.cacheCreateTokens)}
           </span>
         </div>
       ) : null}
       <div className="text-muted flex items-center justify-between gap-4">
-        <span>Output</span>
+        <span>{t("Output")}</span>
         <span className="text-foreground font-mono">{formatCompactNumber(row.outputTokens)}</span>
       </div>
       <div className="text-muted flex items-center justify-between gap-4">
-        <span>Reasoning</span>
+        <span>{t("Reasoning")}</span>
         <span className="text-foreground font-mono">
           {formatCompactNumber(row.reasoningTokens)}
         </span>
       </div>
       <div className="border-border-light text-muted mt-1 flex items-center justify-between gap-4 border-t pt-1">
-        <span>Total</span>
+        <span>{t("Total")}</span>
         <span className="text-foreground font-mono font-medium">
           {formatCompactNumber(row.totalTokens)}
         </span>
       </div>
       <div className="text-muted flex items-center justify-between gap-4">
-        <span>Requests</span>
+        <span>{t("Requests")}</span>
         <span className="text-foreground font-mono">{formatCompactNumber(row.requestCount)}</span>
       </div>
     </div>
@@ -93,24 +95,27 @@ function TokensByModelTooltipContent(props: {
 }
 
 export function TokensByModelChart(props: TokensByModelChartProps) {
+  const { t } = useLanguage();
   const rows = [...(props.data ?? [])].sort((a, b) => b.totalTokens - a.totalTokens).slice(0, 10);
 
   return (
     <div className="bg-background-secondary border-border-medium rounded-lg border p-4">
-      <h2 className="text-foreground text-sm font-semibold">Token usage by model</h2>
+      <h2 className="text-foreground text-sm font-semibold">{t("Token usage by model")}</h2>
       <p className="text-muted mt-1 text-xs">
-        Token production and consumption breakdown per model.
+        {t("Token production and consumption breakdown per model.")}
       </p>
 
       {props.error ? (
-        <p className="text-danger mt-3 text-xs">Failed to load token breakdown: {props.error}</p>
+        <p className="text-danger mt-3 text-xs">
+          {t("Failed to load token breakdown:")} {props.error}
+        </p>
       ) : props.loading ? (
         <div className="mt-3">
           <Skeleton variant="shimmer" className="h-72 w-full" />
         </div>
       ) : rows.length === 0 ? (
         <div className="text-muted mt-3 rounded border border-dashed px-3 py-10 text-center text-sm">
-          No token usage data available.
+          {t("No token usage data available.")}
         </div>
       ) : (
         <div className="mt-3 h-72 w-full">

@@ -10,6 +10,7 @@ import {
   WarningTitle,
 } from "@/browser/components/Dialog/Dialog";
 import { Button } from "@/browser/components/Button/Button";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 export interface ProjectDeleteConfirmationModalProps {
   isOpen: boolean;
@@ -30,6 +31,7 @@ type ProjectDeleteConfirmationModalComponentProps = Omit<
 export function ProjectDeleteConfirmationModal(
   props: ProjectDeleteConfirmationModalComponentProps
 ) {
+  const { t } = useLanguage();
   const [typedProjectName, setTypedProjectName] = useState("");
   const [isConfirming, setIsConfirming] = useState(false);
   const confirmationInputId = useId();
@@ -80,23 +82,27 @@ export function ProjectDeleteConfirmationModal(
         }}
       >
         <DialogHeader>
-          <DialogTitle>Delete &ldquo;{props.projectName}&rdquo;?</DialogTitle>
+          <DialogTitle>
+            {t("Delete “")}
+            {props.projectName}&rdquo;?
+          </DialogTitle>
         </DialogHeader>
 
         <WarningBox>
-          <WarningTitle>Warning</WarningTitle>
+          <WarningTitle>{t("Warning")}</WarningTitle>
           <WarningText>
-            This will permanently delete {totalCount} workspace{totalCount !== 1 ? "s" : ""}
+            {t("This will permanently delete")}
+            {totalCount} {t(totalCount === 1 ? " workspace" : " workspaces")}
             {hasActive &&
               hasArchived &&
-              ` (${activeCount} active, ${props.archivedCount} archived)`}
-            . All chat transcripts and managed checkouts will be lost.
+              ` (${activeCount} ${t("active")}, ${props.archivedCount} ${t("archived")})`}
+            {t(". All chat transcripts and managed checkouts will be lost.")}
           </WarningText>
         </WarningBox>
 
         <div className="space-y-2">
           <label htmlFor={confirmationInputId} className="text-muted block text-xs font-medium">
-            Project name confirmation
+            {t("Project name confirmation")}
           </label>
           <input
             autoFocus
@@ -116,7 +122,7 @@ export function ProjectDeleteConfirmationModal(
                 void handleConfirm();
               }
             }}
-            placeholder={`Type "${props.projectName}" to confirm`}
+            placeholder={`${t("Type")} "${props.projectName}" ${t("to confirm")}`}
             className="border-border-medium bg-modal-bg text-foreground placeholder:text-muted focus:border-accent w-full rounded border px-3 py-2 text-sm focus:outline-none disabled:opacity-50"
             disabled={isConfirming}
           />
@@ -124,7 +130,7 @@ export function ProjectDeleteConfirmationModal(
 
         <DialogFooter>
           <Button variant="secondary" onClick={props.onCancel} disabled={isConfirming}>
-            Cancel
+            {t("Cancel")}
           </Button>
           <Button
             variant="destructive"
@@ -133,7 +139,7 @@ export function ProjectDeleteConfirmationModal(
             }}
             disabled={!confirmationMatches || isConfirming}
           >
-            {isConfirming ? "Deleting..." : "Delete Project"}
+            {isConfirming ? t("Deleting...") : t("Delete Project")}
           </Button>
         </DialogFooter>
       </DialogContent>

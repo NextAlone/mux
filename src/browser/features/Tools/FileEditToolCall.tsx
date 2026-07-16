@@ -30,6 +30,7 @@ import { DiffContainer, DiffRenderer, SelectableDiffRenderer } from "../Shared/D
 import { KebabMenu, type KebabMenuItem } from "@/browser/components/KebabMenu/KebabMenu";
 import { JsonHighlight } from "./Shared/HighlightedCode";
 import type { ReviewNoteData } from "@/common/types/review";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 type FileEditOperationArgs =
   | FileEditReplaceStringToolArgs
@@ -147,12 +148,13 @@ interface FileEditToolCallProps {
 function renderDiff(
   diff: string,
   filePath?: string,
-  onReviewNote?: (data: ReviewNoteData) => void
+  onReviewNote?: (data: ReviewNoteData) => void,
+  t: (text: string) => string = (text) => text
 ): React.ReactNode {
   try {
     const patches = parsePatch(diff);
     if (patches.length === 0) {
-      return <div style={{ padding: "8px", color: "var(--color-muted)" }}>No changes</div>;
+      return <div style={{ padding: "8px", color: "var(--color-muted)" }}>{t("No changes")}</div>;
     }
 
     // Render each hunk using SelectableDiffRenderer if we have a callback, otherwise DiffRenderer
@@ -185,7 +187,11 @@ function renderDiff(
       </React.Fragment>
     ));
   } catch (error) {
-    return <ErrorBox>Failed to parse diff: {String(error)}</ErrorBox>;
+    return (
+      <ErrorBox>
+        {t("Failed to parse diff:")} {String(error)}
+      </ErrorBox>
+    );
   }
 }
 
@@ -206,6 +212,7 @@ export const FileEditToolCall: React.FC<FileEditToolCallProps> = ({
   status = "pending",
   onReviewNote,
 }) => {
+  const { t } = useLanguage();
   // Collapse failed edits by default since they're common and expected. This is just
   // the fallback: the per-workspace sticky tools preference (set once the user
   // expands/collapses any tool here) wins. Seeded once at mount, so a later result or
@@ -292,7 +299,7 @@ export const FileEditToolCall: React.FC<FileEditToolCallProps> = ({
         <ToolDetails>
           {showInvocation && (
             <DetailSection>
-              <DetailLabel>Invocation</DetailLabel>
+              <DetailLabel>{t("Invocation")}</DetailLabel>
               <JsonHighlight value={{ tool: toolName, args }} />
             </DetailSection>
           )}
@@ -301,7 +308,7 @@ export const FileEditToolCall: React.FC<FileEditToolCallProps> = ({
             <>
               {result.success === false && result.error && (
                 <DetailSection>
-                  <DetailLabel>Error</DetailLabel>
+                  <DetailLabel>{t("Error")}</DetailLabel>
                   <ErrorBox>{result.error}</ErrorBox>
                 </DetailSection>
               )}
@@ -311,17 +318,17 @@ export const FileEditToolCall: React.FC<FileEditToolCallProps> = ({
                   {activeDiffPreview && (
                     <DetailSection>
                       <div className="text-muted text-[11px]">
-                        Large diff preview: showing{" "}
-                        {activeDiffPreview.displayedLines.toLocaleString()} of{" "}
-                        {activeDiffPreview.totalLines.toLocaleString()} lines. Full patch is still
-                        available from the menu.
+                        {t("Large diff preview: showing")}{" "}
+                        {activeDiffPreview.displayedLines.toLocaleString()} {t("of")}{" "}
+                        {activeDiffPreview.totalLines.toLocaleString()}
+                        {t("lines. Full patch is still available from the menu.")}
                       </div>
                       <button
                         type="button"
                         className="text-accent hover:text-accent-light mt-1 text-left text-[11px] underline underline-offset-2"
                         onClick={() => setShowFullDiff(true)}
                       >
-                        Render full parsed diff
+                        {t("Render full parsed diff")}
                       </button>
                     </DetailSection>
                   )}
@@ -329,7 +336,7 @@ export const FileEditToolCall: React.FC<FileEditToolCallProps> = ({
                     ? renderRawDiff(diff)
                     : activeDiffPreview
                       ? renderRawDiff(activeDiffPreview.previewDiff)
-                      : renderDiff(diff, filePath, onReviewNote)}
+                      : renderDiff(diff, filePath, onReviewNote, t)}
                 </>
               )}
             </>
@@ -338,7 +345,7 @@ export const FileEditToolCall: React.FC<FileEditToolCallProps> = ({
           {status === "executing" && result === undefined && (
             <DetailSection>
               <div className="text-secondary text-[11px]">
-                Waiting for result
+                {t("Waiting for result")}
                 <LoadingDots />
               </div>
             </DetailSection>

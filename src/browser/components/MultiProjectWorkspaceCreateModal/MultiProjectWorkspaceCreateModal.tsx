@@ -12,6 +12,7 @@ import { Checkbox } from "@/browser/components/Checkbox/Checkbox";
 import { useExperimentValue } from "@/browser/hooks/useExperiments";
 import { EXPERIMENT_IDS } from "@/common/constants/experiments";
 import { getErrorMessage } from "@/common/utils/errors";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 interface MultiProjectOption {
   projectPath: string;
@@ -26,6 +27,7 @@ interface MultiProjectWorkspaceCreateModalProps {
 }
 
 export function MultiProjectWorkspaceCreateModal(props: MultiProjectWorkspaceCreateModalProps) {
+  const { t } = useLanguage();
   const multiProjectWorkspacesEnabled = useExperimentValue(EXPERIMENT_IDS.MULTI_PROJECT_WORKSPACES);
   const [selectedProjectPaths, setSelectedProjectPaths] = useState<string[]>([]);
   const [isCreating, setIsCreating] = useState(false);
@@ -89,21 +91,24 @@ export function MultiProjectWorkspaceCreateModal(props: MultiProjectWorkspaceCre
     >
       <DialogContent showCloseButton={!isCreating} maxWidth="540px">
         <DialogHeader>
-          <DialogTitle>New Multi-Project Workspace</DialogTitle>
+          <DialogTitle>{t("New Multi-Project Workspace")}</DialogTitle>
           <DialogDescription>
-            Select at least two projects. Mux will create a shared workspace across the selected
-            projects.
+            {t(
+              "Select at least two projects. Mux will create a shared workspace across the selected projects."
+            )}
           </DialogDescription>
         </DialogHeader>
 
         {!hasEnoughProjects ? (
           <p className="text-muted text-sm">
-            Add at least two projects before creating a multi-project workspace.
+            {t("Add at least two projects before creating a multi-project workspace.")}
           </p>
         ) : (
           <div className="space-y-2">
             <p className="text-muted text-xs">
-              Selected {selectedProjectPaths.length} of {props.projectOptions.length} projects
+              {t("Selected")}
+              {selectedProjectPaths.length} {t(" of ")}
+              {props.projectOptions.length} {t("projects")}
             </p>
             <div className="border-border-medium bg-modal-bg max-h-72 space-y-1 overflow-y-auto rounded border p-2">
               {props.projectOptions.map((project) => {
@@ -144,10 +149,10 @@ export function MultiProjectWorkspaceCreateModal(props: MultiProjectWorkspaceCre
 
         <DialogFooter>
           <Button variant="secondary" onClick={props.onClose} disabled={isCreating}>
-            Cancel
+            {t("Cancel")}
           </Button>
           <Button onClick={() => void handleConfirm()} disabled={!canCreate}>
-            {isCreating ? "Creating..." : "Create Workspace"}
+            {isCreating ? t("Creating...") : t("Create Workspace")}
           </Button>
         </DialogFooter>
       </DialogContent>

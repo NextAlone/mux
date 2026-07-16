@@ -27,6 +27,7 @@ import { EXPERIMENT_IDS } from "@/common/constants/experiments";
 import { useExperimentValue } from "@/browser/hooks/useExperiments";
 import { getErrorMessage } from "@/common/utils/errors";
 import { MemoryFileEditor } from "./MemoryFileEditor";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 const SCOPE_LABELS: Record<MemoryScope, string> = {
   global: "Global",
@@ -58,6 +59,7 @@ interface MemoryBrowserProps {
  * so everything renders as plain React text — never through innerHTML-family sinks.
  */
 export function MemoryBrowser(props: MemoryBrowserProps) {
+  const { t } = useLanguage();
   const { api } = useAPI();
   const scopes = props.scopes ?? MEMORY_SCOPES;
   const [files, setFiles] = useState<MemoryFileInfo[] | null>(null);
@@ -208,7 +210,9 @@ export function MemoryBrowser(props: MemoryBrowserProps) {
           <div className="text-muted border-border-light flex flex-col items-center justify-center gap-2 rounded-md border border-dashed p-6 text-center text-sm">
             <Brain className="h-5 w-5" aria-hidden="true" />
             <p>
-              No memory files yet. The agent records durable facts and preferences here as it works.
+              {t(
+                "No memory files yet. The agent records durable facts and preferences here as it works."
+              )}
             </p>
           </div>
         )}
@@ -256,9 +260,9 @@ export function MemoryBrowser(props: MemoryBrowserProps) {
       {deleteTarget !== null && (
         <ConfirmationModal
           isOpen
-          title="Delete memory file?"
+          title={t("Delete memory file?")}
           description={`${scopeRelativeName(deleteTarget)} will be deleted. This cannot be undone.`}
-          confirmLabel="Delete"
+          confirmLabel={t("Delete")}
           confirmVariant="destructive"
           onConfirm={async () => {
             await handleDelete(deleteTarget);
@@ -429,6 +433,7 @@ interface MemoryFileRowProps {
 }
 
 function MemoryFileRow(props: MemoryFileRowProps) {
+  const { t } = useLanguage();
   // aria-labels keep the full scope-relative name for uniqueness; the visible
   // label is just the basename since the tree expresses the directory path.
   const name = scopeRelativeName(props.file);
@@ -445,7 +450,7 @@ function MemoryFileRow(props: MemoryFileRowProps) {
           <span className="truncate">{base}</span>
           {props.agentEdited && (
             <span className="bg-accent/15 text-accent shrink-0 rounded px-1.5 py-px text-[10px] font-medium">
-              agent edited
+              {t("agent edited")}
             </span>
           )}
         </button>
@@ -478,7 +483,8 @@ function MemoryFileRow(props: MemoryFileRowProps) {
       )}
       {props.file.accessCount > 0 && props.file.lastAccessedAt !== null && (
         <div className="text-muted counter-nums pl-[22px] text-[10px]">
-          Used {props.file.accessCount}× · {formatRelativeTime(props.file.lastAccessedAt)}
+          {t("Used")}
+          {props.file.accessCount}× · {formatRelativeTime(props.file.lastAccessedAt)}
         </div>
       )}
     </div>
@@ -516,6 +522,7 @@ function ConsolidationFooter(props: {
   refreshTick: number;
   onConsolidated: () => void;
 }) {
+  const { t } = useLanguage();
   const { api } = useAPI();
   const enabled = useExperimentValue(EXPERIMENT_IDS.MEMORY_CONSOLIDATION);
   const [status, setStatus] = useState<MemoryConsolidationStatusPayload | null>(null);
@@ -592,16 +599,23 @@ function ConsolidationFooter(props: {
         {/* Use the shared, portaled tooltip only: a native title duplicates the UI tooltip and ignores z-index. */}
         <div className="text-muted min-w-0 flex-1 space-y-0.5">
           <div className="counter-nums truncate">
-            Workspace: {formatConsolidationRecord(status?.workspaceRecord ?? null)}
+            {t("Workspace:")}
+            {formatConsolidationRecord(status?.workspaceRecord ?? null)}
           </div>
-          <div className="counter-nums truncate">Project: {projectLabel}</div>
           <div className="counter-nums truncate">
-            Global: {formatConsolidationRecord(status?.globalRecord ?? null)}
+            {t("Project:")} {projectLabel}
           </div>
-          <div className="counter-nums truncate">Harvest: {harvestLabel}</div>
+          <div className="counter-nums truncate">
+            {t("Global:")}
+            {formatConsolidationRecord(status?.globalRecord ?? null)}
+          </div>
+          <div className="counter-nums truncate">
+            {t("Harvest:")} {harvestLabel}
+          </div>
           {harvestError !== undefined && (
             <div role="alert" className="text-error truncate">
-              Harvest error: {harvestError}
+              {t("Harvest error:")}
+              {harvestError}
             </div>
           )}
           {runError !== null && <div className="text-error truncate">{runError}</div>}

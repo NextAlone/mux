@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { ChevronRight } from "lucide-react";
 import { cn } from "@/common/lib/utils";
 import { formatDuration } from "@/common/utils/formatDuration";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 export { extractHookDuration, extractHookOutput } from "@/common/utils/tools/hookOutput";
 
@@ -20,6 +21,7 @@ export const HookOutputDisplay: React.FC<HookOutputDisplayProps> = ({
   durationMs,
   className,
 }) => {
+  const { t } = useLanguage();
   const [expanded, setExpanded] = useState(false);
 
   return (
@@ -36,7 +38,7 @@ export const HookOutputDisplay: React.FC<HookOutputDisplayProps> = ({
           size={12}
           className={cn("transition-transform duration-150", expanded && "rotate-90")}
         />
-        <span className="font-medium">hook output</span>
+        <span className="font-medium">{t("hook output")}</span>
         {durationMs !== undefined && (
           <span className="text-muted-foreground/50">• {formatDuration(durationMs)}</span>
         )}

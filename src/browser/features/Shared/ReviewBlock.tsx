@@ -15,6 +15,7 @@ import { formatLineRangeCompact } from "@/browser/utils/review/lineRange";
 import { matchesKeybind, formatKeybind, KEYBINDS } from "@/browser/utils/ui/keybinds";
 import { parseReviewLineRange } from "@/common/types/review";
 import type { ReviewNoteDataForDisplay } from "@/common/types/message";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // SHARED INTERNAL COMPONENT
@@ -56,6 +57,7 @@ const ReviewBlockCore: React.FC<ReviewBlockCoreProps> = ({
   onEditComment,
   compact = false,
 }) => {
+  const { t } = useLanguage();
   const [isEditing, setIsEditing] = useState(false);
   const [editValue, setEditValue] = useState(comment);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -135,13 +137,13 @@ const ReviewBlockCore: React.FC<ReviewBlockCoreProps> = ({
                   <button
                     type="button"
                     onClick={handleStartEdit}
-                    aria-label="Edit comment"
+                    aria-label={t("Edit comment")}
                     className="text-muted hover:text-secondary flex items-center justify-center rounded p-1 transition-colors"
                   >
                     <Pencil className="size-3" />
                   </button>
                 </TooltipTrigger>
-                <TooltipContent>Edit comment</TooltipContent>
+                <TooltipContent>{t("Edit comment")}</TooltipContent>
               </Tooltip>
             )}
             {onComplete && (
@@ -150,13 +152,13 @@ const ReviewBlockCore: React.FC<ReviewBlockCoreProps> = ({
                   <button
                     type="button"
                     onClick={onComplete}
-                    aria-label="Mark as done"
+                    aria-label={t("Mark as done")}
                     className="text-muted hover:text-success flex items-center justify-center rounded p-1 transition-colors"
                   >
                     <Check className="size-3" />
                   </button>
                 </TooltipTrigger>
-                <TooltipContent>Mark as done</TooltipContent>
+                <TooltipContent>{t("Mark as done")}</TooltipContent>
               </Tooltip>
             )}
             {onDetach && (
@@ -165,13 +167,13 @@ const ReviewBlockCore: React.FC<ReviewBlockCoreProps> = ({
                   <button
                     type="button"
                     onClick={onDetach}
-                    aria-label="Detach from message"
+                    aria-label={t("Detach from message")}
                     className="text-muted hover:text-secondary flex items-center justify-center rounded p-1 transition-colors"
                   >
                     <Unlink className="size-3" />
                   </button>
                 </TooltipTrigger>
-                <TooltipContent>Detach from message</TooltipContent>
+                <TooltipContent>{t("Detach from message")}</TooltipContent>
               </Tooltip>
             )}
             {onDelete && (
@@ -180,13 +182,13 @@ const ReviewBlockCore: React.FC<ReviewBlockCoreProps> = ({
                   <button
                     type="button"
                     onClick={onDelete}
-                    aria-label="Delete review"
+                    aria-label={t("Delete review")}
                     className="text-muted hover:text-error flex items-center justify-center rounded p-1 transition-colors"
                   >
                     <Trash2 className="size-3" />
                   </button>
                 </TooltipTrigger>
-                <TooltipContent>Delete review</TooltipContent>
+                <TooltipContent>{t("Delete review")}</TooltipContent>
               </Tooltip>
             )}
           </div>
@@ -245,7 +247,7 @@ const ReviewBlockCore: React.FC<ReviewBlockCoreProps> = ({
                 onKeyDown={handleKeyDown}
                 className="text-primary w-full resize-none rounded border border-[var(--color-review-accent)]/40 bg-[var(--color-review-accent)]/10 px-1.5 py-1 text-xs focus:border-[var(--color-review-accent)]/60 focus:outline-none"
                 rows={2}
-                placeholder="Your comment..."
+                placeholder={t("Your comment...")}
               />
               <div className="flex items-center justify-end gap-1">
                 <span className="text-muted text-[10px]">
@@ -257,7 +259,7 @@ const ReviewBlockCore: React.FC<ReviewBlockCoreProps> = ({
                   className="h-5 px-1.5 text-[10px]"
                   onClick={handleCancelEdit}
                 >
-                  Cancel
+                  {t("Cancel")}
                 </Button>
                 <Button
                   variant="secondary"
@@ -265,13 +267,13 @@ const ReviewBlockCore: React.FC<ReviewBlockCoreProps> = ({
                   className="h-5 px-1.5 text-[10px]"
                   onClick={handleSaveEdit}
                 >
-                  Save
+                  {t("Save")}
                 </Button>
               </div>
             </div>
           ) : (
             <blockquote className="text-secondary border-l-2 border-[var(--color-review-accent)]/50 pl-2 text-xs leading-relaxed whitespace-pre-wrap">
-              {comment || <span className="text-muted italic">No comment</span>}
+              {comment || <span className="text-muted italic">{t("No comment")}</span>}
             </blockquote>
           )}
         </div>

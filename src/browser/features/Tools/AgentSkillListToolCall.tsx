@@ -22,6 +22,7 @@ import {
   useToolExpansion,
   type ToolStatus,
 } from "./Shared/toolUtils";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 /**
  * Transcript card for the `agent_skill_list` tool — the call the agent makes to
@@ -129,30 +130,37 @@ const InlineCode: React.FC<React.PropsWithChildren> = (props) => (
   </span>
 );
 
-const UnadvertisedChip: React.FC = () => (
-  <span className="text-warning bg-warning-overlay border-warning/40 inline-flex shrink-0 items-center gap-1 rounded-full border px-1.5 py-px text-[10px] leading-none">
-    <EyeOff aria-hidden="true" className="h-2.5 w-2.5" />
-    unadvertised
-  </span>
-);
-
-const SkillGroupHeader: React.FC<{ group: SkillScopeGroup }> = (props) => (
-  <div className="flex items-center gap-1.5 px-2.5 pt-2 pb-1">
-    <span className={cn("h-1.5 w-1.5 shrink-0 rounded-[2px]", props.group.dotClass)} />
-    <span
-      className={cn("text-[10px] font-semibold tracking-wider uppercase", props.group.labelClass)}
-    >
-      {props.group.label}
+const UnadvertisedChip: React.FC = () => {
+  const { t } = useLanguage();
+  return (
+    <span className="text-warning bg-warning-overlay border-warning/40 inline-flex shrink-0 items-center gap-1 rounded-full border px-1.5 py-px text-[10px] leading-none">
+      <EyeOff aria-hidden="true" className="h-2.5 w-2.5" />
+      {t("unadvertised")}
     </span>
-    <span className="text-muted text-[10px]">{props.group.skills.length}</span>
-  </div>
-);
+  );
+};
+
+const SkillGroupHeader: React.FC<{ group: SkillScopeGroup }> = (props) => {
+  const { t } = useLanguage();
+  return (
+    <div className="flex items-center gap-1.5 px-2.5 pt-2 pb-1">
+      <span className={cn("h-1.5 w-1.5 shrink-0 rounded-[2px]", props.group.dotClass)} />
+      <span
+        className={cn("text-[10px] font-semibold tracking-wider uppercase", props.group.labelClass)}
+      >
+        {t(props.group.label)}
+      </span>
+      <span className="text-muted text-[10px]">{props.group.skills.length}</span>
+    </div>
+  );
+};
 
 // A single skill row. Collapsed it shows the name + a 2-line clamped description
 // (descriptions can run to 1024 chars); clicking expands it in place to the full
 // text plus how to invoke it. Rendered as a button so the disclosure is reachable
 // by keyboard, not just pointer.
 const SkillRow: React.FC<{ skill: AgentSkillDescriptor; first: boolean }> = (props) => {
+  const { t } = useLanguage();
   const [open, setOpen] = React.useState(false);
   const unadvertised = props.skill.advertise === false;
   return (
@@ -185,10 +193,11 @@ const SkillRow: React.FC<{ skill: AgentSkillDescriptor; first: boolean }> = (pro
             <div className="text-muted mt-1.5 text-[11px] leading-snug">
               {unadvertised && (
                 <span className="text-warning">
-                  Hidden from the skill index — call it explicitly.{" "}
+                  {t("Hidden from the skill index — call it explicitly.")}{" "}
                 </span>
               )}
-              Invoke with <InlineCode>${props.skill.name}</InlineCode> or read it in full via{" "}
+              {t("Invoke with")}
+              <InlineCode>${props.skill.name}</InlineCode> {t("or read it in full via")}{" "}
               <InlineCode>agent_skill_read</InlineCode>.
             </div>
           )}
@@ -214,6 +223,7 @@ interface AgentSkillListToolCallProps {
 }
 
 export const AgentSkillListToolCall: React.FC<AgentSkillListToolCallProps> = (props) => {
+  const { t } = useLanguage();
   const status = props.status ?? "pending";
   const { expanded, toggleExpanded } = useToolExpansion(props.defaultExpanded ?? false);
 
@@ -237,15 +247,16 @@ export const AgentSkillListToolCall: React.FC<AgentSkillListToolCallProps> = (pr
       <ToolHeader onClick={toggleExpanded}>
         <ExpandIcon expanded={expanded}>▶</ExpandIcon>
         <ToolIcon toolName="agent_skill_list" />
-        <span className="text-secondary font-medium whitespace-nowrap">{verb}</span>
+        <span className="text-secondary font-medium whitespace-nowrap">{t(verb)}</span>
         {view.kind === "skills" && (
           <span className="text-muted whitespace-nowrap">
-            {skills.length} {skills.length === 1 ? "skill" : "skills"}
+            {skills.length} {t(skills.length === 1 ? "skill" : "skills")}
           </span>
         )}
         {unadvertisedCount > 0 && (
           <span className="text-muted hidden whitespace-nowrap @sm:inline">
-            · {unadvertisedCount} unadvertised
+            · {unadvertisedCount}
+            {t("unadvertised")}
           </span>
         )}
         <StatusIndicator status={status}>{getStatusDisplay(status)}</StatusIndicator>
@@ -257,7 +268,7 @@ export const AgentSkillListToolCall: React.FC<AgentSkillListToolCallProps> = (pr
 
           {status === "executing" && view.kind !== "error" && (
             <div className="text-muted px-1 py-1 text-[11px] italic">
-              Scanning available skills
+              {t("Scanning available skills")}
               <LoadingDots />
             </div>
           )}
@@ -265,8 +276,8 @@ export const AgentSkillListToolCall: React.FC<AgentSkillListToolCallProps> = (pr
           {view.kind === "skills" && skills.length === 0 && status !== "executing" && (
             <div className="text-muted px-1 py-1 text-[11px] italic">
               {includedUnadvertised
-                ? "No skills are available in this workspace."
-                : "No advertised skills are available in this workspace."}
+                ? t("No skills are available in this workspace.")
+                : t("No advertised skills are available in this workspace.")}
             </div>
           )}
 
@@ -291,7 +302,7 @@ export const AgentSkillListToolCall: React.FC<AgentSkillListToolCallProps> = (pr
 
           {skills.length > 0 && (
             <div className="text-muted mt-2 px-1 text-[10.5px] leading-relaxed">
-              Skills are project-local, global, or built-in — invoke any of them inline with{" "}
+              {t("Skills are project-local, global, or built-in — invoke any of them inline with")}{" "}
               <InlineCode>$name</InlineCode>
               {unadvertisedCount > 0
                 ? "; unadvertised skills stay out of the index but remain callable by name."

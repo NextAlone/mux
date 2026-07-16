@@ -1,4 +1,5 @@
 import { cn } from "@/common/lib/utils";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 export interface ToggleOption<T extends string> {
   value: T;
@@ -19,6 +20,7 @@ export function ToggleGroup<T extends string>({
   onChange,
   compact = false,
 }: ToggleGroupProps<T>) {
+  const { t } = useLanguage();
   // Compact mode: show only active option, click cycles to next option
   if (compact) {
     const currentIndex = options.findIndex((opt) => opt.value === value);
@@ -34,9 +36,9 @@ export function ToggleGroup<T extends string>({
           "text-toggle-text-active bg-toggle-active font-medium",
           activeOption?.activeClassName
         )}
-        aria-label={`${activeOption.label} mode. Click to switch to ${nextOption.label}.`}
+        aria-label={`${t(activeOption.label)} ${t("mode. Click to switch to")} ${t(nextOption.label)}.`}
       >
-        {activeOption.label}
+        {t(activeOption.label)}
       </button>
     );
   }
@@ -59,7 +61,7 @@ export function ToggleGroup<T extends string>({
               isActive && option.activeClassName
             )}
           >
-            {option.label}
+            {t(option.label)}
           </button>
         );
       })}

@@ -12,6 +12,7 @@ import type {
   AgentSkillIssue,
   AgentSkillScope,
 } from "@/common/types/agentSkill";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 interface SkillIndicatorProps {
   /** Skills that have been loaded in the current session */
@@ -40,6 +41,7 @@ interface SkillsPopoverContentProps {
 }
 
 const SkillsPopoverContent: React.FC<SkillsPopoverContentProps> = (props) => {
+  const { t } = useLanguage();
   const loadedSkillNames = new Set(props.loadedSkills.map((skill) => skill.name));
 
   const skillsByScope = new Map<AgentSkillScope, AgentSkillDescriptor[]>();
@@ -67,7 +69,7 @@ const SkillsPopoverContent: React.FC<SkillsPopoverContentProps> = (props) => {
         return (
           <div key={scope} className="flex flex-col gap-1">
             <div className="text-muted-foreground text-[10px] font-medium tracking-wider uppercase">
-              {label} skills
+              {t(label)} {t("skills")}
             </div>
             {skills.map((skill) => {
               const isLoaded = loadedSkillNames.has(skill.name);
@@ -86,7 +88,7 @@ const SkillsPopoverContent: React.FC<SkillsPopoverContentProps> = (props) => {
                       {isUnadvertised && (
                         <EyeOff
                           className="text-muted-foreground ml-1 inline h-3 w-3"
-                          aria-label="Not advertised in system prompt"
+                          aria-label={t("Not advertised in system prompt")}
                         />
                       )}
                       {isLoaded && <Check className="text-success ml-1 inline h-3 w-3" />}
@@ -105,7 +107,7 @@ const SkillsPopoverContent: React.FC<SkillsPopoverContentProps> = (props) => {
         <div className="border-separator-light border-t pt-2">
           <div className="text-danger-soft flex items-center gap-1 text-[10px] font-medium tracking-wider uppercase">
             <AlertTriangle className="h-3 w-3" />
-            Invalid skills
+            {t("Invalid skills")}
           </div>
           <div className="mt-1.5 flex flex-col gap-2">
             {SCOPE_CONFIG.map(({ scope, label }) => {
@@ -115,7 +117,7 @@ const SkillsPopoverContent: React.FC<SkillsPopoverContentProps> = (props) => {
               return (
                 <div key={`invalid-${scope}`} className="flex flex-col gap-1">
                   <div className="text-muted-foreground text-[10px] font-medium tracking-wider uppercase">
-                    {label}
+                    {t(label)}
                   </div>
                   {issues.map((issue) => (
                     <div
@@ -133,7 +135,8 @@ const SkillsPopoverContent: React.FC<SkillsPopoverContentProps> = (props) => {
                         </span>
                         {issue.hint && (
                           <span className="text-muted-foreground line-clamp-1 text-[11px] leading-snug">
-                            Hint: {issue.hint}
+                            {t("Hint:")}
+                            {issue.hint}
                           </span>
                         )}
                       </div>
@@ -149,7 +152,7 @@ const SkillsPopoverContent: React.FC<SkillsPopoverContentProps> = (props) => {
         <div className="border-separator-light border-t pt-2">
           <div className="text-danger-soft flex items-center gap-1 text-[10px] font-medium tracking-wider uppercase">
             <XCircle className="h-3 w-3" />
-            Load errors
+            {t("Load errors")}
           </div>
           <div className="mt-1.5 flex flex-col gap-1">
             {props.skillLoadErrors.map((err) => (
@@ -176,6 +179,7 @@ const SkillsPopoverContent: React.FC<SkillsPopoverContentProps> = (props) => {
  * Hover to preview skills organized by scope (Project, Global, Built-in); click to pin the list open.
  */
 export const SkillIndicator: React.FC<SkillIndicatorProps> = (props) => {
+  const { t } = useLanguage();
   const loadedCount = props.loadedSkills.length;
   const totalCount = props.availableSkills.length;
   const invalidCount = props.invalidSkills?.length ?? 0;
@@ -191,14 +195,16 @@ export const SkillIndicator: React.FC<SkillIndicatorProps> = (props) => {
   const ariaLabelParts: string[] = [];
   if (totalCount > 0) {
     ariaLabelParts.push(
-      `${loadedCount} of ${totalCount} skill${totalCount === 1 ? "" : "s"} loaded`
+      `${loadedCount} ${t("of")} ${totalCount} ${t(totalCount === 1 ? "skill loaded" : "skills loaded")}`
     );
   }
   if (invalidCount > 0) {
-    ariaLabelParts.push(`${invalidCount} invalid`);
+    ariaLabelParts.push(`${invalidCount} ${t("invalid")}`);
   }
   if (loadErrorCount > 0) {
-    ariaLabelParts.push(`${loadErrorCount} load error${loadErrorCount === 1 ? "" : "s"}`);
+    ariaLabelParts.push(
+      `${loadErrorCount} ${t(loadErrorCount === 1 ? "load error" : "load errors")}`
+    );
   }
   const ariaLabel = ariaLabelParts.join(", ");
 

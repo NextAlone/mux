@@ -6,6 +6,7 @@ import { normalizeReasoningMarkdown } from "./MarkdownStyles";
 import { cn } from "@/common/lib/utils";
 import { Shimmer } from "../AIElements/Shimmer";
 import { Lightbulb } from "lucide-react";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 interface ReasoningMessageProps {
   message: DisplayedMessage & { type: "reasoning" };
@@ -52,6 +53,7 @@ export const ReasoningMessage: React.FC<ReasoningMessageProps> = ({
   className,
   workspaceId,
 }) => {
+  const { t } = useLanguage();
   // Quiet default: new thinking starts collapsed (even while streaming). The sticky
   // "thinking" preference — set when the user expands/collapses any thinking block —
   // wins once present. Seeded once at mount, so a preference change never mutates a
@@ -94,7 +96,7 @@ export const ReasoningMessage: React.FC<ReasoningMessageProps> = ({
   const renderContent = () => {
     // Empty streaming state
     if (isStreaming && !content) {
-      return <div className="text-thinking-mode opacity-60">Thinking...</div>;
+      return <div className="text-thinking-mode opacity-60">{t("Thinking...")}</div>;
     }
 
     if (!content) {
@@ -151,7 +153,7 @@ export const ReasoningMessage: React.FC<ReasoningMessageProps> = ({
           </span>
           <div className="flex min-w-0 items-center gap-1 truncate">
             {isStreaming ? (
-              <Shimmer colorClass="var(--color-thinking-mode)">Thinking...</Shimmer>
+              <Shimmer colorClass="var(--color-thinking-mode)">{t("Thinking...")}</Shimmer>
             ) : hasContent ? (
               <span className={cn("truncate whitespace-nowrap text-text", REASONING_FONT_CLASSES)}>
                 {parsedLeadingBoldSummary ? (

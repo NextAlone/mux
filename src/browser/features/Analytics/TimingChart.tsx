@@ -17,6 +17,7 @@ import {
   CHART_AXIS_TICK,
   CHART_TOOLTIP_CONTENT_STYLE,
 } from "./analyticsUtils";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 const METRIC_LABELS = {
   ttft: {
@@ -84,12 +85,13 @@ function formatMetricValue(value: number, metric: TimingMetric): string {
 }
 
 export function TimingChart(props: TimingChartProps) {
+  const { t } = useLanguage();
   return (
     <div className="bg-background-secondary border-border-medium rounded-lg border p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h2 className="text-foreground text-sm font-semibold">Timing distribution</h2>
-          <p className="text-muted mt-1 text-xs">{METRIC_LABELS[props.metric].description}</p>
+          <h2 className="text-foreground text-sm font-semibold">{t("Timing distribution")}</h2>
+          <p className="text-muted mt-1 text-xs">{t(METRIC_LABELS[props.metric].description)}</p>
         </div>
         <div className="border-border-medium bg-background flex items-center gap-1 rounded-md border p-1">
           {(Object.keys(METRIC_LABELS) as TimingMetric[]).map((metric) => (
@@ -100,7 +102,7 @@ export function TimingChart(props: TimingChartProps) {
               className="h-6 px-2 text-xs"
               onClick={() => props.onMetricChange(metric)}
             >
-              {METRIC_LABELS[metric].label}
+              {t(METRIC_LABELS[metric].label)}
             </Button>
           ))}
         </div>
@@ -108,7 +110,8 @@ export function TimingChart(props: TimingChartProps) {
 
       {props.error ? (
         <p className="text-danger mt-3 text-xs">
-          Failed to load timing distribution: {props.error}
+          {t("Failed to load timing distribution:")}
+          {props.error}
         </p>
       ) : props.loading ? (
         <div className="mt-3">
@@ -116,7 +119,7 @@ export function TimingChart(props: TimingChartProps) {
         </div>
       ) : !props.data || props.data.histogram.length === 0 ? (
         <div className="text-muted mt-3 rounded border border-dashed px-3 py-10 text-center text-sm">
-          No timing data available yet.
+          {t("No timing data available yet.")}
         </div>
       ) : (
         <div className="mt-3 h-72 w-full">
@@ -137,7 +140,7 @@ export function TimingChart(props: TimingChartProps) {
               <YAxis tick={CHART_AXIS_TICK} stroke={CHART_AXIS_STROKE} />
               <Tooltip
                 labelFormatter={(value: number) => formatMetricValue(Number(value), props.metric)}
-                formatter={(value: number) => [value, "Responses"]}
+                formatter={(value: number) => [value, t("Responses")]}
                 contentStyle={CHART_TOOLTIP_CONTENT_STYLE}
               />
               <ReferenceLine

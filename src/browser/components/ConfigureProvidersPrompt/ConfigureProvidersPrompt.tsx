@@ -1,12 +1,14 @@
 import { Settings, Zap } from "lucide-react";
 import { useSettings } from "@/browser/contexts/SettingsContext";
 import { Button } from "../Button/Button";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 /**
  * Large prompt displayed when no providers are configured.
  * Directs users to configure API providers before they can start using the app.
  */
 export function ConfigureProvidersPrompt() {
+  const { t } = useLanguage();
   const settings = useSettings();
 
   const handleOpenProviders = () => {
@@ -22,15 +24,16 @@ export function ConfigureProvidersPrompt() {
         <Zap className="text-primary h-6 w-6" />
       </div>
       <div className="space-y-2">
-        <h2 className="text-foreground text-lg font-semibold">Configure an LLM Provider</h2>
+        <h2 className="text-foreground text-lg font-semibold">{t("Configure an LLM Provider")}</h2>
         <p className="text-muted-foreground max-w-sm text-sm">
-          To start a workspace, you&apos;ll need to configure at least one LLM provider with API
-          credentials.
+          {t(
+            "To start a workspace, you'll need to configure at least one LLM provider with API credentials."
+          )}
         </p>
       </div>
       <Button onClick={handleOpenProviders} className="gap-2">
         <Settings className="h-4 w-4" />
-        Open Provider Settings
+        {t("Open Provider Settings")}
       </Button>
     </div>
   );

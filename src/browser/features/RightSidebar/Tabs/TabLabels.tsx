@@ -35,6 +35,7 @@ import {
 } from "@/browser/stores/WorkspaceStore";
 import { goalActiveMode, isGoalPendingPersistence } from "@/common/types/goal";
 import { sumUsageHistory, type ChatUsageDisplay } from "@/common/utils/tokens/usageAggregator";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 interface StatsTabLabelProps {
   workspaceId: string;
@@ -48,6 +49,7 @@ interface StatsTabLabelProps {
  * `tabRegistry` Label slot (see `Tabs/tabRegistry.tsx`).
  */
 export const StatsTabLabel: React.FC<StatsTabLabelProps> = ({ workspaceId }) => {
+  const { t } = useLanguage();
   const usage = useWorkspaceUsage(workspaceId);
 
   const sessionCost = React.useMemo(() => {
@@ -70,7 +72,7 @@ export const StatsTabLabel: React.FC<StatsTabLabelProps> = ({ workspaceId }) => 
 
   return (
     <>
-      Stats
+      {t("Stats")}
       {sessionCost !== null && (
         <span className="text-muted text-[10px] tabular-nums">
           ${sessionCost < 0.01 ? "<0.01" : sessionCost.toFixed(2)}
@@ -107,6 +109,7 @@ interface ReviewTabLabelProps {
  * static tab labels.
  */
 export const ReviewTabLabel: React.FC<ReviewTabLabelProps> = ({ reviewStats }) => {
+  const { t } = useLanguage();
   const unreadAssisted = reviewStats?.unreadAssisted ?? 0;
   const hasUnreadAssisted = unreadAssisted > 0;
 
@@ -119,13 +122,15 @@ export const ReviewTabLabel: React.FC<ReviewTabLabelProps> = ({ reviewStats }) =
             aria-label={`Review — ${unreadAssisted} unread agent-flagged hunk${unreadAssisted === 1 ? "" : "s"}`}
             data-testid="review-tab-assisted-pizzazz"
           >
-            Review
+            {t("Review")}
             <Sparkles className="h-3 w-3 shrink-0" aria-hidden="true" />
             <span className="counter-nums">{unreadAssisted}</span>
           </span>
         </TooltipTrigger>
         <TooltipContent side="bottom">
-          {unreadAssisted} agent-flagged hunk{unreadAssisted === 1 ? "" : "s"} pending review
+          {unreadAssisted} {t("agent-flagged hunk")}
+          {unreadAssisted === 1 ? "" : "s"}
+          {t("pending review")}
         </TooltipContent>
       </Tooltip>
     );
@@ -133,7 +138,7 @@ export const ReviewTabLabel: React.FC<ReviewTabLabelProps> = ({ reviewStats }) =
 
   return (
     <>
-      Review
+      {t("Review")}
       {reviewStats !== null && reviewStats.total > 0 && (
         <span className="text-muted text-[10px]">
           {reviewStats.read}/{reviewStats.total}
@@ -144,28 +149,37 @@ export const ReviewTabLabel: React.FC<ReviewTabLabelProps> = ({ reviewStats }) =
 };
 
 /** Desktop tab label with monitor icon */
-export const DesktopTabLabel: React.FC = () => (
-  <span className="inline-flex items-center gap-1">
-    <Monitor className="h-3 w-3 shrink-0" />
-    Desktop
-  </span>
-);
+export const DesktopTabLabel: React.FC = () => {
+  const { t } = useLanguage();
+  return (
+    <span className="inline-flex items-center gap-1">
+      <Monitor className="h-3 w-3 shrink-0" />
+      {t("Desktop")}
+    </span>
+  );
+};
 
 /** Browser tab label with globe icon */
-export const BrowserTabLabel: React.FC = () => (
-  <span className="inline-flex items-center gap-1">
-    <Globe className="h-3 w-3 shrink-0" />
-    Browser
-  </span>
-);
+export const BrowserTabLabel: React.FC = () => {
+  const { t } = useLanguage();
+  return (
+    <span className="inline-flex items-center gap-1">
+      <Globe className="h-3 w-3 shrink-0" />
+      {t("Browser")}
+    </span>
+  );
+};
 
 /** Debug tab label with bug icon */
-export const DebugTabLabel: React.FC = () => (
-  <span className="inline-flex items-center gap-1">
-    <BugPlay className="h-3 w-3 shrink-0" />
-    Debug
-  </span>
-);
+export const DebugTabLabel: React.FC = () => {
+  const { t } = useLanguage();
+  return (
+    <span className="inline-flex items-center gap-1">
+      <BugPlay className="h-3 w-3 shrink-0" />
+      {t("Debug")}
+    </span>
+  );
+};
 
 interface GoalTabLabelProps {
   workspaceId: string;
@@ -194,6 +208,7 @@ interface GoalTabLabelProps {
  * the accent doesn't flicker during a stream — same gating as before.
  */
 export const GoalTabLabel: React.FC<GoalTabLabelProps> = ({ workspaceId }) => {
+  const { t } = useLanguage();
   const sidebarState = useOptionalWorkspaceSidebarState(workspaceId);
   const goal = sidebarState?.goal ?? null;
   const activeMode = goal && !isGoalPendingPersistence(goal) ? goalActiveMode(goal.status) : null;
@@ -217,7 +232,7 @@ export const GoalTabLabel: React.FC<GoalTabLabelProps> = ({ workspaceId }) => {
       aria-label={ariaLabel}
     >
       <Target className="h-3 w-3 shrink-0" />
-      Goal
+      {t("Goal")}
     </span>
   );
 };
@@ -232,12 +247,13 @@ interface WorkflowsTabLabelProps {
  * mirroring how the Goal/Stats labels expose live workspace signals.
  */
 export const WorkflowsTabLabel: React.FC<WorkflowsTabLabelProps> = ({ workspaceId }) => {
+  const { t } = useLanguage();
   const sidebarState = useOptionalWorkspaceSidebarState(workspaceId);
   const activeCount = sidebarState?.activeWorkflowRunCount ?? 0;
   return (
     <span className="inline-flex items-center gap-1">
       <Workflow className="h-3 w-3 shrink-0" />
-      Workflows
+      {t("Workflows")}
       {activeCount > 0 && (
         <span
           className="text-accent inline-flex items-center gap-1 text-[10px] tabular-nums"
@@ -252,11 +268,13 @@ export const WorkflowsTabLabel: React.FC<WorkflowsTabLabelProps> = ({ workspaceI
 };
 
 export function OutputTabLabel() {
-  return <>Output</>;
+  const { t } = useLanguage();
+  return <>{t("Output")}</>;
 }
 
 export function MemoryTabLabel() {
-  return <>Memory</>;
+  const { t } = useLanguage();
+  return <>{t("Memory")}</>;
 }
 
 interface InstructionsTabLabelProps {
@@ -275,6 +293,7 @@ interface InstructionsTabLabelProps {
  * additional system context to the agent.
  */
 export const InstructionsTabLabel: React.FC<InstructionsTabLabelProps> = ({ workspaceId }) => {
+  const { t } = useLanguage();
   const { api } = useAPI();
   const fileCount = useWorkspaceInstructionsFileCount(workspaceId);
   const scratchpad = useAdditionalSystemContextSnapshot(workspaceId);
@@ -295,7 +314,7 @@ export const InstructionsTabLabel: React.FC<InstructionsTabLabelProps> = ({ work
 
   return (
     <>
-      Instructions
+      {t("Instructions")}
       {showBadge && (
         <span
           className="text-muted text-[10px] tabular-nums"
@@ -337,6 +356,7 @@ export const TerminalTabLabel: React.FC<TerminalTabLabelProps> = ({
   onPopOut,
   onClose,
 }) => {
+  const { t } = useLanguage();
   const fallbackName = terminalIndex === 0 ? "Terminal" : `Terminal ${terminalIndex + 1}`;
   const displayName = dynamicTitle ?? fallbackName;
 
@@ -353,12 +373,12 @@ export const TerminalTabLabel: React.FC<TerminalTabLabelProps> = ({
               e.stopPropagation();
               onPopOut();
             }}
-            aria-label="Open terminal in new window"
+            aria-label={t("Open terminal in new window")}
           >
             <ExternalLink className="h-3 w-3" />
           </button>
         </TooltipTrigger>
-        <TooltipContent side="bottom">Open in new window</TooltipContent>
+        <TooltipContent side="bottom">{t("Open in new window")}</TooltipContent>
       </Tooltip>
       <Tooltip>
         <TooltipTrigger asChild>
@@ -369,13 +389,13 @@ export const TerminalTabLabel: React.FC<TerminalTabLabelProps> = ({
               e.stopPropagation();
               onClose();
             }}
-            aria-label="Close terminal"
+            aria-label={t("Close terminal")}
           >
             <X className="h-3 w-3" />
           </button>
         </TooltipTrigger>
         <TooltipContent side="bottom">
-          Close terminal ({formatKeybind(KEYBINDS.CLOSE_TAB)})
+          {t("Close terminal")} ({formatKeybind(KEYBINDS.CLOSE_TAB)})
         </TooltipContent>
       </Tooltip>
     </span>

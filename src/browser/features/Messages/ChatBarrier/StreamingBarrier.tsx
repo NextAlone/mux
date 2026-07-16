@@ -14,6 +14,7 @@ import {
 import { getDefaultModel } from "@/browser/hooks/useModelsFromSettings";
 import { useSettings } from "@/browser/contexts/SettingsContext";
 import { useAPI } from "@/browser/contexts/API";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 type StreamingPhase =
   | "starting" // Message sent, waiting for stream-start
@@ -145,6 +146,7 @@ export const StreamingBarrier: React.FC<StreamingBarrierProps> = ({
   vimEnabled: vimEnabledFromParent,
   onCancelCompaction,
 }) => {
+  const { t } = useLanguage();
   const workspaceState = useWorkspaceState(workspaceId);
   const aggregator = useWorkspaceAggregator(workspaceId);
   const storeRaw = useWorkspaceStoreRaw();
@@ -313,7 +315,7 @@ export const StreamingBarrier: React.FC<StreamingBarrierProps> = ({
             onClick={() => openSettings("tasks")}
             className="text-muted hover:text-foreground text-[10px] underline decoration-dotted underline-offset-2"
           >
-            configure
+            {t("configure")}
           </button>
         ) : undefined
       }

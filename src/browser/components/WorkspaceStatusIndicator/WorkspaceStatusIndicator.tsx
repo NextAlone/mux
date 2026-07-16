@@ -8,6 +8,7 @@ import {
 import { CircleHelp, ExternalLinkIcon, Loader2 } from "lucide-react";
 import { memo } from "react";
 import { Tooltip, TooltipTrigger, TooltipContent } from "../Tooltip/Tooltip";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 export const WorkspaceStatusIndicator = memo<{
   workspaceId: string;
@@ -16,6 +17,7 @@ export const WorkspaceStatusIndicator = memo<{
    *  component doesn't need to subscribe to the full WorkspaceContext. */
   isCreating?: boolean;
 }>(({ workspaceId, fallbackModel, isCreating }) => {
+  const { t } = useLanguage();
   const {
     canInterrupt,
     isStarting,
@@ -44,7 +46,7 @@ export const WorkspaceStatusIndicator = memo<{
     return (
       <div className="bg-plan-mode-alpha text-plan-mode-light flex min-w-0 items-center gap-1.5 rounded px-1.5 py-0.5 text-xs">
         <CircleHelp aria-hidden="true" className="h-3 w-3 shrink-0" />
-        <span className="min-w-0 truncate font-medium">Mux has a few questions</span>
+        <span className="min-w-0 truncate font-medium">{t("Mux has a few questions")}</span>
       </div>
     );
   }
@@ -123,7 +125,7 @@ export const WorkspaceStatusIndicator = memo<{
         </>
       ) : (
         <span className="min-w-0 truncate">
-          {isProvisioningOnlyStartup ? "Assistant - starting..." : "Assistant - streaming..."}
+          {isProvisioningOnlyStartup ? t("Assistant - starting...") : t("Assistant - streaming...")}
         </span>
       )}
     </div>

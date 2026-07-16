@@ -2,6 +2,7 @@ import React from "react";
 import { useProviderOptions } from "@/browser/hooks/useProviderOptions";
 import { cn } from "@/common/lib/utils";
 import { supports1MContext } from "@/common/utils/ai/models";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 interface Toggle1MContextProps {
   /** Model ID to check/toggle 1M context for */
@@ -16,13 +17,14 @@ interface Toggle1MContextProps {
  * State is synced across all instances via ProviderOptionsContext.
  */
 export const Toggle1MContext: React.FC<Toggle1MContextProps> = (props) => {
+  const { t } = useLanguage();
   const { has1MContext, toggle1MContext } = useProviderOptions();
 
   // 1M context is a runtime model capability, gated on the runtime model —
   // not inherited through "Treat as" model mapping.
   if (!supports1MContext(props.model)) return null;
 
-  const label = props.label ?? "1M context";
+  const label = t(props.label ?? "1M context");
   const enabled = has1MContext(props.model);
 
   return (
@@ -33,7 +35,7 @@ export const Toggle1MContext: React.FC<Toggle1MContextProps> = (props) => {
         "flex cursor-pointer items-center gap-1.5 text-[11px] transition-colors",
         enabled ? "text-accent" : "text-muted hover:text-foreground"
       )}
-      aria-label={enabled ? `Disable ${label}` : `Enable ${label}`}
+      aria-label={enabled ? `${t("Disable")} ${label}` : `${t("Enable")} ${label}`}
     >
       <span
         className={cn(
@@ -45,7 +47,7 @@ export const Toggle1MContext: React.FC<Toggle1MContextProps> = (props) => {
       </span>
       <span>
         {label}
-        <span className="text-muted ml-1 text-[10px]">(beta)</span>
+        <span className="text-muted ml-1 text-[10px]">{t("(beta)")}</span>
       </span>
     </button>
   );

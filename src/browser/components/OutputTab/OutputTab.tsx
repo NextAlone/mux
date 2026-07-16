@@ -4,6 +4,7 @@ import { useAPI } from "@/browser/contexts/API";
 import { usePersistedState } from "@/browser/hooks/usePersistedState";
 import { isAbortError } from "@/browser/utils/isAbortError";
 import { MAX_LOG_ENTRIES } from "@/common/constants/ui";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 type LogLevel = "error" | "warn" | "info" | "debug";
 
@@ -57,6 +58,7 @@ interface OutputTabProps {
 }
 
 export function OutputTab(_props: OutputTabProps) {
+  const { t } = useLanguage();
   const { api } = useAPI();
 
   const [logState, dispatch] = useReducer(reduceLogState, {
@@ -146,8 +148,7 @@ export function OutputTab(_props: OutputTabProps) {
           type="button"
           className="text-muted hover:text-foreground hover:bg-hover flex h-6 w-6 items-center justify-center rounded border-none bg-transparent p-0 transition-colors"
           onClick={handleDelete}
-          title="Delete"
-          aria-label="Delete output logs"
+          aria-label={t("Delete output logs")}
         >
           <Trash2 className="h-3.5 w-3.5" />
         </button>
@@ -167,9 +168,10 @@ export function OutputTab(_props: OutputTabProps) {
 }
 
 function LevelFilterDropdown(props: { value: LogLevel; onChange: (level: LogLevel) => void }) {
+  const { t } = useLanguage();
   return (
     <label className="text-muted flex items-center gap-2 text-xs">
-      <span>Level</span>
+      <span>{t("Level")}</span>
       <select
         className="border-border bg-background-secondary hover:bg-hover h-7 rounded border px-2 py-1 text-xs"
         value={props.value}

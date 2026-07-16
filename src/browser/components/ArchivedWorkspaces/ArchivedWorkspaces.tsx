@@ -34,6 +34,7 @@ import {
 } from "@/common/utils/tokens/usageAggregator";
 import { useOptimisticBatchLRU } from "@/browser/hooks/useOptimisticBatchLRU";
 import { sessionCostCache } from "@/browser/utils/sessionCostCache";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 type SessionUsageFile = z.infer<typeof SessionUsageFileSchema>;
 
@@ -169,6 +170,7 @@ const BulkProgressModal: React.FC<{
   operation: BulkOperationState;
   onClose: () => void;
 }> = ({ operation, onClose }) => {
+  const { t } = useLanguage();
   const percentage = Math.round((operation.completed / operation.total) * 100);
   const isComplete = operation.completed === operation.total;
   const actionLabels: Record<
@@ -197,17 +199,19 @@ const BulkProgressModal: React.FC<{
     <Dialog open onOpenChange={(open) => !open && isComplete && onClose()}>
       <DialogContent maxWidth="400px" showCloseButton={isComplete}>
         <DialogHeader>
-          <DialogTitle>{isComplete ? "Complete" : labels.inProgressTitle}</DialogTitle>
+          <DialogTitle>{isComplete ? t("Complete") : t(labels.inProgressTitle)}</DialogTitle>
           <DialogDescription>
             {isComplete ? (
               <>
-                Successfully {labels.actionPast} {operation.completed} {labels.itemLabel}
-                {operation.completed !== 1 && "s"}
-                {operation.errors.length > 0 && ` (${operation.errors.length} failed)`}
+                {t("Successfully")}
+                {t(labels.actionPast)} {operation.completed}{" "}
+                {t(operation.completed === 1 ? labels.itemLabel : `${labels.itemLabel}s`)}
+                {operation.errors.length > 0 && ` (${operation.errors.length} ${t("failed")})`}
               </>
             ) : (
               <>
-                {operation.completed} of {operation.total} complete
+                {operation.completed} {t(" of ")}
+                {operation.total} {t("complete")}
                 {operation.current && <> — {operation.current}</>}
               </>
             )}
@@ -237,7 +241,7 @@ const BulkProgressModal: React.FC<{
         {isComplete && (
           <DialogFooter className="justify-center">
             <Button variant="secondary" onClick={onClose} className="w-full">
-              Done
+              {t("Done")}
             </Button>
           </DialogFooter>
         )}
@@ -256,6 +260,7 @@ export const ArchivedWorkspaces: React.FC<ArchivedWorkspacesProps> = ({
   workspaces,
   onWorkspacesChanged,
 }) => {
+  const { t } = useLanguage();
   const [isExpanded, setIsExpanded] = usePersistedState(
     getArchivedWorkspacesExpandedKey(_projectPath),
     false
@@ -750,7 +755,9 @@ export const ArchivedWorkspaces: React.FC<ArchivedWorkspacesProps> = ({
             type="button"
             onClick={handleToggleExpanded}
             className="text-muted hover:text-foreground rounded p-1 transition-colors hover:bg-white/10"
-            aria-label={isExpanded ? "Collapse archived workspaces" : "Expand archived workspaces"}
+            aria-label={
+              isExpanded ? t("Collapse archived workspaces") : t("Expand archived workspaces")
+            }
             aria-expanded={isExpanded}
             aria-controls={archivedRegionId}
           >
@@ -762,29 +769,33 @@ export const ArchivedWorkspaces: React.FC<ArchivedWorkspacesProps> = ({
           </button>
           <ArchiveIcon className="text-muted h-4 w-4" />
           <span className="text-foreground font-medium">
-            Archived Workspaces ({workspaces.length})
+            {t("Archived Workspaces (")}
+            {workspaces.length})
           </span>
           <CostBadge cost={totalCost} loading={costsLoading} size="lg" />
           <span className="flex-1" />
           {isExpanded && hasSelection && (
             <div className="flex items-center gap-2">
-              <span className="text-muted text-xs">{selectedIds.size} selected</span>
+              <span className="text-muted text-xs">
+                {selectedIds.size} {t(" selected")}
+              </span>
               {bulkDeleteConfirm ? (
                 <>
                   <span className="text-muted text-xs">
-                    Delete permanently (also deletes local checkouts)?
+                    {t("Delete permanently (also deletes local checkouts)?")}
                   </span>
                   <button
                     onClick={() => void handleBulkDelete()}
                     className="rounded bg-red-600 px-2 py-0.5 text-xs text-white hover:bg-red-700"
                   >
-                    Yes, delete {selectedIds.size}
+                    {t("Yes, delete")}
+                    {selectedIds.size}
                   </button>
                   <button
                     onClick={() => setBulkDeleteConfirm(false)}
                     className="text-muted hover:text-foreground text-xs"
                   >
-                    Cancel
+                    {t("Cancel")}
                   </button>
                 </>
               ) : (
@@ -794,12 +805,12 @@ export const ArchivedWorkspaces: React.FC<ArchivedWorkspacesProps> = ({
                       <button
                         onClick={() => void handleBulkRestore()}
                         className="text-muted hover:text-foreground rounded p-1 transition-colors hover:bg-white/10"
-                        aria-label="Restore selected"
+                        aria-label={t("Restore selected")}
                       >
                         <ArchiveRestoreIcon className="h-4 w-4" />
                       </button>
                     </TooltipTrigger>
-                    <TooltipContent>Restore selected</TooltipContent>
+                    <TooltipContent>{t("Restore selected")}</TooltipContent>
                   </Tooltip>
                   {hasBulkDeleteWorktreeSelection && (
                     <Tooltip>
@@ -807,12 +818,12 @@ export const ArchivedWorkspaces: React.FC<ArchivedWorkspacesProps> = ({
                         <button
                           onClick={() => void handleBulkDeleteWorktree()}
                           className="text-muted rounded p-1 transition-colors hover:bg-white/10 hover:text-orange-300"
-                          aria-label="Remove local checkouts for selected"
+                          aria-label={t("Remove local checkouts for selected")}
                         >
                           <FolderX className="h-4 w-4" />
                         </button>
                       </TooltipTrigger>
-                      <TooltipContent>Remove local checkouts</TooltipContent>
+                      <TooltipContent>{t("Remove local checkouts")}</TooltipContent>
                     </Tooltip>
                   )}
                   <Tooltip>
@@ -820,20 +831,20 @@ export const ArchivedWorkspaces: React.FC<ArchivedWorkspacesProps> = ({
                       <button
                         onClick={() => setBulkDeleteConfirm(true)}
                         className="text-muted rounded p-1 transition-colors hover:bg-white/10 hover:text-red-400"
-                        aria-label="Delete selected"
+                        aria-label={t("Delete selected")}
                       >
                         <Trash2 className="h-4 w-4" />
                       </button>
                     </TooltipTrigger>
                     <TooltipContent>
-                      Delete selected permanently (local checkouts too)
+                      {t("Delete selected permanently (local checkouts too)")}
                     </TooltipContent>
                   </Tooltip>
                   <button
                     onClick={() => setSelectedIds(new Set())}
                     className="text-muted hover:text-foreground ml-1 text-xs"
                   >
-                    Clear
+                    {t("Clear")}
                   </button>
                 </>
               )}
@@ -845,7 +856,7 @@ export const ArchivedWorkspaces: React.FC<ArchivedWorkspacesProps> = ({
           <div
             id={archivedRegionId}
             role="region"
-            aria-label="Archived workspaces"
+            aria-label={t("Archived workspaces")}
             className="border-border border-t"
           >
             {/* Search input with select all */}
@@ -856,14 +867,14 @@ export const ArchivedWorkspaces: React.FC<ArchivedWorkspacesProps> = ({
                   checked={allFilteredSelected}
                   onChange={handleSelectAll}
                   className="h-4 w-4 rounded border-gray-600 bg-transparent"
-                  aria-label="Select all"
+                  aria-label={t("Select all")}
                 />
                 {workspaces.length > 3 && (
                   <div className="relative flex-1">
                     <Search className="text-muted pointer-events-none absolute top-1/2 left-2 h-4 w-4 -translate-y-1/2" />
                     <input
                       type="text"
-                      placeholder="Search archived workspaces or bookmarks..."
+                      placeholder={t("Search archived workspaces or bookmarks...")}
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
                       className="bg-bg-dark placeholder:text-muted text-foreground focus:border-border-light w-full rounded border border-transparent py-1.5 pr-3 pl-8 text-sm focus:outline-none"
@@ -877,7 +888,8 @@ export const ArchivedWorkspaces: React.FC<ArchivedWorkspacesProps> = ({
             <div>
               {filteredWorkspaces.length === 0 ? (
                 <div className="text-muted px-4 py-6 text-center text-sm">
-                  No workspaces match {`"${searchQuery}"`}
+                  {t("No workspaces match")}
+                  {`"${searchQuery}"`}
                 </div>
               ) : (
                 Array.from(groupedWorkspaces.entries()).map(([period, periodWorkspaces]) => (
@@ -914,7 +926,7 @@ export const ArchivedWorkspaces: React.FC<ArchivedWorkspacesProps> = ({
                             onClick={(e) => handleCheckboxClick(workspace.id, e)}
                             onChange={() => undefined} // Controlled by onClick for shift-click support
                             className="h-4 w-4 rounded border-gray-600 bg-transparent"
-                            aria-label={`Select ${displayTitle}`}
+                            aria-label={`${t("Select")} ${displayTitle}`}
                           />
                           <RuntimeBadge
                             runtimeConfig={workspace.runtimeConfig}
@@ -953,12 +965,12 @@ export const ArchivedWorkspaces: React.FC<ArchivedWorkspacesProps> = ({
                                   }
                                   disabled={isProcessing}
                                   className="text-muted hover:text-foreground rounded p-1.5 transition-colors hover:bg-white/10 disabled:opacity-50"
-                                  aria-label={`Restore workspace ${displayTitle}`}
+                                  aria-label={`${t("Restore workspace")} ${displayTitle}`}
                                 >
                                   <ArchiveRestoreIcon className="h-4 w-4" />
                                 </button>
                               </TooltipTrigger>
-                              <TooltipContent>Restore to sidebar</TooltipContent>
+                              <TooltipContent>{t("Restore to sidebar")}</TooltipContent>
                             </Tooltip>
                             {canDeleteWorktree && (
                               <Tooltip>
@@ -969,7 +981,7 @@ export const ArchivedWorkspaces: React.FC<ArchivedWorkspacesProps> = ({
                                     }
                                     disabled={isProcessing}
                                     className="text-muted rounded p-1.5 transition-colors hover:bg-white/10 hover:text-orange-300 disabled:opacity-50"
-                                    aria-label={`Remove local checkout for workspace ${displayTitle}`}
+                                    aria-label={`${t("Remove local checkout for workspace")} ${displayTitle}`}
                                   >
                                     {isDeletingWorktree ? (
                                       <Loader2 className="h-4 w-4 animate-spin" />
@@ -978,7 +990,7 @@ export const ArchivedWorkspaces: React.FC<ArchivedWorkspacesProps> = ({
                                     )}
                                   </button>
                                 </TooltipTrigger>
-                                <TooltipContent>Remove local checkout</TooltipContent>
+                                <TooltipContent>{t("Remove local checkout")}</TooltipContent>
                               </Tooltip>
                             )}
                             <Tooltip>
@@ -991,13 +1003,13 @@ export const ArchivedWorkspaces: React.FC<ArchivedWorkspacesProps> = ({
                                   }
                                   disabled={isProcessing}
                                   className="text-muted rounded p-1.5 transition-colors hover:bg-white/10 hover:text-red-400 disabled:opacity-50"
-                                  aria-label={`Delete workspace ${displayTitle}`}
+                                  aria-label={`${t("Delete workspace")} ${displayTitle}`}
                                 >
                                   <Trash2 className="h-4 w-4" />
                                 </button>
                               </TooltipTrigger>
                               <TooltipContent>
-                                Delete permanently (local checkout too)
+                                {t("Delete permanently (local checkout too)")}
                               </TooltipContent>
                             </Tooltip>
                           </div>

@@ -11,6 +11,7 @@ import {
   PositionedMenu,
   PositionedMenuItem,
 } from "@/browser/components/PositionedMenu/PositionedMenu";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 // Discriminated mode so the menu renders link vs text actions based on what
 // the user right-clicked, without redundant conditional rendering paths.
@@ -31,6 +32,7 @@ interface UseTranscriptContextMenuReturn {
 export function useTranscriptContextMenu(
   options: UseTranscriptContextMenuOptions
 ): UseTranscriptContextMenuReturn {
+  const { t } = useLanguage();
   const transcriptMenu = useContextMenuPosition();
   const transcriptMenuTextRef = useRef<string>("");
   const transcriptMenuLinkRef = useRef<string>("");
@@ -112,17 +114,21 @@ export function useTranscriptContextMenu(
         position={transcriptMenu.position}
       >
         {mode?.kind === "link" ? (
-          <PositionedMenuItem icon={<LinkIcon />} label="Copy link" onClick={handleCopyLink} />
+          <PositionedMenuItem icon={<LinkIcon />} label={t("Copy link")} onClick={handleCopyLink} />
         ) : (
           <>
             {hasInputTarget ? (
               <PositionedMenuItem
                 icon={<TextQuote />}
-                label="Quote in input"
+                label={t("Quote in input")}
                 onClick={handleQuoteText}
               />
             ) : null}
-            <PositionedMenuItem icon={<Clipboard />} label="Copy text" onClick={handleCopyText} />
+            <PositionedMenuItem
+              icon={<Clipboard />}
+              label={t("Copy text")}
+              onClick={handleCopyText}
+            />
           </>
         )}
       </PositionedMenu>

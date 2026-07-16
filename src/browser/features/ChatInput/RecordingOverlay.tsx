@@ -8,6 +8,7 @@ import { Loader2 } from "lucide-react";
 import { cn } from "@/common/lib/utils";
 import { formatKeybind, KEYBINDS } from "@/browser/utils/ui/keybinds";
 import type { VoiceInputState } from "@/browser/hooks/useVoiceInput";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 // Waveform shows last 10 seconds of audio, sampled every 50ms (200 samples)
 const WINDOW_DURATION_MS = 10_000;
@@ -43,11 +44,12 @@ interface RecordingOverlayProps {
 }
 
 export const RecordingOverlay: React.FC<RecordingOverlayProps> = (props) => {
+  const { t } = useLanguage();
   const isRecording = props.state === "recording";
   const isRequesting = props.state === "requesting";
 
   // Status text for non-recording states
-  const statusText = isRequesting ? "Requesting microphone..." : "Transcribing...";
+  const statusText = isRequesting ? t("Requesting microphone...") : t("Transcribing...");
 
   // For recording state, we use inline styles with the agent color
   // For other states (requesting/transcribing), use amber classes
@@ -62,7 +64,7 @@ export const RecordingOverlay: React.FC<RecordingOverlayProps> = (props) => {
       onClick={isRecording ? props.onStop : undefined}
       disabled={!isRecording}
       className={containerClasses}
-      aria-label={isRecording ? "Stop recording" : statusText}
+      aria-label={isRecording ? t("Stop recording") : statusText}
       style={
         isRecording
           ? {
@@ -95,13 +97,16 @@ export const RecordingOverlay: React.FC<RecordingOverlayProps> = (props) => {
 };
 
 /** Keyboard hint display for recording state */
-const RecordingHints: React.FC = () => (
-  <span className="mobile-hide-shortcut-hints">
-    <span className="opacity-70">space</span> send ·{" "}
-    <span className="opacity-70">{formatKeybind(KEYBINDS.TOGGLE_VOICE_INPUT)}</span> review ·{" "}
-    <span className="opacity-70">esc</span> cancel
-  </span>
-);
+const RecordingHints: React.FC = () => {
+  const { t } = useLanguage();
+  return (
+    <span className="mobile-hide-shortcut-hints">
+      <span className="opacity-70">{t("space")}</span> {t("send ·")}{" "}
+      <span className="opacity-70">{formatKeybind(KEYBINDS.TOGGLE_VOICE_INPUT)}</span>{" "}
+      {t("review ·")} <span className="opacity-70">{t("esc")}</span> {t("cancel")}
+    </span>
+  );
+};
 
 // =============================================================================
 // SlidingWaveform - Canvas-based amplitude visualization

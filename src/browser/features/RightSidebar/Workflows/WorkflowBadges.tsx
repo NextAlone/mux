@@ -3,6 +3,7 @@ import { Check, Circle, Pause, X, type LucideIcon } from "lucide-react";
 
 import type { WorkflowRunStatus, WorkflowScriptScope } from "@/common/types/workflow";
 import { WORKFLOW_STATUS_META, WORKFLOW_TONE_VAR, type WorkflowTone } from "./workflowDisplay";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 /** Small pulsing dot used to mark live / running work. */
 export const WorkflowLiveDot: React.FC<{ tone?: WorkflowTone; className?: string }> = (props) => (
@@ -33,6 +34,7 @@ const WorkflowStatusIcon: React.FC<{ status: WorkflowRunStatus; color: string }>
 export const WorkflowStatusPill: React.FC<{ status: WorkflowRunStatus; pulse?: boolean }> = (
   props
 ) => {
+  const { t } = useLanguage();
   const meta = WORKFLOW_STATUS_META[props.status];
   const color = WORKFLOW_TONE_VAR[meta.tone];
   const isLive = props.status === "running";
@@ -50,14 +52,17 @@ export const WorkflowStatusPill: React.FC<{ status: WorkflowRunStatus; pulse?: b
       ) : (
         <WorkflowStatusIcon status={props.status} color={color} />
       )}
-      {meta.label}
+      {t(meta.label)}
     </span>
   );
 };
 
 /** Where the workflow script came from. */
-export const WorkflowScopeBadge: React.FC<{ scope: WorkflowScriptScope }> = (props) => (
-  <span className="border-border text-muted rounded border px-1.5 py-px text-[9.5px] font-semibold tracking-wide uppercase">
-    {props.scope}
-  </span>
-);
+export const WorkflowScopeBadge: React.FC<{ scope: WorkflowScriptScope }> = (props) => {
+  const { t } = useLanguage();
+  return (
+    <span className="border-border text-muted rounded border px-1.5 py-px text-[9.5px] font-semibold tracking-wide uppercase">
+      {t(props.scope)}
+    </span>
+  );
+};

@@ -28,6 +28,7 @@ import {
   ToolName,
 } from "./Shared/ToolPrimitives";
 import { getStatusDisplay, type ToolStatus, useToolExpansion } from "./Shared/toolUtils";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 interface AdvisorToolCallProps {
   args: Record<string, unknown>;
@@ -162,7 +163,7 @@ function getAdvisorStatusPresentation(
         content: (
           <>
             <AlertTriangle aria-hidden="true" className="mr-1 inline-block h-3 w-3 align-[-2px]" />
-            <span className="status-text">limit reached</span>
+            <AdvisorLimitReachedText />
           </>
         ),
       };
@@ -177,6 +178,11 @@ function getAdvisorStatusPresentation(
         content: getStatusDisplay(fallbackStatus),
       };
   }
+}
+
+function AdvisorLimitReachedText() {
+  const { t } = useLanguage();
+  return <span className="status-text">{t("limit reached")}</span>;
 }
 
 const MetadataBadge: React.FC<React.HTMLAttributes<HTMLSpanElement>> = ({
@@ -196,14 +202,19 @@ const AdvisorMetadata: React.FC<{ advisorModel: string; reasoningLevel?: string 
   advisorModel,
   reasoningLevel,
 }) => {
+  const { t } = useLanguage();
   const model = formatAdvisorModel(advisorModel);
 
   return (
     <DetailSection>
-      <DetailLabel>Model</DetailLabel>
+      <DetailLabel>{t("Model")}</DetailLabel>
       <div className="flex flex-wrap items-center gap-1.5">
         <MetadataBadge className="text-foreground">{model.displayName}</MetadataBadge>
-        {reasoningLevel && <MetadataBadge>reasoning: {reasoningLevel}</MetadataBadge>}
+        {reasoningLevel && (
+          <MetadataBadge>
+            {t("reasoning:")} {reasoningLevel}
+          </MetadataBadge>
+        )}
       </div>
       {model.rawModel !== model.displayName && (
         <div className="text-foreground-secondary mt-1 font-mono text-[10px] break-all">
@@ -256,6 +267,7 @@ const AdvisorToolCallContent: React.FC<AdvisorToolCallContentProps> = ({
   hasUnrecognizedResult,
   isExecutingWithoutResult,
 }) => {
+  const { t } = useLanguage();
   // A live advisor streams chunks that are only visible while expanded, so force the
   // row open while executing — otherwise a stored `tools: false` preference would mount
   // it collapsed and hide the live output. The key={… "executing"/"settled"} remount
@@ -312,7 +324,7 @@ const AdvisorToolCallContent: React.FC<AdvisorToolCallContentProps> = ({
         <ToolDetails text={detailsText}>
           {question && (
             <DetailSection>
-              <DetailLabel>Question</DetailLabel>
+              <DetailLabel>{t("Question")}</DetailLabel>
               <DetailContent className="text-secondary px-2 py-1.5">{question}</DetailContent>
             </DetailSection>
           )}
@@ -325,7 +337,7 @@ const AdvisorToolCallContent: React.FC<AdvisorToolCallContentProps> = ({
               />
 
               <DetailSection>
-                <DetailLabel>Advice</DetailLabel>
+                <DetailLabel>{t("Advice")}</DetailLabel>
                 <div className="bg-code-bg rounded px-3 py-2 text-[12px] leading-relaxed">
                   <MarkdownRenderer content={advisorResult.advice} preserveLineBreaks />
                 </div>
@@ -334,8 +346,10 @@ const AdvisorToolCallContent: React.FC<AdvisorToolCallContentProps> = ({
               {advisorResult.remainingUses !== null && (
                 <DetailSection>
                   <div className="text-secondary text-[10px]">
-                    {advisorResult.remainingUses} remaining use
-                    {advisorResult.remainingUses === 1 ? "" : "s"} this turn.
+                    {advisorResult.remainingUses}
+                    {t("remaining use")}
+                    {advisorResult.remainingUses === 1 ? "" : "s"}
+                    {t("this turn.")}
                   </div>
                 </DetailSection>
               )}
@@ -344,7 +358,7 @@ const AdvisorToolCallContent: React.FC<AdvisorToolCallContentProps> = ({
 
           {advisorResult === null && liveReasoningText && (
             <DetailSection>
-              <DetailLabel>Thinking</DetailLabel>
+              <DetailLabel>{t("Thinking")}</DetailLabel>
               <div className="bg-code-bg text-secondary rounded px-3 py-2 text-[12px] leading-relaxed">
                 <MarkdownRenderer content={liveReasoningText} preserveLineBreaks />
               </div>
@@ -353,7 +367,7 @@ const AdvisorToolCallContent: React.FC<AdvisorToolCallContentProps> = ({
 
           {advisorResult === null && liveAdviceText && (
             <DetailSection>
-              <DetailLabel>Advice</DetailLabel>
+              <DetailLabel>{t("Advice")}</DetailLabel>
               <div className="bg-code-bg rounded px-3 py-2 text-[12px] leading-relaxed">
                 <MarkdownRenderer content={liveAdviceText} preserveLineBreaks />
               </div>
@@ -368,7 +382,7 @@ const AdvisorToolCallContent: React.FC<AdvisorToolCallContentProps> = ({
               />
 
               <DetailSection>
-                <DetailLabel>Limit</DetailLabel>
+                <DetailLabel>{t("Limit")}</DetailLabel>
                 <div className="bg-warning/10 border-warning/30 text-warning flex items-start gap-2 rounded border px-3 py-2 text-[11px]">
                   <AlertTriangle aria-hidden="true" className="mt-0.5 size-3 shrink-0" />
                   <span>{advisorResult.message}</span>
@@ -379,7 +393,7 @@ const AdvisorToolCallContent: React.FC<AdvisorToolCallContentProps> = ({
 
           {advisorResult?.type === "error" && (
             <DetailSection>
-              <DetailLabel>Error</DetailLabel>
+              <DetailLabel>{t("Error")}</DetailLabel>
               <ErrorBox>{advisorResult.message}</ErrorBox>
             </DetailSection>
           )}
@@ -387,11 +401,11 @@ const AdvisorToolCallContent: React.FC<AdvisorToolCallContentProps> = ({
           {hasUnrecognizedResult && (
             <>
               <DetailSection>
-                <DetailLabel>Error</DetailLabel>
-                <ErrorBox>Unrecognized advisor tool output shape</ErrorBox>
+                <DetailLabel>{t("Error")}</DetailLabel>
+                <ErrorBox>{t("Unrecognized advisor tool output shape")}</ErrorBox>
               </DetailSection>
               <DetailSection>
-                <DetailLabel>Result</DetailLabel>
+                <DetailLabel>{t("Result")}</DetailLabel>
                 <DetailContent>
                   <JsonHighlight value={result} />
                 </DetailContent>
@@ -412,7 +426,7 @@ const AdvisorToolCallContent: React.FC<AdvisorToolCallContentProps> = ({
           {toolStatus === "redacted" && result === undefined && (
             <DetailSection>
               <div className="text-muted text-[11px] italic">
-                Output excluded from shared transcript
+                {t("Output excluded from shared transcript")}
               </div>
             </DetailSection>
           )}

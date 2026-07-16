@@ -9,6 +9,7 @@ import {
   type LiveBashOutputInternal,
 } from "@/browser/utils/messages/liveBashOutputBuffer";
 import { BASH_TRUNCATE_MAX_TOTAL_BYTES } from "@/common/constants/toolLimits";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 const BACKGROUND_BASH_INITIAL_TAIL_BYTES = 64_000;
 const BACKGROUND_BASH_POLL_INTERVAL_MS = 500;
@@ -53,6 +54,7 @@ export const BackgroundBashOutputDialog: React.FC<BackgroundBashOutputDialogProp
 const BackgroundBashOutputViewer: React.FC<{ workspaceId: string; processId: string }> = (
   props
 ) => {
+  const { t } = useLanguage();
   const { api } = useAPI();
 
   // Live wake-on-match monitor info, folded into the status row (banner-style
@@ -145,11 +147,13 @@ const BackgroundBashOutputViewer: React.FC<{ workspaceId: string; processId: str
     <div className="flex min-h-0 flex-col gap-2 overflow-hidden">
       <div className="flex items-center justify-between gap-3">
         <div className="text-muted min-w-0 flex-1 truncate font-mono text-[11px]">
-          status: {status}
+          {t("status:")}
+          {status}
           {monitor && (
             <>
               {" · watching "}
-              {monitor.filter_exclude && "not "}/{monitor.filter}/ · {monitor.totalMatches} match
+              {monitor.filter_exclude && "not "}/{monitor.filter}/ · {monitor.totalMatches}{" "}
+              {t("match")}
               {monitor.totalMatches === 1 ? "" : "es"}
               {monitor.stopped && " · stopped"}
             </>
@@ -160,12 +164,15 @@ const BackgroundBashOutputViewer: React.FC<{ workspaceId: string; processId: str
 
       {truncatedStart && (
         <div className="text-muted text-[10px] italic">
-          Showing last {Math.round(BACKGROUND_BASH_INITIAL_TAIL_BYTES / 1000)}KB
+          {t("Showing last")}
+          {Math.round(BACKGROUND_BASH_INITIAL_TAIL_BYTES / 1000)}KB
         </div>
       )}
 
       {isTruncatedToMaxBytes && (
-        <div className="text-muted text-[10px] italic">Output truncated (showing last ~1MB)</div>
+        <div className="text-muted text-[10px] italic">
+          {t("Output truncated (showing last ~1MB)")}
+        </div>
       )}
 
       {error && <div className="text-error text-[11px]">{error}</div>}
@@ -176,7 +183,7 @@ const BackgroundBashOutputViewer: React.FC<{ workspaceId: string; processId: str
           min-h keeps a visible pane for "No output yet" while still letting very
           short windows shrink it instead of clipping it at the dialog edge. */}
       <DetailContent className="max-h-none min-h-24 flex-1 px-2 py-1.5">
-        {isLoading ? "Loading…" : text.length > 0 ? text : error ? "" : "No output yet"}
+        {isLoading ? t("Loading…") : text.length > 0 ? text : error ? "" : t("No output yet")}
       </DetailContent>
     </div>
   );

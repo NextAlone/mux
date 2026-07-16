@@ -26,6 +26,7 @@ import {
   LEFT_SIDEBAR_MIN_WIDTH_PX,
 } from "@/constants/layout";
 import { ChatPane } from "../ChatPane/ChatPane";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 // ChatPane uses tailwind `min-w-96`.
 const CHAT_PANE_MIN_WIDTH_PX = 384;
@@ -104,6 +105,7 @@ const WorkspacePlaceholder: React.FC<{
 );
 
 export const WorkspaceShell: React.FC<WorkspaceShellProps> = (props) => {
+  const { t } = useLanguage();
   const shellRef = useRef<HTMLDivElement>(null);
   const shellSize = useResizeObserver(shellRef);
 
@@ -198,7 +200,7 @@ export const WorkspaceShell: React.FC<WorkspaceShellProps> = (props) => {
   ) {
     return (
       <WorkspacePlaceholder
-        title="Loading workspace..."
+        title={t("Loading workspace...")}
         showAnimation
         className={props.className}
       />
@@ -208,8 +210,8 @@ export const WorkspaceShell: React.FC<WorkspaceShellProps> = (props) => {
   if (!props.projectName || !props.workspaceName) {
     return (
       <WorkspacePlaceholder
-        title="No Workspace Selected"
-        description="Select a workspace from the sidebar to view and interact with Claude"
+        title={t("No Workspace Selected")}
+        description={t("Select a workspace from the sidebar to view and interact with Claude")}
         className={props.className}
       />
     );

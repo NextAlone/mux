@@ -5,6 +5,7 @@ import { SplashScreen } from "@/browser/features/SplashScreens/SplashScreen";
 import { CUSTOM_EVENTS } from "@/common/constants/events";
 import { MUX_GATEWAY_SESSION_EXPIRED_MESSAGE } from "@/common/constants/muxGatewayOAuth";
 import { getErrorMessage } from "@/common/utils/errors";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 function getServerAuthToken(): string | null {
   const urlToken = new URLSearchParams(window.location.search).get("token")?.trim();
@@ -12,6 +13,7 @@ function getServerAuthToken(): string | null {
 }
 
 export function MuxGatewaySessionExpiredDialog() {
+  const { t } = useLanguage();
   const [isOpen, setIsOpen] = useState(false);
   const [loginError, setLoginError] = useState<string | null>(null);
   const [isStartingLogin, setIsStartingLogin] = useState(false);
@@ -129,7 +131,7 @@ export function MuxGatewaySessionExpiredDialog() {
 
   return (
     <SplashScreen
-      title="Mux Gateway session expired"
+      title={t("Mux Gateway session expired")}
       onDismiss={dismiss}
       dismissOnPrimaryAction={false}
       primaryAction={{
@@ -145,7 +147,7 @@ export function MuxGatewaySessionExpiredDialog() {
 
       {loginError && (
         <p className="mt-3 text-sm">
-          <strong className="text-destructive">Login failed:</strong> {loginError}
+          <strong className="text-destructive">{t("Login failed:")}</strong> {loginError}
         </p>
       )}
     </SplashScreen>

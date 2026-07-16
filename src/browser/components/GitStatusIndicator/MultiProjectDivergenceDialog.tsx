@@ -10,7 +10,7 @@ import { cn } from "@/common/lib/utils";
 import assert from "@/common/utils/assert";
 import type { GitStatus } from "@/common/types/workspace";
 import type { MultiProjectGitSummary } from "@/browser/stores/GitStatusStore";
-import { formatRepoCount } from "./gitStatusFormatters";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 interface MultiProjectDivergenceDialogProps {
   isOpen: boolean;
@@ -32,7 +32,10 @@ function formatLineDelta(additions: number, deletions: number): React.ReactNode 
   );
 }
 
-function getHeaderSummary(summary: MultiProjectGitSummary | null): React.ReactNode {
+function getHeaderSummary(
+  summary: MultiProjectGitSummary | null,
+  t: (text: string) => string
+): React.ReactNode {
   if (summary === null) {
     return null;
   }
@@ -42,26 +45,31 @@ function getHeaderSummary(summary: MultiProjectGitSummary | null): React.ReactNo
     text: string;
     className?: string;
     icon?: React.ReactNode;
-  }> = [{ key: "total", text: formatRepoCount(summary.totalProjectCount) }];
+  }> = [
+    {
+      key: "total",
+      text: `${summary.totalProjectCount} ${t(summary.totalProjectCount === 1 ? "repo" : "repos")}`,
+    },
+  ];
 
   if (summary.divergedProjectCount > 0) {
     fragments.push({
       key: "diverged",
-      text: `${summary.divergedProjectCount} diverged`,
+      text: `${summary.divergedProjectCount} ${t("diverged")}`,
       className: "text-accent",
     });
   }
   if (summary.dirtyProjectCount > 0) {
     fragments.push({
       key: "dirty",
-      text: `${summary.dirtyProjectCount} changed`,
+      text: `${summary.dirtyProjectCount} ${t("changed")}`,
       className: "text-git-dirty",
     });
   }
   if (summary.unknownProjectCount > 0) {
     fragments.push({
       key: "unknown",
-      text: `${summary.unknownProjectCount} unknown`,
+      text: `${summary.unknownProjectCount} ${t("unknown")}`,
       className: "text-warning",
       icon: <AlertTriangle aria-hidden="true" className="h-3 w-3" />,
     });
@@ -82,7 +90,7 @@ function getHeaderSummary(summary: MultiProjectGitSummary | null): React.ReactNo
   );
 }
 
-function renderDirtyCell(status: GitStatus): React.ReactNode {
+function renderDirtyCell(status: GitStatus, t: (text: string) => string): React.ReactNode {
   if (!status.dirty) {
     return <span className="text-muted">—</span>;
   }
@@ -90,7 +98,7 @@ function renderDirtyCell(status: GitStatus): React.ReactNode {
   return (
     <span className="text-git-dirty inline-flex items-center gap-1">
       <CircleDot aria-hidden="true" className="h-3 w-3" />
-      <span>Working copy</span>
+      <span>{t("Working copy")}</span>
     </span>
   );
 }
@@ -101,6 +109,7 @@ export const MultiProjectDivergenceDialog: React.FC<MultiProjectDivergenceDialog
   summary,
   isRefreshing,
 }) => {
+  const { t } = useLanguage();
   if (summary !== null) {
     assert(
       Array.isArray(summary.projects),
@@ -118,47 +127,49 @@ export const MultiProjectDivergenceDialog: React.FC<MultiProjectDivergenceDialog
       >
         <DialogHeader className="mb-2 gap-1">
           <DialogTitle className="text-foreground text-sm">
-            Multi-project repository status
+            {t("Multi-project repository status")}
           </DialogTitle>
-          {getHeaderSummary(summary)}
+          {getHeaderSummary(summary, t)}
           {isRefreshing && (
             <div className="text-muted animate-pulse font-mono text-[11px]">
-              Refreshing repository status…
+              {t("Refreshing repository status…")}
             </div>
           )}
         </DialogHeader>
 
         {summary === null ? (
           <div className="text-muted-light py-2">
-            Loading repository status for workspace repos…
+            {t("Loading repository status for workspace repos…")}
           </div>
         ) : summary.totalProjectCount === 0 ? (
-          <div className="text-muted-light py-2">No repos are tracked in this workspace.</div>
+          <div className="text-muted-light py-2">
+            {t("No repos are tracked in this workspace.")}
+          </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[720px] border-collapse text-left font-mono text-[11px]">
               <thead>
                 <tr className="text-muted border-separator-light border-b">
                   <th scope="col" className="px-2 py-1 font-medium">
-                    Project
+                    {t("Project")}
                   </th>
                   <th scope="col" className="px-2 py-1 font-medium">
-                    Bookmark
+                    {t("Bookmark")}
                   </th>
                   <th scope="col" className="px-2 py-1 font-medium">
-                    Ahead
+                    {t("Ahead")}
                   </th>
                   <th scope="col" className="px-2 py-1 font-medium">
-                    Behind
+                    {t("Behind")}
                   </th>
                   <th scope="col" className="px-2 py-1 font-medium">
-                    Working copy
+                    {t("Working copy")}
                   </th>
                   <th scope="col" className="px-2 py-1 font-medium">
-                    Outgoing
+                    {t("Outgoing")}
                   </th>
                   <th scope="col" className="px-2 py-1 font-medium">
-                    Incoming
+                    {t("Incoming")}
                   </th>
                 </tr>
               </thead>
@@ -177,7 +188,7 @@ export const MultiProjectDivergenceDialog: React.FC<MultiProjectDivergenceDialog
                         <td className="px-2 py-1.5" colSpan={6}>
                           <span className="text-warning inline-flex items-center gap-1">
                             <AlertTriangle aria-hidden="true" className="h-3 w-3 shrink-0" />
-                            <span>{project.error ?? "Repository status unavailable"}</span>
+                            <span>{project.error ?? t("Repository status unavailable")}</span>
                           </span>
                         </td>
                       </tr>
@@ -195,7 +206,7 @@ export const MultiProjectDivergenceDialog: React.FC<MultiProjectDivergenceDialog
                       <td className="text-foreground px-2 py-1.5">{status.branch.trim() || "—"}</td>
                       <td className="counter-nums text-foreground px-2 py-1.5">{status.ahead}</td>
                       <td className="counter-nums text-foreground px-2 py-1.5">{status.behind}</td>
-                      <td className="px-2 py-1.5">{renderDirtyCell(status)}</td>
+                      <td className="px-2 py-1.5">{renderDirtyCell(status, t)}</td>
                       <td className="px-2 py-1.5">
                         {formatLineDelta(status.outgoingAdditions, status.outgoingDeletions)}
                       </td>

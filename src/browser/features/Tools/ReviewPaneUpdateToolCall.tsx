@@ -10,6 +10,7 @@ import {
   ToolIcon,
 } from "./Shared/ToolPrimitives";
 import { useToolExpansion, getStatusDisplay, type ToolStatus } from "./Shared/toolUtils";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 interface ReviewPaneUpdateToolCallProps {
   args: ReviewPaneUpdateToolArgs;
@@ -29,6 +30,7 @@ export const ReviewPaneUpdateToolCall: React.FC<ReviewPaneUpdateToolCallProps> =
   result,
   status = "pending",
 }) => {
+  const { t } = useLanguage();
   const { expanded, toggleExpanded } = useToolExpansion(false);
   const statusDisplay = getStatusDisplay(status);
 
@@ -60,7 +62,9 @@ export const ReviewPaneUpdateToolCall: React.FC<ReviewPaneUpdateToolCallProps> =
         <span className="text-muted-foreground flex min-w-0 flex-1 items-center gap-1 italic">
           <span className="truncate">{summary}</span>
           {rejectedCount > 0 && (
-            <span className="text-warning-light shrink-0">· {rejectedCount} rejected</span>
+            <span className="text-warning-light shrink-0">
+              · {rejectedCount} {t("rejected")}
+            </span>
           )}
         </span>
         {errorMessage && <span className="text-error-foreground">({errorMessage})</span>}
@@ -70,7 +74,7 @@ export const ReviewPaneUpdateToolCall: React.FC<ReviewPaneUpdateToolCallProps> =
       {expanded && (
         <ToolDetails>
           {displayHunks.length === 0 ? (
-            <div className="text-muted px-2 py-1.5 text-[11px] italic">No hunks pinned.</div>
+            <div className="text-muted px-2 py-1.5 text-[11px] italic">{t("No hunks pinned.")}</div>
           ) : (
             <ul className="flex flex-col gap-1.5 px-2 py-1.5">
               {displayHunks.map((hunk, i) => (
@@ -98,7 +102,7 @@ export const ReviewPaneUpdateToolCall: React.FC<ReviewPaneUpdateToolCallProps> =
           )}
           {successResult && successResult.rejected.length > 0 && (
             <div className="border-border-light mt-1 border-t px-2 py-1.5">
-              <div className="text-muted text-[10px] tracking-wide uppercase">Rejected</div>
+              <div className="text-muted text-[10px] tracking-wide uppercase">{t("Rejected")}</div>
               <ul className="font-monospace text-warning-light mt-1 flex flex-col gap-0.5 text-[11px]">
                 {successResult.rejected.map((entry, i) => (
                   <li key={`${entry}-${i}`} className="break-all">

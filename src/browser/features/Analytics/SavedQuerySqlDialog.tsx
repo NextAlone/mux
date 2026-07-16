@@ -9,6 +9,7 @@ import {
   DialogTitle,
 } from "@/browser/components/Dialog/Dialog";
 import { TIME_FILTER_PLACEHOLDER } from "./sqlTimeFilter";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 interface SavedQuerySqlDialogProps {
   open: boolean;
@@ -23,21 +24,24 @@ interface SavedQuerySqlDialogProps {
 }
 
 export function SavedQuerySqlDialog(props: SavedQuerySqlDialogProps) {
+  const { t } = useLanguage();
   return (
     <Dialog open={props.open} onOpenChange={props.onOpenChange}>
       <DialogContent maxWidth="900px" maxHeight="80vh" showCloseButton={!props.saving}>
         <DialogHeader>
-          <DialogTitle>{`Edit SQL — ${props.label}`}</DialogTitle>
+          <DialogTitle>
+            {t("Edit SQL")} — {props.label}
+          </DialogTitle>
           <DialogDescription>
-            Saving updates this panel and reruns it with the edited query. Use{" "}
-            <code className="text-foreground">{TIME_FILTER_PLACEHOLDER}</code> in a WHERE clause to
-            filter by the dashboard&apos;s selected date range.
+            {t("Saving updates this panel and reruns it with the edited query. Use")}{" "}
+            <code className="text-foreground">{TIME_FILTER_PLACEHOLDER}</code>{" "}
+            {t("in a WHERE clause to filter by the dashboard's selected date range.")}
           </DialogDescription>
         </DialogHeader>
 
         <div className="flex flex-col gap-2">
           <textarea
-            aria-label="Saved query SQL"
+            aria-label={t("Saved query SQL")}
             value={props.sql}
             onChange={(event) => props.onSqlChange(event.target.value)}
             spellCheck={false}
@@ -53,7 +57,7 @@ export function SavedQuerySqlDialog(props: SavedQuerySqlDialogProps) {
               }
             }}
           />
-          <div className="text-muted text-[10px]">Ctrl/Cmd+Enter to save</div>
+          <div className="text-muted text-[10px]">{t("Ctrl/Cmd+Enter to save")}</div>
         </div>
 
         {props.error && (
@@ -69,10 +73,10 @@ export function SavedQuerySqlDialog(props: SavedQuerySqlDialogProps) {
             onClick={() => props.onOpenChange(false)}
             disabled={props.saving}
           >
-            Cancel
+            {t("Cancel")}
           </Button>
           <Button onClick={props.onSave} disabled={props.saveDisabled}>
-            {props.saving ? "Saving..." : "Save"}
+            {props.saving ? t("Saving...") : t("Save")}
           </Button>
         </DialogFooter>
       </DialogContent>

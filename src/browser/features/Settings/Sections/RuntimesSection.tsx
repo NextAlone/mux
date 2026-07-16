@@ -18,6 +18,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/browser/components/To
 import { useAPI } from "@/browser/contexts/API";
 import { useProjectContext } from "@/browser/contexts/ProjectContext";
 import { useSettings } from "@/browser/contexts/SettingsContext";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 import { useCoderWorkspace } from "@/browser/hooks/useCoderWorkspace";
 import { usePersistedState } from "@/browser/hooks/usePersistedState";
 import { useRuntimeEnablement } from "@/browser/hooks/useRuntimeEnablement";
@@ -75,6 +76,31 @@ const RUNTIME_ROWS: RuntimeRow[] = [
 
 function getProjectLabel(path: string) {
   return path.split(/[\\/]/).pop() ?? path;
+}
+
+function localizeRuntimeDescription(text: string, t: (value: string) => string): string {
+  const customWorkspacePrefix = "Isolated jj workspace in ";
+  if (text.startsWith(customWorkspacePrefix)) {
+    return `${t("Isolated jj workspace in")} ${text.slice(customWorkspacePrefix.length)}`;
+  }
+  return t(text);
+}
+
+function localizeRuntimeAvailabilityReason(text: string, t: (value: string) => string): string {
+  const outdated = /^(.*) (\S+) is below minimum v(\S+)\.$/.exec(text);
+  if (outdated?.[1] && outdated[2] && outdated[3]) {
+    return t("{cli} {version} is below minimum v{minimum}.")
+      .replace("{cli}", outdated[1])
+      .replace("{version}", outdated[2])
+      .replace("{minimum}", outdated[3]);
+  }
+
+  const errorPrefix = "Coder CLI error: ";
+  if (text.startsWith(errorPrefix)) {
+    return `${t("Coder CLI error:")} ${text.slice(errorPrefix.length)}`;
+  }
+
+  return t(text);
 }
 
 function getFallbackRuntime(enablement: RuntimeEnablement): RuntimeEnablementId | null {
@@ -138,6 +164,7 @@ function deriveProjectOverrideState(
 
 export function RuntimesSection() {
   const { api } = useAPI();
+  const { t } = useLanguage();
   const { userProjects, refreshProjects } = useProjectContext();
   const { enablement, setRuntimeEnabled, defaultRuntime, setDefaultRuntime } =
     useRuntimeEnablement();
@@ -348,8 +375,9 @@ export function RuntimesSection() {
     effectiveDefaultRuntime && effectiveEnablement[effectiveDefaultRuntime]
       ? effectiveDefaultRuntime
       : "";
-  const defaultRuntimePlaceholder =
-    enabledRuntimeOptions.length === 0 ? "No runtimes enabled" : "Select default runtime";
+  const defaultRuntimePlaceholder = t(
+    enabledRuntimeOptions.length === 0 ? "No runtimes enabled" : "Select default runtime"
+  );
   const defaultRuntimeDisabled =
     enabledRuntimeOptions.length === 0 || (isProjectScope && !projectOverrideEnabled);
 
@@ -489,18 +517,20 @@ export function RuntimesSection() {
       <div className="space-y-4">
         <div className="flex items-center justify-between gap-4">
           <div>
-            <div className="text-foreground text-sm">Scope</div>
-            <div className="text-muted text-xs">Manage runtimes globally or per project.</div>
+            <div className="text-foreground text-sm">{t("Scope")}</div>
+            <div className="text-muted text-xs">
+              {t("Manage runtimes globally or per project.")}
+            </div>
           </div>
           <Select value={effectiveScope} onValueChange={setSelectedScope}>
             <SelectTrigger
               className="border-border-medium bg-background-secondary hover:bg-hover h-9 w-auto min-w-[160px] cursor-pointer rounded-md border px-3 text-sm transition-colors"
-              aria-label="Scope"
+              aria-label={t("Scope")}
             >
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value={ALL_SCOPE_VALUE}>All</SelectItem>
+              <SelectItem value={ALL_SCOPE_VALUE}>{t("All")}</SelectItem>
               {projectList.map((path) => (
                 <SelectItem key={path} value={path}>
                   {getProjectLabel(path)}
@@ -513,15 +543,15 @@ export function RuntimesSection() {
         {isProjectScope ? (
           <div className="border-border-light bg-background-secondary flex items-center justify-between gap-4 rounded-md border px-3 py-2">
             <div>
-              <div className="text-foreground text-sm">Override project settings</div>
+              <div className="text-foreground text-sm">{t("Override project settings")}</div>
               <div className="text-muted text-xs">
-                Keep global defaults or customize enabled runtimes for this project.
+                {t("Keep global defaults or customize enabled runtimes for this project.")}
               </div>
             </div>
             <Switch
               checked={projectOverrideEnabled}
               onCheckedChange={handleOverrideToggle}
-              aria-label="Override project runtime settings"
+              aria-label={t("Override project runtime settings")}
             />
           </div>
         ) : null}
@@ -535,11 +565,13 @@ export function RuntimesSection() {
           )}
         >
           <div>
-            <div className="text-foreground text-sm">Default runtime</div>
+            <div className="text-foreground text-sm">{t("Default runtime")}</div>
             <div className="text-muted text-xs">
-              {isProjectScope
-                ? "Applied to new workspaces in this project."
-                : "Applied to new workspaces by default."}
+              {t(
+                isProjectScope
+                  ? "Applied to new workspaces in this project."
+                  : "Applied to new workspaces by default."
+              )}
             </div>
           </div>
           <Select
@@ -553,7 +585,7 @@ export function RuntimesSection() {
             <SelectContent>
               {enabledRuntimeOptions.map((runtime) => (
                 <SelectItem key={runtime.id} value={runtime.id}>
-                  {runtime.label}
+                  {t(runtime.label)}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -592,7 +624,7 @@ export function RuntimesSection() {
                 checked={effectiveEnablement[runtime.id]}
                 disabled={switchDisabled}
                 onCheckedChange={(checked) => handleRuntimeToggle(runtime.id, checked)}
-                aria-label={`Toggle ${runtime.label} runtime`}
+                aria-label={t("Toggle {runtime} runtime").replace("{runtime}", t(runtime.label))}
               />
             );
             const switchNode =
@@ -601,7 +633,9 @@ export function RuntimesSection() {
                   <TooltipTrigger asChild>
                     <span className="inline-flex">{switchControl}</span>
                   </TooltipTrigger>
-                  <TooltipContent align="end">At least one runtime must be enabled.</TooltipContent>
+                  <TooltipContent align="end">
+                    {t("At least one runtime must be enabled.")}
+                  </TooltipContent>
                 </Tooltip>
               ) : (
                 switchControl
@@ -620,31 +654,40 @@ export function RuntimesSection() {
                   <Icon size={16} className="text-muted mt-0.5" />
                   <div className="flex-1">
                     <div className="flex items-center gap-2">
-                      <div className="text-foreground text-sm">{runtime.label}</div>
+                      <div className="text-foreground text-sm">{t(runtime.label)}</div>
                       {availabilityReason ? (
                         <Tooltip>
                           <TooltipTrigger asChild>
                             <span className="bg-warning/10 text-warning border-warning/30 inline-flex cursor-help items-center gap-1 rounded-full border px-1.5 py-0.5 text-[10px]">
                               <AlertTriangle className="h-3 w-3" />
-                              Unavailable
+                              {t("Unavailable")}
                             </span>
                           </TooltipTrigger>
                           <TooltipContent align="start" className="max-w-64 whitespace-normal">
-                            {availabilityReason}
+                            {localizeRuntimeAvailabilityReason(availabilityReason, t)}
                           </TooltipContent>
                         </Tooltip>
                       ) : null}
                     </div>
-                    <div className="text-muted text-xs">{runtime.description}</div>
+                    <div className="text-muted text-xs">
+                      {localizeRuntimeDescription(runtime.description, t)}
+                    </div>
                     {/* Configurable option inputs — project scope uses the same labeled
                         input component and localStorage defaults as the creation flow. */}
                     {!optionSpec || !selectedProjectPath ? (
                       runtime.options && !selectedProjectPath ? (
-                        <div className="text-muted/70 text-[11px]">Options: {runtime.options}</div>
+                        <div className="text-muted/70 text-[11px]">
+                          {t("Options:")} {t(runtime.options)}
+                        </div>
                       ) : null
                     ) : (
                       <RuntimeConfigInput
-                        fieldSpec={optionSpec}
+                        fieldSpec={{
+                          ...optionSpec,
+                          label: t(optionSpec.label),
+                          placeholder: t(optionSpec.placeholder),
+                          summary: t(optionSpec.summary),
+                        }}
                         value={readOptionField(optionRuntimeMode, optionSpec.field)}
                         onChange={(value) =>
                           setOptionField(optionRuntimeMode, optionSpec.field, value)
@@ -652,7 +695,9 @@ export function RuntimesSection() {
                         disabled={rowDisabled}
                         className="mt-1.5"
                         inputClassName="w-full max-w-[260px]"
-                        ariaLabel={`${optionSpec.label} for ${runtime.label}`}
+                        ariaLabel={t("{option} for {runtime}")
+                          .replace("{option}", t(optionSpec.label))
+                          .replace("{runtime}", t(runtime.label))}
                         stacked
                       />
                     )}

@@ -22,6 +22,7 @@ import {
 } from "./Shared/toolUtils";
 import { JsonHighlight } from "./Shared/HighlightedCode";
 import { formatBytes } from "@/common/utils/formatBytes";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 interface AgentSkillReadFileToolCallProps {
   args: AgentSkillReadFileToolArgs;
@@ -91,6 +92,7 @@ export const AgentSkillReadFileToolCall: React.FC<AgentSkillReadFileToolCallProp
   result,
   status = "pending",
 }) => {
+  const { t } = useLanguage();
   const { expanded, toggleExpanded } = useToolExpansion();
 
   const successResult = isFileReadSuccessResult(result) ? result : null;
@@ -114,9 +116,12 @@ export const AgentSkillReadFileToolCall: React.FC<AgentSkillReadFileToolCallProp
         </div>
         {successResult && parsedContent && (
           <span className="text-secondary font-monospace ml-2 text-[10px] whitespace-nowrap">
-            <span className="hidden @sm:inline">read </span>
+            <span className="hidden @sm:inline">{t("read")} </span>
             {formatBytes(parsedContent.actualBytes)}
-            <span className="hidden @lg:inline"> of {formatBytes(successResult.file_size)}</span>
+            <span className="hidden @lg:inline">
+              {" "}
+              {t("of")} {formatBytes(successResult.file_size)}
+            </span>
           </span>
         )}
         <StatusIndicator status={status}>{getStatusDisplay(status)}</StatusIndicator>
@@ -127,41 +132,45 @@ export const AgentSkillReadFileToolCall: React.FC<AgentSkillReadFileToolCallProp
           <DetailSection>
             <div className="bg-code-bg flex flex-wrap gap-4 rounded px-2 py-1.5 text-[11px] leading-[1.4]">
               <div className="flex items-baseline gap-1.5">
-                <span className="text-secondary font-medium">Skill:</span>
+                <span className="text-secondary font-medium">{t("Skill:")}</span>
                 <span className="text-text font-monospace break-all">{args.name}</span>
               </div>
               <div className="flex items-baseline gap-1.5">
-                <span className="text-secondary font-medium">File:</span>
+                <span className="text-secondary font-medium">{t("File:")}</span>
                 <span className="text-text font-monospace break-all">{args.filePath}</span>
               </div>
               {args.offset != null && (
                 <div className="flex items-baseline gap-1.5">
-                  <span className="text-secondary font-medium">Offset:</span>
-                  <span className="text-text font-monospace break-all">line {args.offset}</span>
+                  <span className="text-secondary font-medium">{t("Offset:")}</span>
+                  <span className="text-text font-monospace break-all">
+                    {t("line")} {args.offset}
+                  </span>
                 </div>
               )}
               {args.limit != null && (
                 <div className="flex items-baseline gap-1.5">
-                  <span className="text-secondary font-medium">Limit:</span>
-                  <span className="text-text font-monospace break-all">{args.limit} lines</span>
+                  <span className="text-secondary font-medium">{t("Limit:")}</span>
+                  <span className="text-text font-monospace break-all">
+                    {args.limit} {t("lines")}
+                  </span>
                 </div>
               )}
               {successResult && (
                 <>
                   <div className="flex items-baseline gap-1.5">
-                    <span className="text-secondary font-medium">Modified:</span>
+                    <span className="text-secondary font-medium">{t("Modified:")}</span>
                     <span className="text-text font-monospace break-all">
                       {successResult.modifiedTime}
                     </span>
                   </div>
                   <div className="flex items-baseline gap-1.5">
-                    <span className="text-secondary font-medium">Lines:</span>
+                    <span className="text-secondary font-medium">{t("Lines:")}</span>
                     <span className="text-text font-monospace break-all">
                       {successResult.lines_read}
                     </span>
                   </div>
                   <div className="flex items-baseline gap-1.5">
-                    <span className="text-secondary font-medium">Size:</span>
+                    <span className="text-secondary font-medium">{t("Size:")}</span>
                     <span className="text-text font-monospace break-all">
                       {formatBytes(successResult.file_size)}
                     </span>
@@ -173,7 +182,7 @@ export const AgentSkillReadFileToolCall: React.FC<AgentSkillReadFileToolCallProp
 
           {errorResult && (
             <DetailSection>
-              <DetailLabel>Error</DetailLabel>
+              <DetailLabel>{t("Error")}</DetailLabel>
               <ErrorBox>{errorResult.error}</ErrorBox>
             </DetailSection>
           )}
@@ -181,11 +190,11 @@ export const AgentSkillReadFileToolCall: React.FC<AgentSkillReadFileToolCallProp
           {hasUnrecognizedResult && (
             <>
               <DetailSection>
-                <DetailLabel>Error</DetailLabel>
-                <ErrorBox>Unrecognized tool output shape</ErrorBox>
+                <DetailLabel>{t("Error")}</DetailLabel>
+                <ErrorBox>{t("Unrecognized tool output shape")}</ErrorBox>
               </DetailSection>
               <DetailSection>
-                <DetailLabel>Result</DetailLabel>
+                <DetailLabel>{t("Result")}</DetailLabel>
                 <DetailContent>
                   <JsonHighlight value={result} />
                 </DetailContent>
@@ -195,7 +204,7 @@ export const AgentSkillReadFileToolCall: React.FC<AgentSkillReadFileToolCallProp
 
           {parsedContent && (
             <DetailSection>
-              <DetailLabel>Content</DetailLabel>
+              <DetailLabel>{t("Content")}</DetailLabel>
               <div className="bg-code-bg m-0 flex max-h-[200px] overflow-y-auto rounded px-2 py-1.5 text-[11px] leading-[1.4]">
                 <div className="text-secondary font-monospace mr-2 min-w-10 border-r border-white/10 pr-3 text-right opacity-40 select-none">
                   {parsedContent.lineNumbers.map((lineNum, i) => (
@@ -212,7 +221,7 @@ export const AgentSkillReadFileToolCall: React.FC<AgentSkillReadFileToolCallProp
           {status === "executing" && !hasResult && (
             <DetailSection>
               <DetailContent>
-                Reading skill file
+                {t("Reading skill file")}
                 <LoadingDots />
               </DetailContent>
             </DetailSection>

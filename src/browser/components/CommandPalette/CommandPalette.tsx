@@ -21,6 +21,7 @@ import { EXPERIMENT_IDS } from "@/common/constants/experiments";
 import { getDisableWorkspaceAgentsKey, GLOBAL_SCOPE_ID } from "@/common/constants/storage";
 import { filterCommandsByPrefix } from "@/browser/utils/commandPaletteFiltering";
 import { rankByPaletteQuery } from "@/browser/utils/commandPaletteRanking";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 interface CommandPaletteProps {
   getSlashContext?: () => { workspaceId?: string };
@@ -59,6 +60,7 @@ interface PaletteGroup {
 }
 
 export const CommandPalette: React.FC<CommandPaletteProps> = ({ getSlashContext }) => {
+  const { t } = useLanguage();
   const { api } = useAPI();
 
   const workspaceHeartbeatsExperimentEnabled = useExperimentValue(
@@ -567,7 +569,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ getSlashContext 
       onMouseDown={dismissPalette}
     >
       <Command
-        label={currentField?.label ?? "Command palette"}
+        label={t(currentField?.label ?? "Command palette")}
         ref={commandPanelRef}
         className="font-primary w-[min(720px,92vw)] overflow-hidden rounded-lg border border-[var(--color-command-border)] bg-[var(--color-command-surface)] text-[var(--color-command-foreground)] shadow-[0_10px_40px_rgba(0,0,0,0.4)]"
         onMouseDown={(e: React.MouseEvent) => e.stopPropagation()}
@@ -578,8 +580,8 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ getSlashContext 
           className="w-full border-b border-[var(--color-command-input-border)] bg-[var(--color-command-input)] px-3.5 py-3 text-sm text-[var(--color-command-foreground)] outline-none placeholder:text-[var(--color-command-subdued)]"
           value={query}
           onValueChange={handleQueryChange}
-          placeholder={getCommandInputPlaceholder(currentField)}
-          aria-label={currentField?.label ?? "Command palette"}
+          placeholder={t(getCommandInputPlaceholder(currentField))}
+          aria-label={t(currentField?.label ?? "Command palette")}
           autoFocus
           onKeyDown={(e: React.KeyboardEvent) => {
             if (!currentField && isEditableElement(e.target)) return;
@@ -604,7 +606,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ getSlashContext 
               key={group.name}
               heading={
                 <div className="px-2.5 py-1 text-[11px] tracking-[0.08em] text-[var(--color-command-subdued)] uppercase">
-                  {group.name}
+                  {t(group.name)}
                 </div>
               }
               className="px-1.5 py-2"
@@ -631,7 +633,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ getSlashContext 
                     key={item.id}
                     value={item.title}
                     keywords={itemKeywords}
-                    aria-label={item.title}
+                    aria-label={t(item.title)}
                     className="hover:bg-hover aria-selected:bg-hover mx-1 my-0.5 grid cursor-pointer grid-cols-[1fr_auto] items-center gap-2 rounded-md px-3 py-2 text-[13px] aria-selected:text-[var(--color-command-foreground)]"
                     onSelect={() => {
                       if ("prompt" in item && item.prompt) {
@@ -653,12 +655,12 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ getSlashContext 
                     }}
                   >
                     <div>
-                      {item.title}
+                      {t(item.title)}
                       {"subtitle" in item && item.subtitle && (
                         <>
                           <br />
                           <span className="text-xs text-[var(--color-command-subdued)]">
-                            {item.subtitle}
+                            {t(item.subtitle)}
                           </span>
                         </>
                       )}
@@ -675,7 +677,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ getSlashContext 
           ))}
           {!hasAnyItems && (
             <div className="p-4 text-[13px] text-[var(--color-command-subdued)]">
-              {emptyText ?? "No results"}
+              {t(emptyText ?? "No results")}
             </div>
           )}
         </Command.List>

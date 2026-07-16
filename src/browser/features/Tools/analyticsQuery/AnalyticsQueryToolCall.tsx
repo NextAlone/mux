@@ -41,6 +41,7 @@ import type {
   ChartType,
   DrillDownContext,
 } from "./types";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 interface AnalyticsQueryToolCallProps {
   args: AnalyticsQueryArgs;
@@ -93,6 +94,7 @@ function escapeDoubleQuotes(value: string): string {
 }
 
 export function AnalyticsQueryToolCall(props: AnalyticsQueryToolCallProps): JSX.Element {
+  const { t } = useLanguage();
   const { expanded, toggleExpanded } = useToolExpansion(true);
   // Rationale: chat cards only use save(), so skip the saved-query preload until the user opts in.
   const { save } = useSavedQueries({ skipLoad: true });
@@ -189,7 +191,9 @@ export function AnalyticsQueryToolCall(props: AnalyticsQueryToolCallProps): JSX.
             <>
               <ErrorBox>{errorResult.error}</ErrorBox>
               <DetailSection>
-                <div className="text-muted mb-1 text-[10px] tracking-wide uppercase">SQL</div>
+                <div className="text-muted mb-1 text-[10px] tracking-wide uppercase">
+                  {t("SQL")}
+                </div>
                 <DetailContent className="px-2 py-1.5">{props.args.sql}</DetailContent>
               </DetailSection>
             </>
@@ -200,9 +204,9 @@ export function AnalyticsQueryToolCall(props: AnalyticsQueryToolCallProps): JSX.
               {successResult.truncated && (
                 <div className="text-warning mb-2 flex items-center gap-1 text-[10px]">
                   <AlertTriangle className="size-3" />
-                  Showing {successResult.rows.length.toLocaleString()} of{" "}
+                  {t("Showing")} {successResult.rows.length.toLocaleString()} {t("of")}{" "}
                   {successResult.rowCount.toLocaleString()}
-                  {isRowCountLowerBound ? "+" : ""} rows (results truncated).
+                  {isRowCountLowerBound ? "+" : ""} {t("rows (results truncated).")}
                 </div>
               )}
 
@@ -225,14 +229,14 @@ export function AnalyticsQueryToolCall(props: AnalyticsQueryToolCallProps): JSX.
                 {saveState.status === "saved" ? (
                   <>
                     <span className="text-success text-[10px]" role="status">
-                      Added to analytics dashboard.
+                      {t("Added to analytics dashboard.")}
                     </span>
                     <HeaderButton
                       type="button"
                       onClick={navigateToAnalytics}
                       className="disabled:cursor-not-allowed disabled:opacity-50"
                     >
-                      Open dashboard
+                      {t("Open dashboard")}
                     </HeaderButton>
                   </>
                 ) : (

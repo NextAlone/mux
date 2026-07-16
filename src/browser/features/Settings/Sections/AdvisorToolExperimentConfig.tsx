@@ -11,6 +11,7 @@ import {
   SelectValue,
 } from "@/browser/components/SelectPrimitive/SelectPrimitive";
 import { useAPI } from "@/browser/contexts/API";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 import { useModelsFromSettings } from "@/browser/hooks/useModelsFromSettings";
 import { ADVISOR_DEFAULT_MAX_USES_PER_TURN } from "@/common/constants/advisor";
 import { normalizeTaskSettings, type TaskSettings } from "@/common/types/tasks";
@@ -136,6 +137,7 @@ function areAdvisorSettingsEqual(a: AdvisorSettingsState, b: AdvisorSettingsStat
 
 export function AdvisorToolExperimentConfig() {
   const { api } = useAPI();
+  const { t } = useLanguage();
   const { models, hiddenModelsForSelector } = useModelsFromSettings();
 
   const [advisorModelString, setAdvisorModelString] = useState("");
@@ -488,7 +490,7 @@ export function AdvisorToolExperimentConfig() {
   if (!api) {
     return (
       <div className="bg-background-secondary px-4 py-3">
-        <div className="text-muted text-xs">Connect to mux to configure this setting.</div>
+        <div className="text-muted text-xs">{t("Connect to mux to configure this setting.")}</div>
       </div>
     );
   }
@@ -497,7 +499,7 @@ export function AdvisorToolExperimentConfig() {
     return (
       <div className="bg-background-secondary flex items-center gap-2 px-4 py-3">
         <Loader2 className="text-muted h-4 w-4 animate-spin" />
-        <span className="text-muted text-xs">Loading advisor defaults…</span>
+        <span className="text-muted text-xs">{t("Loading advisor defaults…")}</span>
       </div>
     );
   }
@@ -505,7 +507,7 @@ export function AdvisorToolExperimentConfig() {
   if (loadFailed) {
     return (
       <div className="bg-background-secondary px-4 py-3">
-        <div className="text-danger-light text-xs">Failed to load advisor settings.</div>
+        <div className="text-danger-light text-xs">{t("Failed to load advisor settings.")}</div>
       </div>
     );
   }
@@ -514,8 +516,8 @@ export function AdvisorToolExperimentConfig() {
     <div className="bg-background-secondary space-y-3 px-4 py-3">
       <div className="flex items-center justify-between gap-4">
         <div className="flex-1">
-          <div className="text-foreground text-sm">Advisor Model</div>
-          <div className="text-muted text-xs">Global default for nested advisor calls.</div>
+          <div className="text-foreground text-sm">{t("Advisor Model")}</div>
+          <div className="text-muted text-xs">{t("Global default for nested advisor calls.")}</div>
         </div>
         <div className="flex items-center justify-end gap-2">
           <ModelSelector
@@ -523,7 +525,7 @@ export function AdvisorToolExperimentConfig() {
             onChange={setAdvisorModelString}
             models={models}
             hiddenModels={hiddenModelsForSelector}
-            emptyLabel="Select model"
+            emptyLabel={t("Select model")}
             variant="box"
             className="bg-modal-bg md:max-w-[22rem]"
           />
@@ -532,8 +534,8 @@ export function AdvisorToolExperimentConfig() {
 
       <div className="flex items-center justify-between gap-4">
         <div className="flex-1">
-          <div className="text-foreground text-sm">Reasoning</div>
-          <div className="text-muted text-xs">Applied to advisor requests.</div>
+          <div className="text-foreground text-sm">{t("Reasoning")}</div>
+          <div className="text-muted text-xs">{t("Applied to advisor requests.")}</div>
         </div>
         <div className="flex items-center justify-end gap-2">
           <Select
@@ -547,7 +549,7 @@ export function AdvisorToolExperimentConfig() {
             <SelectContent>
               {allowedThinkingLevels.map((level) => (
                 <SelectItem key={level} value={level}>
-                  {getThinkingOptionLabel(level, effectiveAdvisorModelStringForThinking)}
+                  {t(getThinkingOptionLabel(level, effectiveAdvisorModelStringForThinking))}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -557,8 +559,8 @@ export function AdvisorToolExperimentConfig() {
 
       <div className="flex items-center justify-between gap-4">
         <div className="flex-1">
-          <div className="text-foreground text-sm">Max Uses / Turn</div>
-          <div className="text-muted text-xs">Per response.</div>
+          <div className="text-foreground text-sm">{t("Max Uses / Turn")}</div>
+          <div className="text-muted text-xs">{t("Per response.")}</div>
         </div>
         <div className="flex items-center justify-end gap-2">
           <Select value={maxUsesMode} onValueChange={setAdvisorMaxUsesMode}>
@@ -566,13 +568,13 @@ export function AdvisorToolExperimentConfig() {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="unlimited">Unlimited</SelectItem>
-              <SelectItem value="limited">Limited</SelectItem>
+              <SelectItem value="unlimited">{t("Unlimited")}</SelectItem>
+              <SelectItem value="limited">{t("Limited")}</SelectItem>
             </SelectContent>
           </Select>
           {maxUsesMode === "limited" ? (
             <Input
-              aria-label="Advisor max uses per turn"
+              aria-label={t("Advisor max uses per turn")}
               type="number"
               min={1}
               step={1}
@@ -589,8 +591,8 @@ export function AdvisorToolExperimentConfig() {
 
       <div className="flex items-center justify-between gap-4">
         <div className="flex-1">
-          <div className="text-foreground text-sm">Max Output Tokens</div>
-          <div className="text-muted text-xs">Per advisor response.</div>
+          <div className="text-foreground text-sm">{t("Max Output Tokens")}</div>
+          <div className="text-muted text-xs">{t("Per advisor response.")}</div>
         </div>
         <div className="flex items-center justify-end gap-2">
           <Select value={maxOutputTokensMode} onValueChange={setAdvisorMaxOutputTokensMode}>
@@ -598,13 +600,13 @@ export function AdvisorToolExperimentConfig() {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="unlimited">Unlimited</SelectItem>
-              <SelectItem value="limited">Limited</SelectItem>
+              <SelectItem value="unlimited">{t("Unlimited")}</SelectItem>
+              <SelectItem value="limited">{t("Limited")}</SelectItem>
             </SelectContent>
           </Select>
           {maxOutputTokensMode === "limited" ? (
             <Input
-              aria-label="Advisor max output tokens"
+              aria-label={t("Advisor max output tokens")}
               type="number"
               min={1}
               step={1}
@@ -619,7 +621,7 @@ export function AdvisorToolExperimentConfig() {
         </div>
       </div>
 
-      {saveError ? <div className="text-danger-light text-xs">{saveError}</div> : null}
+      {saveError ? <div className="text-danger-light text-xs">{t(saveError)}</div> : null}
     </div>
   );
 }

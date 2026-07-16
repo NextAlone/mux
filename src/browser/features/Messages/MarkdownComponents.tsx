@@ -11,6 +11,7 @@ import { resolveBrowserLocalhostProxyTemplate } from "@/browser/utils/browserLoc
 import { normalizeLocalhostProxyUrl } from "@/common/utils/localhostProxyUrl";
 import { InlineSkillPreviewContext } from "./InlineSkillPreviewContext";
 import { INTERNAL_INLINE_SKILL_HREF_PREFIX } from "./inlineSkillMarkdown";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 interface CodeProps {
   node?: unknown;
@@ -159,6 +160,7 @@ export function getCurrentHighlightedCodeBlockLines(
  * Displays code with line numbers in a CSS grid
  */
 const CodeBlock: React.FC<CodeBlockProps> = ({ code, language, highlightLanguage }) => {
+  const { t } = useLanguage();
   const [highlighted, setHighlighted] = useState<HighlightedCodeBlockLines | null>(null);
 
   const shikiLanguage = highlightLanguage ?? language;
@@ -249,7 +251,7 @@ const CodeBlock: React.FC<CodeBlockProps> = ({ code, language, highlightLanguage
         <button
           type="button"
           className="copy-button code-run-button"
-          aria-label="Run command"
+          aria-label={t("Run command")}
           onClick={() => openTerminal?.({ initialCommand: runnableCommand })}
         >
           <Play className="copy-icon" />

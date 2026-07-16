@@ -12,6 +12,7 @@ import type {
   RefreshTrigger,
   RefreshFailureInfo,
 } from "@/browser/utils/RefreshController";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 interface RefreshButtonProps {
   onClick: () => void;
@@ -36,6 +37,7 @@ const TRIGGER_LABELS: Record<RefreshTrigger, string> = {
 };
 
 export const RefreshButton: React.FC<RefreshButtonProps> = (props) => {
+  const { t } = useLanguage();
   const {
     onClick,
     isLoading = false,
@@ -106,7 +108,7 @@ export const RefreshButton: React.FC<RefreshButtonProps> = (props) => {
     <Tooltip>
       <TooltipTrigger asChild>
         <button
-          aria-label="Refresh diff"
+          aria-label={t("Refresh diff")}
           data-testid="review-refresh"
           data-last-refresh-trigger={lastRefreshInfo?.trigger ?? ""}
           data-last-refresh-timestamp={lastRefreshInfo?.timestamp ?? ""}
@@ -144,20 +146,22 @@ export const RefreshButton: React.FC<RefreshButtonProps> = (props) => {
       </TooltipTrigger>
       <TooltipContent side="bottom" align="start">
         {disabled ? (
-          "Finish editing review note to refresh"
+          t("Finish editing review note to refresh")
         ) : animationState !== "idle" ? (
-          "Refreshing..."
+          t("Refreshing...")
         ) : (
           <span>
-            Refresh diff ({formatKeybind(KEYBINDS.REFRESH_REVIEW)})
+            {t("Refresh diff")} ({formatKeybind(KEYBINDS.REFRESH_REVIEW)})
             {refreshStatus === "error" && lastRefreshFailure && (
               <span className="text-danger-soft block text-[10px]">
-                Last refresh failed: {lastRefreshFailure.errorMessage}
+                {t("Last refresh failed:")}
+                {lastRefreshFailure.errorMessage}
               </span>
             )}
             {lastRefreshInfo && (
               <span className="text-muted block text-[10px]">
-                Last: {formatRelativeTimeCompact(lastRefreshInfo.timestamp)} via{" "}
+                {t("Last:")}
+                {formatRelativeTimeCompact(lastRefreshInfo.timestamp)} {t("via")}{" "}
                 {TRIGGER_LABELS[lastRefreshInfo.trigger] ?? lastRefreshInfo.trigger}
               </span>
             )}

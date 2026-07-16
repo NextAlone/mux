@@ -7,6 +7,7 @@ import { useTaskDelegationMode } from "@/browser/hooks/useTaskDelegationMode";
 import { isAgentDescriptorExecLikeEditingCapable } from "@/common/utils/agentTools";
 import { CommandIds } from "@/browser/utils/commandIds";
 import { Tooltip, TooltipContent, TooltipTrigger } from "../Tooltip/Tooltip";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 interface TaskDelegationToggleProps {
   busy: boolean;
@@ -14,6 +15,7 @@ interface TaskDelegationToggleProps {
 }
 
 export function TaskDelegationToggle(props: TaskDelegationToggleProps) {
+  const { t } = useLanguage();
   const { agentId, agents, loaded } = useAgent();
   const [mode, setMode] = useTaskDelegationMode();
   const registerSource = useOptionalCommandRegistry()?.registerSource;
@@ -52,7 +54,9 @@ export function TaskDelegationToggle(props: TaskDelegationToggleProps) {
   }
 
   const active = mode === "proactive";
-  const label = `Proactive task delegation preference: ${active ? "on" : "off"}.`;
+  const label = active
+    ? t("Proactive task delegation is on.")
+    : t("Proactive task delegation is off.");
 
   return (
     <Tooltip>
@@ -65,8 +69,8 @@ export function TaskDelegationToggle(props: TaskDelegationToggleProps) {
           aria-disabled={props.busy}
           aria-label={
             props.busy
-              ? `${label} It can be changed after the current turn finishes.`
-              : `${label} Click to toggle.`
+              ? `${label} ${t("It can be changed after the current turn finishes.")}`
+              : `${label} ${t("Click to toggle.")}`
           }
           onClick={() => {
             if (!props.busy) {
@@ -81,8 +85,8 @@ export function TaskDelegationToggle(props: TaskDelegationToggleProps) {
       </TooltipTrigger>
       <TooltipContent align="center">
         {props.busy
-          ? "Task delegation mode can be changed after the current turn finishes."
-          : "Prefer proactive delegation on the next eligible user turn when useful."}
+          ? t("Task delegation mode can be changed after the current turn finishes.")
+          : t("Prefer proactive delegation on the next eligible user turn when useful.")}
       </TooltipContent>
     </Tooltip>
   );

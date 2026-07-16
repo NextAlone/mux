@@ -5,6 +5,7 @@ import { useProvidersConfig } from "@/browser/hooks/useProvidersConfig";
 import { useReasoningMode } from "@/browser/hooks/useReasoningMode";
 import { useRouting } from "@/browser/hooks/useRouting";
 import { Tooltip, TooltipTrigger, TooltipContent } from "../Tooltip/Tooltip";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 interface ProModeToggleProps {
   modelString: string;
@@ -20,6 +21,7 @@ interface ProModeToggleProps {
  * the resolved route, which openaiProModeAvailable re-checks.
  */
 export const ProModeToggle: React.FC<ProModeToggleProps> = (props) => {
+  const { t } = useLanguage();
   const [reasoningMode, setReasoningMode] = useReasoningMode();
   // Availability mirrors the send path (see openaiProModeAvailable): hides for
   // chatCompletions wire format, gateway routes, and Codex OAuth auth.
@@ -46,7 +48,11 @@ export const ProModeToggle: React.FC<ProModeToggleProps> = (props) => {
           data-component="ProModeToggle"
           data-pro-mode-toggle
           aria-pressed={isActive}
-          aria-label={`Pro reasoning mode: ${isActive ? "on" : "off"}. Click to toggle.`}
+          aria-label={
+            isActive
+              ? t("Pro reasoning mode is on. Click to toggle.")
+              : t("Pro reasoning mode is off. Click to toggle.")
+          }
           onClick={() => setReasoningMode(isActive ? "standard" : "pro")}
           className="hover:bg-hover shrink-0 rounded-sm bg-transparent px-1 text-center text-[11px] transition-all duration-200 select-none"
           style={
@@ -55,11 +61,11 @@ export const ProModeToggle: React.FC<ProModeToggleProps> = (props) => {
               : { color: "var(--color-text-secondary)", fontWeight: 400 }
           }
         >
-          PRO
+          {t("PRO")}
         </button>
       </TooltipTrigger>
       <TooltipContent align="center">
-        Pro reasoning mode: slower, more thorough responses. Saved per workspace.
+        {t("Pro reasoning mode: slower, more thorough responses. Saved per workspace.")}
       </TooltipContent>
     </Tooltip>
   );
