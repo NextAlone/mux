@@ -92,6 +92,7 @@ import { parseMuxDeepLink } from "../common/utils/deepLink";
 
 import { normalizeAndValidateExternalUrl } from "./utils/normalizeAndValidateExternalUrl";
 import { hasSameOrigin } from "./utils/hasSameOrigin";
+import { getDesktopDevServerOrigin } from "./utils/devServerOrigin";
 import assert from "../common/utils/assert";
 import { setOpenSSHHostKeyPolicyMode } from "@/node/runtime/sshConnectionPool";
 import { loadTokenizerModules } from "../node/utils/main/tokenizer";
@@ -151,8 +152,6 @@ if (isE2ETest) {
 const localhostProxyTemplate =
   // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing -- intentional: empty/whitespace-only env vars should be treated as unset
   process.env.MUX_PROXY_URI?.trim() || process.env.VSCODE_PROXY_URI?.trim() || undefined;
-
-const devServerPort = process.env.MUX_DEVSERVER_PORT ?? "5173";
 
 console.log(
   `Mux starting - version: ${(VERSION as { git?: string; buildTime?: string }).git ?? "(dev)"} (built: ${(VERSION as { git?: string; buildTime?: string }).buildTime ?? "dev-mode"})`
@@ -732,7 +731,12 @@ async function loadServices(): Promise<void> {
     return looksLikeWsl;
   });
 
-  electronIpcMain.on("mux:set-ui-language", (_event, value: unknown) => {
+  electronIpcMain.on("mux:set-ui-language", (event, value: unknown) => {
+    // The settings-bearing main renderer owns desktop language; secondary windows must not
+    // overwrite menus and tray labels with an independently initialized browser preference.
+    if (mainWindow == null || mainWindow.isDestroyed() || event.sender !== mainWindow.webContents) {
+      return;
+    }
     desktopLanguage = normalizeUiLanguage(value);
     createMenu();
     updateTrayMenu();
@@ -857,8 +861,7 @@ function createWindow() {
   mainWindowFinishedLoading = false;
 
   const useDevServer = (isE2ETest && !forceDistLoad) || (!app.isPackaged && !forceDistLoad);
-  const devHost = process.env.MUX_DEVSERVER_HOST ?? "127.0.0.1";
-  const devServerUrl = `http://${devHost}:${devServerPort}`;
+  const devServerUrl = getDesktopDevServerOrigin();
   let devServerRetryTimeout: ReturnType<typeof setTimeout> | null = null;
   let devServerRetryAttempt = 0;
 

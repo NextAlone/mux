@@ -7,6 +7,7 @@
 
 import { app, BrowserWindow, shell } from "electron";
 import * as path from "path";
+import { getDesktopDevServerOrigin } from "@/desktop/utils/devServerOrigin";
 import { normalizeAndValidateExternalUrl } from "@/desktop/utils/normalizeAndValidateExternalUrl";
 import { log } from "@/node/services/log";
 import type { Config } from "@/node/config";
@@ -117,9 +118,11 @@ export class TerminalWindowManager {
     }
 
     if (useDevServer) {
-      // Development mode - load from Vite dev server
+      // Use the main renderer's exact origin so localStorage-backed settings stay shared.
       const params = new URLSearchParams(queryParams);
-      await terminalWindow.loadURL(`http://localhost:5173/terminal.html?${params.toString()}`);
+      await terminalWindow.loadURL(
+        `${getDesktopDevServerOrigin()}/terminal.html?${params.toString()}`
+      );
       terminalWindow.webContents.openDevTools();
     } else {
       // Production mode (or E2E dist mode) - load from built files

@@ -18,4 +18,11 @@ describe("UI language", () => {
     expect(translateDesktopUi("zh-CN", "Unknown label")).toBe("Unknown label");
     expect(translateDesktopUi("zh-CN", "Edit")).not.toBe("Edit");
   });
+
+  test.each(["constructor", "toString", "__proto__"])(
+    "does not expose Object prototype value for %s",
+    (text) => {
+      expect(translateDesktopUi("zh-CN", text)).toBe(text);
+    }
+  );
 });

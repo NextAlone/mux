@@ -13,6 +13,7 @@ function LanguageProbe() {
       <span>{language}</span>
       <span>{t("Settings")}</span>
       <span>{t("Untranslated")}</span>
+      <span data-testid="prototype-translation">{t("constructor")}</span>
       <button type="button" onClick={() => setLanguage("zh-CN")}>
         Switch
       </button>
@@ -40,6 +41,7 @@ describe("LanguageContext", () => {
     expect(view.getByText("zh-CN")).toBeTruthy();
     expect(view.getByText("设置")).toBeTruthy();
     expect(view.getByText("Untranslated")).toBeTruthy();
+    expect(view.getByTestId("prototype-translation").textContent).toBe("constructor");
     expect(localStorage.getItem(UI_LANGUAGE_KEY)).toBe(JSON.stringify("zh-CN"));
     expect(document.documentElement.lang).toBe("zh-CN");
   });

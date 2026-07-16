@@ -1,3 +1,5 @@
+import { translateExact } from "./translateExact";
+
 export type UiLanguage = "en" | "zh-CN";
 
 export function normalizeUiLanguage(value: unknown): UiLanguage {
@@ -56,5 +58,5 @@ const DESKTOP_ZH_CN: Record<string, string> = {
 };
 
 export function translateDesktopUi(language: UiLanguage, text: string): string {
-  return language === "zh-CN" ? (DESKTOP_ZH_CN[text] ?? text) : text;
+  return language === "zh-CN" ? translateExact(DESKTOP_ZH_CN, text) : text;
 }
