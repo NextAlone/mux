@@ -95,7 +95,9 @@ function normalizeText(text: string): string {
 }
 
 function containsEnglishWords(text: string): boolean {
-  return /[A-Za-z]{2,}/.test(normalizeText(text));
+  // JSX entity names are markup, not visible English copy.
+  const visibleText = normalizeText(text).replace(/&(?:[a-z]+|#\d+|#x[\da-f]+);/gi, "");
+  return /[A-Za-z]{2,}/.test(visibleText);
 }
 
 function isIgnored(sourceFile: ts.SourceFile, node: ts.Node): boolean {
