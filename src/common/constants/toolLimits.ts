@@ -10,6 +10,12 @@ export const BASH_MAX_FILE_BYTES = 100 * 1024; // 100KB max to save to temp file
 export const BASH_TRUNCATE_MAX_TOTAL_BYTES = 1024 * 1024; // 1MB total output
 export const BASH_TRUNCATE_MAX_FILE_BYTES = 1024 * 1024; // 1MB file limit (same as total for IPC)
 
+/** Maximum number of syntax symbols returned by one module_report call. */
+export const CODE_STRUCTURE_MAX_SYMBOLS = 200;
+
+/** Match file_read's total response budget for exact symbol source. */
+export const CODE_STRUCTURE_MAX_SOURCE_BYTES = 16 * 1024;
+
 export const ADVISOR_LIVE_OUTPUT_MAX_CHARS = 256 * 1024;
 
 // tmpfile policy limits (AI agent only)

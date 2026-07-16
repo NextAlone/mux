@@ -90,6 +90,23 @@ describe("supportsAnthropicNativeWebFetch", () => {
 });
 
 describe("getToolsForModel", () => {
+  test("includes executable code structure tools", async () => {
+    const tools = await getToolsForModel(
+      "noop:model",
+      {
+        cwd: process.cwd(),
+        runtime: new LocalRuntime(process.cwd()),
+        runtimeTempDir: "/tmp",
+      },
+      "ws-code-structure",
+      createInitStateManager()
+    );
+
+    expect(tools.module_report?.execute).toBeDefined();
+    expect(tools.read_symbol?.execute).toBeDefined();
+    expect(tools.read_enclosing?.execute).toBeDefined();
+  });
+
   test("only includes send_follow_up for a top-level stream with a runtime", async () => {
     const runtime = new LocalRuntime(process.cwd());
     const initStateManager = createInitStateManager();

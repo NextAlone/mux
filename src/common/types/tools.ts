@@ -22,6 +22,9 @@ import type {
   MuxAgentsReadToolResultSchema,
   MuxAgentsWriteToolResultSchema,
   FileReadToolResultSchema,
+  ModuleReportToolResultSchema,
+  ReadEnclosingToolResultSchema,
+  ReadSymbolToolResultSchema,
   HeartbeatToolResultSchema,
   MemoryToolResultSchema,
   AttachFileToolResultSchema,
@@ -132,6 +135,13 @@ export interface ToolOutputUiOnlyFields {
 
 // FileReadToolResult derived from Zod schema (single source of truth)
 export type FileReadToolResult = z.infer<typeof FileReadToolResultSchema>;
+
+export type ModuleReportToolArgs = z.infer<typeof TOOL_DEFINITIONS.module_report.schema>;
+export type ModuleReportToolResult = z.infer<typeof ModuleReportToolResultSchema>;
+export type ReadSymbolToolArgs = z.infer<typeof TOOL_DEFINITIONS.read_symbol.schema>;
+export type ReadSymbolToolResult = z.infer<typeof ReadSymbolToolResultSchema>;
+export type ReadEnclosingToolArgs = z.infer<typeof TOOL_DEFINITIONS.read_enclosing.schema>;
+export type ReadEnclosingToolResult = z.infer<typeof ReadEnclosingToolResultSchema>;
 
 // Heartbeat tool types, derived from schema (avoid drift)
 export type HeartbeatToolArgs = z.infer<typeof TOOL_DEFINITIONS.heartbeat.schema>;

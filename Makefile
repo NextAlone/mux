@@ -63,11 +63,16 @@ ESBUILD_SERVER_FLAGS := --bundle --platform=node --target=node22 --format=cjs --
 # Common esbuild flags for tokenizer worker bundle used by server-bundle runtime.
 ESBUILD_TOKENIZER_WORKER_FLAGS := --bundle --platform=node --target=node22 --format=cjs --outfile=dist/runtime/tokenizer.worker.js --minify
 
+# Common esbuild flags for the code-structure worker used by server-bundle runtime.
+ESBUILD_CODE_STRUCTURE_WORKER_FLAGS := --bundle --platform=node --target=node22 --format=cjs --outfile=dist/runtime/codeStructureWorker.js --minify
+
+CODE_STRUCTURE_ASSET_STAMP := dist/.code-structure-assets
+
 # Include formatting rules
 include fmt.mk
 
 .PHONY: all build dev start clean help
-.PHONY: build-renderer version build-icons build-static build-docker-runtime verify-docker-runtime-artifacts
+.PHONY: build-renderer version build-icons build-static build-code-structure-assets build-docker-runtime verify-docker-runtime-artifacts
 .PHONY: lint lint-fix typecheck static-check static-check-full
 .PHONY: test test-unit test-integration test-watch test-coverage test-e2e test-e2e-perf smoke-test
 .PHONY: dist dist-mac dist-win dist-linux install-mac-arm64 install-mac-arm64-fast dist-mac-arm64-dir check-appimage-icons check-mac-attach-file-runtime
@@ -213,7 +218,14 @@ build: node_modules/.installed src/version.ts build-renderer build-main build-pr
 	@NODE_ENV=production bun x tsc-alias -p tsconfig.main.json
 	@$(MAKE) check-node-dist-aliases
 
-build-main: node_modules/.installed dist/cli/index.js dist/cli/api.mjs ## Build main process
+build-main: node_modules/.installed build-code-structure-assets dist/cli/index.js dist/cli/api.mjs ## Build main process
+
+build-code-structure-assets: $(CODE_STRUCTURE_ASSET_STAMP) ## Copy portable parser WASM assets
+
+$(CODE_STRUCTURE_ASSET_STAMP): scripts/copy-code-structure-assets.ts package.json bun.lock node_modules/.installed
+	@echo "Copying code structure WASM assets..."
+	@bun scripts/copy-code-structure-assets.ts
+	@touch $(CODE_STRUCTURE_ASSET_STAMP)
 
 BUILTIN_AGENTS_GENERATED := src/node/services/agentDefinitions/builtInAgentContent.generated.ts
 BUILTIN_SKILLS_GENERATED := src/node/services/agentSkills/builtInSkillContent.generated.ts
@@ -280,11 +292,13 @@ build-static: ## Copy static assets to dist
 		cp "$$f" "dist/typescript-lib/$$(basename $$f).txt"; \
 	done
 
-build-docker-runtime: build-main build-renderer build-static dist/runtime/server-bundle.js dist/runtime/tokenizer.worker.js dist/static/.copied ## Build Docker runtime artifacts
+build-docker-runtime: build-main build-renderer build-static dist/runtime/server-bundle.js dist/runtime/tokenizer.worker.js dist/runtime/codeStructureWorker.js dist/static/.copied ## Build Docker runtime artifacts
 
 verify-docker-runtime-artifacts: build-docker-runtime ## Verify required Docker runtime artifacts exist
 	@test -f dist/runtime/server-bundle.js
 	@test -f dist/runtime/tokenizer.worker.js
+	@test -f dist/runtime/codeStructureWorker.js
+	@test -f dist/runtime/assets/manifest.json
 	@test -f dist/static/splash.html
 	@test -f dist/typescript-lib/lib.es2023.d.ts.txt
 
@@ -303,6 +317,13 @@ dist/runtime/tokenizer.worker.js: build-main
 	@test -f dist/node/utils/main/tokenizer.worker.js
 	@mkdir -p dist/runtime
 	@bun x esbuild dist/node/utils/main/tokenizer.worker.js $(ESBUILD_TOKENIZER_WORKER_FLAGS)
+
+# Bundle code-structure worker next to server-bundle.js; it loads grammar WASM from runtime/assets.
+dist/runtime/codeStructureWorker.js: build-main
+	@echo "Bundling code structure worker for Docker..."
+	@test -f dist/node/services/codeStructure/codeStructureWorker.js
+	@mkdir -p dist/runtime
+	@bun x esbuild dist/node/services/codeStructure/codeStructureWorker.js $(ESBUILD_CODE_STRUCTURE_WORKER_FLAGS)
 
 # Docker runtime keeps static assets under dist/static/ for compatibility with existing image layout.
 dist/static/.copied: static/splash.html

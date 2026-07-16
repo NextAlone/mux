@@ -1617,6 +1617,66 @@ export const TOOL_DEFINITIONS = {
       })
     ),
   },
+  module_report: {
+    description:
+      "Return a compact syntax outline for a Python, JavaScript, TypeScript, Go, or Rust file. " +
+      "Use this before reading a whole source file; it reports symbols and ranges but omits bodies.",
+    schema: z.preprocess(
+      normalizeFilePath,
+      z.object({
+        path: z.string().describe("Source file path, absolute or relative to the workspace"),
+      })
+    ),
+  },
+  read_symbol: {
+    description:
+      "Read the exact source lines for one symbol in a Python, JavaScript, TypeScript, Go, or Rust file. " +
+      "Use a qualified name from module_report when available.",
+    schema: z.preprocess(
+      normalizeFilePath,
+      z.object({
+        path: z.string().describe("Source file path, absolute or relative to the workspace"),
+        symbol: z.string().min(1).describe("Exact symbol name or qualified name"),
+        kind: z
+          .enum([
+            "function",
+            "method",
+            "class",
+            "interface",
+            "type",
+            "enum",
+            "struct",
+            "trait",
+            "impl",
+            "module",
+            "namespace",
+            "constant",
+            "property",
+            "constructor",
+          ])
+          .nullish()
+          .describe("Optional symbol kind used to disambiguate matching names"),
+        startLine: z
+          .number()
+          .int()
+          .positive()
+          .nullish()
+          .describe("Optional 1-based declaration line used to disambiguate matching names"),
+      })
+    ),
+  },
+  read_enclosing: {
+    description:
+      "Read the exact source lines for the smallest named symbol enclosing a line in a Python, " +
+      "JavaScript, TypeScript, Go, or Rust file.",
+    schema: z.preprocess(
+      normalizeFilePath,
+      z.object({
+        path: z.string().describe("Source file path, absolute or relative to the workspace"),
+        line: z.number().int().positive().describe("1-based source line to inspect"),
+      })
+    ),
+  },
   memory: {
     description:
       "Manage your persistent memory directory (experiment). " +
@@ -2845,6 +2905,117 @@ export const FileReadToolResultSchema = z.union([
   }),
 ]);
 
+interface CodeSymbolSchemaValue {
+  name: string;
+  qualifiedName: string;
+  kind:
+    | "function"
+    | "method"
+    | "class"
+    | "interface"
+    | "type"
+    | "enum"
+    | "struct"
+    | "trait"
+    | "impl"
+    | "module"
+    | "namespace"
+    | "constant"
+    | "property"
+    | "constructor";
+  startLine: number;
+  endLine: number;
+  signature?: string;
+  documentation?: string;
+  modifiers?: string[];
+  exported?: boolean;
+  visibility?: "public" | "protected" | "private";
+  convention?: "public" | "private";
+  members?: CodeSymbolSchemaValue[];
+}
+
+const CodeSymbolBaseResultSchema = z.object({
+  name: z.string(),
+  qualifiedName: z.string(),
+  kind: z.enum([
+    "function",
+    "method",
+    "class",
+    "interface",
+    "type",
+    "enum",
+    "struct",
+    "trait",
+    "impl",
+    "module",
+    "namespace",
+    "constant",
+    "property",
+    "constructor",
+  ]),
+  startLine: z.number().int().positive(),
+  endLine: z.number().int().positive(),
+  signature: z.string().optional(),
+  documentation: z.string().optional(),
+  modifiers: z.array(z.string()).optional(),
+  exported: z.boolean().optional(),
+  visibility: z.enum(["public", "protected", "private"]).optional(),
+  convention: z.enum(["public", "private"]).optional(),
+});
+
+export const CodeSymbolResultSchema: z.ZodType<CodeSymbolSchemaValue> = z.lazy(() =>
+  CodeSymbolBaseResultSchema.extend({
+    members: z.array(CodeSymbolResultSchema).optional(),
+  })
+);
+
+export const ModuleReportToolResultSchema = z.union([
+  z.object({
+    success: z.literal(true),
+    path: z.string(),
+    language: z.enum(["python", "typescript", "tsx", "javascript", "go", "rust"]),
+    lineCount: z.number().int().nonnegative(),
+    complete: z.boolean(),
+    warnings: z.array(z.string()),
+    symbols: z.array(CodeSymbolResultSchema),
+    truncated: z.boolean(),
+    warning: z.string().optional(),
+  }),
+  z.object({
+    success: z.literal(false),
+    error: z.string(),
+  }),
+]);
+
+export const ReadCodeToolResultSchema = z.union([
+  z
+    .object({
+      success: z.literal(true),
+      path: z.string(),
+      language: z.enum(["python", "typescript", "tsx", "javascript", "go", "rust"]),
+      source: z.string(),
+      warning: z.string().optional(),
+    })
+    .merge(CodeSymbolBaseResultSchema),
+  z.object({
+    success: z.literal(false),
+    reason: z.literal("ambiguous"),
+    error: z.string(),
+    candidates: z.array(CodeSymbolResultSchema),
+  }),
+  z.object({
+    success: z.literal(false),
+    reason: z.enum(["not_found", "no_enclosing_symbol", "unsupported", "too_large", "error"]),
+    error: z.string(),
+    candidates: z.array(CodeSymbolResultSchema).optional(),
+    startLine: z.number().int().positive().optional(),
+    endLine: z.number().int().positive().optional(),
+  }),
+]);
+
+export const ReadSymbolToolResultSchema = ReadCodeToolResultSchema;
+export const ReadEnclosingToolResultSchema = ReadCodeToolResultSchema;
+
 const AttachFileToolTextPartSchema = z
   .object({
     type: z.literal("text"),
@@ -3017,6 +3188,9 @@ export type BridgeableToolName =
   | "bash_background_list"
   | "bash_background_terminate"
   | "file_read"
+  | "module_report"
+  | "read_symbol"
+  | "read_enclosing"
   | "attach_file"
   | "agent_skill_read"
   | "agent_skill_read_file"
@@ -3048,6 +3222,9 @@ export const RESULT_SCHEMAS: Record<BridgeableToolName, z.ZodType> = {
   bash_background_list: BashBackgroundListResultSchema,
   bash_background_terminate: BashBackgroundTerminateResultSchema,
   file_read: FileReadToolResultSchema,
+  module_report: ModuleReportToolResultSchema,
+  read_symbol: ReadSymbolToolResultSchema,
+  read_enclosing: ReadEnclosingToolResultSchema,
   attach_file: AttachFileToolResultSchema,
   agent_skill_read: AgentSkillReadToolResultSchema,
   agent_skill_read_file: AgentSkillReadFileToolResultSchema,
@@ -3150,6 +3327,9 @@ export function getAvailableTools(
     "mux_config_read",
     "mux_config_write",
     "file_read",
+    "module_report",
+    "read_symbol",
+    "read_enclosing",
     "attach_file",
     "desktop_screenshot",
     "desktop_move_mouse",

@@ -33,6 +33,25 @@ describe("ProposeNameToolArgsSchema", () => {
 });
 
 describe("TOOL_DEFINITIONS", () => {
+  it("accepts null optional read_symbol selectors", () => {
+    const parsed = TOOL_DEFINITIONS.read_symbol.schema.safeParse({
+      path: "service.py",
+      symbol: "Service.run",
+      kind: null,
+      startLine: null,
+    });
+
+    expect(parsed.success).toBe(true);
+  });
+
+  it("exposes code structure tools in the base allowlist", () => {
+    const tools = getAvailableTools("noop:model");
+
+    expect(tools).toContain("module_report");
+    expect(tools).toContain("read_symbol");
+    expect(tools).toContain("read_enclosing");
+  });
+
   it("accepts custom subagent_type IDs (deprecated alias)", () => {
     const parsed = TaskToolArgsSchema.safeParse({
       subagent_type: "potato",

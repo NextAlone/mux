@@ -3,6 +3,9 @@ import type { LanguageModelV2Usage } from "@ai-sdk/provider";
 import type { BackgroundWorkAttentionPolicy } from "@/common/types/backgroundWorkAttention";
 import { cloneToolPreservingDescriptors } from "@/common/utils/tools/cloneToolPreservingDescriptors";
 import { createFileReadTool } from "@/node/services/tools/file_read";
+import { createModuleReportTool } from "@/node/services/tools/module_report";
+import { createReadEnclosingTool } from "@/node/services/tools/read_enclosing";
+import { createReadSymbolTool } from "@/node/services/tools/read_symbol";
 import { createAttachFileTool } from "@/node/services/tools/attach_file";
 import { createImageGenerateTool } from "@/node/services/tools/image_generate";
 import { createBashTool } from "@/node/services/tools/bash";
@@ -564,6 +567,9 @@ export async function getToolsForModel(
   // Wrap them to handle init waiting centrally instead of in each tool
   const runtimeTools: Record<string, Tool> = {
     file_read: wrap(createFileReadTool(config)),
+    module_report: wrap(createModuleReportTool(config)),
+    read_symbol: wrap(createReadSymbolTool(config)),
+    read_enclosing: wrap(createReadEnclosingTool(config)),
     attach_file: wrap(createAttachFileTool(config)),
     image_generate: wrap(createImageGenerateTool(config)),
     agent_skill_read: wrap(createAgentSkillReadTool(config)),
