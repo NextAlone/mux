@@ -178,8 +178,8 @@ process.on("uncaughtException", (error: unknown) => {
   // Show error dialog in production
   if (app.isPackaged) {
     dialog.showErrorBox(
-      "Application Error",
-      `An unexpected error occurred:\n\n${message}\n\nStack trace:\n${stack ?? "No stack trace available"}`
+      desktopT("Application Error"),
+      `${desktopT("An unexpected error occurred:")}\n\n${message}\n\n${desktopT("Stack trace:")}\n${stack ?? desktopT("No stack trace available")}`
     );
   }
 });
@@ -192,8 +192,8 @@ process.on("unhandledRejection", (reason, promise) => {
     const message = getErrorMessage(reason);
     const stack = reason instanceof Error ? reason.stack : undefined;
     dialog.showErrorBox(
-      "Unhandled Promise Rejection",
-      `An unhandled promise rejection occurred:\n\n${message}\n\nStack trace:\n${stack ?? "No stack trace available"}`
+      desktopT("Unhandled Promise Rejection"),
+      `${desktopT("An unhandled promise rejection occurred:")}\n\n${message}\n\n${desktopT("Stack trace:")}\n${stack ?? desktopT("No stack trace available")}`
     );
   }
 });
@@ -830,8 +830,8 @@ async function loadServices(): Promise<void> {
     const res = await dialog.showOpenDialog(win, {
       // Hide hidden entries so the new-project picker stays focused on visible folders.
       properties: ["openDirectory", "createDirectory"],
-      title: "Select Project Directory",
-      buttonLabel: "Select Project",
+      title: desktopT("Select Project Directory"),
+      buttonLabel: desktopT("Select Project"),
       defaultPath,
     });
 
@@ -1215,8 +1215,8 @@ if (gotTheLock) {
         error instanceof Error ? `${error.message}\n\n${error.stack ?? ""}` : String(error);
 
       dialog.showErrorBox(
-        "Startup Failed",
-        `The application failed to start:\n\n${errorMessage}\n\nPlease check the console for details.`
+        desktopT("Startup Failed"),
+        `${desktopT("The application failed to start:")}\n\n${errorMessage}\n\n${desktopT("Please check the console for details.")}`
       );
 
       // Quit after showing error
