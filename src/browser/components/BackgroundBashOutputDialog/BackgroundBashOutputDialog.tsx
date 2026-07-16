@@ -152,7 +152,10 @@ const BackgroundBashOutputViewer: React.FC<{ workspaceId: string; processId: str
             <>
               {" · "}
               {t("watching")} {monitor.filter_exclude && `${t("not")} `}/{monitor.filter}/ ·{" "}
-              {monitor.totalMatches} {t(monitor.totalMatches === 1 ? "match" : "matches")}
+              {t(monitor.totalMatches === 1 ? "{count} match" : "{count} matches").replace(
+                "{count}",
+                String(monitor.totalMatches)
+              )}
               {monitor.stopped && <> {t("· stopped")}</>}
             </>
           )}

@@ -110,8 +110,10 @@ export const BackgroundProcessesBanner: React.FC<BackgroundProcessesBannerProps>
                     {proc.monitor && (
                       <div className="text-muted truncate text-[10px]">
                         {t("watching /")}
-                        {proc.monitor.filter}/ · {proc.monitor.totalMatches}{" "}
-                        {t(proc.monitor.totalMatches === 1 ? "match" : "matches")}
+                        {proc.monitor.filter}/ ·{" "}
+                        {t(
+                          proc.monitor.totalMatches === 1 ? "{count} match" : "{count} matches"
+                        ).replace("{count}", String(proc.monitor.totalMatches))}
                         {proc.monitor.stopped && <> {t("· stopped")}</>}
                       </div>
                     )}
