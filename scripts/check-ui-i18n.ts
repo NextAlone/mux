@@ -5,8 +5,11 @@ import { ZH_CN } from "../src/browser/i18n/translations/zh-CN";
 import { FEATURES_ZH_CN } from "../src/browser/i18n/translations/zh-CN/features";
 import { SETTINGS_ZH_CN } from "../src/browser/i18n/translations/zh-CN/settings";
 import { SHELL_ZH_CN } from "../src/browser/i18n/translations/zh-CN/shell";
+import { translateDesktopUi } from "../src/common/i18n/uiLanguage";
 
-const SOURCE_ROOT = path.resolve(import.meta.dir, "../src/browser");
+const BROWSER_SOURCE_ROOT = path.resolve(import.meta.dir, "../src/browser");
+const DESKTOP_SOURCE_ROOT = path.resolve(import.meta.dir, "../src/desktop");
+const CHART_SERIES_COMPONENTS = new Set(["Area", "Bar", "Line", "Pie", "Radar", "Scatter"]);
 const USER_VISIBLE_ATTRIBUTES = new Set([
   "alt",
   "aria-label",
@@ -147,6 +150,13 @@ function collectRenderableStrings(node: ts.Node, output: ts.StringLiteralLike[])
   }
 }
 
+function getJsxTagName(attribute: ts.JsxAttribute): string | null {
+  const parent = attribute.parent.parent;
+  if (!ts.isJsxOpeningElement(parent) && !ts.isJsxSelfClosingElement(parent)) return null;
+  const tagName = parent.tagName.getText();
+  return tagName.split(".").at(-1) ?? null;
+}
+
 function auditFile(file: string): {
   findings: Finding[];
   missingTranslations: MissingTranslation[];
@@ -178,7 +188,9 @@ function auditFile(file: string): {
       addFinding(node, node.text);
     } else if (ts.isJsxAttribute(node)) {
       const attributeName = node.name.getText(sourceFile);
-      if (USER_VISIBLE_ATTRIBUTES.has(attributeName) && node.initializer) {
+      const chartSeriesName =
+        attributeName === "name" && CHART_SERIES_COMPONENTS.has(getJsxTagName(node) ?? "");
+      if ((USER_VISIBLE_ATTRIBUTES.has(attributeName) || chartSeriesName) && node.initializer) {
         if (ts.isStringLiteral(node.initializer)) {
           addFinding(node.initializer, node.initializer.text);
         } else if (ts.isJsxExpression(node.initializer) && node.initializer.expression) {
@@ -251,9 +263,49 @@ function auditFile(file: string): {
   return { findings, missingTranslations };
 }
 
-const auditResults = listSourceFiles(SOURCE_ROOT).map(auditFile);
+function auditDesktopFile(file: string): MissingTranslation[] {
+  const source = readFileSync(file, "utf8");
+  const sourceFile = ts.createSourceFile(
+    file,
+    source,
+    ts.ScriptTarget.Latest,
+    true,
+    file.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS
+  );
+  const missingTranslations: MissingTranslation[] = [];
+
+  const visit = (node: ts.Node) => {
+    if (
+      ts.isCallExpression(node) &&
+      ts.isIdentifier(node.expression) &&
+      node.expression.text === "desktopT" &&
+      node.arguments.length === 1
+    ) {
+      const keyNode = node.arguments[0];
+      if (
+        ts.isStringLiteralLike(keyNode) &&
+        containsEnglishWords(keyNode.text) &&
+        translateDesktopUi("zh-CN", keyNode.text) === keyNode.text &&
+        !isIgnored(sourceFile, node)
+      ) {
+        missingTranslations.push({
+          file: path.relative(path.resolve(import.meta.dir, ".."), file),
+          line: sourceFile.getLineAndCharacterOfPosition(keyNode.getStart(sourceFile)).line + 1,
+          key: keyNode.text,
+        });
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+
+  visit(sourceFile);
+  return missingTranslations;
+}
+
+const auditResults = listSourceFiles(BROWSER_SOURCE_ROOT).map(auditFile);
 const findings = auditResults.flatMap((result) => result.findings);
 const missingTranslations = auditResults.flatMap((result) => result.missingTranslations);
+const desktopMissingTranslations = listSourceFiles(DESKTOP_SOURCE_ROOT).flatMap(auditDesktopFile);
 const translationAreas = [
   ["shell", SHELL_ZH_CN],
   ["features", FEATURES_ZH_CN],
@@ -291,6 +343,16 @@ if (missingTranslations.length > 0) {
   console.error(`\n${missingTranslations.length} missing dictionary entrie(s) found.`);
 }
 
+if (desktopMissingTranslations.length > 0) {
+  console.error("Desktop translation calls missing a simplified Chinese dictionary entry:");
+  for (const finding of desktopMissingTranslations) {
+    console.error(`${finding.file}:${finding.line}: ${finding.key}`);
+  }
+  console.error(
+    `\n${desktopMissingTranslations.length} missing desktop dictionary entrie(s) found.`
+  );
+}
+
 if (translationConflicts.length > 0) {
   console.error("Translation areas define conflicting values for the same source text:");
   for (const conflict of translationConflicts) {
@@ -301,7 +363,12 @@ if (translationConflicts.length > 0) {
   console.error(`\n${translationConflicts.length} conflicting translation key(s) found.`);
 }
 
-if (findings.length > 0 || missingTranslations.length > 0 || translationConflicts.length > 0) {
+if (
+  findings.length > 0 ||
+  missingTranslations.length > 0 ||
+  desktopMissingTranslations.length > 0 ||
+  translationConflicts.length > 0
+) {
   process.exit(1);
 }
 
