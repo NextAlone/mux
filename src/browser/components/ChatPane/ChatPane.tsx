@@ -96,6 +96,7 @@ import {
   useBackgroundBashActions,
   useBackgroundBashError,
 } from "@/browser/contexts/BackgroundBashContext";
+import { hasWorkspaceRepository } from "@/browser/utils/workspaceCapabilities";
 import {
   buildEditingStateFromDisplayed,
   canEditDisplayedUserMessage,
@@ -317,6 +318,7 @@ const ChatPaneContent: React.FC<ChatPaneContentProps> = (props) => {
   // Transcript-only workspaces preserve historical chat and usage after the worktree is deleted,
   // so the transcript stays readable while new sends remain disabled.
   const meta = workspaceMetadata.get(workspaceId);
+  const hasRepository = hasWorkspaceRepository(meta);
   const transcriptOnly = meta?.transcriptOnly ?? false;
   const isPreStreamAgentTask =
     Boolean(meta?.parentWorkspaceId) && isBlockedPreStreamTaskStatus(meta?.taskStatus);
@@ -1432,18 +1434,20 @@ const ChatPaneContent: React.FC<ChatPaneContentProps> = (props) => {
                 <div className="text-placeholder flex h-full flex-1 flex-col items-center justify-center text-center [&_h3]:m-0 [&_h3]:mb-2.5 [&_h3]:text-base [&_h3]:font-medium [&_p]:m-0 [&_p]:text-[13px]">
                   <h3>No Messages Yet</h3>
                   <p>Send a message below to begin</p>
-                  <p className="text-muted mt-5 flex items-start gap-2 text-xs">
-                    <Lightbulb aria-hidden="true" className="mt-0.5 h-3 w-3 shrink-0" />
-                    <span>
-                      Tip: Add a{" "}
-                      <code className="bg-inline-code-dark-bg text-code-string rounded-[3px] px-1.5 py-0.5 font-mono text-[11px]">
-                        .mux/init
-                      </code>{" "}
-                      hook to your project to run setup commands
-                      <br />
-                      (e.g., install dependencies, build) when creating new workspaces
-                    </span>
-                  </p>
+                  {hasRepository && (
+                    <p className="text-muted mt-5 flex items-start gap-2 text-xs">
+                      <Lightbulb aria-hidden="true" className="mt-0.5 h-3 w-3 shrink-0" />
+                      <span>
+                        Tip: Add a{" "}
+                        <code className="bg-inline-code-dark-bg text-code-string rounded-[3px] px-1.5 py-0.5 font-mono text-[11px]">
+                          .mux/init
+                        </code>{" "}
+                        hook to your project to run setup commands
+                        <br />
+                        (e.g., install dependencies, build) when creating new workspaces
+                      </span>
+                    </p>
+                  )}
                 </div>
               ) : (
                 <BashCollapsedSummaryModeProvider>
@@ -1667,6 +1671,7 @@ const ChatPaneContent: React.FC<ChatPaneContentProps> = (props) => {
                   <TranscriptOnlyNoticePane />
                 ) : (
                   <ChatInputPane
+                    kind={meta?.kind}
                     workspaceId={workspaceId}
                     isTopLevelWorkspace={meta != null && !meta.parentWorkspaceId}
                     projectName={projectName}
@@ -1729,6 +1734,7 @@ const TranscriptOnlyNoticePane: React.FC = () => {
 };
 
 interface ChatInputPaneProps {
+  kind?: "scratch";
   workspaceId: string;
   isTopLevelWorkspace: boolean;
   projectName: string;
@@ -1868,6 +1874,7 @@ const ChatInputPane: React.FC<ChatInputPaneProps> = (props) => {
       <ChatInput
         key={props.workspaceId}
         variant="workspace"
+        kind={props.kind}
         workspaceId={props.workspaceId}
         isTopLevelWorkspace={props.isTopLevelWorkspace}
         runtimeType={getRuntimeTypeForTelemetry(props.runtimeConfig)}

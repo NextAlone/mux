@@ -28,10 +28,10 @@ export function LeftSidebar(props: LeftSidebarProps) {
   const isDesktop = isDesktopMode();
   const [isCollapseTransitionPending, setIsCollapseTransitionPending] = React.useState(false);
   const previousCollapsedRef = React.useRef(collapsed);
-  // Match the CSS gate for the mobile "overlay" sidebar; we don't show a drag handle in that mode.
-  const isMobileTouch =
-    typeof window !== "undefined" &&
-    window.matchMedia("(max-width: 768px) and (pointer: coarse)").matches;
+  // Match the CSS gate for the mobile "overlay" sidebar (width-only, any pointer
+  // type); we don't show a drag handle in that mode since CSS pins the width.
+  const isMobileOverlay =
+    typeof window !== "undefined" && window.matchMedia("(max-width: 768px)").matches;
 
   React.useLayoutEffect(() => {
     const wasCollapsed = previousCollapsedRef.current;
@@ -50,9 +50,9 @@ export function LeftSidebar(props: LeftSidebarProps) {
   }, [collapsed, isResizing]);
 
   const handleBeforeOpenSettings = () => {
-    // Keep settings navigation escapable on touch devices by dismissing the
+    // Keep settings navigation escapable on narrow viewports by dismissing the
     // off-canvas sidebar as soon as the user opens settings from this sidebar.
-    if (!collapsed && isMobileTouch) {
+    if (!collapsed && isMobileOverlay) {
       onToggleCollapsed();
     }
   };
@@ -106,7 +106,7 @@ export function LeftSidebar(props: LeftSidebarProps) {
           onToggleCollapsed={onToggleCollapsed}
         />
 
-        {!isVisuallyCollapsed && !isMobileTouch && onStartResize && (
+        {!isVisuallyCollapsed && !isMobileOverlay && onStartResize && (
           <div
             data-testid="left-sidebar-resize-handle"
             className={cn(

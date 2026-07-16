@@ -6,11 +6,19 @@ import * as path from "node:path";
 import { KNOWN_MODELS } from "@/common/constants/knownModels";
 import type { ProvidersConfigMap } from "@/common/orpc/types";
 import { StreamEndEventSchema } from "@/common/orpc/schemas/stream";
-import type { CompletedMessagePart, WorkflowRunAttachedEvent } from "@/common/types/stream";
+import type {
+  CompletedMessagePart,
+  ToolCallExecutionStartEvent,
+  WorkflowRunAttachedEvent,
+} from "@/common/types/stream";
 import { Ok, Err } from "@/common/types/result";
 import type { ToolPolicy } from "@/common/utils/tools/toolPolicy";
 import type { ToolSearchStreamState } from "@/common/utils/tools/toolCatalog";
 import { StreamManager, type ModelFallbackPrepareOptions } from "./streamManager";
+import type {
+  ActiveTurnThinkingOverride,
+  RebuildProviderOptionsForThinkingLevel,
+} from "./thinkingOverride";
 import { stripEncryptedContent } from "@/node/utils/messages/stripEncryptedContent";
 import * as aiSdk from "ai";
 import {
@@ -209,6 +217,7 @@ function createStreamInfoForTests(
     lastPartTimestamp: now,
     toolCompletionTimestamps: new Map<string, number>(),
     pendingWorkflowRunAttachments: new Map<string, unknown>(),
+    pendingToolExecutionStarts: new Map<string, number>(),
     model,
     metadataModel: overrides.metadataModel ?? model,
     historySequence: 1,
@@ -353,6 +362,107 @@ describe("StreamManager - workflow run attachments", () => {
       runId: "wfr_race",
       timestamp: timestamp + 1,
     });
+  });
+});
+
+describe("StreamManager - tool execution start timing", () => {
+  test("stamps executionStartedAt and emits tool-call-execution-start when the part already exists", () => {
+    const streamManager = new StreamManager(historyService);
+    const workspaceId = "execution-start-workspace";
+    const messageId = "execution-start-message";
+    // Seed the monotonic stream clock ahead of wall time: a raw Date.now() execution
+    // start would be <= the tool-call timestamp and reconnect replay's
+    // `executionStartedAt > cursor` repair predicate would never fire.
+    const timestamp = Date.now() + 60_000;
+    const streamInfo = createStreamInfoForTests({
+      messageId,
+      lastPartTimestamp: timestamp,
+      parts: [
+        {
+          type: "dynamic-tool",
+          toolCallId: "tool-call-1",
+          toolName: "bash",
+          input: { command: "echo hi" },
+          state: "input-available",
+          timestamp,
+        },
+      ],
+    });
+    getWorkspaceStreamsForTests(streamManager).set(workspaceId, streamInfo);
+
+    const events: ToolCallExecutionStartEvent[] = [];
+    streamManager.on("tool-call-execution-start", (event: ToolCallExecutionStartEvent) => {
+      events.push(event);
+    });
+
+    const handleToolExecutionStart = getPrivateMethodForTests<
+      (workspaceId: string, messageId: string, toolCallId: string) => void
+    >(streamManager, "handleToolExecutionStart");
+    handleToolExecutionStart.call(streamManager, workspaceId, messageId, "tool-call-1");
+
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      type: "tool-call-execution-start",
+      workspaceId,
+      messageId,
+      toolCallId: "tool-call-1",
+    });
+    // Cursor-monotonic: strictly after the tool-call part timestamp even when the wall
+    // clock has not advanced past it.
+    expect(events[0].timestamp).toBeGreaterThan(timestamp);
+
+    const parts = streamInfo.parts as Array<Record<string, unknown>>;
+    expect(parts[0].executionStartedAt).toBe(events[0].timestamp);
+  });
+
+  test("applies execution starts that arrive before the tool part lands", async () => {
+    const streamManager = new StreamManager(historyService);
+    const workspaceId = "execution-start-race-workspace";
+    const messageId = "execution-start-race-message";
+    const streamInfo = createStreamInfoForTests({ messageId, parts: [] });
+    getWorkspaceStreamsForTests(streamManager).set(workspaceId, streamInfo);
+
+    const events: ToolCallExecutionStartEvent[] = [];
+    streamManager.on("tool-call-execution-start", (event: ToolCallExecutionStartEvent) => {
+      events.push(event);
+    });
+
+    // execute() wins the race: no part yet, so the start is parked as pending.
+    const handleToolExecutionStart = getPrivateMethodForTests<
+      (workspaceId: string, messageId: string, toolCallId: string) => void
+    >(streamManager, "handleToolExecutionStart");
+    handleToolExecutionStart.call(streamManager, workspaceId, messageId, "tool-call-race");
+    expect(events).toHaveLength(0);
+
+    const appendPartAndEmit = getPrivateMethodForTests<
+      (
+        workspaceId: string,
+        streamInfo: Record<string, unknown>,
+        part: CompletedMessagePart,
+        schedulePartialWrite?: boolean
+      ) => Promise<void>
+    >(streamManager, "appendPartAndEmit");
+    await appendPartAndEmit.call(
+      streamManager,
+      workspaceId,
+      streamInfo,
+      {
+        type: "dynamic-tool",
+        toolCallId: "tool-call-race",
+        toolName: "bash",
+        input: { command: "echo hi" },
+        state: "input-available",
+        timestamp: Date.now(),
+      },
+      false
+    );
+
+    expect(events).toHaveLength(1);
+    expect(events[0].toolCallId).toBe("tool-call-race");
+
+    const parts = streamInfo.parts as Array<Record<string, unknown>>;
+    expect(parts[0].executionStartedAt).toBe(events[0].timestamp);
+    expect((streamInfo.pendingToolExecutionStarts as Map<string, number>).size).toBe(0);
   });
 });
 
@@ -4666,6 +4776,70 @@ describe("StreamManager - replayStream", () => {
 
     expect(replayedToolEnds).toEqual(["tool-new"]);
   });
+
+  test("replayStream replays queued tool parts whose execute() began after the cursor", async () => {
+    const streamManager = createReplayStreamManager();
+
+    const workspaceId = "ws-replay-exec-start";
+
+    const replayedToolStarts: Array<{ toolCallId: string; executionStartedAt?: number }> = [];
+    streamManager.on(
+      "tool-call-start",
+      (event: {
+        replay?: boolean | undefined;
+        toolCallId: string;
+        executionStartedAt?: number;
+      }) => {
+        expect(event.replay).toBe(true);
+        replayedToolStarts.push({
+          toolCallId: event.toolCallId,
+          executionStartedAt: event.executionStartedAt,
+        });
+      }
+    );
+
+    const streamInfo = {
+      state: "streaming",
+      messageId: "msg-exec-start",
+      model: "claude-sonnet-4",
+      historySequence: 1,
+      startTime: 123,
+      initialMetadata: {},
+      toolCompletionTimestamps: new Map(),
+      parts: [
+        {
+          // Queued before the cursor, still waiting for the execution lock: not replayed.
+          type: "dynamic-tool",
+          toolCallId: "tool-still-queued",
+          toolName: "bash",
+          input: {},
+          state: "input-available",
+          timestamp: 10,
+        },
+        {
+          // Queued before the cursor, execute() began after it: replayed with the
+          // enriched executionStartedAt so the renderer can start the elapsed timer.
+          type: "dynamic-tool",
+          toolCallId: "tool-started-after-cursor",
+          toolName: "bash",
+          input: {},
+          state: "input-available",
+          timestamp: 12,
+          executionStartedAt: 25,
+        },
+      ],
+    };
+
+    setReplayStreamInfo(streamManager, workspaceId, streamInfo);
+    stubReplayTokenTracker(streamManager);
+
+    await streamManager.replayStream(workspaceId, { afterTimestamp: 20 });
+
+    expect(replayedToolStarts).toEqual([
+      { toolCallId: "tool-started-after-cursor", executionStartedAt: 25 },
+    ]);
+  });
+
   test("replayStream emits replay usage-delta from tracked step/cumulative usage", async () => {
     const streamManager = createReplayStreamManager();
 
@@ -5312,7 +5486,7 @@ describe("StreamManager - tool search activeTools scoping", () => {
         { name: "slack_list_channels", description: "List channels", paramText: "" },
       ],
       deferredToolNames: new Set(["slack_send_message", "slack_list_channels"]),
-      allToolNames: ["bash", "tool_search", "slack_send_message", "slack_list_channels"],
+      allToolNames: ["bash", "tool_catalog_search", "slack_send_message", "slack_list_channels"],
       activatedToolNames: new Set(),
     };
 
@@ -5324,15 +5498,15 @@ describe("StreamManager - tool search activeTools scoping", () => {
     const prepareStep = capturePrepareStep(streamTextSpy);
 
     const firstStep = await prepareStep({ messages });
-    expect(firstStep?.activeTools).toEqual(["bash", "tool_search"]);
+    expect(firstStep?.activeTools).toEqual(["bash", "tool_catalog_search"]);
     // Messages were unchanged, so no messages key should be introduced.
     expect(firstStep && "messages" in firstStep).toBe(false);
 
-    // Simulate tool_search.execute activating a tool mid-stream: the next
+    // Simulate tool_catalog_search.execute activating a tool mid-stream: the next
     // prepareStep call must advertise it without rebuilding the request.
     toolSearchState.activatedToolNames.add("slack_send_message");
     const nextStep = await prepareStep({ messages });
-    expect(nextStep?.activeTools).toEqual(["bash", "tool_search", "slack_send_message"]);
+    expect(nextStep?.activeTools).toEqual(["bash", "tool_catalog_search", "slack_send_message"]);
   });
 
   test("buildStreamRequestConfig forwards the tool search state reference", () => {
@@ -5365,8 +5539,334 @@ describe("StreamManager - tool search activeTools scoping", () => {
       toolSearchState
     );
 
-    // Same reference, not a copy — tool_search.execute mutations must be
+    // Same reference, not a copy. tool_catalog_search.execute mutations must be
     // visible to prepareStep.
     expect(request.toolSearchState).toBe(toolSearchState);
+  });
+});
+
+describe("StreamManager - mid-turn thinking override", () => {
+  interface OverrideRequestForTests {
+    model: unknown;
+    messages: ModelMessage[];
+    system?: string;
+    providerOptions?: Record<string, unknown>;
+    thinkingOverrideState?: ActiveTurnThinkingOverride;
+    rebuildProviderOptionsForThinkingLevel?: RebuildProviderOptionsForThinkingLevel;
+  }
+
+  type BuildStreamRequestConfig = (...args: unknown[]) => OverrideRequestForTests;
+  type CreateStreamResult = (
+    request: OverrideRequestForTests,
+    abortController: AbortController
+  ) => unknown;
+  type CapturedPrepareStep = (options: { messages: ModelMessage[] }) => Promise<
+    | {
+        messages?: ModelMessage[];
+        activeTools?: string[];
+        providerOptions?: Record<string, unknown>;
+      }
+    | undefined
+  >;
+
+  const model = createAnthropic({ apiKey: "test" })("claude-sonnet-4-5");
+  const messages: ModelMessage[] = [{ role: "user", content: "hello" }];
+
+  function getRequestHelpers(streamManager: StreamManager): {
+    buildRequestConfig: BuildStreamRequestConfig;
+    createStreamResult: CreateStreamResult;
+  } {
+    const buildRequestConfig = Reflect.get(streamManager, "buildStreamRequestConfig") as
+      | ((...args: unknown[]) => OverrideRequestForTests)
+      | undefined;
+    const createStreamResultMethod = Reflect.get(streamManager, "createStreamResult") as
+      | CreateStreamResult
+      | undefined;
+    expect(typeof buildRequestConfig).toBe("function");
+    expect(typeof createStreamResultMethod).toBe("function");
+    if (!buildRequestConfig || !createStreamResultMethod) {
+      throw new Error("Expected StreamManager private helpers to exist");
+    }
+    return {
+      buildRequestConfig: (...args) => buildRequestConfig.apply(streamManager, args),
+      createStreamResult: (request, abortController) =>
+        createStreamResultMethod.call(streamManager, request, abortController),
+    };
+  }
+
+  function setupStreamTextSpy() {
+    return spyOn(aiSdk, "streamText").mockReturnValue({
+      fullStream: (async function* asyncGenerator() {
+        yield* [] as unknown[];
+        await Promise.resolve();
+      })(),
+      usage: Promise.resolve(undefined),
+      providerMetadata: Promise.resolve(undefined),
+      totalUsage: Promise.resolve(undefined),
+      steps: Promise.resolve([]),
+    } as unknown as ReturnType<typeof aiSdk.streamText>);
+  }
+
+  function capturePrepareStep(
+    streamTextSpy: ReturnType<typeof setupStreamTextSpy>
+  ): CapturedPrepareStep {
+    const prepareStep = streamTextSpy.mock.calls[0]?.[0]?.prepareStep as
+      | CapturedPrepareStep
+      | undefined;
+    expect(typeof prepareStep).toBe("function");
+    if (!prepareStep) {
+      throw new Error("Expected prepareStep to be captured");
+    }
+    return prepareStep;
+  }
+
+  afterEach(() => {
+    mock.restore();
+  });
+
+  test("applies a pending override in place: same object identity, old keys deleted, sink invoked", async () => {
+    const streamManager = new StreamManager(historyService);
+    const { createStreamResult } = getRequestHelpers(streamManager);
+    const streamTextSpy = setupStreamTextSpy();
+
+    const appliedLevels: string[] = [];
+    const state: ActiveTurnThinkingOverride = {
+      pending: "high",
+      onApplied: (level) => appliedLevels.push(level),
+    };
+    const originalProviderOptions: Record<string, unknown> = {
+      anthropic: { effort: "low", thinking: { type: "enabled", budgetTokens: 4000 } },
+      staleNamespace: { key: "must-be-deleted" },
+    };
+    const rebuilt = { anthropic: { effort: "high", thinking: { type: "enabled" } } };
+    const rebuild = mock((level: string) =>
+      level === "high" ? { effectiveLevel: "high" as const, providerOptions: rebuilt } : null
+    );
+
+    const request: OverrideRequestForTests = {
+      model,
+      messages,
+      system: "system",
+      providerOptions: originalProviderOptions,
+      thinkingOverrideState: state,
+      rebuildProviderOptionsForThinkingLevel:
+        rebuild as unknown as RebuildProviderOptionsForThinkingLevel,
+    };
+    createStreamResult(request, new AbortController());
+    const prepareStep = capturePrepareStep(streamTextSpy);
+
+    const step = await prepareStep({ messages });
+    // Rebuilt options are returned for the step (defense in depth) …
+    expect(step?.providerOptions).toEqual(rebuilt);
+    // … and the live request object is replaced IN PLACE (same identity),
+    // deleting keys the SDK's deep-merge could never remove.
+    expect(request.providerOptions).toBe(originalProviderOptions);
+    expect(request.providerOptions).toEqual(rebuilt);
+    expect("staleNamespace" in originalProviderOptions).toBe(false);
+    // Consume-once bookkeeping + metadata sink.
+    expect(state.pending).toBeUndefined();
+    expect(state.applied).toBe("high");
+    expect(appliedLevels).toEqual(["high"]);
+    // Without a new pending value the next step is a no-op again.
+    expect(await prepareStep({ messages })).toBeUndefined();
+    expect(rebuild).toHaveBeenCalledTimes(1);
+  });
+
+  test("clears pending without touching options when the rebuild reports not-applicable", async () => {
+    const streamManager = new StreamManager(historyService);
+    const { createStreamResult } = getRequestHelpers(streamManager);
+    const streamTextSpy = setupStreamTextSpy();
+
+    const state: ActiveTurnThinkingOverride = { pending: "off" };
+    const originalProviderOptions: Record<string, unknown> = { xai: { some: "config" } };
+    const rebuild = mock(() => null);
+
+    const request: OverrideRequestForTests = {
+      model,
+      messages,
+      system: "system",
+      providerOptions: originalProviderOptions,
+      thinkingOverrideState: state,
+      rebuildProviderOptionsForThinkingLevel:
+        rebuild as unknown as RebuildProviderOptionsForThinkingLevel,
+    };
+    createStreamResult(request, new AbortController());
+    const prepareStep = capturePrepareStep(streamTextSpy);
+
+    expect(await prepareStep({ messages })).toBeUndefined();
+    expect(request.providerOptions).toEqual({ xai: { some: "config" } });
+    // Consume-once: a skipped application must not retry on every later step.
+    expect(state.pending).toBeUndefined();
+    expect(state.applied).toBeUndefined();
+    expect(await prepareStep({ messages })).toBeUndefined();
+    expect(rebuild).toHaveBeenCalledTimes(1);
+  });
+
+  test("stays byte-identical to the feature-off behavior when no override state exists", async () => {
+    const streamManager = new StreamManager(historyService);
+    const { createStreamResult } = getRequestHelpers(streamManager);
+    const streamTextSpy = setupStreamTextSpy();
+
+    createStreamResult({ model, messages, system: "system" }, new AbortController());
+    const prepareStep = capturePrepareStep(streamTextSpy);
+    expect(await prepareStep({ messages })).toBeUndefined();
+  });
+
+  test("buildStreamRequestConfig normalizes providerOptions to a stable mutable object only when a rebuild closure exists", () => {
+    const streamManager = new StreamManager(historyService);
+    const { buildRequestConfig, createStreamResult } = getRequestHelpers(streamManager);
+    const streamTextSpy = setupStreamTextSpy();
+
+    const state: ActiveTurnThinkingOverride = {};
+    const rebuild: RebuildProviderOptionsForThinkingLevel = () => null;
+
+    // Without the closure, an absent providerOptions stays absent (no behavior change).
+    const plainRequest = buildRequestConfig(
+      model,
+      KNOWN_MODELS.SONNET.id,
+      messages,
+      "system",
+      undefined, // routeProvider
+      undefined, // tools
+      undefined, // providerOptions
+      undefined, // maxOutputTokens
+      undefined, // callSettingsOverrides
+      undefined, // toolPolicy
+      undefined, // hasQueuedMessages
+      undefined, // headers
+      undefined, // anthropicCacheTtlOverride
+      undefined, // onChunk
+      undefined, // onStepMessages
+      undefined // toolSearchState
+    );
+    expect(plainRequest.providerOptions).toBeUndefined();
+
+    // With the closure, undefined normalizes to a mutable object whose identity
+    // is exactly what streamText() captures — otherwise in-place mutation at
+    // prepareStep time would be unobservable to the SDK's per-step merge.
+    const request = buildRequestConfig(
+      model,
+      KNOWN_MODELS.SONNET.id,
+      messages,
+      "system",
+      undefined,
+      undefined,
+      undefined, // providerOptions intentionally absent
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined, // onToolExecutionStart
+      state,
+      rebuild
+    );
+    expect(request.providerOptions).toEqual({});
+    expect(request.thinkingOverrideState).toBe(state);
+    expect(request.rebuildProviderOptionsForThinkingLevel).toBe(rebuild);
+
+    createStreamResult(request, new AbortController());
+    const streamTextArgs = streamTextSpy.mock.calls[0]?.[0];
+    expect(streamTextArgs?.providerOptions).toBe(
+      request.providerOptions as NonNullable<typeof streamTextArgs>["providerOptions"]
+    );
+  });
+
+  test("model fallback folds the pending override into prepare() and rebinds holder + closure on the swapped request", async () => {
+    const streamManager = new StreamManager(historyService);
+    Reflect.set(streamManager, "tokenTracker", {
+      setModel: () => Promise.resolve(undefined),
+      countTokens: () => Promise.resolve(0),
+    });
+
+    const workspaceId = "thinking-fallback-workspace";
+    const messageId = "thinking-fallback-message";
+    const historySequence = 1;
+    const fallbackModel = KNOWN_MODELS.GPT.id;
+
+    await appendPartialAssistantForTests(workspaceId, messageId, historySequence);
+    const processStreamWithCleanup = getProcessStreamWithCleanupForTests(streamManager);
+
+    const capturedNextRequests: OverrideRequestForTests[] = [];
+    const createStreamResult = mock((request: OverrideRequestForTests) => {
+      capturedNextRequests.push(request);
+      return createStreamResultForTests(
+        (async function* () {
+          await Promise.resolve();
+          yield { type: "text-delta", text: "fallback answer" };
+          yield { type: "finish", finishReason: "stop" };
+        })(),
+        { inputTokens: 5, outputTokens: 3, totalTokens: 8 }
+      );
+    });
+    expect(Reflect.set(streamManager, "createStreamResult", createStreamResult)).toBe(true);
+
+    const fallbackLanguageModel = createTestLanguageModel("fallback-model");
+    const fallbackRebuild: RebuildProviderOptionsForThinkingLevel = () => null;
+    const prepare = mock((nextModelString: string, options?: ModelFallbackPrepareOptions) => {
+      expect(options?.thinkingLevelOverride).toBe("high");
+      return Promise.resolve(
+        Ok({
+          model: fallbackLanguageModel,
+          modelString: nextModelString,
+          messages: [],
+          system: "fallback system",
+          tools: undefined,
+          thinkingLevel: "high",
+          rebuildProviderOptionsForThinkingLevel: fallbackRebuild,
+        })
+      );
+    });
+
+    // Pending override that never got a next step on the refusing stream: the
+    // fallback hop must not silently revert it.
+    const holder: ActiveTurnThinkingOverride = { pending: "high" };
+    const startTime = Date.now() - 250;
+    const streamInfo = createStreamInfoForTests({
+      streamResult: createStreamResultForTests(
+        (async function* () {
+          await Promise.resolve();
+          yield { type: "finish", finishReason: "content-filter", rawFinishReason: "refusal" };
+        })(),
+        { inputTokens: 10, outputTokens: 0, totalTokens: 10 }
+      ),
+      messageId,
+      startTime,
+      lastPartTimestamp: startTime,
+      model: KNOWN_MODELS.SONNET.id,
+      metadataModel: KNOWN_MODELS.SONNET.id,
+      historySequence,
+      runtime: LOCAL_TEST_RUNTIME,
+      request: {
+        model: createTestLanguageModel("refused-model"),
+        messages: [],
+        providerOptions: undefined,
+        thinkingOverrideState: holder,
+      },
+      modelFallback: {
+        options: { chain: [fallbackModel], prepare },
+        requestedModel: KNOWN_MODELS.SONNET.id,
+        refusedModels: [],
+        original: { maxOutputTokens: undefined },
+      },
+    });
+
+    await processStreamWithCleanup.call(streamManager, workspaceId, streamInfo, historySequence);
+
+    expect(prepare).toHaveBeenCalledTimes(1);
+    // Pending was folded into the fallback baseline (consumed, kept as applied
+    // for potential second hops).
+    expect(holder.pending).toBeUndefined();
+    expect(holder.applied).toBe("high");
+    // The swapped request carries the SAME holder (the session setter keeps
+    // working) and the fallback-bound rebuild closure.
+    expect(createStreamResult).toHaveBeenCalledTimes(1);
+    const nextRequest = capturedNextRequests[0];
+    expect(nextRequest?.thinkingOverrideState).toBe(holder);
+    expect(nextRequest?.rebuildProviderOptionsForThinkingLevel).toBe(fallbackRebuild);
   });
 });

@@ -5,6 +5,10 @@ import * as os from "os";
 import { execSync } from "node:child_process";
 
 import {
+  TASK_TERMINATION_STOP_STREAM_TIMEOUT_MS,
+  TASK_TERMINATION_WORKSPACE_REMOVE_TIMEOUT_MS,
+} from "@/constants/terminationTimeouts";
+import {
   Config,
   type ProjectConfig,
   type ProjectsConfig,
@@ -48,6 +52,7 @@ import { createRuntime } from "@/node/runtime/runtimeFactory";
 import * as runtimeFactory from "@/node/runtime/runtimeFactory";
 import * as forkOrchestrator from "@/node/services/utils/forkOrchestrator";
 import { Ok, Err, type Result } from "@/common/types/result";
+import { SCRATCH_PROJECT_CONFIG_KEY } from "@/common/constants/scratch";
 import { STRUCTURED_WORKFLOW_REPORT_PLACEHOLDER_MARKDOWN } from "@/common/constants/workflowReports";
 import { defaultModel } from "@/common/utils/ai/models";
 import { enforceThinkingPolicy } from "@/common/utils/thinking/policy";
@@ -395,6 +400,7 @@ function createWorkspaceServiceMocks(
     hasQueuedMessages: ReturnType<typeof mock>;
     isBusyForMessage: ReturnType<typeof mock>;
     hasPendingQueuedOrPreparingTurn: ReturnType<typeof mock>;
+    hasPendingAutoRetry: ReturnType<typeof mock>;
     waitForIdleAndNoQueuedMessages: ReturnType<typeof mock>;
     waitForIdle: ReturnType<typeof mock>;
     waitForPendingStreamErrorRecoveryDecision: ReturnType<typeof mock>;
@@ -422,6 +428,7 @@ function createWorkspaceServiceMocks(
   waitForIdleAndNoQueuedMessages: ReturnType<typeof mock>;
   waitForIdle: ReturnType<typeof mock>;
   hasPendingQueuedOrPreparingTurn: ReturnType<typeof mock>;
+  hasPendingAutoRetry: ReturnType<typeof mock>;
   waitForPendingStreamErrorRecoveryDecision: ReturnType<typeof mock>;
   archive: ReturnType<typeof mock>;
   deleteWorktree: ReturnType<typeof mock>;
@@ -448,6 +455,7 @@ function createWorkspaceServiceMocks(
   const isBusyForMessage = overrides?.isBusyForMessage ?? mock(() => false);
   const hasPendingQueuedOrPreparingTurn =
     overrides?.hasPendingQueuedOrPreparingTurn ?? mock(() => false);
+  const hasPendingAutoRetry = overrides?.hasPendingAutoRetry ?? mock(() => false);
   const waitForIdleAndNoQueuedMessages =
     overrides?.waitForIdleAndNoQueuedMessages ?? mock((): Promise<void> => Promise.resolve());
   const waitForIdle = overrides?.waitForIdle ?? mock((): Promise<void> => Promise.resolve());
@@ -490,6 +498,7 @@ function createWorkspaceServiceMocks(
       hasQueuedWorkspaceTurn,
       hasQueuedMessages,
       hasPendingQueuedOrPreparingTurn,
+      hasPendingAutoRetry,
       waitForIdleAndNoQueuedMessages,
       waitForIdle,
       waitForPendingStreamErrorRecoveryDecision,
@@ -513,6 +522,7 @@ function createWorkspaceServiceMocks(
     hasQueuedMessages,
     isBusyForMessage,
     hasPendingQueuedOrPreparingTurn,
+    hasPendingAutoRetry,
     waitForIdleAndNoQueuedMessages,
     waitForIdle,
     waitForPendingStreamErrorRecoveryDecision,
@@ -586,6 +596,64 @@ describe("TaskService", () => {
     await fsPromises.rm(rootDir, { recursive: true, force: true });
   });
 
+  test("scratch tasks share the managed workdir and stay in the scratch config bucket", async () => {
+    const config = await createTestConfig(rootDir);
+    const parentId = "1111111111";
+    const childId = "2222222222";
+    const scratchPath = path.join(config.rootDir, "scratch", parentId);
+    await fsPromises.mkdir(scratchPath, { recursive: true });
+    await saveTestConfig(
+      config,
+      [
+        [
+          SCRATCH_PROJECT_CONFIG_KEY,
+          {
+            projectKind: "system",
+            trusted: true,
+            workspaces: [
+              {
+                kind: "scratch",
+                path: scratchPath,
+                id: parentId,
+                name: `scratch-${parentId}`,
+                createdAt: new Date().toISOString(),
+                runtimeConfig: { type: "local" },
+                aiSettings: {
+                  model: "anthropic:claude-opus-4-6",
+                  thinkingLevel: "high",
+                },
+              },
+            ],
+          },
+        ],
+      ],
+      { taskSettings: testTaskSettings() }
+    );
+    stubStableIds(config, [childId]);
+
+    const workspaceMocks = createWorkspaceServiceMocks();
+    const { taskService } = createTaskServiceHarness(config, {
+      workspaceService: workspaceMocks.workspaceService,
+    });
+
+    const result = await createAgentTask(taskService, parentId, "Inspect the scratch files");
+
+    expect(result).toEqual(Ok({ taskId: childId, kind: "agent", status: "running" }));
+    const scratchProject = config.loadConfigOrDefault().projects.get(SCRATCH_PROJECT_CONFIG_KEY);
+    const child = scratchProject?.workspaces.find((workspace) => workspace.id === childId);
+    expect(child?.kind).toBe("scratch");
+    expect(child?.path).toBe(scratchPath);
+    expect(child?.taskIsolation).toBe("none");
+    expect(child?.parentWorkspaceId).toBe(parentId);
+    expect(config.loadConfigOrDefault().projects.has(scratchPath)).toBe(false);
+    expect(workspaceMocks.sendMessage).toHaveBeenCalledWith(
+      childId,
+      "Inspect the scratch files",
+      expect.any(Object),
+      { agentInitiated: true }
+    );
+  });
+
   async function startWorkspaceTurnForTest(
     options: {
       stableIds?: string[];
@@ -595,6 +663,7 @@ describe("TaskService", () => {
       isStreaming?: ReturnType<typeof mock>;
       hasQueuedMessages?: ReturnType<typeof mock>;
       hasPendingQueuedOrPreparingTurn?: ReturnType<typeof mock>;
+      hasPendingAutoRetry?: ReturnType<typeof mock>;
       waitForPendingStreamErrorRecoveryDecision?: ReturnType<typeof mock>;
     } = {}
   ) {
@@ -631,6 +700,9 @@ describe("TaskService", () => {
         : {}),
       ...(options.hasPendingQueuedOrPreparingTurn != null
         ? { hasPendingQueuedOrPreparingTurn: options.hasPendingQueuedOrPreparingTurn }
+        : {}),
+      ...(options.hasPendingAutoRetry != null
+        ? { hasPendingAutoRetry: options.hasPendingAutoRetry }
         : {}),
       ...(options.waitForPendingStreamErrorRecoveryDecision != null
         ? {
@@ -1268,6 +1340,207 @@ describe("TaskService", () => {
     expect(sendMessage).toHaveBeenCalledTimes(1);
     const sendMessageCall = sendMessage.mock.calls[0] as unknown[];
     expect(sendMessageCall[2]).toMatchObject({ reasoningMode: "pro" });
+  });
+
+  test("createWorkspaceTurn resolves AI settings: agent defaults on create, target settings on follow-up, explicit override wins", async () => {
+    const config = await createTestConfig(rootDir);
+    stubStableIds(config, [
+      "firsthandle",
+      "firstturn",
+      "secondhandle",
+      "secondturn",
+      "thirdhandle",
+      "thirdturn",
+    ]);
+    // Owner persisted at opus/high (helper default); configured exec agent
+    // defaults differ from both the owner's persisted and live settings.
+    const { parentId, projectPath } = await saveLocalParentWorkspace(config, rootDir, {
+      agentAiDefaults: { exec: { modelString: "openai:gpt-5.2", thinkingLevel: "xhigh" } },
+    });
+
+    const createWorkspace = mock(
+      async (...args: unknown[]): Promise<Result<{ metadata: WorkspaceMetadata }>> => {
+        const tags = args[7] as Record<string, string> | undefined;
+        await config.editConfig((cfg) => {
+          const project = cfg.projects.get(projectPath);
+          assert(project, "test project must exist");
+          project.workspaces.push({
+            path: path.join(projectPath, "workspace-turn"),
+            id: "childworkspace",
+            name: "workspace-turn",
+            title: "Workspace turn",
+            createdAt: "2026-06-19T00:00:00.000Z",
+            runtimeConfig: { type: "local" },
+            tags,
+          });
+          return cfg;
+        });
+        return Ok({ metadata: createWorkspaceTurnMetadata(projectPath) });
+      }
+    );
+    const sendMessage = mock(async (...args: unknown[]): Promise<Result<void>> => {
+      const internal = args[3] as { onAccepted?: () => Promise<void> | void } | undefined;
+      await internal?.onAccepted?.();
+      return Ok(undefined);
+    });
+    const workspaceMocks = createWorkspaceServiceMocks({ create: createWorkspace, sendMessage });
+    const { taskService } = createTaskServiceHarness(config, {
+      workspaceService: workspaceMocks.workspaceService,
+    });
+
+    // Creation: configured agent defaults outrank the owner's live runtime
+    // settings (owner turned down to medium must not produce medium children).
+    const first = await taskService.createWorkspaceTurn({
+      ownerWorkspaceId: parentId,
+      prompt: "First prompt",
+      title: "Workspace turn",
+      parentRuntimeAiSettings: {
+        modelString: "anthropic:claude-sonnet-4-5",
+        thinkingLevel: "medium",
+      },
+      workspace: { mode: "new" },
+    });
+    expect(first.success).toBe(true);
+    const firstSend = sendMessage.mock.calls[0];
+    expect(firstSend[2]).toMatchObject({
+      agentId: "exec",
+      model: "openai:gpt-5.2",
+      thinkingLevel: "xhigh",
+    });
+
+    // Simulate the child's own last-used settings (persist-on-send or a manual
+    // flip inside the child workspace).
+    await config.editConfig((cfg) => {
+      const project = cfg.projects.get(projectPath);
+      const child = project?.workspaces.find((workspace) => workspace.id === "childworkspace");
+      assert(child, "child workspace must exist");
+      child.aiSettingsByAgent = {
+        exec: { model: "anthropic:claude-opus-4-6", thinkingLevel: "low" },
+      };
+      return cfg;
+    });
+
+    // Follow-up: the target continues its own settings; the owner's bump to
+    // high must not drag the child along, and agent defaults no longer apply.
+    const second = await taskService.createWorkspaceTurn({
+      ownerWorkspaceId: parentId,
+      prompt: "Second prompt",
+      title: "Follow-up",
+      parentRuntimeAiSettings: {
+        modelString: "anthropic:claude-sonnet-4-5",
+        thinkingLevel: "high",
+      },
+      workspace: { mode: "existing", workspaceId: "childworkspace" },
+    });
+    expect(second.success).toBe(true);
+    const secondSend = sendMessage.mock.calls[1];
+    expect(secondSend[2]).toMatchObject({
+      model: "anthropic:claude-opus-4-6",
+      thinkingLevel: "low",
+    });
+
+    // Explicit per-launch overrides still outrank the target's own settings.
+    const third = await taskService.createWorkspaceTurn({
+      ownerWorkspaceId: parentId,
+      prompt: "Third prompt",
+      title: "Override",
+      modelString: "openai:gpt-5.3-codex",
+      thinkingLevel: "medium",
+      workspace: { mode: "existing", workspaceId: "childworkspace" },
+    });
+    expect(third.success).toBe(true);
+    const thirdSend = sendMessage.mock.calls[2];
+    expect(thirdSend[2]).toMatchObject({
+      model: "openai:gpt-5.3-codex",
+      thinkingLevel: "medium",
+    });
+  });
+
+  test("createWorkspaceTurn follow-ups do not re-inject the owner's pro mode over the target's own settings", async () => {
+    const config = await createTestConfig(rootDir);
+    stubStableIds(config, ["firsthandle", "firstturn", "secondhandle", "secondturn"]);
+    const projectPath = await createTestProject(rootDir, "repo", { initGit: false });
+    const parentId = "1111111111";
+    await saveWorkspaces(
+      config,
+      projectPath,
+      [
+        {
+          path: projectPath,
+          id: parentId,
+          name: "parent",
+          createdAt: new Date().toISOString(),
+          runtimeConfig: { type: "local" },
+          aiSettingsByAgent: {
+            exec: { model: "openai:gpt-5.6-sol", thinkingLevel: "high", reasoningMode: "pro" },
+          },
+        },
+      ],
+      testTaskSettings()
+    );
+
+    const createWorkspace = mock(
+      async (...args: unknown[]): Promise<Result<{ metadata: WorkspaceMetadata }>> => {
+        const tags = args[7] as Record<string, string> | undefined;
+        await config.editConfig((cfg) => {
+          const project = cfg.projects.get(projectPath);
+          assert(project, "test project must exist");
+          project.workspaces.push({
+            path: path.join(projectPath, "workspace-turn"),
+            id: "childworkspace",
+            name: "workspace-turn",
+            title: "Workspace turn",
+            createdAt: "2026-06-19T00:00:00.000Z",
+            runtimeConfig: { type: "local" },
+            tags,
+          });
+          return cfg;
+        });
+        return Ok({ metadata: createWorkspaceTurnMetadata(projectPath) });
+      }
+    );
+    const sendMessage = mock(async (...args: unknown[]): Promise<Result<void>> => {
+      const internal = args[3] as { onAccepted?: () => Promise<void> | void } | undefined;
+      await internal?.onAccepted?.();
+      return Ok(undefined);
+    });
+    const workspaceMocks = createWorkspaceServiceMocks({ create: createWorkspace, sendMessage });
+    const { taskService } = createTaskServiceHarness(config, {
+      workspaceService: workspaceMocks.workspaceService,
+    });
+
+    // Creation still inherits the owner's pro mode.
+    const first = await taskService.createWorkspaceTurn({
+      ownerWorkspaceId: parentId,
+      prompt: "First prompt",
+      title: "Workspace turn",
+      workspace: { mode: "new" },
+    });
+    expect(first.success).toBe(true);
+    const firstSend = sendMessage.mock.calls[0];
+    expect(firstSend[2]).toMatchObject({ reasoningMode: "pro" });
+
+    // The child was switched back to standard (absent = standard per
+    // WorkspaceAISettingsSchema); follow-ups must respect that.
+    await config.editConfig((cfg) => {
+      const project = cfg.projects.get(projectPath);
+      const child = project?.workspaces.find((workspace) => workspace.id === "childworkspace");
+      assert(child, "child workspace must exist");
+      child.aiSettingsByAgent = {
+        exec: { model: "openai:gpt-5.6-sol", thinkingLevel: "high" },
+      };
+      return cfg;
+    });
+
+    const second = await taskService.createWorkspaceTurn({
+      ownerWorkspaceId: parentId,
+      prompt: "Second prompt",
+      title: "Follow-up",
+      workspace: { mode: "existing", workspaceId: "childworkspace" },
+    });
+    expect(second.success).toBe(true);
+    const secondSend = sendMessage.mock.calls[1];
+    expect(secondSend[2]).not.toHaveProperty("reasoningMode");
   });
 
   test("createWorkspaceTurn rejects multi-project owners instead of dropping secondary repos", async () => {
@@ -3861,6 +4134,92 @@ describe("TaskService", () => {
     expect(snapshot).toMatchObject({
       status: "running",
       workspaceId: "childworkspace",
+    });
+  });
+
+  // Regression: stream_truncated (a transient provider drop) previously fell
+  // outside the recoverable allowlist and terminally settled the handle even
+  // though the child session had already scheduled an in-session auto-retry,
+  // falsely reporting the turn as failed to the parent.
+  test("workspace-turn auto-retryable stream errors stay running while retry is pending", async () => {
+    let retryDecisionAwaited = false;
+    const hasPendingAutoRetry = mock(
+      (workspaceId: string) => retryDecisionAwaited && workspaceId === "childworkspace"
+    );
+    const waitForPendingStreamErrorRecoveryDecision = mock((): Promise<void> => {
+      retryDecisionAwaited = true;
+      return Promise.resolve();
+    });
+    const { parentId, taskService } = await startWorkspaceTurnForTest({
+      hasPendingAutoRetry,
+      waitForPendingStreamErrorRecoveryDecision,
+    });
+    const internal = taskService as unknown as {
+      handleTaskStreamError: (event: ErrorEvent) => Promise<void>;
+    };
+
+    await internal.handleTaskStreamError({
+      type: "error",
+      workspaceId: "childworkspace",
+      messageId: "msg_truncated",
+      error: "Anthropic stream closed unexpectedly before the response completed.",
+      errorType: "stream_truncated",
+    });
+
+    expect(waitForPendingStreamErrorRecoveryDecision).toHaveBeenCalledWith("childworkspace");
+    expect(await taskService.getWorkspaceTurnSnapshot(parentId, "wst_handle")).toMatchObject({
+      status: "running",
+      workspaceId: "childworkspace",
+    });
+  });
+
+  test("workspace-turn auto-retryable stream errors without a pending retry mark the handle failed", async () => {
+    const { parentId, taskService } = await startWorkspaceTurnForTest();
+    const internal = taskService as unknown as {
+      handleTaskStreamError: (event: ErrorEvent) => Promise<void>;
+    };
+
+    await internal.handleTaskStreamError({
+      type: "error",
+      workspaceId: "childworkspace",
+      messageId: "msg_truncated_exhausted",
+      error: "Anthropic stream closed unexpectedly before the response completed.",
+      errorType: "stream_truncated",
+    });
+
+    expect(await taskService.getWorkspaceTurnSnapshot(parentId, "wst_handle")).toMatchObject({
+      status: "error",
+      workspaceId: "childworkspace",
+      error: "Anthropic stream closed unexpectedly before the response completed.",
+    });
+  });
+
+  // Codex review: unrelated queued manual messages must not keep the handle
+  // running for auto-retryable errors — they start a different turn, so the
+  // failed turn would never resume. Only an actual pending auto-retry counts.
+  test("workspace-turn auto-retryable stream errors with only queued messages mark the handle failed", async () => {
+    const hasPendingQueuedOrPreparingTurn = mock(() => true);
+    const hasPendingAutoRetry = mock(() => false);
+    const { parentId, taskService } = await startWorkspaceTurnForTest({
+      hasPendingQueuedOrPreparingTurn,
+      hasPendingAutoRetry,
+    });
+    const internal = taskService as unknown as {
+      handleTaskStreamError: (event: ErrorEvent) => Promise<void>;
+    };
+
+    await internal.handleTaskStreamError({
+      type: "error",
+      workspaceId: "childworkspace",
+      messageId: "msg_truncated_queued_only",
+      error: "Anthropic stream closed unexpectedly before the response completed.",
+      errorType: "stream_truncated",
+    });
+
+    expect(await taskService.getWorkspaceTurnSnapshot(parentId, "wst_handle")).toMatchObject({
+      status: "error",
+      workspaceId: "childworkspace",
+      error: "Anthropic stream closed unexpectedly before the response completed.",
     });
   });
 
@@ -9215,6 +9574,180 @@ describe("TaskService", () => {
     expect(remove).toHaveBeenNthCalledWith(2, parentTaskId, true);
   });
 
+  test("terminateDescendantAgentTask skips a timed-out stream and continues other descendants", async () => {
+    const config = await createTestConfig(rootDir);
+    const projectPath = path.join(rootDir, "repo");
+    const rootWorkspaceId = "root-111";
+    const parentTaskId = "task-parent";
+    const stuckTaskId = "task-stuck";
+    const siblingTaskId = "task-sibling";
+
+    await saveWorkspaces(
+      config,
+      projectPath,
+      [
+        projectWorkspace(projectPath, "root", rootWorkspaceId),
+        projectWorkspace(projectPath, "parent-task", parentTaskId, {
+          parentWorkspaceId: rootWorkspaceId,
+          agentType: "exec",
+          taskStatus: "running",
+        }),
+        projectWorkspace(projectPath, "stuck-task", stuckTaskId, {
+          parentWorkspaceId: parentTaskId,
+          agentType: "explore",
+          taskStatus: "running",
+        }),
+        projectWorkspace(projectPath, "sibling-task", siblingTaskId, {
+          parentWorkspaceId: parentTaskId,
+          agentType: "explore",
+          taskStatus: "running",
+        }),
+      ],
+      testTaskSettings()
+    );
+
+    const stopStream = mock((workspaceId: string): Promise<Result<void>> => {
+      return workspaceId === stuckTaskId
+        ? new Promise(() => undefined)
+        : Promise.resolve(Ok(undefined));
+    });
+    const { aiService } = createAIServiceMocks(config, { stopStream });
+    const { workspaceService, remove } = createWorkspaceServiceMocks();
+    const { taskService } = createTaskServiceHarness(config, { aiService, workspaceService });
+    const originalSetTimeout = globalThis.setTimeout;
+    const timeoutSpy = spyOn(globalThis, "setTimeout").mockImplementation(((
+      handler: () => void,
+      timeout?: number
+    ) => {
+      if (timeout === TASK_TERMINATION_STOP_STREAM_TIMEOUT_MS) {
+        // Fire on a 0ms macrotask, not a microtask: already-resolved stop
+        // promises settle through several microtask hops first, so only the
+        // genuinely stuck stream can lose the race to this timer.
+        return originalSetTimeout(handler, 0);
+      }
+      return originalSetTimeout(handler, timeout);
+    }) as typeof setTimeout);
+
+    const terminateResult = await taskService.terminateDescendantAgentTask(
+      rootWorkspaceId,
+      parentTaskId
+    );
+    timeoutSpy.mockRestore();
+
+    expect(terminateResult.success).toBe(false);
+    if (terminateResult.success) return;
+    expect(terminateResult.error).toContain(`Timed out stopping task stream (${stuckTaskId})`);
+    expect(terminateResult.error).toContain(
+      `Skipped removing task workspace (${parentTaskId}): a descendant task workspace was not removed`
+    );
+    expect(remove).not.toHaveBeenCalledWith(stuckTaskId, true);
+    expect(remove).toHaveBeenCalledWith(siblingTaskId, true);
+    // The stuck child survives, so its ancestor must survive too: a live child
+    // must never point at removed parent metadata.
+    expect(remove).not.toHaveBeenCalledWith(parentTaskId, true);
+  });
+
+  test("terminate retry awaits the original in-flight removal instead of trusting a dedup Ok", async () => {
+    const config = await createTestConfig(rootDir);
+    const projectPath = path.join(rootDir, "repo");
+    const rootWorkspaceId = "root-111";
+    const parentTaskId = "task-parent";
+    const childTaskId = "task-child";
+
+    await saveWorkspaces(
+      config,
+      projectPath,
+      [
+        projectWorkspace(projectPath, "root", rootWorkspaceId),
+        projectWorkspace(projectPath, "parent-task", parentTaskId, {
+          parentWorkspaceId: rootWorkspaceId,
+          agentType: "exec",
+          taskStatus: "running",
+        }),
+        projectWorkspace(projectPath, "child-task", childTaskId, {
+          parentWorkspaceId: parentTaskId,
+          agentType: "explore",
+          taskStatus: "running",
+        }),
+      ],
+      testTaskSettings()
+    );
+
+    // First removal of the child hangs; later calls return Ok, simulating
+    // WorkspaceService.remove()'s short-circuit for IDs already being removed.
+    let childRemoveCalls = 0;
+    const remove = mock((workspaceId: string, _force?: boolean): Promise<Result<void>> => {
+      if (workspaceId === childTaskId) {
+        childRemoveCalls += 1;
+        if (childRemoveCalls === 1) {
+          return new Promise(() => undefined);
+        }
+      }
+      return Promise.resolve(Ok(undefined));
+    });
+    const { workspaceService } = createWorkspaceServiceMocks({ remove });
+    const { taskService } = createTaskServiceHarness(config, { workspaceService });
+    const originalSetTimeout = globalThis.setTimeout;
+    const timeoutSpy = spyOn(globalThis, "setTimeout").mockImplementation(((
+      handler: () => void,
+      timeout?: number
+    ) => {
+      if (timeout === TASK_TERMINATION_WORKSPACE_REMOVE_TIMEOUT_MS) {
+        // 0ms macrotask so pending microtask chains settle first (see above).
+        return originalSetTimeout(handler, 0);
+      }
+      return originalSetTimeout(handler, timeout);
+    }) as typeof setTimeout);
+
+    const firstAttempt = await taskService.terminateDescendantAgentTask(
+      rootWorkspaceId,
+      parentTaskId
+    );
+    const retryAttempt = await taskService.terminateDescendantAgentTask(
+      rootWorkspaceId,
+      parentTaskId
+    );
+    timeoutSpy.mockRestore();
+
+    expect(firstAttempt.success).toBe(false);
+    expect(retryAttempt.success).toBe(false);
+    if (retryAttempt.success) return;
+    expect(retryAttempt.error).toContain(`Timed out removing task workspace (${childTaskId})`);
+    // The retry must not re-call remove for the child (a fresh call would
+    // return the dedup Ok) and must keep the parent blocked.
+    expect(childRemoveCalls).toBe(1);
+    expect(remove).not.toHaveBeenCalledWith(parentTaskId, true);
+  });
+
+  test("descendant traversal terminates when task metadata contains a cycle", () => {
+    const config = new Config(rootDir);
+    const { taskService } = createTaskServiceHarness(config);
+    const traversal = taskService as unknown as {
+      listDescendantAgentTaskIdsFromIndex: (
+        index: {
+          byId: Map<string, unknown>;
+          childrenByParent: Map<string, string[]>;
+          parentById: Map<string, string>;
+        },
+        workspaceId: string
+      ) => string[];
+    };
+    const index = {
+      byId: new Map<string, unknown>(),
+      childrenByParent: new Map([
+        ["root", ["child"]],
+        ["child", ["grandchild"]],
+        ["grandchild", ["child", "root"]],
+      ]),
+      parentById: new Map<string, string>(),
+    };
+
+    expect(traversal.listDescendantAgentTaskIdsFromIndex(index, "root")).toEqual([
+      "child",
+      "grandchild",
+    ]);
+  });
+
   test("terminateAllDescendantAgentTasks interrupts entire subtree leaf-first", async () => {
     const config = await createTestConfig(rootDir);
 
@@ -14035,6 +14568,104 @@ describe("TaskService", () => {
     );
     expect(findWorkspaceInConfig(config, childId)?.taskStatus).toBe("running");
   });
+
+  test.each(["workflow_run", "workflow_resume"] as const)(
+    "task stream-end accepts terminal %s output before final report",
+    async (toolName) => {
+      const config = await createTestConfig(rootDir);
+
+      const projectPath = path.join(rootDir, "repo");
+      const parentId = `parent-terminal-${toolName}`;
+      const childId = `child-terminal-${toolName}`;
+      const workflowRunId = `wfr_terminal_${toolName}`;
+
+      await saveWorkspaces(
+        config,
+        projectPath,
+        [
+          projectWorkspace(projectPath, "parent", parentId),
+          projectWorkspace(projectPath, "child", childId, {
+            name: "agent_explore_child",
+            parentWorkspaceId: parentId,
+            agentType: "explore",
+            taskStatus: "awaiting_report",
+            taskModelString: "openai:gpt-4o-mini",
+          }),
+        ],
+        testTaskSettings()
+      );
+
+      const runStore = new WorkflowRunStore({ sessionDir: config.getSessionDir(childId) });
+      await runStore.createRun({
+        id: workflowRunId,
+        workspaceId: childId,
+        workflow: {
+          name: "child-workflow",
+          description: "Child workflow",
+          scope: "built-in",
+          executable: true,
+        },
+        source: "export default function workflow() { return { reportMarkdown: 'done' }; }\n",
+        args: {},
+        now: "2026-06-04T00:00:00.000Z",
+      });
+      await runStore.appendStatus(workflowRunId, "running", "2026-06-04T00:00:01.000Z");
+      await runStore.appendStatus(workflowRunId, "completed", "2026-06-04T00:00:02.000Z");
+
+      const { aiService } = createAIServiceMocks(config);
+      const remove = mock(async (workspaceId: string, _force?: boolean): Promise<Result<void>> => {
+        await removeWorkspaceFromTestConfig(config, workspaceId);
+        return Ok(undefined);
+      });
+      const { workspaceService, sendMessage, isWorkflowInvocationCurrent } =
+        createWorkspaceServiceMocks({ remove });
+      const { taskService } = createTaskServiceHarness(config, {
+        aiService,
+        workspaceService,
+      });
+
+      await handleTaskServiceStreamEndForTest(taskService, {
+        type: "stream-end",
+        workspaceId: childId,
+        messageId: `assistant-${toolName}-output`,
+        metadata: { model: "openai:gpt-4o-mini" },
+        parts: [
+          {
+            type: "dynamic-tool",
+            toolCallId: `${toolName}-call-1`,
+            toolName,
+            input:
+              toolName === "workflow_run"
+                ? { script_path: "skill://test/workflow.js", run_in_background: false }
+                : { run_id: workflowRunId, run_in_background: false, mode: "resume" },
+            state: "output-available",
+            output: {
+              status: "completed",
+              runId: workflowRunId,
+              result: { reportMarkdown: "Workflow done" },
+            },
+          },
+          {
+            type: "dynamic-tool",
+            toolCallId: "agent-report-call-1",
+            toolName: "agent_report",
+            input: { reportMarkdown: "Final report", title: "Result" },
+            state: "output-available",
+            output: { success: true },
+          },
+        ],
+      });
+
+      expect(isWorkflowInvocationCurrent).not.toHaveBeenCalled();
+      expect(sendMessage).not.toHaveBeenCalledWith(
+        childId,
+        expect.stringContaining(workflowRunId),
+        expect.any(Object),
+        expect.any(Object)
+      );
+      expect(remove).toHaveBeenCalledWith(childId, true);
+    }
+  );
 
   test("handleStreamEnd finalizes report when task status is interrupted", async () => {
     const config = await createTestConfig(rootDir);

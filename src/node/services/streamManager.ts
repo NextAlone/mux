@@ -14,7 +14,9 @@ import {
   RetryError,
 } from "ai";
 import type { LanguageModelV2Usage } from "@ai-sdk/provider";
+import type { ProviderOptions } from "@ai-sdk/provider-utils";
 import type { Result } from "@/common/types/result";
+import assert from "@/common/utils/assert";
 import { Ok, Err } from "@/common/types/result";
 import { log, type Logger } from "./log";
 import type {
@@ -23,6 +25,7 @@ import type {
   StreamAbortReason,
   UsageDeltaEvent,
   ToolCallEndEvent,
+  ToolCallExecutionStartEvent,
   CompletedMessagePart,
   WorkflowRunAttachedEvent,
 } from "@/common/types/stream";
@@ -35,6 +38,10 @@ import type {
   PersistedToolModelUsage,
 } from "@/common/types/message";
 import type { ThinkingLevel } from "@/common/types/thinking";
+import type {
+  ActiveTurnThinkingOverride,
+  RebuildProviderOptionsForThinkingLevel,
+} from "@/node/services/thinkingOverride";
 import type { NestedToolCall } from "@/common/orpc/schemas/message";
 import type { ProvidersConfigMap } from "@/common/orpc/types";
 import {
@@ -279,10 +286,23 @@ interface StreamRequestConfig {
   toolPolicy?: ToolPolicy;
   /**
    * Tool-search deferral state (tool-search experiment). Owned and mutated by
-   * aiService/tool_search.execute; prepareStep reads it each step to compute
+   * aiService/tool_catalog_search.execute; prepareStep reads it each step to compute
    * `activeTools`. Absent when the feature is inactive.
    */
   toolSearchState?: ToolSearchStreamState;
+  /**
+   * Mid-turn thinking override holder — the SESSION'S object, by reference
+   * (never created inside StreamManager: a locally-created object would be
+   * invisible to AgentSession.setActiveTurnThinkingLevel). prepareStep
+   * consumes `pending` before every model step.
+   */
+  thinkingOverrideState?: ActiveTurnThinkingOverride;
+  /**
+   * Closure built by AIService that re-runs the effective-level pipeline
+   * (policy clamp + resolveEffectiveThinkingLevel) and rebuilds provider
+   * options for the stream's model. `null` ⇒ not applicable / no-op.
+   */
+  rebuildProviderOptionsForThinkingLevel?: RebuildProviderOptionsForThinkingLevel;
 }
 
 /**
@@ -313,6 +333,12 @@ export interface PreparedModelFallback {
   thinkingLevel?: string;
   /** Route attribution corrections (routedThroughGateway, routeProvider, costsIncluded). */
   initialMetadataPatch?: Partial<MuxMetadata>;
+  /**
+   * Rebuild closure bound to the FALLBACK model so mid-turn thinking changes
+   * keep working after a fallback hop (the source model's closure would build
+   * options for the wrong model).
+   */
+  rebuildProviderOptionsForThinkingLevel?: RebuildProviderOptionsForThinkingLevel;
 }
 
 export interface ModelFallbackPrepareOptions {
@@ -322,6 +348,12 @@ export interface ModelFallbackPrepareOptions {
    * receives it so provider-message preparation cannot mutate live UI parts.
    */
   continuation?: { assistantMessage: MuxMessage };
+  /**
+   * Mid-turn thinking level to fold into the fallback's baseline: pending (not
+   * yet applied) or already-applied override from the refused stream. The
+   * fallback prepare re-clamps it for the next model.
+   */
+  thinkingLevelOverride?: ThinkingLevel;
 }
 
 export interface ModelFallbackOptions {
@@ -574,6 +606,11 @@ interface WorkspaceStreamInfo {
   // attachment and apply it as soon as the matching dynamic-tool part lands.
   pendingWorkflowRunAttachments: Map<string, WorkflowRunToolAttachment>;
 
+  // execute() can begin (lock acquired in withSequentialExecution) before the fullStream
+  // consumer has stored the matching dynamic-tool part. Keep the execution-start timestamp
+  // and apply it as soon as the part lands.
+  pendingToolExecutionStarts: Map<string, number>;
+
   model: string;
   /** Metadata model resolved from provider mapping for cost/token metadata lookups. */
   metadataModel: string;
@@ -814,6 +851,65 @@ export class StreamManager extends EventEmitter {
 
     await this.flushPartialWrite(workspaceId, streamInfo);
     return true;
+  }
+
+  /**
+   * Record on the dynamic-tool part when its execute() actually began running and notify
+   * the UI. Returns false when the part has not landed in streamInfo.parts yet.
+   */
+  private applyToolExecutionStart(
+    workspaceId: WorkspaceId,
+    streamInfo: WorkspaceStreamInfo,
+    toolCallId: string,
+    timestamp: number
+  ): boolean {
+    const partIndex = streamInfo.parts.findIndex(
+      (part) => part.type === "dynamic-tool" && part.toolCallId === toolCallId
+    );
+    if (partIndex === -1) {
+      return false;
+    }
+
+    const part = streamInfo.parts[partIndex];
+    assert(part.type === "dynamic-tool", "applyToolExecutionStart matched a non-tool part");
+    streamInfo.parts[partIndex] = { ...part, executionStartedAt: timestamp };
+
+    this.emit("tool-call-execution-start", {
+      type: "tool-call-execution-start",
+      workspaceId: workspaceId as string,
+      messageId: streamInfo.messageId,
+      toolCallId,
+      timestamp,
+    } satisfies ToolCallExecutionStartEvent);
+    return true;
+  }
+
+  /**
+   * Called from withSequentialExecution the moment a tool call's execute() acquires the
+   * execution lock. Parallel tool calls run sequentially, so this is the honest start of
+   * execution — the part's own `timestamp` only marks when the model emitted the call.
+   */
+  private handleToolExecutionStart(
+    workspaceId: WorkspaceId,
+    messageId: string,
+    toolCallId: string
+  ): void {
+    const streamInfo = this.workspaceStreams.get(workspaceId);
+    if (streamInfo?.messageId !== messageId) {
+      return;
+    }
+
+    // Use the stream's monotonic clock, not raw Date.now(): the tool-call part timestamp
+    // was monotonicized by nextPartTimestamp(), so a same-millisecond raw reading could be
+    // <= it. Reconnect replay repairs missed execution starts only when
+    // executionStartedAt > cursor, and the cursor sits at the tool-call timestamp when the
+    // client disconnected right after tool-call-start.
+    const timestamp = nextPartTimestamp(streamInfo);
+    if (!this.applyToolExecutionStart(workspaceId, streamInfo, toolCallId, timestamp)) {
+      // execute() won the race against the fullStream consumer; the "tool-call" case
+      // consumes this entry right after storing the part.
+      (streamInfo.pendingToolExecutionStarts ??= new Map()).set(toolCallId, timestamp);
+    }
   }
 
   /**
@@ -1249,6 +1345,11 @@ export class StreamManager extends EventEmitter {
         args: part.input,
         tokens,
         timestamp,
+        // Replays rebuild parts from scratch; carry the real execution start so
+        // elapsed timers don't restart from the model-emission timestamp.
+        ...(part.executionStartedAt !== undefined
+          ? { executionStartedAt: part.executionStartedAt }
+          : {}),
       });
 
       if (part.workflowRun != null) {
@@ -1297,13 +1398,35 @@ export class StreamManager extends EventEmitter {
       // Always persist the part in-memory (and to partial.json, if enabled), even if emit fails.
       let partToPersist = part;
       let pendingAttachment: WorkflowRunToolAttachment | undefined;
+      let pendingExecutionStart: number | undefined;
       if (part.type === "dynamic-tool") {
         pendingAttachment = this.takePendingWorkflowRunAttachment(streamInfo, part.toolCallId);
-        if (pendingAttachment != null) {
-          partToPersist = { ...part, workflowRun: pendingAttachment };
+        // execute() may have started (lock acquired) before the fullStream consumer
+        // stored this part; carry the real execution start onto the persisted part.
+        pendingExecutionStart = streamInfo.pendingToolExecutionStarts?.get(part.toolCallId);
+        if (pendingExecutionStart !== undefined) {
+          streamInfo.pendingToolExecutionStarts.delete(part.toolCallId);
+        }
+        if (pendingAttachment != null || pendingExecutionStart !== undefined) {
+          partToPersist = {
+            ...part,
+            ...(pendingAttachment != null ? { workflowRun: pendingAttachment } : {}),
+            ...(pendingExecutionStart !== undefined
+              ? { executionStartedAt: pendingExecutionStart }
+              : {}),
+          };
         }
       }
       streamInfo.parts.push(partToPersist);
+      if (pendingExecutionStart !== undefined && part.type === "dynamic-tool") {
+        this.emit("tool-call-execution-start", {
+          type: "tool-call-execution-start",
+          workspaceId: workspaceId as string,
+          messageId: streamInfo.messageId,
+          toolCallId: part.toolCallId,
+          timestamp: pendingExecutionStart,
+        } satisfies ToolCallExecutionStartEvent);
+      }
       if (pendingAttachment != null && part.type === "dynamic-tool") {
         await this.flushPartialWrite(workspaceId, streamInfo);
         this.emitWorkflowRunAttachedFromAttachment({
@@ -1583,9 +1706,17 @@ export class StreamManager extends EventEmitter {
     anthropicCacheTtlOverride?: AnthropicCacheTtl,
     onChunk?: StreamTextOnChunk,
     onStepMessages?: (messages: ModelMessage[]) => void,
-    toolSearchState?: ToolSearchStreamState
+    toolSearchState?: ToolSearchStreamState,
+    onToolExecutionStart?: (toolCallId: string) => void,
+    thinkingOverrideState?: ActiveTurnThinkingOverride,
+    rebuildProviderOptionsForThinkingLevel?: RebuildProviderOptionsForThinkingLevel
   ): StreamRequestConfig {
-    const finalProviderOptions = providerOptions;
+    // Mid-turn thinking overrides mutate providerOptions IN PLACE (the SDK's
+    // per-step deep-merge reads the object passed at streamText() time, so
+    // identity must stay stable). An initially-undefined value would make that
+    // mutation unobservable — normalize to a guaranteed mutable object.
+    const finalProviderOptions =
+      rebuildProviderOptionsForThinkingLevel != null ? (providerOptions ?? {}) : providerOptions;
 
     // Apply cache control for Anthropic models
     let finalMessages = messages;
@@ -1653,7 +1784,7 @@ export class StreamManager extends EventEmitter {
       system: finalSystem,
       // Keep provider-level parallel tool planning enabled, but serialize sibling
       // execute() handlers inside this stream so shared mutable state cannot race.
-      tools: withSequentialExecution(finalTools),
+      tools: withSequentialExecution(finalTools, onToolExecutionStart),
       providerOptions: finalProviderOptions,
       headers,
       maxOutputTokens: effectiveMaxOutputTokens,
@@ -1664,6 +1795,8 @@ export class StreamManager extends EventEmitter {
       onStepMessages,
       toolPolicy,
       toolSearchState,
+      thinkingOverrideState,
+      rebuildProviderOptionsForThinkingLevel,
     };
   }
 
@@ -1711,9 +1844,63 @@ export class StreamManager extends EventEmitter {
 
     return [
       stepCountIs(100000),
+      // The SDK evaluates stop conditions only after every sibling tool result in the
+      // model's current step settles. Do not move this to individual tool-call-end events:
+      // that would abort the remaining calls the model emitted in the same batch.
       () => request.hasQueuedMessages?.("tool-end") ?? false,
       hasSuccessfulRequiredToolResult,
     ];
+  }
+
+  /**
+   * Consume a pending mid-turn thinking-level override for the next step.
+   *
+   * Consume-once: `pending` is always cleared (a failed/no-op application must
+   * not retry on every subsequent step). On success the CONTENT of
+   * `request.providerOptions` is replaced in place — object identity is
+   * preserved because the SDK's per-step deep-merge reads the reference passed
+   * at streamText() time, and deep-merge alone cannot delete keys (e.g. the
+   * Anthropic `thinking` object when moving to "off").
+   *
+   * Returns the rebuilt options (for the prepareStep return value) or
+   * undefined when there is nothing to apply.
+   */
+  private applyPendingThinkingOverride(
+    request: StreamRequestConfig
+  ): Record<string, unknown> | undefined {
+    const state = request.thinkingOverrideState;
+    const pending = state?.pending;
+    if (state == null || pending == null) {
+      return undefined;
+    }
+    state.pending = undefined;
+    const rebuild = request.rebuildProviderOptionsForThinkingLevel;
+    if (rebuild == null) {
+      return undefined;
+    }
+    const rebuilt = rebuild(pending);
+    if (rebuilt == null) {
+      log.debug("Mid-turn thinking override skipped (not applicable / no-op)", {
+        requestedLevel: pending,
+        appliedLevel: state.applied,
+      });
+      return undefined;
+    }
+    const target = request.providerOptions;
+    // buildStreamRequestConfig normalizes providerOptions to a stable object
+    // whenever a rebuild closure is present, so target must exist here.
+    assert(target != null, "providerOptions must be normalized when a rebuild closure is present");
+    for (const key of Object.keys(target)) {
+      delete target[key];
+    }
+    Object.assign(target, rebuilt.providerOptions);
+    state.applied = rebuilt.effectiveLevel;
+    state.onApplied?.(rebuilt.effectiveLevel);
+    log.debug("Mid-turn thinking override applied", {
+      requestedLevel: pending,
+      effectiveLevel: rebuilt.effectiveLevel,
+    });
+    return rebuilt.providerOptions;
   }
 
   private createStreamResult(
@@ -1749,14 +1936,29 @@ export class StreamManager extends EventEmitter {
         request.onStepMessages?.(effectiveMessages);
         // Tool search (tool-search experiment): scope the advertised tool list
         // to core tools + activated deferred tools. Read per step so tools
-        // activated by tool_search.execute appear on the following step.
+        // activated by tool_catalog_search.execute appear on the following step.
         // undefined when the feature is inactive, keeping the return value
         // byte-identical to the pre-feature behavior.
         const activeTools = computeActiveToolNames(request.toolSearchState);
-        if (rewritten === stepMessages && activeTools === undefined) return undefined;
+        // Mid-turn thinking-level change: consume a pending override before
+        // this step's provider request is built.
+        const thinkingOverride = this.applyPendingThinkingOverride(request);
+        if (
+          rewritten === stepMessages &&
+          activeTools === undefined &&
+          thinkingOverride === undefined
+        ) {
+          return undefined;
+        }
         return {
           ...(rewritten === stepMessages ? {} : { messages: rewritten }),
           ...(activeTools !== undefined ? { activeTools } : {}),
+          // Defense in depth: the in-place request mutation is authoritative
+          // (per-step deep-merge cannot delete keys); returning the rebuilt
+          // options also covers any future SDK options snapshotting.
+          ...(thinkingOverride !== undefined
+            ? { providerOptions: thinkingOverride as ProviderOptions }
+            : {}),
         };
       },
       onChunk: request.onChunk,
@@ -1895,7 +2097,9 @@ export class StreamManager extends EventEmitter {
     onChunk?: StreamTextOnChunk,
     onStepMessages?: (messages: ModelMessage[]) => void,
     modelFallback?: ModelFallbackOptions,
-    toolSearchState?: ToolSearchStreamState
+    toolSearchState?: ToolSearchStreamState,
+    thinkingOverrideState?: ActiveTurnThinkingOverride,
+    rebuildProviderOptionsForThinkingLevel?: RebuildProviderOptionsForThinkingLevel
   ): WorkspaceStreamInfo {
     // abortController is created and linked to the caller-provided abortSignal in startStream().
 
@@ -1917,7 +2121,10 @@ export class StreamManager extends EventEmitter {
       anthropicCacheTtlOverride,
       onChunk,
       onStepMessages,
-      toolSearchState
+      toolSearchState,
+      (toolCallId) => this.handleToolExecutionStart(workspaceId, messageId, toolCallId),
+      thinkingOverrideState,
+      rebuildProviderOptionsForThinkingLevel
     );
 
     // Start streaming - this can throw immediately if API key is missing
@@ -1943,6 +2150,7 @@ export class StreamManager extends EventEmitter {
       lastPartTimestamp: startTime,
       toolCompletionTimestamps: new Map(),
       pendingWorkflowRunAttachments: new Map(),
+      pendingToolExecutionStarts: new Map(),
       model: modelString,
       metadataModel,
       thinkingLevel,
@@ -1981,6 +2189,19 @@ export class StreamManager extends EventEmitter {
       cumulativeProviderMetadata: undefined,
     };
 
+    // Mid-turn thinking override: route applied levels into this stream's
+    // metadata (partials, stream-end, final assistant message). Wired before
+    // any step can run; the catch-up sync covers a holder that already applied
+    // a level (e.g. re-attachment on retry paths).
+    if (request.thinkingOverrideState) {
+      request.thinkingOverrideState.onApplied = (level) => {
+        streamInfo.thinkingLevel = level;
+      };
+      if (request.thinkingOverrideState.applied) {
+        streamInfo.thinkingLevel = request.thinkingOverrideState.applied;
+      }
+    }
+
     // Atomically register the stream
     this.workspaceStreams.set(workspaceId, streamInfo);
 
@@ -1998,7 +2219,8 @@ export class StreamManager extends EventEmitter {
     toolCalls: ToolCallMap,
     toolCallId: string,
     toolName: string,
-    output: unknown
+    output: unknown,
+    providerExecuted?: boolean
   ): Promise<void> {
     // Find and update the existing tool part
     const existingPartIndex = streamInfo.parts.findIndex(
@@ -2057,6 +2279,7 @@ export class StreamManager extends EventEmitter {
       toolCallId,
       toolName,
       result: output,
+      ...(providerExecuted === true ? { providerExecuted: true } : {}),
       timestamp: completionTimestamp,
     } as ToolCallEndEvent);
   }
@@ -2067,9 +2290,18 @@ export class StreamManager extends EventEmitter {
     toolCalls: ToolCallMap,
     toolCallId: string,
     toolName: string,
-    output: unknown
+    output: unknown,
+    providerExecuted?: boolean
   ): Promise<void> {
-    await this.completeToolCall(workspaceId, streamInfo, toolCalls, toolCallId, toolName, output);
+    await this.completeToolCall(
+      workspaceId,
+      streamInfo,
+      toolCalls,
+      toolCallId,
+      toolName,
+      output,
+      providerExecuted
+    );
     await this.checkSoftCancelStream(workspaceId, streamInfo);
   }
 
@@ -2534,14 +2766,32 @@ export class StreamManager extends EventEmitter {
     // it would be categorized as a retryable api/unknown error and re-enter the
     // unbounded auto-retry loop this feature exists to prevent. Aborts rethrow so
     // a user interrupt during prepare stays an abort instead of a refusal.
+    // Fold a mid-turn thinking override (pending or already applied) into the
+    // fallback's baseline so the hop doesn't silently revert the user's
+    // mid-turn change. Pending is cleared here — prepare() re-clamps it for
+    // the fallback model and bakes it into the rebuilt provider options.
+    const overrideHolder = streamInfo.request.thinkingOverrideState;
+    const thinkingLevelOverride = overrideHolder?.pending ?? overrideHolder?.applied;
+    if (overrideHolder?.pending != null) {
+      overrideHolder.pending = undefined;
+    }
+    if (overrideHolder != null && thinkingLevelOverride != null) {
+      // Keep the override visible to later hops: prepare() bakes it into this
+      // hop's baseline, but a second hop re-folds from `applied`.
+      overrideHolder.applied = thinkingLevelOverride;
+    }
+    const prepareCallOptions: ModelFallbackPrepareOptions | undefined =
+      continuation?.success === true || thinkingLevelOverride != null
+        ? {
+            ...(continuation?.success === true
+              ? { continuation: { assistantMessage: continuation.data } }
+              : {}),
+            ...(thinkingLevelOverride != null ? { thinkingLevelOverride } : {}),
+          }
+        : undefined;
     let prepared: Result<PreparedModelFallback, string>;
     try {
-      prepared = await fallbackState.options.prepare(
-        nextModelString,
-        continuation?.success === true
-          ? { continuation: { assistantMessage: continuation.data } }
-          : undefined
-      );
+      prepared = await fallbackState.options.prepare(nextModelString, prepareCallOptions);
     } catch (error) {
       if (streamInfo.abortController.signal.aborted) {
         throw error;
@@ -2582,7 +2832,13 @@ export class StreamManager extends EventEmitter {
       streamInfo.request.onStepMessages,
       // Same state object: aiService's fallback prepare() rebuilt it in place
       // against the fallback toolset, so prepareStep keeps reading live state.
-      streamInfo.request.toolSearchState
+      streamInfo.request.toolSearchState,
+      (toolCallId) => this.handleToolExecutionStart(workspaceId, streamInfo.messageId, toolCallId),
+      // Same holder object (the session's setter keeps working across the
+      // hop) with a closure bound to the FALLBACK model. Attached before
+      // createStreamResult below in case the SDK eagerly prepares step 1.
+      streamInfo.request.thinkingOverrideState,
+      prepared.data.rebuildProviderOptionsForThinkingLevel
     );
     // createStreamResult may eagerly prepare the first fallback step and update
     // latestMessages. Clear stale source-step messages before starting it so a
@@ -3025,6 +3281,7 @@ export class StreamManager extends EventEmitter {
                   toolCallId: string;
                   toolName: string;
                   output: unknown;
+                  providerExecuted?: boolean;
                 };
 
                 // Strip encrypted content from web search results before storing
@@ -3058,7 +3315,8 @@ export class StreamManager extends EventEmitter {
                   toolCalls,
                   toolResultPart.toolCallId,
                   toolResultPart.toolName,
-                  strippedOutput
+                  strippedOutput,
+                  toolResultPart.providerExecuted
                 );
                 break;
               }
@@ -3070,6 +3328,7 @@ export class StreamManager extends EventEmitter {
                   toolCallId: string;
                   toolName: string;
                   error: unknown;
+                  providerExecuted?: boolean;
                 };
 
                 const logLevel = streamInfo.abortController.signal.aborted ? log.debug : log.error;
@@ -3096,7 +3355,8 @@ export class StreamManager extends EventEmitter {
                   toolCalls,
                   toolErrorPart.toolCallId,
                   toolErrorPart.toolName,
-                  errorOutput
+                  errorOutput,
+                  toolErrorPart.providerExecuted
                 );
                 break;
               }
@@ -4167,7 +4427,9 @@ export class StreamManager extends EventEmitter {
     onStepMessages?: (messages: ModelMessage[]) => void,
     providedRuntimeTempDir?: string,
     modelFallback?: ModelFallbackOptions,
-    toolSearchState?: ToolSearchStreamState
+    toolSearchState?: ToolSearchStreamState,
+    thinkingOverrideState?: ActiveTurnThinkingOverride,
+    rebuildProviderOptionsForThinkingLevel?: RebuildProviderOptionsForThinkingLevel
   ): Promise<Result<StreamToken, SendMessageError>> {
     const typedWorkspaceId = workspaceId as WorkspaceId;
 
@@ -4251,7 +4513,9 @@ export class StreamManager extends EventEmitter {
           onChunk,
           onStepMessages,
           modelFallback,
-          toolSearchState
+          toolSearchState,
+          thinkingOverrideState,
+          rebuildProviderOptionsForThinkingLevel
         );
 
         // Guard against a narrow race:
@@ -4615,6 +4879,17 @@ export class StreamManager extends EventEmitter {
                 }
 
                 return completionTimestamp > afterTimestamp;
+              }
+
+              // A queued tool's execute() can begin after the reconnect cursor while the
+              // part's own timestamp (model emission) is older. Replay the part so the
+              // enriched tool-call-start carries executionStartedAt and the renderer can
+              // start the elapsed timer (the aggregator merges it into the existing row).
+              if (
+                part.executionStartedAt !== undefined &&
+                part.executionStartedAt > afterTimestamp
+              ) {
+                return true;
               }
             }
 

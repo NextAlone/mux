@@ -271,6 +271,7 @@ function buildUserDisplayedMessages(options: {
       ? {
           skillName: muxMeta.skillName,
           scope: muxMeta.scope,
+          arguments: muxMeta.arguments,
           snapshot: agentSkillSnapshot,
         }
       : undefined;
@@ -532,6 +533,7 @@ function appendToolRows(
     isLastPartOfMessage: options.isLastPartOfMessage,
     ...(part.workflowRun != null ? { workflowRun: part.workflowRun } : {}),
     timestamp: part.timestamp ?? options.baseTimestamp,
+    ...(part.executionStartedAt != null ? { executionStartedAt: part.executionStartedAt } : {}),
     nestedCalls,
   });
 }

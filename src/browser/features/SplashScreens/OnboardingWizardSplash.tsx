@@ -213,6 +213,7 @@ export function OnboardingWizardSplash(props: { onDismiss: () => void }) {
 
   const projectAddFormRef = useRef<ProjectAddFormHandle | null>(null);
   const [isProjectCreating, setIsProjectCreating] = useState(false);
+  const [projectFormHasError, setProjectFormHasError] = useState(false);
 
   const [direction, setDirection] = useState<Direction>("forward");
 
@@ -846,6 +847,7 @@ export function OnboardingWizardSplash(props: { onDismiss: () => void }) {
               autoFocus={userProjects.size === 0}
               hideFooter
               onIsCreatingChange={setIsProjectCreating}
+              onErrorChange={setProjectFormHasError}
               onSuccess={(normalizedPath, projectConfig) => {
                 addProject(normalizedPath, projectConfig);
                 updatePersistedState(getAgentsInitNudgeKey(normalizedPath), true);
@@ -855,11 +857,14 @@ export function OnboardingWizardSplash(props: { onDismiss: () => void }) {
             />
           </div>
 
-          <p className="mt-2 text-xs">
-            {userProjects.size > 0
-              ? "Add another folder or repo, or leave this blank and click Next to continue."
-              : "Click Next to add this project."}
-          </p>
+          {/* Hide the "click Next" nudge while the form shows an error; the two contradict. */}
+          {!projectFormHasError && (
+            <p className="mt-2 text-xs">
+              {userProjects.size > 0
+                ? "Add another folder or repo, or leave this blank and click Next to continue."
+                : "Click Next to add this project."}
+            </p>
+          )}
         </>
       ),
     });
@@ -1014,6 +1019,7 @@ export function OnboardingWizardSplash(props: { onDismiss: () => void }) {
     muxGatewayLoginInProgress,
     muxGatewayLoginStatus,
     openProvidersSettings,
+    projectFormHasError,
     userProjects.size,
     providersConfig,
     refreshMuxGatewayAccountStatus,
@@ -1052,6 +1058,9 @@ export function OnboardingWizardSplash(props: { onDismiss: () => void }) {
       return;
     }
     setDirection("back");
+    // Changing steps remounts the project form without its inline error, so
+    // clear the stale flag or the "click Next" nudge stays hidden on return.
+    setProjectFormHasError(false);
     setStepIndex((i) => Math.max(0, i - 1));
   };
 
@@ -1060,6 +1069,7 @@ export function OnboardingWizardSplash(props: { onDismiss: () => void }) {
       return;
     }
     setDirection("forward");
+    setProjectFormHasError(false);
     setStepIndex((i) => Math.min(totalSteps - 1, i + 1));
   };
 

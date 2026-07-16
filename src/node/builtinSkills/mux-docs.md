@@ -47,69 +47,70 @@ Use this index to find a page's:
 - **Documentation**
   - **Getting Started**
     - Introduction (`/`) → `references/docs/index.mdx`
-    - Install (`/install`) → `references/docs/install.mdx` — Download and install Mux for macOS, Linux, and Windows
+    - Install (`/install`) → `references/docs/install.mdx`: Download and install Mux for macOS, Linux, and Windows
     - **Models**
-      - Models (`/config/models`) → `references/docs/config/models.mdx` — Select and configure AI models in Mux
-      - Providers (`/config/providers`) → `references/docs/config/providers.mdx` — Configure API keys and settings for AI providers
-    - Why Parallelize? (`/getting-started/why-parallelize`) → `references/docs/getting-started/why-parallelize.mdx` — Use cases for running multiple AI agents in parallel
-    - Mux Gateway (`/getting-started/mux-gateway`) → `references/docs/getting-started/mux-gateway.mdx` — Log in to Mux Gateway to get evaluation credits
-    - CLI (`/reference/cli`) → `references/docs/reference/cli.mdx` — Run one-off agent tasks and durable workflows from the command line
+      - Models (`/config/models`) → `references/docs/config/models.mdx`: Select and configure AI models in Mux
+      - Providers (`/config/providers`) → `references/docs/config/providers.mdx`: Configure API keys and settings for AI providers
+    - Why Parallelize? (`/getting-started/why-parallelize`) → `references/docs/getting-started/why-parallelize.mdx`: Use cases for running multiple AI agents in parallel
+    - Mux Gateway (`/getting-started/mux-gateway`) → `references/docs/getting-started/mux-gateway.mdx`: Log in to Mux Gateway to get evaluation credits
+    - CLI (`/reference/cli`) → `references/docs/reference/cli.mdx`: Run one-off agent tasks and durable workflows from the command line
   - **Workspaces**
-    - Workspaces (`/workspaces`) → `references/docs/workspaces/index.mdx` — Isolated development environments for parallel agent work
-    - Forking Workspaces (`/workspaces/fork`) → `references/docs/workspaces/fork.mdx` — Clone workspaces with conversation history to explore alternatives
-    - .muxignore (`/workspaces/muxignore`) → `references/docs/workspaces/muxignore.mdx` — Sync ignored files to JJ Workspace checkouts
+    - Workspaces (`/workspaces`) → `references/docs/workspaces/index.mdx`: Isolated development environments for parallel agent work
+    - Scratch chats (`/workspaces/scratch-chats`) → `references/docs/workspaces/scratch-chats.mdx`: Start a durable chat with an app-managed folder and no project or Git repository.
+    - Forking Workspaces (`/workspaces/fork`) → `references/docs/workspaces/fork.mdx`: Clone workspaces with conversation history to explore alternatives
+    - .muxignore (`/workspaces/muxignore`) → `references/docs/workspaces/muxignore.mdx`: Sync ignored files to JJ Workspace checkouts
     - **Compaction**
-      - Compaction (`/workspaces/compaction`) → `references/docs/workspaces/compaction/index.mdx` — Managing conversation context size with compaction
-      - Manual Compaction (`/workspaces/compaction/manual`) → `references/docs/workspaces/compaction/manual.mdx` — Commands for manually managing conversation context
-      - Automatic Compaction (`/workspaces/compaction/automatic`) → `references/docs/workspaces/compaction/automatic.mdx` — Let Mux automatically compact your conversations based on usage or idle time
-      - Customization (`/workspaces/compaction/customization`) → `references/docs/workspaces/compaction/customization.mdx` — Customize the compaction system prompt
+      - Compaction (`/workspaces/compaction`) → `references/docs/workspaces/compaction/index.mdx`: Managing conversation context size with compaction
+      - Manual Compaction (`/workspaces/compaction/manual`) → `references/docs/workspaces/compaction/manual.mdx`: Commands for manually managing conversation context
+      - Automatic Compaction (`/workspaces/compaction/automatic`) → `references/docs/workspaces/compaction/automatic.mdx`: Let Mux automatically compact your conversations based on usage or idle time
+      - Customization (`/workspaces/compaction/customization`) → `references/docs/workspaces/compaction/customization.mdx`: Customize the compaction system prompt
     - **Runtimes**
-      - Runtimes (`/runtime`) → `references/docs/runtime/index.mdx` — Configure where and how Mux executes agent workspaces
-      - Local Runtime (`/runtime/local`) → `references/docs/runtime/local.mdx` — Run agents directly in your project directory
-      - JJ Workspace Runtime (`/runtime/worktree`) → `references/docs/runtime/worktree.mdx` — Isolated jj workspace environments for parallel agent work
-      - SSH Runtime (`/runtime/ssh`) → `references/docs/runtime/ssh.mdx` — Run agents on remote hosts over SSH for security and performance
-      - Coder Runtime (`/runtime/coder`) → `references/docs/runtime/coder.mdx` — Run agents on Coder workspaces
-      - Docker Runtime (`/runtime/docker`) → `references/docs/runtime/docker.mdx` — Run agents in isolated Docker containers
-      - Dev Container Runtime (`/runtime/devcontainer`) → `references/docs/runtime/devcontainer.mdx` — Run agents in containers defined by devcontainer.json
+      - Runtimes (`/runtime`) → `references/docs/runtime/index.mdx`: Configure where and how Mux executes agent workspaces
+      - Local Runtime (`/runtime/local`) → `references/docs/runtime/local.mdx`: Run agents directly in your project directory
+      - JJ Workspace Runtime (`/runtime/worktree`) → `references/docs/runtime/worktree.mdx`: Isolated jj workspace environments for parallel agent work
+      - SSH Runtime (`/runtime/ssh`) → `references/docs/runtime/ssh.mdx`: Run agents on remote hosts over SSH for security and performance
+      - Coder Runtime (`/runtime/coder`) → `references/docs/runtime/coder.mdx`: Run agents on Coder workspaces
+      - Docker Runtime (`/runtime/docker`) → `references/docs/runtime/docker.mdx`: Run agents in isolated Docker containers
+      - Dev Container Runtime (`/runtime/devcontainer`) → `references/docs/runtime/devcontainer.mdx`: Run agents in containers defined by devcontainer.json
     - **Hooks**
-      - Init Hooks (`/hooks/init`) → `references/docs/hooks/init.mdx` — Run setup commands automatically when creating new workspaces
-      - Tool Hooks (`/hooks/tools`) → `references/docs/hooks/tools.mdx` — Block dangerous commands, lint after edits, and set up your environment
-      - Environment Variables (`/hooks/environment-variables`) → `references/docs/hooks/environment-variables.mdx` — Environment variables available in agent bash commands and hooks
+      - Init Hooks (`/hooks/init`) → `references/docs/hooks/init.mdx`: Run setup commands automatically when creating new workspaces
+      - Tool Hooks (`/hooks/tools`) → `references/docs/hooks/tools.mdx`: Block dangerous commands, lint after edits, and set up your environment
+      - Environment Variables (`/hooks/environment-variables`) → `references/docs/hooks/environment-variables.mdx`: Environment variables available in agent bash commands and hooks
   - **Agents**
-    - Agents (`/agents`) → `references/docs/agents/index.mdx` — Define custom agents (modes + subagents) as Markdown files
-    - Instruction Files (`/agents/instruction-files`) → `references/docs/agents/instruction-files.mdx` — Configure agent behavior with AGENTS.md files
-    - Agent Skills (`/agents/agent-skills`) → `references/docs/agents/agent-skills.mdx` — Share reusable workflows and references with skills
-    - Plan Mode (`/agents/plan-mode`) → `references/docs/agents/plan-mode.mdx` — Review and collaborate on plans before execution
-    - System Prompt (`/agents/system-prompt`) → `references/docs/agents/system-prompt.mdx` — How Mux constructs the system prompt for AI models
-    - Prompting Tips (`/agents/prompting-tips`) → `references/docs/agents/prompting-tips.mdx` — Tips and tricks for getting the most out of your AI agents
-    - Best of N (`/agents/best-of-n`) → `references/docs/agents/best-of-n.mdx` — Improve plans, analysis, and reviews by asking Mux to explore multiple candidate answers in parallel
-    - Workflows (`/agents/workflows`) → `references/docs/agents/workflows.mdx` — Define durable multi-agent processes as declarative Markdown templates
-    - Multi-model fusion (`/agents/fusion`) → `references/docs/agents/fusion.mdx` — Run several selected models in parallel and synthesize one answer
+    - Agents (`/agents`) → `references/docs/agents/index.mdx`: Define custom agents (modes + subagents) as Markdown files
+    - Instruction Files (`/agents/instruction-files`) → `references/docs/agents/instruction-files.mdx`: Configure agent behavior with AGENTS.md files
+    - Agent Skills (`/agents/agent-skills`) → `references/docs/agents/agent-skills.mdx`: Share reusable workflows and references with skills
+    - Plan Mode (`/agents/plan-mode`) → `references/docs/agents/plan-mode.mdx`: Review and collaborate on plans before execution
+    - System Prompt (`/agents/system-prompt`) → `references/docs/agents/system-prompt.mdx`: How Mux constructs the system prompt for AI models
+    - Prompting Tips (`/agents/prompting-tips`) → `references/docs/agents/prompting-tips.mdx`: Tips and tricks for getting the most out of your AI agents
+    - Best of N (`/agents/best-of-n`) → `references/docs/agents/best-of-n.mdx`: Improve plans, analysis, and reviews by asking Mux to explore multiple candidate answers in parallel
+    - Workflows (`/agents/workflows`) → `references/docs/agents/workflows.mdx`: Define durable multi-agent processes as declarative Markdown templates
+    - Multi-model fusion (`/agents/fusion`) → `references/docs/agents/fusion.mdx`: Run several selected models in parallel and synthesize one answer
   - **Configuration**
-    - MCP Servers (`/config/mcp-servers`) → `references/docs/config/mcp-servers.mdx` — Extend agent capabilities with Model Context Protocol servers
-    - Policy File (`/config/policy-file`) → `references/docs/config/policy-file.mdx` — Admin-enforced restrictions for providers, models, MCP, and runtimes
-    - Project Secrets (`/config/project-secrets`) → `references/docs/config/project-secrets.mdx` — Manage environment variables and API keys for your projects
-    - Agentic Git Identity (`/config/agentic-git-identity`) → `references/docs/config/agentic-git-identity.mdx` — Configure a separate Git identity for AI-generated commits
-    - Keyboard Shortcuts (`/config/keybinds`) → `references/docs/config/keybinds.mdx` — Complete keyboard shortcut reference for Mux
-    - Notifications (`/config/notifications`) → `references/docs/config/notifications.mdx` — Configure how agents notify you about important events
-    - Server Access (`/config/server-access`) → `references/docs/config/server-access.mdx` — Configure authentication and session controls for mux server/browser mode
-    - Vim Mode (`/config/vim-mode`) → `references/docs/config/vim-mode.mdx` — Vim-style editing in the Mux chat input
+    - MCP Servers (`/config/mcp-servers`) → `references/docs/config/mcp-servers.mdx`: Extend agent capabilities with Model Context Protocol servers
+    - Policy File (`/config/policy-file`) → `references/docs/config/policy-file.mdx`: Admin-enforced restrictions for providers, models, MCP, and runtimes
+    - Project Secrets (`/config/project-secrets`) → `references/docs/config/project-secrets.mdx`: Manage environment variables and API keys for your projects
+    - Agentic Git Identity (`/config/agentic-git-identity`) → `references/docs/config/agentic-git-identity.mdx`: Configure a separate Git identity for AI-generated commits
+    - Keyboard Shortcuts (`/config/keybinds`) → `references/docs/config/keybinds.mdx`: Complete keyboard shortcut reference for Mux
+    - Notifications (`/config/notifications`) → `references/docs/config/notifications.mdx`: Configure how agents notify you about important events
+    - Server Access (`/config/server-access`) → `references/docs/config/server-access.mdx`: Configure authentication and session controls for mux server/browser mode
+    - Vim Mode (`/config/vim-mode`) → `references/docs/config/vim-mode.mdx`: Vim-style editing in the Mux chat input
   - **Guides**
-    - GitHub Actions (`/guides/github-actions`) → `references/docs/guides/github-actions.mdx` — Automate your workflows with mux run in GitHub Actions
-    - Symbol Shortcuts (`/guides/symbol-shortcuts`) → `references/docs/guides/symbol-shortcuts.mdx` — Insert math and trading symbols in the Mux chat input with LaTeX-style backslash commands
-    - Agentic Git Identity (`/config/agentic-git-identity`) → `references/docs/config/agentic-git-identity.mdx` — Configure a separate Git identity for AI-generated commits
-    - Prompting Tips (`/agents/prompting-tips`) → `references/docs/agents/prompting-tips.mdx` — Tips and tricks for getting the most out of your AI agents
+    - GitHub Actions (`/guides/github-actions`) → `references/docs/guides/github-actions.mdx`: Automate your workflows with mux run in GitHub Actions
+    - Symbol Shortcuts (`/guides/symbol-shortcuts`) → `references/docs/guides/symbol-shortcuts.mdx`: Insert math and trading symbols in the Mux chat input with LaTeX-style backslash commands
+    - Agentic Git Identity (`/config/agentic-git-identity`) → `references/docs/config/agentic-git-identity.mdx`: Configure a separate Git identity for AI-generated commits
+    - Prompting Tips (`/agents/prompting-tips`) → `references/docs/agents/prompting-tips.mdx`: Tips and tricks for getting the most out of your AI agents
   - **Integrations**
-    - VS Code Extension (`/integrations/vscode-extension`) → `references/docs/integrations/vscode-extension.mdx` — Pair Mux workspaces with VS Code and Cursor editors
-    - ACP (Editor Integrations) (`/integrations/acp`) → `references/docs/integrations/acp.mdx` — Connect Mux to Zed, Neovim, and JetBrains via the Agent Client Protocol
+    - VS Code Extension (`/integrations/vscode-extension`) → `references/docs/integrations/vscode-extension.mdx`: Pair Mux workspaces with VS Code and Cursor editors
+    - ACP (Editor Integrations) (`/integrations/acp`) → `references/docs/integrations/acp.mdx`: Connect Mux to Zed, Neovim, and JetBrains via the Agent Client Protocol
   - **Reference**
-    - Debugging (`/reference/debugging`) → `references/docs/reference/debugging.mdx` — View live backend logs and diagnose issues
-    - Telemetry (`/reference/telemetry`) → `references/docs/reference/telemetry.mdx` — What Mux collects, what it doesn’t, and how to disable it
-    - Storybook (`/reference/storybook`) → `references/docs/reference/storybook.mdx` — Develop and test Mux UI states in isolation
-    - Terminal Benchmarking (`/reference/benchmarking`) → `references/docs/reference/benchmarking.mdx` — Run Terminal-Bench benchmarks with the Mux adapter
-    - Context Boundaries for Compaction and Reset (`/adr/0003-context-boundaries-for-compaction-and-reset`) → `references/docs/adr/0003-context-boundaries-for-compaction-and-reset.md` — Architecture decision for modeling provider context windows separately from transcript history
-    - CLI Goal Runs are not strict /goal aliases (`/adr/0004-cli-goal-runs-are-not-strict-goal-aliases`) → `references/docs/adr/0004-cli-goal-runs-are-not-strict-goal-aliases.md` — Architecture decision for giving mux run --goal CLI-specific completion and limit semantics
-    - AGENTS.md (`/AGENTS`) → `references/docs/AGENTS.md` — Agent instructions for AI assistants working on the Mux codebase
+    - Debugging (`/reference/debugging`) → `references/docs/reference/debugging.mdx`: View live backend logs and diagnose issues
+    - Telemetry (`/reference/telemetry`) → `references/docs/reference/telemetry.mdx`: What Mux collects, what it doesn’t, and how to disable it
+    - Storybook (`/reference/storybook`) → `references/docs/reference/storybook.mdx`: Develop and test Mux UI states in isolation
+    - Terminal Benchmarking (`/reference/benchmarking`) → `references/docs/reference/benchmarking.mdx`: Run Terminal-Bench benchmarks with the Mux adapter
+    - Context Boundaries for Compaction and Reset (`/adr/0003-context-boundaries-for-compaction-and-reset`) → `references/docs/adr/0003-context-boundaries-for-compaction-and-reset.md`: Architecture decision for modeling provider context windows separately from transcript history
+    - CLI Goal Runs are not strict /goal aliases (`/adr/0004-cli-goal-runs-are-not-strict-goal-aliases`) → `references/docs/adr/0004-cli-goal-runs-are-not-strict-goal-aliases.md`: Architecture decision for giving mux run --goal CLI-specific completion and limit semantics
+    - AGENTS.md (`/AGENTS`) → `references/docs/AGENTS.md`: Agent instructions for AI assistants working on the Mux codebase
 <!-- END DOCS_TREE -->
 
 1. Read the docs navigation (source of truth for which pages exist):

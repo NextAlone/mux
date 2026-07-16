@@ -19,7 +19,7 @@ import {
   ADVISOR_DEFAULT_MAX_USES_PER_TURN,
   resolveAdvisorEnabledForAgent,
 } from "@/common/constants/advisor";
-import { EXPERIMENT_IDS } from "@/common/constants/experiments";
+import { EXPERIMENT_IDS, type ExperimentId } from "@/common/constants/experiments";
 import { KNOWN_MODELS } from "@/common/constants/knownModels";
 
 import type { GoalRecordV1 } from "@/common/types/goal";
@@ -139,9 +139,14 @@ import {
 import type { TaskDelegationCallSurface, TaskDelegationMode } from "@/common/types/taskDelegation";
 import {
   enforceThinkingPolicy,
+  isXaiGrokFastVariantSwap,
   resolveEffectiveThinkingLevel,
   resolveMinimumThinkingLevel,
 } from "@/common/utils/thinking/policy";
+import type {
+  ActiveTurnThinkingOverride,
+  RebuildProviderOptionsForThinkingLevel,
+} from "@/node/services/thinkingOverride";
 
 import type {
   ErrorEvent,
@@ -155,6 +160,7 @@ import {
   prepareToolSearch,
   rebuildToolSearchState,
   seedToolSearchActivationsFromMessages,
+  TOOL_SEARCH_TOOL_NAME,
   type ToolSearchRuntime,
 } from "@/common/utils/tools/toolCatalog";
 import type { PTCEventWithParent } from "@/node/services/tools/code_execution";
@@ -204,7 +210,7 @@ import {
   WorkflowTaskServiceAdapter,
 } from "@/node/services/workflows/WorkflowTaskServiceAdapter";
 import { resolveWorkflowScript } from "@/node/services/workflows/workflowScriptResolver";
-import { isProjectTrusted } from "@/node/utils/projectTrust";
+import { isWorkspaceProjectTrusted } from "@/node/utils/projectTrust";
 
 const STREAM_STARTUP_DIAGNOSTIC_THRESHOLD_MS = 1_000;
 
@@ -498,6 +504,19 @@ export interface StreamMessageOptions {
     duration?: number;
     systemMessageTokens?: number;
   }) => Promise<Result<CompactionCompletionMetadata, string>>;
+  /**
+   * Model floor already resolved by AgentSession (config.json
+   * minThinkingLevelByModel → resolveMinimumThinkingLevel). Passed down so
+   * mid-turn overrides clamp against the same floor as the send-time level;
+   * internal callers may omit it (re-resolved from defaults).
+   */
+  minThinkingLevel?: ThinkingLevel;
+  /**
+   * Session-owned per-turn holder for mid-turn thinking-level overrides.
+   * When absent (compaction, sub-agent paths), the feature is inert for the
+   * stream. See src/node/services/thinkingOverride.ts.
+   */
+  activeTurnThinkingOverride?: ActiveTurnThinkingOverride;
 }
 
 function convertOpenAICompactUsage(
@@ -791,6 +810,26 @@ export class AIService extends EventEmitter {
   }
 
   /**
+   * Whether a global experiment is enabled. False when no ExperimentsService was
+   * provided (lightweight test setups). Exposed so collaborators constructed with
+   * an AIService reference (e.g. AgentSession) can gate experiment-only behavior
+   * without threading ExperimentsService through every constructor.
+   */
+  isExperimentEnabled(experimentId: ExperimentId): boolean {
+    return this.experimentsService?.isExperimentEnabled(experimentId) === true;
+  }
+
+  /**
+   * Whether the user explicitly enabled an experiment via local override.
+   * Unlike isExperimentEnabled, remote assignment can never satisfy this gate —
+   * required for security-sensitive experiments (see
+   * ExperimentsService.isExperimentLocallyEnabled).
+   */
+  isExperimentLocallyEnabled(experimentId: ExperimentId): boolean {
+    return this.experimentsService?.isExperimentLocallyEnabled(experimentId) === true;
+  }
+
+  /**
    * Build the session-segment memory context: the index snapshot advertised
    * in the memory tool description, plus the hot-memories block (pinned +
    * frequently used memory files; memory-hot-set sub-experiment). Returns
@@ -899,6 +938,7 @@ export class AIService extends EventEmitter {
       "stream-start",
       "stream-delta",
       "tool-call-start",
+      "tool-call-execution-start",
       "tool-call-delta",
       "tool-call-end",
       "reasoning-delta",
@@ -1266,6 +1306,18 @@ export class AIService extends EventEmitter {
     return Ok(undefined);
   }
 
+  /**
+   * Host-evaluated gate for the claude-skills-compat experiment: when enabled, skill
+   * discovery/read paths also scan .claude/skills and ~/.claude/skills (read-only,
+   * lowest precedence). Public so AgentSession's skill snapshot materialization can
+   * resolve slash-invoked .claude skills with the same roots as discovery.
+   */
+  isClaudeSkillsCompatEnabled(): boolean {
+    return (
+      this.experimentsService?.isExperimentEnabled(EXPERIMENT_IDS.CLAUDE_SKILLS_COMPAT) === true
+    );
+  }
+
   /** Stream a message conversation to the AI model. */
   async streamMessage(opts: StreamMessageOptions): Promise<Result<void, SendMessageError>> {
     const {
@@ -1298,6 +1350,8 @@ export class AIService extends EventEmitter {
       openaiTruncationModeOverride,
       installOpenAIResponsesRemoteCompaction,
       muxMetadata,
+      minThinkingLevel: providedMinThinkingLevel,
+      activeTurnThinkingOverride,
     } = opts;
     // Support interrupts during startup (before StreamManager emits stream-start).
     // We register an AbortController up-front and let stopStream() abort it.
@@ -1718,6 +1772,9 @@ export class AIService extends EventEmitter {
         this.experimentsService?.isExperimentEnabled(EXPERIMENT_IDS.TOOL_SEARCH) === true;
       const memoryHotSetExperimentEnabled =
         this.experimentsService?.isExperimentEnabled(EXPERIMENT_IDS.MEMORY_HOT_SET) === true;
+      // claude-skills-compat is host-evaluated (like memory-hot-set): sub-agents share the
+      // host ExperimentsService, so it is not inherited through SendMessageOptions.experiments.
+      const claudeSkillsCompatExperimentEnabled = this.isClaudeSkillsCompatEnabled();
       // Once final tool policy keeps the memory tool, upgrade the index-only
       // memory context (resolved pre-policy with includeHotMemories: false) to
       // the token-budgeted hot block for the model that will actually stream.
@@ -1766,7 +1823,7 @@ export class AIService extends EventEmitter {
         effectiveToolPolicy,
       } = agentResult.data;
       const legacyModeForMetadata = getLegacyModeForAgentMetadata(effectiveAgentId, effectiveMode);
-      const projectTrusted = isProjectTrusted(this.config, metadata.projectPath);
+      const projectTrusted = isWorkspaceProjectTrusted(this.config, metadata);
       const sharedExecutionTrusted = isWorkspaceTrustedForSharedExecution(metadata, cfg.projects);
       const latestUserMessage = [...messages].reverse().find((message) => message.role === "user");
       const isTopLevelOrdinaryUserTurn =
@@ -1940,6 +1997,7 @@ export class AIService extends EventEmitter {
           memoryToolAvailable: toolset.memoryToolAvailable,
           taskDelegationCallSurface: toolset.taskDelegationCallSurface,
           hotMemoriesBlock: contextForModel?.hotMemoriesBlock ?? undefined,
+          claudeSkillsCompatEnabled: claudeSkillsCompatExperimentEnabled,
         });
 
       // Build provisional agent context before tool policy finalizes the toolset.
@@ -1996,7 +2054,7 @@ export class AIService extends EventEmitter {
       }
 
       // Tool search (tool-search experiment): assembly-time gate. The runtime
-      // holder makes getToolsForModel create the tool_search tool; its `state`
+      // holder makes getToolsForModel create the tool_catalog_search tool; its `state`
       // is assigned only after policy filtering builds the deferred catalog
       // (see prepareToolSearch below). Without MCP tools there is nothing to
       // defer, so the feature stays fully inactive.
@@ -2146,7 +2204,7 @@ export class AIService extends EventEmitter {
         thinkingLevel: thinkingLevel ?? "off",
         costsUsd: sessionCostsUsd,
       });
-      const getWorkflowProjectTrusted = () => isProjectTrusted(this.config, metadata.projectPath);
+      const getWorkflowProjectTrusted = () => isWorkspaceProjectTrusted(this.config, metadata);
 
       const workflowService =
         dynamicWorkflowsExperimentEnabled && this.taskService != null
@@ -2292,7 +2350,7 @@ export class AIService extends EventEmitter {
                   await waitForWorkflowContinuationRetry();
                 }
               },
-              getCurrentProjectTrusted: () => isProjectTrusted(this.config, metadata.projectPath),
+              getCurrentProjectTrusted: () => isWorkspaceProjectTrusted(this.config, metadata),
               runnerId: `workflow-runner:${workspaceId}`,
             })
           : undefined;
@@ -2498,6 +2556,7 @@ export class AIService extends EventEmitter {
           memory: memoryExperimentEnabled,
           workspaceHeartbeats: workspaceHeartbeatsExperimentEnabled,
           toolSearch: toolSearchExperimentEnabled,
+          claudeSkillsCompat: claudeSkillsCompatExperimentEnabled,
         },
         // Dynamic context for tool descriptions (moved from system prompt for better model attention)
         availableSubagents: agentDefinitions,
@@ -2553,7 +2612,7 @@ export class AIService extends EventEmitter {
       // must consume the policy-filtered record so policy-disabled tools never
       // enter the deferred catalog. This runs before every downstream consumer
       // of `tools` (system-prompt rebuild, sentinel tool names, telemetry,
-      // streaming) so a dropped tool_search cannot leak anywhere.
+      // streaming) so a dropped tool_catalog_search cannot leak anywhere.
       // PTC gate uses the same condition toolAssembly uses to add code_execution:
       // presence-sniffing the record would misfire on an MCP tool named
       // code_execution (see prepareToolSearch).
@@ -2640,7 +2699,7 @@ export class AIService extends EventEmitter {
         systemMessageTokens = await tokenizer.countTokens(systemMessage);
       }
 
-      // Re-activate deferred tools discovered by tool_search in earlier turns
+      // Re-activate deferred tools discovered by tool_catalog_search in earlier turns
       // without requiring a new search. Must run before the sentinel list is
       // computed so pre-activated tools are advertised in agent transitions.
       if (toolSearchRuntime?.state) {
@@ -2778,8 +2837,7 @@ export class AIService extends EventEmitter {
         effectiveMuxProviderOptions,
         workspaceId,
         this.providerService.getConfig(),
-        routeProvider,
-        effectiveThinkingLevel
+        routeProvider
       );
 
       // --- Model parameter overrides from providers.jsonc ---
@@ -2795,21 +2853,29 @@ export class AIService extends EventEmitter {
       // Recursive merge within the provider namespace preserves non-conflicting nested
       // subfields (e.g., user reasoning.max_tokens alongside Mux reasoning.enabled).
       // Mux-built values win on leaf conflicts for safety of thinking/reasoning/cache.
+      // Shared by the initial build and mid-turn thinking-level rebuilds so both
+      // produce identically-shaped options.
       const providerOptionsNamespaceKey = resolveProviderOptionsNamespaceKey(
         canonicalProviderName,
         routeProvider
       );
-      const muxProviderNamespace = (providerOptions as Record<string, unknown>)?.[
-        providerOptionsNamespaceKey
-      ];
-      const mergedProviderOptions = resolvedOverrides.providerExtras
-        ? {
-            ...providerOptions,
-            [providerOptionsNamespaceKey]: isPlainObject(muxProviderNamespace)
-              ? mergeProviderExtrasUnderMux(resolvedOverrides.providerExtras, muxProviderNamespace)
-              : resolvedOverrides.providerExtras,
-          }
-        : providerOptions;
+      const mergeModelParameterExtras = (
+        builtOptions: Record<string, unknown>
+      ): Record<string, unknown> => {
+        if (!resolvedOverrides.providerExtras) {
+          return builtOptions;
+        }
+        const muxProviderNamespace = builtOptions[providerOptionsNamespaceKey];
+        return {
+          ...builtOptions,
+          [providerOptionsNamespaceKey]: isPlainObject(muxProviderNamespace)
+            ? mergeProviderExtrasUnderMux(resolvedOverrides.providerExtras, muxProviderNamespace)
+            : resolvedOverrides.providerExtras,
+        };
+      };
+      const mergedProviderOptions = mergeModelParameterExtras(
+        providerOptions as Record<string, unknown>
+      );
 
       recordStartupPhaseTiming("buildRequestConfigMs", buildRequestConfigStartedAt);
 
@@ -2819,6 +2885,63 @@ export class AIService extends EventEmitter {
           resolvedOverrides
         );
       }
+
+      // --- Mid-turn thinking-level override support ---
+      // Floor resolved by AgentSession when present; internal callers fall back
+      // to the model default so clamping never loosens below policy.
+      const minThinkingLevel =
+        providedMinThinkingLevel ??
+        resolveMinimumThinkingLevel(modelString, undefined, this.providerService.getConfig());
+      // Rebuilds provider options for a new level using the exact same pipeline
+      // as the initial build (policy clamp → resolveEffectiveThinkingLevel →
+      // buildProviderOptions → providers.jsonc extras merge). Consumed by
+      // StreamManager's prepareStep; `null` ⇒ skip (no-op or model-swap level).
+      const currentEffectiveLevelRef = { current: effectiveThinkingLevel };
+      const rebuildProviderOptionsForThinkingLevel: RebuildProviderOptionsForThinkingLevel = (
+        level
+      ) => {
+        const clamped = enforceThinkingPolicy(
+          modelString,
+          level,
+          minThinkingLevel,
+          this.providerService.getConfig()
+        );
+        const effective = resolveEffectiveThinkingLevel(
+          modelString,
+          clamped,
+          this.providerService.getConfig()
+        );
+        if (effective === currentEffectiveLevelRef.current) {
+          return null;
+        }
+        // off ↔ non-off on grok-4-1-fast selects a different model instance —
+        // not expressible via provider options on the in-flight stream.
+        if (
+          isXaiGrokFastVariantSwap(
+            canonicalModelString,
+            currentEffectiveLevelRef.current,
+            effective
+          )
+        ) {
+          return null;
+        }
+        const rebuilt = buildProviderOptions(
+          modelString,
+          effective,
+          providerRequestMessages,
+          (id) => this.streamManager.isResponseIdLost(id),
+          effectiveMuxProviderOptions,
+          workspaceId,
+          truncationMode,
+          this.providerService.getConfig(),
+          routeProvider,
+          promptCacheScope,
+          reasoningMode
+        );
+        const merged = mergeModelParameterExtras(rebuilt as Record<string, unknown>);
+        currentEffectiveLevelRef.current = effective;
+        return { effectiveLevel: effective, providerOptions: merged };
+      };
 
       // Debug dump: Log the complete LLM request when MUX_DEBUG_LLM_REQUEST is set
       if (process.env.MUX_DEBUG_LLM_REQUEST === "1") {
@@ -3033,16 +3156,19 @@ export class AIService extends EventEmitter {
                 // clamped level may violate the next model's policy/floor (the
                 // providerOptions builders require a policy-valid level, e.g. an
                 // "off" source level on a fixed-effort model like gpt-5-pro).
+                // A mid-turn thinking override folded in by StreamManager wins
+                // over the send-time level.
+                const nextMinThinkingLevel = resolveMinimumThinkingLevel(
+                  nextModelString,
+                  this.config.loadConfigOrDefault().minThinkingLevelByModel?.[
+                    normalizeToCanonical(nextModelString)
+                  ],
+                  this.providerService.getConfig()
+                );
                 const nextThinkingLevel = enforceThinkingPolicy(
                   nextModelString,
-                  effectiveThinkingLevel,
-                  resolveMinimumThinkingLevel(
-                    nextModelString,
-                    this.config.loadConfigOrDefault().minThinkingLevelByModel?.[
-                      normalizeToCanonical(nextModelString)
-                    ],
-                    this.providerService.getConfig()
-                  ),
+                  prepareOptions?.thinkingLevelOverride ?? effectiveThinkingLevel,
+                  nextMinThinkingLevel,
                   this.providerService.getConfig()
                 );
 
@@ -3126,14 +3252,14 @@ export class AIService extends EventEmitter {
                         toolPolicy: effectiveToolPolicy,
                         ptcEnabled: nextPtcEnabled,
                       }).tools;
-                    } else if (!(mcpTools && "tool_search" in mcpTools)) {
+                    } else if (!(mcpTools && TOOL_SEARCH_TOOL_NAME in mcpTools)) {
                       // The primary-path gate deactivated deferral (e.g. every
                       // MCP tool was policy-disabled). StreamManager was never
-                      // handed scoping state, so tool_search must not appear in
+                      // handed scoping state, so tool_catalog_search must not appear in
                       // the fallback toolset either. Skipped when an MCP tool
                       // collides with the name: that record entry is a
                       // legitimate MCP tool, not our search tool.
-                      const { tool_search: _removed, ...rest } = nextTools;
+                      const { [TOOL_SEARCH_TOOL_NAME]: _removed, ...rest } = nextTools;
                       nextTools = rest;
                     }
                   }
@@ -3234,8 +3360,7 @@ export class AIService extends EventEmitter {
                     effectiveMuxProviderOptions,
                     workspaceId,
                     this.providerService.getConfig(),
-                    next.routeProvider,
-                    nextThinkingLevel
+                    next.routeProvider
                   );
                   if (pendingRunMetadataId != null) {
                     // Keep DevTools run correlation on fallback requests too.
@@ -3255,20 +3380,76 @@ export class AIService extends EventEmitter {
                     next.canonicalProviderName,
                     next.routeProvider
                   );
-                  const nextMuxNamespace = (nextProviderOptions as Record<string, unknown>)?.[
-                    nextNamespaceKey
-                  ];
-                  const nextMergedProviderOptions = nextOverrides.providerExtras
-                    ? {
-                        ...nextProviderOptions,
-                        [nextNamespaceKey]: isPlainObject(nextMuxNamespace)
-                          ? mergeProviderExtrasUnderMux(
-                              nextOverrides.providerExtras,
-                              nextMuxNamespace
-                            )
-                          : nextOverrides.providerExtras,
+                  // Mirrors mergeModelParameterExtras for the fallback model;
+                  // shared by this baseline build and mid-turn rebuilds below.
+                  const mergeNextModelParameterExtras = (
+                    builtOptions: Record<string, unknown>
+                  ): Record<string, unknown> => {
+                    if (!nextOverrides.providerExtras) {
+                      return builtOptions;
+                    }
+                    const nextMuxNamespace = builtOptions[nextNamespaceKey];
+                    return {
+                      ...builtOptions,
+                      [nextNamespaceKey]: isPlainObject(nextMuxNamespace)
+                        ? mergeProviderExtrasUnderMux(
+                            nextOverrides.providerExtras,
+                            nextMuxNamespace
+                          )
+                        : nextOverrides.providerExtras,
+                    };
+                  };
+                  const nextMergedProviderOptions = mergeNextModelParameterExtras(
+                    nextProviderOptions as Record<string, unknown>
+                  );
+
+                  // Rebuild closure bound to the FALLBACK model so mid-turn
+                  // thinking changes keep working after the hop.
+                  const nextCurrentEffectiveLevelRef = { current: nextThinkingLevel };
+                  const rebuildNextProviderOptionsForThinkingLevel: RebuildProviderOptionsForThinkingLevel =
+                    (level) => {
+                      const clamped = enforceThinkingPolicy(
+                        next.canonicalModelString,
+                        level,
+                        nextMinThinkingLevel,
+                        this.providerService.getConfig()
+                      );
+                      const effective = resolveEffectiveThinkingLevel(
+                        next.canonicalModelString,
+                        clamped,
+                        this.providerService.getConfig()
+                      );
+                      if (effective === nextCurrentEffectiveLevelRef.current) {
+                        return null;
                       }
-                    : nextProviderOptions;
+                      if (
+                        isXaiGrokFastVariantSwap(
+                          next.canonicalModelString,
+                          nextCurrentEffectiveLevelRef.current,
+                          effective
+                        )
+                      ) {
+                        return null;
+                      }
+                      const rebuilt = buildProviderOptions(
+                        next.canonicalModelString,
+                        effective,
+                        nextProviderRequestMessages,
+                        (id) => this.streamManager.isResponseIdLost(id),
+                        effectiveMuxProviderOptions,
+                        workspaceId,
+                        truncationMode,
+                        this.providerService.getConfig(),
+                        next.routeProvider,
+                        promptCacheScope,
+                        reasoningMode
+                      );
+                      const merged = mergeNextModelParameterExtras(
+                        rebuilt as Record<string, unknown>
+                      );
+                      nextCurrentEffectiveLevelRef.current = effective;
+                      return { effectiveLevel: effective, providerOptions: merged };
+                    };
 
                   return Ok({
                     model: next.model,
@@ -3281,6 +3462,8 @@ export class AIService extends EventEmitter {
                     callSettingsOverrides: nextOverrides.standard,
                     anthropicCacheTtl: effectiveMuxProviderOptions.anthropic?.cacheTtl ?? undefined,
                     thinkingLevel: nextThinkingLevel,
+                    rebuildProviderOptionsForThinkingLevel:
+                      rebuildNextProviderOptionsForThinkingLevel,
                     initialMetadataPatch: {
                       routedThroughGateway: next.routedThroughGateway,
                       ...(next.routeProvider != null ? { routeProvider: next.routeProvider } : {}),
@@ -3348,7 +3531,9 @@ export class AIService extends EventEmitter {
           : undefined,
         runtimeTempDir,
         modelFallback,
-        toolSearchRuntime?.state
+        toolSearchRuntime?.state,
+        activeTurnThinkingOverride,
+        rebuildProviderOptionsForThinkingLevel
       );
       recordStartupPhaseTiming("startStreamMs", startStreamStartedAt);
 

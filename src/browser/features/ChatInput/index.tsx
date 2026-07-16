@@ -340,7 +340,8 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
   const memoryConsolidationExperimentEnabled = useExperimentValue(
     EXPERIMENT_IDS.MEMORY_CONSOLIDATION
   );
-  const atMentionProjectPath = variant === "creation" ? props.projectPath : null;
+  const atMentionProjectPath =
+    variant === "creation" && props.kind !== "scratch" ? props.projectPath : null;
   const asyncCommandScopeRef = useRef<{ variant: typeof variant; workspaceId: string | null }>({
     variant,
     workspaceId: variant === "workspace" ? props.workspaceId : null,
@@ -1020,6 +1021,7 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
   const creationState = useCreationWorkspace(
     variant === "creation"
       ? {
+          kind: props.kind,
           projectPath: creationParentProjectPath,
           subProjectPath: creationSubProjectPath,
           onWorkspaceCreated: props.onWorkspaceCreated,
@@ -1062,12 +1064,13 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
   });
 
   const creationRuntimeError =
-    variant === "creation"
+    variant === "creation" && props.kind !== "scratch"
       ? validateCreationRuntime(creationState.selectedRuntime, coderState.presets.length)
       : null;
 
   const creationRuntimePolicyError =
     variant === "creation" &&
+    props.kind !== "scratch" &&
     effectivePolicy?.runtimes != null &&
     !isParsedRuntimeAllowedByPolicy(effectivePolicy, creationState.selectedRuntime)
       ? creationState.selectedRuntime.mode === "ssh" &&
@@ -1082,7 +1085,7 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
     variant === "creation" && hasAttemptedCreateSend ? (creationRuntimeError?.mode ?? null) : null;
 
   const creationControlsProps =
-    variant === "creation"
+    variant === "creation" && props.kind !== "scratch"
       ? ({
           branches: creationState.branches,
           branchesLoaded: creationState.branchesLoaded,
@@ -2703,7 +2706,11 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
 
       if (combinedSkillRefs.length > 0) {
         const baseMetadata = skillInvocation
-          ? buildSkillInvocationMetadata(messageText, skillInvocation.descriptor)
+          ? buildSkillInvocationMetadata(
+              messageText,
+              skillInvocation.descriptor,
+              skillInvocation.argumentText
+            )
           : undefined;
         const muxMetadata = withAgentSkillRefs(baseMetadata, combinedSkillRefs);
         if (!muxMetadata) {
@@ -2720,12 +2727,14 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
 
       setHasAttemptedCreateSend(true);
 
-      const runtimeError = validateCreationRuntime(
-        creationState.selectedRuntime,
-        coderState.presets.length
-      );
-      if (runtimeError) {
-        return;
+      if (props.kind !== "scratch") {
+        const runtimeError = validateCreationRuntime(
+          creationState.selectedRuntime,
+          coderState.presets.length
+        );
+        if (runtimeError) {
+          return;
+        }
       }
 
       // Creation variant: simple message send + workspace creation
@@ -2794,7 +2803,8 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
       const skillMuxMetadata = skillInvocation
         ? buildSkillInvocationMetadata(
             appendStagedAttachmentNotice(messageText, attachments),
-            skillInvocation.descriptor
+            skillInvocation.descriptor,
+            skillInvocation.argumentText
           )
         : undefined;
 
@@ -3288,7 +3298,9 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
   const placeholder = (() => {
     // Creation view keeps the onboarding prompt; workspace stays concise for the inline hints.
     if (variant === "creation") {
-      return "Type your first message to create a workspace...";
+      return props.kind === "scratch"
+        ? "Type your first message to start a scratch chat..."
+        : "Type your first message to create a workspace...";
     }
 
     // Workspace variant placeholders
@@ -3318,10 +3330,7 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
     // slash-command tricks on a wall-clock bucket so switching workspaces
     // mid-bucket doesn't reroll the visible tip. See placeholderTips.ts.
     //
-    // Mobile gets the plain placeholder because the on-screen keyboard already
-    // squeezes the input and a long English sentence in the placeholder looks
-    // like a wall of grey text instead of a hint.
-    if (isMobileTouch) {
+    if (isMobileTouch || props.kind === "scratch") {
       return "Type a message...";
     }
     return getPlaceholderTip();
@@ -3351,7 +3360,11 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
         <CreationCenterContent
           projectName={props.projectName}
           isSending={isSendInFlight}
-          workspaceName={isSendInFlight ? creationState.creatingWithIdentity?.name : undefined}
+          workspaceName={
+            isSendInFlight && props.kind !== "scratch"
+              ? creationState.creatingWithIdentity?.name
+              : undefined
+          }
           workspaceTitle={isSendInFlight ? creationState.creatingWithIdentity?.title : undefined}
         />
       )}

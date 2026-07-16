@@ -288,6 +288,8 @@ export interface BuildAgentSkillMetadataOptions {
   skillName: string;
   scope: AgentSkillScope;
   commandPrefix?: string;
+  /** Trimmed argument text after the slash command (drives placeholder substitution). */
+  arguments?: string;
 }
 
 export function buildAgentSkillMetadata(
@@ -299,6 +301,7 @@ export function buildAgentSkillMetadata(
     commandPrefix: options.commandPrefix,
     skillName: options.skillName,
     scope: options.scope,
+    arguments: options.arguments,
     agentSkillRefs: [{ skillName: options.skillName, scope: options.scope, source: "slash" }],
   };
 }
@@ -381,6 +384,13 @@ export type MuxMessageMetadata = MuxMessageMetadataBase &
         rawCommand: string;
         skillName: string;
         scope: "project" | "global" | "built-in";
+        /**
+         * Trimmed argument text after the slash command (e.g. "123 high" for
+         * "/fix-issue 123 high"). Used to substitute $ARGUMENTS/$1..$9 placeholders in
+         * the materialized skill snapshot body. Absent on messages persisted before
+         * this field existed; consumers treat that as "".
+         */
+        arguments?: string;
       }
     | {
         type: "plan-display"; // Ephemeral plan display from /plan command
@@ -760,6 +770,8 @@ export type DisplayedMessage =
       agentSkill?: {
         skillName: string;
         scope: AgentSkillScope;
+        /** Trimmed slash-command argument text; preserved so compaction retry can rebuild metadata. */
+        arguments?: string;
         /**
          * Optional snapshot content attached later by message aggregation (e.g. tooltips).
          * Not persisted on the user message itself.
@@ -840,6 +852,12 @@ export type DisplayedMessage =
       streamSequence?: number; // Local ordering within this assistant message
       isLastPartOfMessage?: boolean; // True if this is the last part of a multi-part message
       timestamp?: number;
+      /**
+       * When the tool's execute() actually began running. Parallel tool calls are
+       * serialized, so this can be much later than `timestamp`; elapsed timers must
+       * start here (and stay hidden while the call is still queued).
+       */
+      executionStartedAt?: number;
       /** Durable workflow run attachment recovered from partial history. */
       workflowRun?: MuxToolPart["workflowRun"];
       // Nested tool calls for code_execution (from PTC streaming or reconstructed from result)

@@ -1,3 +1,5 @@
+import { TASK_TERMINATION_STOP_STREAM_TIMEOUT_MS } from "@/constants/terminationTimeouts";
+import { raceWithAbortAndTimeout } from "@/node/utils/concurrency/withTimeout";
 import { EventEmitter } from "events";
 import * as path from "path";
 import * as fsPromises from "fs/promises";
@@ -10,6 +12,7 @@ import {
   isWorkspacePinned,
   reassignPinnedTimestamps,
 } from "@/common/utils/pin";
+import { SCRATCH_PROJECT_CONFIG_KEY } from "@/common/constants/scratch";
 import { MULTI_PROJECT_CONFIG_KEY } from "@/common/constants/multiProject";
 import type { CompactionCompletionMetadata } from "@/common/types/compaction";
 import type { Config } from "@/node/config";
@@ -160,6 +163,7 @@ import {
   WORKFLOW_RUN_CARD_DISPLAY_METADATA_TYPE,
   WORKFLOW_TRIGGER_DISPLAY_METADATA_TYPE,
   buildWorkflowRunCardMessage,
+  isTerminalWorkflowRunToolOutput,
   isWorkflowRunEmittingToolName,
 } from "@/common/utils/workflowRunMessages";
 import type { RuntimeConfig } from "@/common/types/runtime";
@@ -295,6 +299,14 @@ import { getErrorMessage } from "@/common/utils/errors";
 const MAX_WORKSPACE_NAME_COLLISION_RETRIES = 3;
 
 /**
+ * Minimum age before an unreferenced session directory is treated as an orphan and
+ * deleted at startup. Protects session data written by a workspace whose config entry
+ * has not been observed yet (e.g., creation racing the sweep); true orphans are stale
+ * for far longer and get reaped on a later startup.
+ */
+const ORPHAN_SESSION_DIR_GRACE_MS = 24 * 60 * 60 * 1000;
+
+/**
  * Base name used when /new auto-generates a workspace/bookmark name. Numbered suffixes
  * (`workspace-1`, `workspace-2`, ...) come from {@link generateForkBranchName}
  * so the existing fork-style numbering helpers stay the single source of truth.
@@ -364,6 +376,15 @@ function isWorkflowInvocationMessage(message: MuxMessage, runId: string): boolea
       (output as Record<string, unknown>).runId === runId
     );
   });
+}
+
+function isTerminalWorkflowToolResultMessage(message: MuxMessage, runId: string): boolean {
+  return message.parts.some(
+    (part) =>
+      part.type === "dynamic-tool" &&
+      part.state === "output-available" &&
+      isTerminalWorkflowRunToolOutput(part.toolName, part.output, runId)
+  );
 }
 
 function isInternalResumeAutoCompactionMessage(message: MuxMessage): boolean {
@@ -1684,6 +1705,7 @@ export class WorkspaceService extends EventEmitter {
   private readonly constructedAtMs = Date.now();
   private readonly pendingBashMonitorWakeDrainsByOwner = new Map<string, Promise<void>>();
   private readonly pendingBashMonitorWakeIdleWaitsByOwner = new Map<string, Promise<void>>();
+  private readonly pendingBashMonitorWakeReadWaits = new Set<Promise<void>>();
   private readonly cancelingBashMonitorWakeKeys = new Set<string>();
   private readonly pendingBashMonitorWakeDrains = new Set<Promise<void>>();
   private readonly bashMonitorMatchListener = (
@@ -1963,6 +1985,32 @@ export class WorkspaceService extends EventEmitter {
     this.pendingBashMonitorWakeDrains.add(promise);
   }
 
+  private scheduleBashMonitorWakeDrainAfterRead(
+    ownerWorkspaceId: string,
+    readSettled: Promise<void>
+  ): void {
+    if (this.pendingBashMonitorWakeReadWaits.has(readSettled)) {
+      return;
+    }
+    this.pendingBashMonitorWakeReadWaits.add(readSettled);
+
+    const promise = readSettled
+      .catch((error: unknown) => {
+        log.debug("Bash monitor blocking read failed; retrying drain anyway", {
+          ownerWorkspaceId,
+          error,
+        });
+      })
+      .then(() => {
+        this.scheduleBashMonitorWakeDrain(ownerWorkspaceId);
+      })
+      .finally(() => {
+        this.pendingBashMonitorWakeDrains.delete(promise);
+        this.pendingBashMonitorWakeReadWaits.delete(readSettled);
+      });
+    this.pendingBashMonitorWakeDrains.add(promise);
+  }
+
   private scheduleBashMonitorWakeDrainAfterIdle(ownerWorkspaceId: string): void {
     if (this.pendingBashMonitorWakeIdleWaitsByOwner.has(ownerWorkspaceId)) {
       return;
@@ -2083,28 +2131,36 @@ export class WorkspaceService extends EventEmitter {
         this.bashMonitorWakeStore.markSupersededSnapshot(ownerWorkspaceId, record)
       );
 
-    // Delivery gate: the authoritative "don't re-report shown output" check. emitMonitorMatch's
-    // shownThroughOffset comparison is only a point-in-time fast path -- it can lose a race with a
-    // concurrent task_await that advances the shown-frontier just after the wake is emitted (a
-    // process printing its final line then exiting triggers an immediate exit flush that bypasses
-    // the cooldown). Here, at the moment each wake would become a transcript message, re-check its
-    // matched offset against the settled shown-frontier and drop any match already shown. Records
-    // without matchedThroughOffset (legacy on-disk) and managers without the query (partial test
-    // stubs) fail open -- the wake delivers, matching the pre-gate behavior. The record's createdAt
-    // pins the check to the instance that produced the match: process IDs are display-name-derived
-    // and reclaimed across restarts, so a fresh process that reused the ID started after createdAt,
-    // getSettledShownThroughOffset returns undefined, and the dead instance's wake still delivers.
+    // Delivery gate: re-check each match against the shown frontier immediately before sending it.
+    // If task_await is already reading that same process, defer only that record until the read
+    // settles; unrelated process wakes in this owner batch remain deliverable. Partial manager stubs
+    // without the non-blocking query retain the previous settled-frontier behavior.
+    const canQueryDeliveryState =
+      typeof this.backgroundProcessManager.getMonitorWakeDeliveryState === "function";
     const canQueryShownFrontier =
       typeof this.backgroundProcessManager.getSettledShownThroughOffset === "function";
     const deliverable: BashMonitorWakeRecord[] = [];
     const supersededByShown: BashMonitorWakeRecord[] = [];
     for (const record of pending) {
-      if (canQueryShownFrontier && record.kind === "match" && record.matchedThroughOffset != null) {
-        const shown = await this.backgroundProcessManager.getSettledShownThroughOffset(
-          record.processId,
-          Date.parse(record.createdAt)
-        );
-        if (shown != null && shown >= record.matchedThroughOffset) {
+      let shownThroughOffset: number | undefined;
+      if (record.kind === "match" && record.matchedThroughOffset != null) {
+        if (canQueryDeliveryState) {
+          const state = await this.backgroundProcessManager.getMonitorWakeDeliveryState(
+            record.processId,
+            Date.parse(record.createdAt)
+          );
+          if (state?.status === "blocked") {
+            this.scheduleBashMonitorWakeDrainAfterRead(ownerWorkspaceId, state.readSettled);
+            continue;
+          }
+          shownThroughOffset = state?.shownThroughOffset;
+        } else if (canQueryShownFrontier) {
+          shownThroughOffset = await this.backgroundProcessManager.getSettledShownThroughOffset(
+            record.processId,
+            Date.parse(record.createdAt)
+          );
+        }
+        if (shownThroughOffset != null && shownThroughOffset >= record.matchedThroughOffset) {
           supersededByShown.push(record);
           continue;
         }
@@ -2247,6 +2303,8 @@ export class WorkspaceService extends EventEmitter {
   private worktreeArchiveSnapshotService?: WorktreeArchiveSnapshotLifecycleService;
   private taskService?: TaskService;
   private workspaceGoalService?: WorkspaceGoalService;
+  /** Narrow DevTools cleanup surface; wired by coreServices when a DevToolsService exists. */
+  private devToolsService?: { removeWorkspaceData(workspaceId: string): Promise<void> };
 
   /**
    * Set the MCP server manager for tool access.
@@ -2306,6 +2364,11 @@ export class WorkspaceService extends EventEmitter {
    */
   setTaskService(taskService: TaskService): void {
     this.taskService = taskService;
+  }
+
+  /** DevTools debug-log cleanup on archive/remove; wired by coreServices. */
+  setDevToolsService(service: { removeWorkspaceData(workspaceId: string): Promise<void> }): void {
+    this.devToolsService = service;
   }
 
   private getWorktreeArchiveBehavior(): "keep" | "delete" | "snapshot" {
@@ -2397,7 +2460,16 @@ export class WorkspaceService extends EventEmitter {
     const startupStartedAt = Date.now();
 
     try {
+      await this.cleanupOrphanScratchWorkdirs().catch((error: unknown) => {
+        log.debug("Failed to clean orphaned scratch workdirs", { error });
+      });
       const allMetadata = await this.config.getAllWorkspaceMetadata();
+      await this.cleanupOrphanSessionDirs(allMetadata).catch((error: unknown) => {
+        log.debug("Failed to clean orphaned session directories", { error });
+      });
+      await this.cleanupArchivedDevToolsLogs(allMetadata).catch((error: unknown) => {
+        log.debug("Failed to clean archived workspace DevTools logs", { error });
+      });
       let scheduledCount = 0;
       let skippedTaskCount = 0;
       let skippedArchivedCount = 0;
@@ -3426,6 +3498,224 @@ export class WorkspaceService extends EventEmitter {
     }
   }
 
+  private getScratchRoot(): string {
+    return path.join(this.config.rootDir, "scratch");
+  }
+
+  private getScratchWorkdir(workspaceId: string): string {
+    return path.join(this.getScratchRoot(), workspaceId);
+  }
+
+  private isManagedScratchWorkdir(workspacePath: string): boolean {
+    const scratchRoot = path.resolve(this.getScratchRoot());
+    const resolvedPath = path.resolve(workspacePath);
+    return path.dirname(resolvedPath) === scratchRoot && isPathInsideDir(scratchRoot, resolvedPath);
+  }
+
+  /**
+   * Scratch workdirs are named after the workspace that created them, and
+   * isolation "none" task children share an ancestor's workdir. Deletion is
+   * only safe when the dir basename matches the removed workspace or one of
+   * its task ancestors; a stale or hand-edited config entry pointing at some
+   * other chat's directory must never recursively delete it.
+   */
+  private scratchWorkdirOwnedByWorkspace(
+    configSnapshot: ProjectsConfig,
+    metadata: WorkspaceMetadata,
+    workdirBasename: string
+  ): boolean {
+    if (workdirBasename === metadata.id) {
+      return true;
+    }
+
+    const parentIdsByWorkspaceId = new Map<string, string | undefined>();
+    for (const project of configSnapshot.projects.values()) {
+      for (const workspace of project.workspaces) {
+        if (workspace.id) {
+          parentIdsByWorkspaceId.set(workspace.id, workspace.parentWorkspaceId);
+        }
+      }
+    }
+    let ancestorId = metadata.parentWorkspaceId;
+    for (let depth = 0; ancestorId != null && depth < 32; depth++) {
+      if (ancestorId === workdirBasename) {
+        return true;
+      }
+      ancestorId = parentIdsByWorkspaceId.get(ancestorId);
+    }
+    return false;
+  }
+
+  private async cleanupOrphanScratchWorkdirs(): Promise<void> {
+    const scratchRoot = this.getScratchRoot();
+    await ensurePrivateDir(scratchRoot);
+
+    // Never interpret a config read failure as an empty reference set, because that would
+    // turn best-effort orphan cleanup into deletion of valid scratch chats.
+    const config = this.config.loadConfigOrDefault({ throwOnError: true });
+    const referencedScratchPaths = new Set(
+      (config.projects.get(SCRATCH_PROJECT_CONFIG_KEY)?.workspaces ?? [])
+        .filter((workspace) => workspace.kind === "scratch")
+        .map((workspace) => path.resolve(workspace.path))
+    );
+
+    for (const entry of await fsPromises.readdir(scratchRoot, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue;
+
+      const candidatePath = path.resolve(scratchRoot, entry.name);
+      if (referencedScratchPaths.has(candidatePath)) continue;
+
+      try {
+        await fsPromises.rm(candidatePath, { recursive: true, force: true });
+      } catch (error: unknown) {
+        log.debug("Failed to clean orphaned scratch workdir", { candidatePath, error });
+      }
+    }
+  }
+
+  /**
+   * Startup sweep over the sessions directory: delete session directories whose
+   * workspace no longer exists in config at all (orphans left behind by crashed
+   * or partially-failed removals), so they stop hogging disk forever.
+   */
+  private async cleanupOrphanSessionDirs(allMetadata: FrontendWorkspaceMetadata[]): Promise<void> {
+    // Never interpret a config read failure as an empty reference set, because that
+    // would turn best-effort orphan cleanup into deletion of every workspace's session data.
+    const config = this.config.loadConfigOrDefault({ throwOnError: true });
+
+    const knownIds = new Set<string>(allMetadata.map((metadata) => metadata.id));
+    for (const [projectPath, projectConfig] of config.projects) {
+      for (const workspace of projectConfig.workspaces) {
+        if (workspace.id) {
+          knownIds.add(workspace.id);
+        }
+        // Pre-stable-ID sessions are keyed by the legacy "<project>-<workspace>" ID;
+        // keep them even if the config entry has since been migrated.
+        knownIds.add(this.config.generateLegacyId(projectPath, workspace.path));
+      }
+    }
+
+    const entries = await fsPromises
+      .readdir(this.config.sessionsDir, { withFileTypes: true })
+      .catch((error: unknown) => {
+        if (isErrnoWithCode(error, "ENOENT")) {
+          return null;
+        }
+        throw error;
+      });
+    if (entries == null) {
+      return;
+    }
+
+    const nowMs = Date.now();
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      if (knownIds.has(entry.name)) continue;
+
+      const candidatePath = path.join(this.config.sessionsDir, entry.name);
+      try {
+        // Grace window: never reap a directory with recent activity, so a workspace
+        // being created concurrently with this sweep cannot lose its session data.
+        const stat = await fsPromises.stat(candidatePath);
+        if (nowMs - stat.mtimeMs < ORPHAN_SESSION_DIR_GRACE_MS) continue;
+
+        // Re-check fresh config immediately before deleting (findWorkspace also
+        // resolves legacy IDs), closing the race with workspaces created after
+        // the snapshot above.
+        if (this.config.findWorkspace(entry.name)) continue;
+
+        await fsPromises.rm(candidatePath, { recursive: true, force: true });
+        log.info("Removed orphaned session directory", { workspaceId: entry.name });
+      } catch (error: unknown) {
+        log.debug("Failed to clean orphaned session directory", { candidatePath, error });
+      }
+    }
+  }
+
+  /**
+   * Startup sweep deleting devtools.jsonl for archived workspaces. Archive-time cleanup
+   * handles new archives; this retroactively heals workspaces archived before that
+   * cleanup existed (debug logs routinely dwarf all other session data).
+   */
+  private async cleanupArchivedDevToolsLogs(
+    allMetadata: FrontendWorkspaceMetadata[]
+  ): Promise<void> {
+    if (!this.devToolsService) {
+      return;
+    }
+
+    for (const metadata of allMetadata) {
+      if (!isWorkspaceArchived(metadata.archivedAt, metadata.unarchivedAt)) continue;
+      try {
+        await this.devToolsService.removeWorkspaceData(metadata.id);
+      } catch (error: unknown) {
+        log.debug("Failed to remove DevTools log for archived workspace", {
+          workspaceId: metadata.id,
+          error,
+        });
+      }
+    }
+  }
+
+  async createScratch(title?: string): Promise<Result<{ metadata: FrontendWorkspaceMetadata }>> {
+    // Scratch chats always run on the local runtime; locked-down deployments
+    // that disallow local runtimes must not get a local tool-execution
+    // workspace through the scratch path either.
+    if (this.policyService?.isEnforced()) {
+      if (!this.policyService.isRuntimeAllowed({ type: "local" })) {
+        return Err("Scratch chats require the local runtime, which is not allowed by policy");
+      }
+    }
+
+    const workspaceId = this.config.generateStableId();
+    const workspaceName = `scratch-${workspaceId}`;
+    const workspacePath = this.getScratchWorkdir(workspaceId);
+    const createdAt = new Date().toISOString();
+
+    try {
+      await ensurePrivateDir(this.getScratchRoot());
+      await ensurePrivateDir(workspacePath);
+
+      await this.config.editConfig((config) => {
+        const scratchProject = config.projects.get(SCRATCH_PROJECT_CONFIG_KEY) ?? {
+          workspaces: [],
+          projectKind: "system" as const,
+          trusted: true,
+        };
+        scratchProject.projectKind = "system";
+        scratchProject.trusted = true;
+        scratchProject.workspaces.push({
+          kind: "scratch",
+          path: workspacePath,
+          id: workspaceId,
+          name: workspaceName,
+          title,
+          createdAt,
+          runtimeConfig: { type: "local" },
+        });
+        config.projects.set(SCRATCH_PROJECT_CONFIG_KEY, scratchProject);
+        return config;
+      });
+
+      const completeMetadata = (await this.config.getAllWorkspaceMetadata()).find(
+        (metadata) => metadata.id === workspaceId
+      );
+      if (!completeMetadata) {
+        await this.config.removeWorkspace(workspaceId);
+        await fsPromises.rm(workspacePath, { recursive: true, force: true });
+        return Err("Failed to retrieve scratch workspace metadata");
+      }
+
+      const enrichedMetadata = this.enrichFrontendMetadata(completeMetadata);
+      this.getOrCreateSession(workspaceId).emitMetadata(enrichedMetadata);
+      return Ok({ metadata: enrichedMetadata });
+    } catch (error) {
+      await this.config.removeWorkspace(workspaceId).catch(() => undefined);
+      await fsPromises.rm(workspacePath, { recursive: true, force: true }).catch(() => undefined);
+      return Err(`Failed to create scratch workspace: ${getErrorMessage(error)}`);
+    }
+  }
+
   async create(
     projectPath: string,
     branchName: string | undefined,
@@ -4262,11 +4552,23 @@ export class WorkspaceService extends EventEmitter {
         : undefined;
 
       try {
-        const stopResult = await this.aiService.stopStream(workspaceId, { abandonPartial: true });
-        if (!stopResult.success) {
+        const stopPromise = this.aiService.stopStream(workspaceId, { abandonPartial: true });
+        const stopOutcome = await raceWithAbortAndTimeout(stopPromise, {
+          timeoutMs: TASK_TERMINATION_STOP_STREAM_TIMEOUT_MS,
+        });
+        if (stopOutcome.kind !== "ok") {
+          void stopPromise.catch((error: unknown) => {
+            log.debug("Timed-out workspace removal stopStream later threw", {
+              workspaceId,
+              error,
+            });
+          });
+          return Err("Timed out stopping workspace stream; workspace was not removed");
+        }
+        if (!stopOutcome.value.success) {
           log.debug("Failed to stop stream during workspace removal", {
             workspaceId,
-            error: stopResult.error,
+            error: stopOutcome.value.error,
           });
         }
       } catch (error: unknown) {
@@ -4454,6 +4756,44 @@ export class WorkspaceService extends EventEmitter {
               `Failed to fully delete multi-project workspace from disk, but force=true. Removing from config. Errors: ${deleteErrors.join("; ")}`
             );
           }
+        } else if (metadata.kind === "scratch") {
+          if (
+            persistedWorkspacePath == null ||
+            !this.isManagedScratchWorkdir(persistedWorkspacePath)
+          ) {
+            return Err(
+              "Refusing to delete scratch workspace outside the managed scratch directory"
+            );
+          }
+
+          const resolvedScratchPath = path.resolve(persistedWorkspacePath);
+          const hasOtherScratchReference = Array.from(configSnapshot.projects.values()).some(
+            (project) =>
+              project.workspaces.some(
+                (workspace) =>
+                  workspace.id !== workspaceId &&
+                  workspace.kind === "scratch" &&
+                  path.resolve(workspace.path) === resolvedScratchPath
+              )
+          );
+          if (!hasOtherScratchReference) {
+            if (
+              this.scratchWorkdirOwnedByWorkspace(
+                configSnapshot,
+                metadata,
+                path.basename(resolvedScratchPath)
+              )
+            ) {
+              await fsPromises.rm(persistedWorkspacePath, { recursive: true, force: true });
+            } else {
+              // Skip instead of failing: config cleanup still proceeds, and the
+              // startup orphan sweep reclaims the dir once nothing references it.
+              log.warn(
+                "Skipping scratch workdir deletion: basename matches neither the workspace nor its task ancestors",
+                { workspaceId, workspacePath: persistedWorkspacePath }
+              );
+            }
+          }
         } else if (taskSharesParentCheckout) {
           // Shared checkout (isolation: "none"): do not touch the filesystem — the directory
           // belongs to the parent workspace. Config/session cleanup below still runs.
@@ -4606,6 +4946,17 @@ export class WorkspaceService extends EventEmitter {
         await fsPromises.rm(sessionDir, { recursive: true, force: true });
       } catch (error) {
         log.error(`Failed to remove session directory for ${workspaceId}:`, error);
+      }
+
+      // The on-disk devtools.jsonl died with the session directory above; also drop any
+      // in-memory DevTools state so stale runs cannot outlive the workspace.
+      try {
+        await this.devToolsService?.removeWorkspaceData(workspaceId);
+      } catch (error) {
+        log.debug("Failed to drop DevTools state after workspace removal", {
+          workspaceId,
+          error: getErrorMessage(error),
+        });
       }
 
       // Stop MCP servers for this workspace
@@ -6408,6 +6759,19 @@ export class WorkspaceService extends EventEmitter {
         }
       }
 
+      // DevTools debug logs can be huge and are only useful for live workspaces; drop them
+      // once the archived state is durable (worst case after unarchive is an empty DevTools
+      // panel). Best-effort: archive stays successful even if this fails — the startup sweep
+      // in initialize() retries for archived workspaces.
+      try {
+        await this.devToolsService?.removeWorkspaceData(workspaceId);
+      } catch (error) {
+        log.debug("Failed to remove DevTools log after archive", {
+          workspaceId,
+          error: getErrorMessage(error),
+        });
+      }
+
       // Emit updated metadata
       const allMetadata = await this.config.getAllWorkspaceMetadata();
       const updatedMetadata = allMetadata.find((m) => m.id === workspaceId);
@@ -6731,6 +7095,10 @@ export class WorkspaceService extends EventEmitter {
 
     const metadata = metadataResult.data;
     assert(metadata, `Workspace ${workspaceId} metadata is required for jj status checks`);
+
+    if (metadata.kind === "scratch") {
+      return [];
+    }
 
     const projects = getProjects(metadata);
     assert(projects.length > 0, `Workspace ${workspaceId} must include at least one project`);
@@ -7310,6 +7678,27 @@ export class WorkspaceService extends EventEmitter {
     }
   }
 
+  /**
+   * Mid-turn thinking change: forward the requested level to the workspace's
+   * active turn (if any). Deliberately `sessions.get`, not getOrCreateSession —
+   * creating a session to tell it "change the turn you don't have" is pointless;
+   * persisted settings already cover the next turn.
+   */
+  setActiveTurnThinkingLevel(
+    workspaceId: string,
+    level: ThinkingLevel
+  ): Result<{ accepted: boolean }, string> {
+    try {
+      const session = this.sessions.get(workspaceId.trim());
+      if (!session) {
+        return Ok({ accepted: false });
+      }
+      return Ok(session.setActiveTurnThinkingLevel(level));
+    } catch (error) {
+      return Err(`Failed to set active-turn thinking level: ${getErrorMessage(error)}`);
+    }
+  }
+
   async fork(
     sourceWorkspaceId: string,
     newName?: string,
@@ -7322,6 +7711,9 @@ export class WorkspaceService extends EventEmitter {
         return Err(`Failed to get source workspace metadata: ${sourceMetadataResult.error}`);
       }
       const sourceMetadata = sourceMetadataResult.data;
+      if (sourceMetadata.kind === "scratch") {
+        return Err("Forking scratch chats is not supported yet");
+      }
       const partialSnapshot =
         sourceMessageId == null ? await this.historyService.readPartial(sourceWorkspaceId) : null;
       const foundProjectPath = sourceMetadata.projectPath;
@@ -7829,7 +8221,8 @@ export class WorkspaceService extends EventEmitter {
           }
           if (
             isWorkflowResultContinuationMessage(message, runId) ||
-            isTerminalWorkflowTaskAwaitResultMessage(message, runId)
+            isTerminalWorkflowTaskAwaitResultMessage(message, runId) ||
+            isTerminalWorkflowToolResultMessage(message, runId)
           ) {
             current = false;
             foundDecision = true;
@@ -8886,6 +9279,18 @@ export class WorkspaceService extends EventEmitter {
     return (
       session.hasQueuedMessages() || session.isPreparingTurn() || session.hasPendingAutoRetry()
     );
+  }
+
+  /**
+   * Narrow check for an actual scheduled/starting auto-retry, excluding queued
+   * manual messages and preparing turns. Callers that must distinguish "the
+   * same turn will resume on its own" from "some other queued work exists"
+   * (e.g. workspace-turn stream-error settlement) need this instead of
+   * hasPendingQueuedOrPreparingTurn.
+   */
+  hasPendingAutoRetry(workspaceId: string): boolean {
+    const session = this.sessions.get(workspaceId.trim());
+    return session?.hasPendingAutoRetry() ?? false;
   }
 
   /**

@@ -1139,6 +1139,15 @@ export const workspace = {
       z.object({ success: z.literal(false), error: z.string() }),
     ]),
   },
+  createScratch: {
+    input: z.object({
+      title: z.string().optional(),
+    }),
+    output: z.discriminatedUnion("success", [
+      z.object({ success: z.literal(true), metadata: FrontendWorkspaceMetadataSchema }),
+      z.object({ success: z.literal(false), error: z.string() }),
+    ]),
+  },
   createMultiProject: {
     input: z.object({
       projects: z
@@ -1242,6 +1251,17 @@ export const workspace = {
       aiSettings: WorkspaceAISettingsSchema,
     }),
     output: ResultSchema(z.void(), z.string()),
+  },
+  // Mid-turn thinking change: request that the active turn's NEXT model step
+  // uses this level. `accepted: false` (success) = no turn active — persisted
+  // settings already cover the next turn. `accepted: true` = the level applies
+  // to the current turn's next step if one occurs (expires silently otherwise).
+  setActiveTurnThinkingLevel: {
+    input: z.object({
+      workspaceId: z.string(),
+      thinkingLevel: ThinkingLevelSchema,
+    }),
+    output: ResultSchema(z.object({ accepted: z.boolean() }), z.string()),
   },
   preflightArchive: {
     input: z.object({ workspaceId: z.string() }),

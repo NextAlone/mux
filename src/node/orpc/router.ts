@@ -130,7 +130,7 @@ import {
 } from "@/node/services/workflows/WorkflowTaskServiceAdapter";
 import { WorkflowArgsValidationError } from "@/node/services/workflows/workflowArgs";
 import { resolveWorkflowScript } from "@/node/services/workflows/workflowScriptResolver";
-import { isProjectTrusted } from "@/node/utils/projectTrust";
+import { isProjectTrusted, isWorkspaceProjectTrusted } from "@/node/utils/projectTrust";
 
 import {
   WORKFLOW_RESULT_METADATA_TYPE,
@@ -375,7 +375,13 @@ export async function resolveWorkflowContext(
   const workflowProjectPath = hasRequestedWorkflowProjectPath
     ? requestedWorkflowProjectPath
     : metadata.projectPath;
-  const projectTrusted = isTrustedProjectPath(context, workflowProjectPath);
+  // Workspace-default trust must be metadata-aware: scratch chats are trusted
+  // by design but their projectPath is an app-managed workdir, not a config key.
+  const resolveWorkflowProjectTrusted = () =>
+    hasRequestedWorkflowProjectPath
+      ? isTrustedProjectPath(context, workflowProjectPath)
+      : isWorkspaceProjectTrusted(context.config, metadata);
+  const projectTrusted = resolveWorkflowProjectTrusted();
   const runtime = createRuntimeForWorkspace(metadata);
   const workspaceRootPath = resolveWorkspaceRootPath(metadata, runtime);
   const workflowExecutionProjectPath = hasRequestedWorkflowProjectPath
@@ -413,7 +419,7 @@ export async function resolveWorkflowContext(
             workspaceSessionDir: context.config.getSessionDir(workspaceId),
             trusted: projectTrusted,
           },
-          getProjectTrusted: () => isTrustedProjectPath(context, workflowProjectPath),
+          getProjectTrusted: resolveWorkflowProjectTrusted,
           experiments: {
             dynamicWorkflows: true,
           },
@@ -423,13 +429,13 @@ export async function resolveWorkflowContext(
           scriptPath,
           runtime,
           workspacePath,
-          projectTrusted: isTrustedProjectPath(context, workflowProjectPath),
+          projectTrusted: resolveWorkflowProjectTrusted(),
         }),
       onRunStatusChanged: (event) => context.workspaceService.emitWorkflowRunActivity(event),
       ...(options.onBackgroundRunTerminal != null
         ? { onBackgroundRunTerminal: options.onBackgroundRunTerminal }
         : {}),
-      getCurrentProjectTrusted: () => isTrustedProjectPath(context, workflowProjectPath),
+      getCurrentProjectTrusted: resolveWorkflowProjectTrusted,
       runnerId: `workflow-runner:${workspaceId}`,
     }),
   };
@@ -1866,7 +1872,12 @@ export const router = (authToken?: string) => {
             await context.aiService.waitForInit(input.workspaceId);
           }
           const { runtime, discoveryPath } = await resolveAgentDiscoveryContext(context, input);
-          return discoverAgentSkills(runtime, discoveryPath);
+          return discoverAgentSkills(runtime, discoveryPath, {
+            // claude-skills-compat experiment: surface read-only .claude skills in the UI listing.
+            includeClaudeSkills: context.experimentsService.isExperimentEnabled(
+              EXPERIMENT_IDS.CLAUDE_SKILLS_COMPAT
+            ),
+          });
         }),
       listDiagnostics: t
         .input(schemas.agentSkills.listDiagnostics.input)
@@ -1877,7 +1888,11 @@ export const router = (authToken?: string) => {
             await context.aiService.waitForInit(input.workspaceId);
           }
           const { runtime, discoveryPath } = await resolveAgentDiscoveryContext(context, input);
-          const diagnostics = await discoverAgentSkillsDiagnostics(runtime, discoveryPath);
+          const diagnostics = await discoverAgentSkillsDiagnostics(runtime, discoveryPath, {
+            includeClaudeSkills: context.experimentsService.isExperimentEnabled(
+              EXPERIMENT_IDS.CLAUDE_SKILLS_COMPAT
+            ),
+          });
           return diagnostics;
         }),
       get: t
@@ -1889,7 +1904,11 @@ export const router = (authToken?: string) => {
             await context.aiService.waitForInit(input.workspaceId);
           }
           const { runtime, discoveryPath } = await resolveAgentDiscoveryContext(context, input);
-          const result = await readAgentSkill(runtime, discoveryPath, input.skillName);
+          const result = await readAgentSkill(runtime, discoveryPath, input.skillName, {
+            includeClaudeSkills: context.experimentsService.isExperimentEnabled(
+              EXPERIMENT_IDS.CLAUDE_SKILLS_COMPAT
+            ),
+          });
           return result.package;
         }),
     },
@@ -4081,6 +4100,16 @@ export const router = (authToken?: string) => {
           }
           return { success: true, metadata: result.data.metadata };
         }),
+      createScratch: t
+        .input(schemas.workspace.createScratch.input)
+        .output(schemas.workspace.createScratch.output)
+        .handler(async ({ context, input }) => {
+          const result = await context.workspaceService.createScratch(input.title);
+          if (!result.success) {
+            return { success: false, error: result.error };
+          }
+          return { success: true, metadata: result.data.metadata };
+        }),
       createMultiProject: t
         .input(schemas.workspace.createMultiProject.input)
         .output(schemas.workspace.createMultiProject.output)
@@ -4197,6 +4226,15 @@ export const router = (authToken?: string) => {
             input.workspaceId,
             input.mode,
             input.aiSettings
+          );
+        }),
+      setActiveTurnThinkingLevel: t
+        .input(schemas.workspace.setActiveTurnThinkingLevel.input)
+        .output(schemas.workspace.setActiveTurnThinkingLevel.output)
+        .handler(({ context, input }) => {
+          return context.workspaceService.setActiveTurnThinkingLevel(
+            input.workspaceId,
+            input.thinkingLevel
           );
         }),
       updateTitle: t

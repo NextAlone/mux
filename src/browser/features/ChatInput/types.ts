@@ -29,6 +29,7 @@ export interface WorkspaceCreatedOptions {
 // Workspace variant: full functionality for existing workspaces
 export interface ChatInputWorkspaceVariant {
   variant: "workspace";
+  kind?: "scratch";
   workspaceId: string;
   /** Proactive delegation is a top-level turn feature; child task workspaces must hide it. */
   isTopLevelWorkspace?: boolean;
@@ -75,6 +76,7 @@ export interface ChatInputWorkspaceVariant {
 // Creation variant: simplified for first message / workspace creation
 export interface ChatInputCreationVariant {
   variant: "creation";
+  kind?: "scratch";
   projectPath: string;
   projectName: string;
   /** Sub-project path for parent-owned draft creation. */
