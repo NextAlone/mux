@@ -191,9 +191,9 @@ export const SecretsSection: React.FC = () => {
   const secretGridColumns =
     scope === "global"
       ? showSourceColumn
-        ? "grid-cols-[1fr_auto_1fr_auto_auto_auto]"
-        : "grid-cols-[1fr_1fr_auto_auto_auto]"
-      : "grid-cols-[1fr_auto_1fr_auto_auto]";
+        ? "@[512px]:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)_auto_auto_auto]"
+        : "@[512px]:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto_auto_auto]"
+      : "@[512px]:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)_auto_auto]";
 
   // When re-opened with a new project hint (e.g., clicking the secrets button again
   // for a different project), sync the scope and clear the one-shot hint.
@@ -632,9 +632,11 @@ export const SecretsSection: React.FC = () => {
   }, [api, currentProjectPath, scope, secrets]);
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between gap-4">
-        <div className="flex-1">
+    <div className="@container space-y-6">
+      {/* Narrow Settings views stack the fixed-size account input so the explanatory copy
+          and account domain never compete for the same horizontal space. */}
+      <div className="flex flex-col gap-4 @[512px]:flex-row @[512px]:items-center @[512px]:justify-between">
+        <div className="min-w-0 flex-1">
           <div className="text-foreground text-sm">{t("1Password Account")}</div>
           <div className="text-muted text-xs">
             {t(
@@ -651,7 +653,7 @@ export const SecretsSection: React.FC = () => {
             handleOpAccountNameBlur(e.target.value)
           }
           placeholder={"my-team.1password.com" /* i18n-ignore: example 1Password account domain */}
-          className="border-border-medium bg-background-secondary h-9 w-64"
+          className="border-border-medium bg-background-secondary h-9 w-full @[512px]:w-64 @[512px]:shrink-0"
         />
       </div>
 
@@ -768,15 +770,19 @@ export const SecretsSection: React.FC = () => {
           {t("No secrets configured")}
         </div>
       ) : (
+        /* Each narrow secret becomes a stacked card. The container-query contents wrappers
+           preserve the existing desktop column grid without duplicating controls or state. */
         <div
-          className={`[&>label]:text-muted grid ${secretGridColumns} items-end gap-1 [&>label]:mb-0.5 [&>label]:text-[11px]`}
+          className={`[&>label]:text-muted grid grid-cols-1 items-end gap-2 @[512px]:gap-1 ${secretGridColumns} [&>label]:mb-0.5 [&>label]:text-[11px]`}
         >
-          <label>{t("Key")}</label>
-          {showSourceColumn && <label>{t("Source")}</label>}
-          <label>{t("Value")}</label>
-          <div />
-          {scope === "global" && <label className="text-center">{t("Inject")}</label>}
-          <div />
+          <label className="hidden @[512px]:block">{t("Key")}</label>
+          {showSourceColumn && <label className="hidden @[512px]:block">{t("Source")}</label>}
+          <label className="hidden @[512px]:block">{t("Value")}</label>
+          <div className="hidden @[512px]:block" />
+          {scope === "global" && (
+            <label className="hidden text-center @[512px]:block">{t("Inject")}</label>
+          )}
+          <div className="hidden @[512px]:block" />
 
           {secrets.map((secret, index) => {
             const secretValue = secret.value;
@@ -796,151 +802,167 @@ export const SecretsSection: React.FC = () => {
                 : sortedGlobalSecretKeys;
 
             return (
-              <React.Fragment key={index}>
-                <input
-                  type="text"
-                  value={secret.key}
-                  onChange={(e) => updateSecretKey(index, e.target.value)}
-                  placeholder={"SECRET_NAME" /* i18n-ignore: environment variable example */}
-                  aria-label={t("Secret key")}
-                  disabled={saving}
-                  spellCheck={false}
-                  className="bg-modal-bg border-border-medium focus:border-accent placeholder:text-dim text-foreground w-full rounded border px-2.5 py-1.5 font-mono text-[13px] focus:outline-none disabled:opacity-50"
-                />
+              <div
+                key={index}
+                className="border-border-medium grid min-w-0 gap-2 rounded-md border p-2 @[512px]:contents"
+              >
+                <div className="grid min-w-0 gap-1 @[512px]:contents">
+                  <label className="text-muted text-[11px] @[512px]:hidden">{t("Key")}</label>
+                  <input
+                    type="text"
+                    value={secret.key}
+                    onChange={(e) => updateSecretKey(index, e.target.value)}
+                    placeholder={"SECRET_NAME" /* i18n-ignore: environment variable example */}
+                    aria-label={t("Secret key")}
+                    disabled={saving}
+                    spellCheck={false}
+                    className="bg-modal-bg border-border-medium focus:border-accent placeholder:text-dim text-foreground min-w-0 rounded border px-2.5 py-1.5 font-mono text-[13px] focus:outline-none disabled:opacity-50"
+                  />
+                </div>
 
                 {showSourceColumn && (
-                  <Select
-                    value={kind}
-                    onValueChange={(value) => {
-                      if (value === "op") {
-                        if (!opAvailable) {
+                  <div className="grid min-w-0 gap-1 @[512px]:contents">
+                    <label className="text-muted text-[11px] @[512px]:hidden">{t("Source")}</label>
+                    <Select
+                      value={kind}
+                      onValueChange={(value) => {
+                        if (value === "op") {
+                          if (!opAvailable) {
+                            return;
+                          }
+
+                          setOpPickerIndex(index);
                           return;
                         }
 
-                        setOpPickerIndex(index);
-                        return;
-                      }
+                        if (value !== "literal" && value !== "global") {
+                          return;
+                        }
 
-                      if (value !== "literal" && value !== "global") {
-                        return;
-                      }
+                        if (value === "global" && scope !== "project") {
+                          return;
+                        }
 
-                      if (value === "global" && scope !== "project") {
-                        return;
-                      }
-
-                      setOpPickerIndex(null);
-                      updateSecretValueKind(index, value);
-                    }}
-                    disabled={saving}
-                  >
-                    <SelectTrigger
-                      className="border-border-medium bg-modal-bg hover:bg-hover h-[34px] w-[100px] px-2.5 text-[13px]"
-                      aria-label={t("Secret source")}
-                    >
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="literal">{t("Value")}</SelectItem>
-                      {scope === "project" && (
-                        <SelectItem value="global" disabled={availableKeys.length === 0}>
-                          {t("Global")}
-                        </SelectItem>
-                      )}
-                      {opAvailable && (
-                        <SelectItem value="op">
-                          {/* i18n-ignore: product name */}
-                          1Password
-                        </SelectItem>
-                      )}
-                    </SelectContent>
-                  </Select>
-                )}
-
-                {isOp ? (
-                  <span className="text-foreground flex items-center gap-1 self-center px-2.5 font-mono text-[13px]">
-                    <KeyRound className="h-3 w-3 shrink-0" />
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <span className="truncate">{opLabel ?? opReference}</span>
-                      </TooltipTrigger>
-                      <TooltipContent side="top">{opReference}</TooltipContent>
-                    </Tooltip>
-                  </span>
-                ) : isReference ? (
-                  <Select
-                    value={referencedKey || undefined}
-                    onValueChange={(value) => updateSecretValue(index, { secret: value })}
-                    disabled={saving}
-                  >
-                    <SelectTrigger
-                      className="border-border-medium bg-modal-bg hover:bg-hover h-[34px] w-full px-2.5 font-mono text-[13px]"
-                      aria-label={t("Global secret key")}
-                    >
-                      <SelectValue placeholder={t("Select global secret")} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {availableKeys.map((key) => (
-                        <SelectItem key={key} value={key}>
-                          {key}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                ) : (
-                  <input
-                    type={visibleSecrets.has(index) ? "text" : "password"}
-                    value={
-                      typeof secret.value === "string"
-                        ? secret.value
-                        : isSecretReferenceValue(secret.value)
-                          ? secret.value.secret
-                          : ""
-                    }
-                    onChange={(e) => updateSecretValue(index, e.target.value)}
-                    placeholder={t("secret value")}
-                    aria-label={t("Secret value")}
-                    disabled={saving}
-                    spellCheck={false}
-                    className="bg-modal-bg border-border-medium focus:border-accent placeholder:text-dim text-foreground w-full rounded border px-2.5 py-1.5 font-mono text-[13px] focus:outline-none disabled:opacity-50"
-                  />
-                )}
-
-                {isReference || isOp ? (
-                  <div />
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => toggleVisibility(index)}
-                    disabled={saving}
-                    className="text-muted hover:text-foreground flex cursor-pointer items-center justify-center self-center rounded-sm border-none bg-transparent px-1 py-0.5 text-base transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-50"
-                    aria-label={t(visibleSecrets.has(index) ? "Hide secret" : "Show secret")}
-                  >
-                    <ToggleVisibilityIcon visible={visibleSecrets.has(index)} />
-                  </button>
-                )}
-
-                {scope === "global" && (
-                  <div className="flex items-center justify-center self-center">
-                    <Switch
-                      size="sm"
-                      checked={!!secret.injectAll}
-                      onCheckedChange={(checked) => updateSecretInjectAll(index, checked)}
+                        setOpPickerIndex(null);
+                        updateSecretValueKind(index, value);
+                      }}
                       disabled={saving}
-                      aria-label={t("Inject into all projects")}
-                    />
+                    >
+                      <SelectTrigger
+                        className="border-border-medium bg-modal-bg hover:bg-hover h-[34px] w-full px-2.5 text-[13px] @[512px]:w-[100px]"
+                        aria-label={t("Secret source")}
+                      >
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="literal">{t("Value")}</SelectItem>
+                        {scope === "project" && (
+                          <SelectItem value="global" disabled={availableKeys.length === 0}>
+                            {t("Global")}
+                          </SelectItem>
+                        )}
+                        {opAvailable && (
+                          <SelectItem value="op">
+                            {/* i18n-ignore: product name */}
+                            1Password
+                          </SelectItem>
+                        )}
+                      </SelectContent>
+                    </Select>
                   </div>
                 )}
 
-                <button
-                  type="button"
-                  onClick={() => removeSecret(index)}
-                  disabled={saving}
-                  className="text-danger-light border-danger-light hover:bg-danger-light/10 cursor-pointer rounded border bg-transparent px-2.5 py-1.5 text-[13px] transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-50"
-                  aria-label={t("Remove secret")}
-                >
-                  <Trash2 className="h-4 w-4" />
-                </button>
+                <div className="grid min-w-0 gap-1 @[512px]:contents">
+                  <label className="text-muted text-[11px] @[512px]:hidden">{t("Value")}</label>
+                  {isOp ? (
+                    <span className="text-foreground flex min-w-0 items-center gap-1 self-center px-2.5 font-mono text-[13px]">
+                      <KeyRound className="h-3 w-3 shrink-0" />
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <span className="truncate">{opLabel ?? opReference}</span>
+                        </TooltipTrigger>
+                        <TooltipContent side="top">{opReference}</TooltipContent>
+                      </Tooltip>
+                    </span>
+                  ) : isReference ? (
+                    <Select
+                      value={referencedKey || undefined}
+                      onValueChange={(value) => updateSecretValue(index, { secret: value })}
+                      disabled={saving}
+                    >
+                      <SelectTrigger
+                        className="border-border-medium bg-modal-bg hover:bg-hover h-[34px] w-full min-w-0 px-2.5 font-mono text-[13px]"
+                        aria-label={t("Global secret key")}
+                      >
+                        <SelectValue placeholder={t("Select global secret")} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {availableKeys.map((key) => (
+                          <SelectItem key={key} value={key}>
+                            {key}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    <input
+                      type={visibleSecrets.has(index) ? "text" : "password"}
+                      value={
+                        typeof secret.value === "string"
+                          ? secret.value
+                          : isSecretReferenceValue(secret.value)
+                            ? secret.value.secret
+                            : ""
+                      }
+                      onChange={(e) => updateSecretValue(index, e.target.value)}
+                      placeholder={t("secret value")}
+                      aria-label={t("Secret value")}
+                      disabled={saving}
+                      spellCheck={false}
+                      className="bg-modal-bg border-border-medium focus:border-accent placeholder:text-dim text-foreground min-w-0 rounded border px-2.5 py-1.5 font-mono text-[13px] focus:outline-none disabled:opacity-50"
+                    />
+                  )}
+                </div>
+
+                <div className="flex items-center justify-end gap-2 @[512px]:contents">
+                  {isReference || isOp ? (
+                    <div className="hidden @[512px]:block" />
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => toggleVisibility(index)}
+                      disabled={saving}
+                      className="text-muted hover:text-foreground flex cursor-pointer items-center justify-center self-center rounded-sm border-none bg-transparent px-1 py-0.5 text-base transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-50"
+                      aria-label={t(visibleSecrets.has(index) ? "Hide secret" : "Show secret")}
+                    >
+                      <ToggleVisibilityIcon visible={visibleSecrets.has(index)} />
+                    </button>
+                  )}
+
+                  {scope === "global" && (
+                    <div className="flex items-center justify-center gap-2 self-center">
+                      <span className="text-muted text-[11px] @[512px]:hidden">{t("Inject")}</span>
+                      <Switch
+                        size="sm"
+                        checked={!!secret.injectAll}
+                        onCheckedChange={(checked) => updateSecretInjectAll(index, checked)}
+                        disabled={saving}
+                        aria-label={t("Inject into all projects")}
+                      />
+                    </div>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={() => removeSecret(index)}
+                    disabled={saving}
+                    className="text-danger-light border-danger-light hover:bg-danger-light/10 cursor-pointer rounded border bg-transparent px-2.5 py-1.5 text-[13px] transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-50"
+                    aria-label={t("Remove secret")}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
+
                 {opPickerIndex === index && (
                   <div className="col-span-full">
                     <OnePasswordPicker
@@ -961,7 +983,7 @@ export const SecretsSection: React.FC = () => {
                     />
                   </div>
                 )}
-              </React.Fragment>
+              </div>
             );
           })}
         </div>
