@@ -2607,6 +2607,66 @@ describe("WorkspaceStore", () => {
       expect(sawStarting).toBe(true);
     });
 
+    it("keeps a preparing workspace visibly active immediately after switching away", async () => {
+      const workspaceId = "stream-starting-background-handoff";
+      const otherWorkspaceId = "stream-starting-background-handoff-other";
+      let releaseAcceptedSnapshot!: () => void;
+      const acceptedSnapshotReady = new Promise<void>((resolve) => {
+        releaseAcceptedSnapshot = resolve;
+      });
+
+      mockActivityList.mockResolvedValue({
+        [workspaceId]: {
+          recency: 1_000,
+          streaming: false,
+          lastModel: "openai:gpt-4o-mini",
+          lastThinkingLevel: null,
+        },
+      });
+      mockActivitySubscribe.mockImplementation(async function* (
+        _input?: void,
+        options?: { signal?: AbortSignal }
+      ): AsyncGenerator<WorkspaceActivityEvent, void, unknown> {
+        await acceptedSnapshotReady;
+        if (options?.signal?.aborted) {
+          return;
+        }
+        yield {
+          type: "activity",
+          workspaceId,
+          activity: {
+            recency: 2_000,
+            streaming: false,
+            lastModel: "openai:gpt-4o-mini",
+            lastThinkingLevel: null,
+          },
+        };
+        await waitForAbortSignal(options?.signal);
+      });
+      recreateStore();
+      mockChatStreamFor(workspaceId, async function* () {
+        yield { type: "caught-up" };
+        await Promise.resolve();
+        yield createUserMessageEvent("background-handoff-user", "hello", 1, 2_000);
+      });
+
+      createAndAddWorkspace(store, workspaceId);
+
+      const sawStarting = await waitUntil(
+        () => store.getWorkspaceSidebarState(workspaceId).isStarting === true
+      );
+      expect(sawStarting).toBe(true);
+
+      // sendMessage updates recency before stream-start; that false snapshot must not
+      // erase the accepted-send indicator while request preparation is still in flight.
+      releaseAcceptedSnapshot();
+      await tick(0);
+      createAndAddWorkspace(store, otherWorkspaceId);
+
+      const backgroundSidebarState = store.getWorkspaceSidebarState(workspaceId);
+      expect(backgroundSidebarState.canInterrupt || backgroundSidebarState.isStarting).toBe(true);
+    });
+
     it("keeps optimistic starting state until buffered first-turn history finishes catching up", async () => {
       const workspaceId = "optimistic-pending-start-replay";
       const requestedModel = "openai:gpt-4o-mini";

@@ -662,6 +662,10 @@ export class WorkspaceStore {
 
   // Lightweight activity snapshots from workspace.activity.list/subscribe.
   private workspaceActivity = new Map<string, WorkspaceActivitySnapshot>();
+  // Live onChat can accept a send before workspace.activity publishes stream-start.
+  // Preserve that narrow startup state across navigation so the sidebar does not
+  // briefly drop its running indicator while the request is still preparing.
+  private workspacePendingActivity = new Set<string>();
   // Recency timestamp observed when a workspace transitions into streaming=true.
   // Used to distinguish true stream completion (recency bumps on stream-end) from
   // abort/error transitions (streaming=false without recency advance).
@@ -809,6 +813,7 @@ export class WorkspaceStore {
     },
     "stream-lifecycle": (workspaceId, aggregator, data) => {
       applyWorkspaceChatEventToAggregator(aggregator, data);
+      this.applyStreamLifecycleToPendingActivity(workspaceId, data);
       this.states.bump(workspaceId);
     },
     "stream-delta": (workspaceId, aggregator, data) => {
@@ -2106,7 +2111,9 @@ export class WorkspaceStore {
    */
   getWorkspaceSidebarState(workspaceId: string): WorkspaceSidebarState {
     const fullState = this.getWorkspaceState(workspaceId);
-    const isStarting = fullState.isStreamStarting;
+    const isStarting =
+      fullState.isStreamStarting ||
+      (!fullState.canInterrupt && this.workspacePendingActivity.has(workspaceId));
     const terminalActivity = this.workspaceTerminalActivity.get(workspaceId);
     const terminalActiveCount = terminalActivity?.activeCount ?? 0;
     const terminalSessionCount = terminalActivity?.totalSessions ?? 0;
@@ -2924,6 +2931,25 @@ export class WorkspaceStore {
     }
   }
 
+  private applyStreamLifecycleToPendingActivity(
+    workspaceId: string,
+    message: WorkspaceChatMessage
+  ): void {
+    if (!isStreamLifecycle(message)) {
+      return;
+    }
+
+    const hasPendingActivity =
+      message.phase === "preparing" ||
+      message.phase === "streaming" ||
+      message.phase === "completing";
+    if (hasPendingActivity) {
+      this.workspacePendingActivity.add(workspaceId);
+    } else {
+      this.workspacePendingActivity.delete(workspaceId);
+    }
+  }
+
   private applyWorkspaceActivityList(snapshots: Record<string, WorkspaceActivitySnapshot>): void {
     const snapshotEntries = Object.entries(snapshots);
 
@@ -3288,7 +3314,22 @@ export class WorkspaceStore {
             if (signal.aborted || attemptController.signal.aborted) {
               return;
             }
+            const previousActivity = this.workspaceActivity.get(event.workspaceId);
+            // sendMessage publishes a non-streaming recency advance before stream-start.
+            // Keep the pending marker through that first snapshot; a true stream takeover,
+            // true-to-false stop, or same-recency terminal write is authoritative.
+            const shouldClearPendingActivity =
+              event.activity === null ||
+              event.activity.streaming === true ||
+              (previousActivity?.streaming === true && event.activity.streaming === false) ||
+              (event.activity.streaming === false &&
+                previousActivity?.recency === event.activity.recency);
+            const clearedPendingActivity =
+              shouldClearPendingActivity && this.workspacePendingActivity.delete(event.workspaceId);
             this.applyWorkspaceActivitySnapshot(event.workspaceId, event.activity);
+            if (clearedPendingActivity && this.aggregators.has(event.workspaceId)) {
+              this.states.bump(event.workspaceId);
+            }
           });
         }
 
@@ -3782,12 +3823,17 @@ export class WorkspaceStore {
     }
 
     aggregator.markOptimisticPendingStreamStart(pendingStreamModel);
+    this.workspacePendingActivity.add(workspaceId);
     this.states.bump(workspaceId);
   }
 
   clearPendingInitialSendState(workspaceId: string): void {
     const aggregator = this.aggregators.get(workspaceId);
+    const clearedPendingActivity = this.workspacePendingActivity.delete(workspaceId);
     if (aggregator?.getPendingStreamStartTime() == null) {
+      if (clearedPendingActivity && aggregator) {
+        this.states.bump(workspaceId);
+      }
       return;
     }
 
@@ -3837,6 +3883,7 @@ export class WorkspaceStore {
     this.workspaceMetadata.delete(workspaceId);
     this.derived.bump("workspaces");
     this.workspaceActivity.delete(workspaceId);
+    this.workspacePendingActivity.delete(workspaceId);
     this.refreshActiveGoalCount();
     this.workspaceTerminalActivity.delete(workspaceId);
     this.activityStreamingStartRecency.delete(workspaceId);
@@ -3933,6 +3980,7 @@ export class WorkspaceStore {
     this.chatTransientState.clear();
     this.workspaceMetadata.clear();
     this.workspaceActivity.clear();
+    this.workspacePendingActivity.clear();
     this.activeGoalCount = 0;
     this.activeGoalCountStore.clear();
     this.workspaceTerminalActivity.clear();
@@ -4427,6 +4475,10 @@ export class WorkspaceStore {
       } else {
         // Process live events immediately (after history loaded)
         applyWorkspaceChatEventToAggregator(aggregator, data);
+
+        if (data.role === "user" && aggregator.getPendingStreamStartTime() !== null) {
+          this.workspacePendingActivity.add(workspaceId);
+        }
 
         const muxMeta = data.metadata?.muxMetadata as { type?: string } | undefined;
         const isCompactionBoundarySummary =
