@@ -1448,7 +1448,7 @@ export const MCPSettingsSection: React.FC = () => {
                   <input
                     id="server-name"
                     type="text"
-                    placeholder="e.g., memory"
+                    placeholder={"e.g., memory" /* i18n-ignore: example MCP server ID */}
                     value={newServer.name}
                     onChange={(e) => setNewServer((prev) => ({ ...prev, name: e.target.value }))}
                     className="bg-modal-bg border-border-medium focus:border-accent w-full rounded border px-2 py-1.5 text-sm focus:outline-none"
@@ -1495,8 +1495,8 @@ export const MCPSettingsSection: React.FC = () => {
                     type="text"
                     placeholder={
                       newServer.transport === "stdio"
-                        ? "e.g., npx -y @modelcontextprotocol/server-memory"
-                        : "e.g., http://localhost:3333/mcp"
+                        ? "e.g., npx -y @modelcontextprotocol/server-memory" /* i18n-ignore: example MCP launch command */
+                        : "e.g., http://localhost:3333/mcp" /* i18n-ignore: example MCP endpoint */
                     }
                     value={newServer.value}
                     onChange={(e) => setNewServer((prev) => ({ ...prev, value: e.target.value }))}

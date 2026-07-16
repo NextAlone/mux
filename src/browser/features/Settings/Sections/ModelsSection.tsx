@@ -481,7 +481,7 @@ export function ModelsSection() {
               type="text"
               value={newModelId}
               onChange={(e) => setNewModelId(e.target.value)}
-              placeholder="model-id"
+              placeholder={"model-id" /* i18n-ignore: model ID format hint */}
               className="bg-background border-border-medium focus:border-accent min-w-0 flex-1 rounded border px-2 py-1 font-mono text-xs focus:outline-none"
               onKeyDown={(e) => {
                 if (e.key === "Enter") void handleAddModel();
@@ -685,15 +685,27 @@ export function ModelsSection() {
           </p>
           <div className="text-muted space-y-0.5 font-mono">
             <div>
-              <span className="text-accent">/sonnet</span> {t("explain this code")}
+              <span className="text-accent">
+                {/* i18n-ignore: slash-command example */}
+                /sonnet
+              </span>{" "}
+              {t("explain this code")}
               <span className="text-muted/60 ml-2">— {t("send one message with Sonnet")}</span>
             </div>
             <div>
-              <span className="text-accent">/opus+high</span> {t("deep review")}
+              <span className="text-accent">
+                {/* i18n-ignore: slash-command example */}
+                /opus+high
+              </span>{" "}
+              {t("deep review")}
               <span className="text-muted/60 ml-2">— {t("Opus with high thinking")}</span>
             </div>
             <div>
-              <span className="text-accent">/haiku+0</span> {t("quick answer")}
+              <span className="text-accent">
+                {/* i18n-ignore: slash-command example */}
+                /haiku+0
+              </span>{" "}
+              {t("quick answer")}
               <span className="text-muted/60 ml-2">— {t("Haiku with thinking off")}</span>
             </div>
             <div>

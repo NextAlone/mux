@@ -929,7 +929,7 @@ export function GeneralSection() {
                 setDefaultProjectDir(e.target.value)
               }
               onBlur={handleCloneDirBlur}
-              placeholder="~/.mux/projects"
+              placeholder={"~/.mux/projects" /* i18n-ignore: example filesystem path */}
               disabled={!cloneDirLoaded}
               className="border-border-medium bg-background-secondary h-9 w-full sm:w-80"
             />
@@ -978,7 +978,7 @@ export function GeneralSection() {
                 onBlur={(e: React.FocusEvent<HTMLInputElement>) =>
                   handleWorkspaceCheckoutCustomPathBlur(e.currentTarget.value)
                 }
-                placeholder="~/.mux/src"
+                placeholder={"~/.mux/src" /* i18n-ignore: example filesystem path */}
                 disabled={
                   !api?.config?.updateWorkspaceCheckoutLocation || !workspacePathSettingsLoaded
                 }

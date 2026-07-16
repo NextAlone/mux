@@ -2334,6 +2334,7 @@ export function ProvidersSection() {
                             <div className="border-border-light space-y-3 border-t pt-3">
                               <div>
                                 <label className="text-foreground block text-xs font-medium">
+                                  {/* i18n-ignore: provider authentication product name */}
                                   ChatGPT (Codex) OAuth
                                 </label>
                                 <span className="text-muted text-xs">
@@ -2633,13 +2634,21 @@ export function ProvidersSection() {
                                             {t("OpenAI wire format")}
                                           </div>
                                           <div className="mt-1">
-                                            <span className="font-semibold">responses</span>:{" "}
+                                            <span className="font-semibold">
+                                              {/* i18n-ignore: OpenAI wire-format identifier */}
+                                              responses
+                                            </span>
+                                            :{" "}
                                             {t(
                                               "modern API with persistence and built-in tools (default)."
                                             )}
                                           </div>
                                           <div>
-                                            <span className="font-semibold">chat completions</span>:{" "}
+                                            <span className="font-semibold">
+                                              {/* i18n-ignore: OpenAI wire-format identifier */}
+                                              chat completions
+                                            </span>
+                                            :{" "}
                                             {t(
                                               "legacy /chat/completions endpoint. Use if your provider doesn't support the Responses API (e.g. Azure Gov)."
                                             )}
@@ -2667,8 +2676,12 @@ export function ProvidersSection() {
                                     <SelectValue />
                                   </SelectTrigger>
                                   <SelectContent>
-                                    <SelectItem value="responses">responses</SelectItem>
+                                    <SelectItem value="responses">
+                                      {/* i18n-ignore: OpenAI wire-format identifier */}
+                                      responses
+                                    </SelectItem>
                                     <SelectItem value="chatCompletions">
+                                      {/* i18n-ignore: OpenAI wire-format identifier */}
                                       chat completions
                                     </SelectItem>
                                   </SelectContent>
@@ -2893,7 +2906,7 @@ export function ProvidersSection() {
                           }
                         }}
                         onBlur={() => markCustomProviderFieldTouched("providerId")}
-                        placeholder="acme-openai"
+                        placeholder={"acme-openai" /* i18n-ignore: example provider ID */}
                         className="bg-modal-bg border-border-medium focus:border-accent w-full rounded border px-2 py-1.5 font-mono text-xs focus:outline-none"
                       />
                       {showCustomProviderIdError && (
@@ -2914,7 +2927,7 @@ export function ProvidersSection() {
                           }
                         }}
                         onBlur={() => markCustomProviderFieldTouched("displayName")}
-                        placeholder="Acme OpenAI"
+                        placeholder={"Acme OpenAI" /* i18n-ignore: example provider name */}
                         className="bg-modal-bg border-border-medium focus:border-accent w-full rounded border px-2 py-1.5 text-xs focus:outline-none"
                       />
                       {showCustomProviderDisplayNameError && (
@@ -2935,7 +2948,9 @@ export function ProvidersSection() {
                           }
                         }}
                         onBlur={() => markCustomProviderFieldTouched("baseUrl")}
-                        placeholder="https://api.acme.test/v1"
+                        placeholder={
+                          "https://api.acme.test/v1" /* i18n-ignore: example API endpoint */
+                        }
                         className="bg-modal-bg border-border-medium focus:border-accent w-full rounded border px-2 py-1.5 font-mono text-xs focus:outline-none"
                       />
                       {showCustomProviderBaseUrlError && (
@@ -2961,7 +2976,9 @@ export function ProvidersSection() {
                       <input
                         value={customProviderApiKeyFile}
                         onChange={(event) => setCustomProviderApiKeyFile(event.target.value)}
-                        placeholder="~/.config/provider/token"
+                        placeholder={
+                          "~/.config/provider/token" /* i18n-ignore: example credential path */
+                        }
                         className="bg-modal-bg border-border-medium focus:border-accent w-full rounded border px-2 py-1.5 font-mono text-xs focus:outline-none"
                       />
                     </label>
@@ -2971,7 +2988,7 @@ export function ProvidersSection() {
                       <input
                         value={customProviderInitialModelId}
                         onChange={(event) => setCustomProviderInitialModelId(event.target.value)}
-                        placeholder="gpt-4o-mini"
+                        placeholder={"gpt-4o-mini" /* i18n-ignore: example model ID */}
                         className="bg-modal-bg border-border-medium focus:border-accent w-full rounded border px-2 py-1.5 font-mono text-xs focus:outline-none"
                       />
                     </label>
