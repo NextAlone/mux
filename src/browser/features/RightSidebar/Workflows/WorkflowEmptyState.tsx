@@ -6,6 +6,7 @@ import type { AvailableWorkflow, WorkflowArgSummary } from "@/common/types/workf
 
 import { WorkflowScopeBadge } from "./WorkflowBadges";
 import { stringifyWorkflowArgValue } from "./projectWorkflowRun";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 /** Coerce a raw input string to the arg's declared type (best-effort). */
 function coerceArgValue(arg: WorkflowArgSummary, raw: string | boolean): unknown {
@@ -33,6 +34,7 @@ const WorkflowRunForm: React.FC<{
   busy: boolean;
   onSubmit: (args: Record<string, unknown>) => void;
 }> = (props) => {
+  const { t } = useLanguage();
   const [values, setValues] = React.useState<Record<string, string | boolean>>(() => {
     // Seed required boolean args that have no default to `false` so their (unchecked) state is a
     // submittable value: otherwise Start stays disabled on the only visible `false` state and the
@@ -109,7 +111,9 @@ const WorkflowRunForm: React.FC<{
                 type="text"
                 className="border-border bg-background text-foreground rounded-md border px-2 py-1 text-xs"
                 placeholder={
-                  arg.default != null ? `default: ${stringifyWorkflowArgValue(arg.default)}` : ""
+                  arg.default != null
+                    ? `${t("default:")} ${stringifyWorkflowArgValue(arg.default)}`
+                    : ""
                 }
                 value={typeof values[arg.name] === "string" ? (values[arg.name] as string) : ""}
                 onChange={(event) =>
@@ -126,7 +130,8 @@ const WorkflowRunForm: React.FC<{
         onClick={submit}
         className="border-accent bg-accent inline-flex items-center gap-1 self-start rounded-md border px-2.5 py-1.5 text-xs font-medium text-white transition-colors hover:opacity-90 disabled:cursor-default disabled:opacity-50"
       >
-        <Play className="h-3 w-3" /> Start
+        <Play className="h-3 w-3" />
+        {t("Start")}
       </button>
     </div>
   );
@@ -146,6 +151,7 @@ interface WorkflowEmptyStateProps {
  * inline form; arg-less scripts start immediately.
  */
 export const WorkflowEmptyState: React.FC<WorkflowEmptyStateProps> = (props) => {
+  const { t } = useLanguage();
   const [configuring, setConfiguring] = React.useState<string | null>(null);
 
   return (
@@ -160,17 +166,21 @@ export const WorkflowEmptyState: React.FC<WorkflowEmptyStateProps> = (props) => 
         >
           <Workflow className="h-6 w-6" />
         </span>
-        <div className="text-content-primary text-[15px] font-semibold">No workflow runs yet</div>
+        <div className="text-content-primary text-[15px] font-semibold">
+          {t("No workflow runs yet")}
+        </div>
         <div className="text-muted max-w-[330px] text-[12.5px] leading-relaxed">
-          Workflows are reusable Markdown phase templates or advanced JavaScript conductors. Run one
-          to see durable progress here.
+          {t(
+            "Workflows are reusable Markdown phase templates or advanced JavaScript conductors. Run one to see durable progress here."
+          )}
         </div>
       </div>
 
       {props.scripts.length > 0 && (
         <>
           <div className="text-muted flex items-center gap-1.5 text-[11px] font-semibold tracking-wide uppercase">
-            <BookOpen className="h-3 w-3" /> Available workflows
+            <BookOpen className="h-3 w-3" />
+            {t("Available workflows")}
           </div>
           <div className="flex flex-col gap-1.5">
             {props.scripts.map((script) => {
@@ -214,7 +224,8 @@ export const WorkflowEmptyState: React.FC<WorkflowEmptyStateProps> = (props) => 
                       onClick={onRunClick}
                       className="border-accent bg-accent inline-flex shrink-0 items-center gap-1 rounded-md border px-2.5 py-1.5 text-xs font-medium text-white transition-colors hover:opacity-90 disabled:cursor-default disabled:opacity-50"
                     >
-                      <Play className="h-3 w-3" /> Run
+                      <Play className="h-3 w-3" />
+                      {t("Run")}
                     </button>
                   </div>
                   {isConfiguring && (
@@ -232,12 +243,12 @@ export const WorkflowEmptyState: React.FC<WorkflowEmptyStateProps> = (props) => 
       )}
 
       <div className="text-muted pt-1 text-center text-[11.5px]">
-        Start one from chat with{" "}
+        {t("Start one from chat with")}{" "}
         <span className="border-border bg-surface-secondary rounded border px-1.5 py-px font-mono">
           {`/workflow ${SLASH_COMMAND_HINTS.workflow}`}
         </span>
-        ; workspace <span className="text-content-secondary font-mono">.md/.js</span> workflows are
-        loaded by explicit path.
+        ; workspace <span className="text-content-secondary font-mono">.md/.js</span>
+        {t("workflows are loaded by explicit path.")}
       </div>
     </div>
   );

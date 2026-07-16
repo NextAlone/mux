@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { cn } from "@/common/lib/utils";
 import { TooltipIfPresent } from "@/browser/components/Tooltip/Tooltip";
 import type { PlanHeading } from "./extractPlanHeadings";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 /**
  * Sticky table of contents rendered alongside a plan in the chat transcript.
@@ -75,6 +76,7 @@ function findScrollAncestor(start: HTMLElement | null): HTMLElement | null {
 }
 
 export const PlanTableOfContents: React.FC<PlanTableOfContentsProps> = (props) => {
+  const { t } = useLanguage();
   // h1 is reserved for the TOC's heading (the plan title), so it never appears
   // as a list entry — but it still consumes a renderIndex because the rendered
   // DOM still contains an <h1>. h5/h6 are also hidden as visual noise.
@@ -212,7 +214,7 @@ export const PlanTableOfContents: React.FC<PlanTableOfContentsProps> = (props) =
   return (
     <aside
       className={cn("plan-toc-aside", props.className)}
-      aria-label="Plan contents"
+      aria-label={t("Plan contents")}
       // At intermediate widths CSS shows only the sideways hint; at wide widths
       // it hides the hint and reveals the sticky nav in the same left gutter.
       // The aside itself stays pointer-events:none so margin clicks fall through
@@ -220,7 +222,7 @@ export const PlanTableOfContents: React.FC<PlanTableOfContentsProps> = (props) =
       data-testid="plan-toc"
     >
       <div className="plan-toc-compact-hint" aria-hidden="true">
-        Expand to see ToC
+        {t("Expand to see ToC")}
       </div>
       <nav className="plan-toc" data-testid="plan-toc-nav">
         {titleHeadingEntry ? (

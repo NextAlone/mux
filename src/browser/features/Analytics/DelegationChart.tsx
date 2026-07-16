@@ -18,6 +18,7 @@ import {
   formatCompactNumber,
   formatUsd,
 } from "./analyticsUtils";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 interface DelegationChartProps {
   data: DelegationSummary | null;
@@ -80,6 +81,7 @@ function DelegationTooltipContent(props: {
   active?: boolean;
   payload?: Array<{ payload?: unknown }>;
 }) {
+  const { t } = useLanguage();
   if (!props.active || !props.payload || props.payload.length === 0) {
     return null;
   }
@@ -116,7 +118,7 @@ function DelegationTooltipContent(props: {
         </div>
       ))}
       <div className="border-border-light text-muted mt-1 flex items-center justify-between gap-4 border-t pt-1">
-        <span>Total</span>
+        <span>{t("Total")}</span>
         <span className="text-foreground font-mono font-medium">
           {formatCompactNumber(row.totalTokens)}
         </span>
@@ -126,6 +128,7 @@ function DelegationTooltipContent(props: {
 }
 
 export function DelegationChart(props: DelegationChartProps) {
+  const { t } = useLanguage();
   const rows: DelegationChartRow[] = (props.data?.byAgentType ?? []).map((agent) => {
     const row: DelegationChartRow = {
       label: `${capitalize(agent.agentType)} (${formatCompactNumber(agent.count)})`,
@@ -157,13 +160,15 @@ export function DelegationChart(props: DelegationChartProps) {
 
   return (
     <div className="bg-background-secondary border-border-medium rounded-lg border p-4">
-      <h2 className="text-foreground text-sm font-semibold">Delegation insights</h2>
+      <h2 className="text-foreground text-sm font-semibold">{t("Delegation insights")}</h2>
       <p className="text-muted mt-1 text-sm">
-        Sub-agent delegation volume, compression, and token usage by agent type.
+        {t("Sub-agent delegation volume, compression, and token usage by agent type.")}
       </p>
 
       {props.error ? (
-        <p className="text-danger mt-3 text-xs">Failed to load delegation data: {props.error}</p>
+        <p className="text-danger mt-3 text-xs">
+          {t("Failed to load delegation data:")} {props.error}
+        </p>
       ) : props.loading ? (
         <div className="mt-3 space-y-3">
           <Skeleton variant="shimmer" className="h-20 w-full" />
@@ -171,25 +176,25 @@ export function DelegationChart(props: DelegationChartProps) {
         </div>
       ) : !props.data || props.data.totalChildren === 0 || rows.length === 0 ? (
         <div className="text-muted mt-3 rounded border border-dashed px-3 py-10 text-center text-sm">
-          No delegation data available.
+          {t("No delegation data available.")}
         </div>
       ) : (
         <>
           <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
             <div className="border-border-medium rounded border p-3">
-              <p className="text-muted text-xs">Total Delegations</p>
+              <p className="text-muted text-xs">{t("Total Delegations")}</p>
               <p className="text-foreground mt-1 font-mono text-lg font-semibold">
                 {props.data.totalChildren}
               </p>
             </div>
             <div className="border-border-medium rounded border p-3">
-              <p className="text-muted text-xs">Compression Ratio</p>
+              <p className="text-muted text-xs">{t("Compression Ratio")}</p>
               <p className="text-foreground mt-1 font-mono text-lg font-semibold">
                 {formatCompressionRatio(props.data.compressionRatio)}
               </p>
             </div>
             <div className="border-border-medium rounded border p-3">
-              <p className="text-muted text-xs">Cost Delegated</p>
+              <p className="text-muted text-xs">{t("Cost Delegated")}</p>
               <p className="text-foreground mt-1 font-mono text-lg font-semibold">
                 {formatUsd(props.data.totalCostDelegated)}
               </p>

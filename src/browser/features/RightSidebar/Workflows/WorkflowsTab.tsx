@@ -10,6 +10,7 @@ import { WorkflowRunHistory } from "./WorkflowRunHistory";
 import { WorkflowTimeline } from "./WorkflowTimeline";
 import { projectWorkflowRun, selectPrimaryWorkflowRun } from "./projectWorkflowRun";
 import { useWorkflowRuns } from "./useWorkflowRuns";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 /**
  * Right-sidebar Workflows tab: a live, scannable view of the workspace's
@@ -17,6 +18,7 @@ import { useWorkflowRuns } from "./useWorkflowRuns";
  * run-history list lets the user pin any prior run into focus.
  */
 export const WorkflowsTab: React.FC<{ workspaceId: string }> = (props) => {
+  const { t } = useLanguage();
   const { api } = useAPI();
   const { runs, loading, error } = useWorkflowRuns(props.workspaceId);
   const [overrideRunId, setOverrideRunId] = React.useState<string | null>(null);
@@ -67,18 +69,22 @@ export const WorkflowsTab: React.FC<{ workspaceId: string }> = (props) => {
       });
       setOverrideRunId(null);
     } catch (startError) {
-      setRunError(startError instanceof Error ? startError.message : "Failed to start workflow");
+      setRunError(startError instanceof Error ? startError.message : t("Failed to start workflow"));
     } finally {
       setBusyScriptPath(null);
     }
   };
 
   if (error != null) {
-    return <div className="text-danger text-sm">Failed to load workflows: {error}</div>;
+    return (
+      <div className="text-danger text-sm">
+        {t("Failed to load workflows:")} {error}
+      </div>
+    );
   }
 
   if (loading && runs.length === 0) {
-    return <div className="text-muted text-sm">Loading workflow runs…</div>;
+    return <div className="text-muted text-sm">{t("Loading workflow runs…")}</div>;
   }
 
   if (runs.length === 0) {
@@ -108,7 +114,8 @@ export const WorkflowsTab: React.FC<{ workspaceId: string }> = (props) => {
           onClick={() => setOverrideRunId(null)}
           className="border-border bg-surface-secondary text-content-secondary hover:bg-hover inline-flex w-fit items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors"
         >
-          <ChevronLeft className="h-3 w-3" /> Back to current run
+          <ChevronLeft className="h-3 w-3" />
+          {t("Back to current run")}
         </button>
       )}
 

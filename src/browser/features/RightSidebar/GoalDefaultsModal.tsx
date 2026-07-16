@@ -8,6 +8,7 @@ import {
   DialogTitle,
 } from "@/browser/components/Dialog/Dialog";
 import { GoalDefaultsSection } from "@/browser/features/RightSidebar/GoalDefaultsSection";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 /**
  * Modal wrapper around `GoalDefaultsSection`. Lets users edit both their
@@ -35,6 +36,7 @@ interface GoalDefaultsModalProps {
 }
 
 export function GoalDefaultsModal(props: GoalDefaultsModalProps) {
+  const { t } = useLanguage();
   const handleOpenChange = useCallback(
     (open: boolean) => {
       props.onOpenChange(open);
@@ -46,10 +48,11 @@ export function GoalDefaultsModal(props: GoalDefaultsModalProps) {
     <Dialog open={props.open} onOpenChange={handleOpenChange}>
       <DialogContent maxWidth="32rem">
         <DialogHeader>
-          <DialogTitle>Goal defaults</DialogTitle>
+          <DialogTitle>{t("Goal defaults")}</DialogTitle>
           <DialogDescription>
-            Defaults apply when you create a goal without an explicit budget or turn cap. Workspace
-            values override the global defaults below.
+            {t(
+              "Defaults apply when you create a goal without an explicit budget or turn cap. Workspace values override the global defaults below."
+            )}
           </DialogDescription>
         </DialogHeader>
         <GoalDefaultsSection workspaceId={props.workspaceId} onPersist={props.onPersist} embedded />

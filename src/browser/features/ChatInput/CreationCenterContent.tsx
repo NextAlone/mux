@@ -1,5 +1,6 @@
 import { Shimmer } from "@/browser/features/AIElements/Shimmer";
 import { LoadingAnimation } from "@/browser/components/LoadingAnimation/LoadingAnimation";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 interface CreationCenterContentProps {
   projectName: string;
@@ -15,6 +16,7 @@ interface CreationCenterContentProps {
  * Shown as an overlay when isSending is true.
  */
 export function CreationCenterContent(props: CreationCenterContentProps) {
+  const { t } = useLanguage();
   return (
     <>
       {props.isSending && (
@@ -25,7 +27,7 @@ export function CreationCenterContent(props: CreationCenterContentProps) {
         >
           <LoadingAnimation />
           <div className="mt-8 max-w-xl px-8 text-center">
-            <h2 className="text-foreground mb-2 text-2xl font-medium">Creating workspace</h2>
+            <h2 className="text-foreground mb-2 text-2xl font-medium">{t("Creating workspace")}</h2>
             <p className="text-muted text-sm leading-relaxed">
               {props.workspaceName ? (
                 <>
@@ -35,7 +37,7 @@ export function CreationCenterContent(props: CreationCenterContentProps) {
                   )}
                 </>
               ) : (
-                <Shimmer>Generating name…</Shimmer>
+                <Shimmer>{t("Generating name…")}</Shimmer>
               )}
             </p>
           </div>

@@ -111,6 +111,7 @@ import { useWorkspaceMetadata } from "@/browser/contexts/WorkspaceContext";
 import { workspaceStore, useWorkspaceStoreRaw } from "@/browser/stores/WorkspaceStore";
 import { invalidateGitStatus } from "@/browser/stores/GitStatusStore";
 import { getErrorMessage } from "@/common/utils/errors";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 /** Stats reported to parent for tab display */
 interface ReviewPanelStats {
@@ -811,6 +812,7 @@ export const ReviewPanel: React.FC<ReviewPanelProps> = ({
   isTouchImmersive = false,
   onTouchImmersiveChange,
 }) => {
+  const { t } = useLanguage();
   const originFetchRef = useRef<OriginFetchState | null>(null);
   const { api } = useAPI();
   const { theme } = useTheme();
@@ -2309,8 +2311,8 @@ export const ReviewPanel: React.FC<ReviewPanelProps> = ({
     return (
       <div className="flex h-full flex-col items-center justify-center p-8 text-center">
         <Loader2 aria-hidden="true" className="text-secondary mb-4 h-6 w-6 animate-spin" />
-        <p className="text-secondary text-sm">Setting up workspace...</p>
-        <p className="text-secondary mt-1 text-xs">Review will be available once ready</p>
+        <p className="text-secondary text-sm">{t("Setting up workspace...")}</p>
+        <p className="text-secondary mt-1 text-xs">{t("Review will be available once ready")}</p>
       </div>
     );
   }
@@ -2347,9 +2349,11 @@ export const ReviewPanel: React.FC<ReviewPanelProps> = ({
       {diffState.status === "error" ? (
         isNonJjWorkspace ? (
           <div className="text-muted flex flex-col items-center justify-start gap-3 px-6 pt-12 pb-6 text-center">
-            <div className="text-foreground text-base font-medium">Not a jj repository</div>
+            <div className="text-foreground text-base font-medium">{t("Not a jj repository")}</div>
             <div className="text-[13px] leading-[1.5]">
-              This project is not a jj repository, so changes {"can't"} be computed.
+              {t("This project is not a jj repository, so changes")}
+              {"can't"}
+              {t("be computed.")}
             </div>
           </div>
         ) : (
@@ -2360,10 +2364,11 @@ export const ReviewPanel: React.FC<ReviewPanelProps> = ({
               <div className="text-muted mt-3 flex items-start gap-2 border-t border-current/20 pt-3 font-sans text-[11px]">
                 <Lightbulb aria-hidden="true" className="mt-0.5 h-3 w-3 shrink-0" />
                 <span>
-                  The revision or bookmark{" "}
-                  <code className="text-foreground">{filters.diffBase}</code> does not exist in this
-                  repository. Use the dropdown above to select a different base (e.g., @-,
-                  main@origin).
+                  {t("The revision or bookmark")}{" "}
+                  <code className="text-foreground">{filters.diffBase}</code>
+                  {t(
+                    "does not exist in this repository. Use the dropdown above to select a different base (e.g., @-, main@origin)."
+                  )}
                 </span>
               </div>
             )}
@@ -2371,7 +2376,7 @@ export const ReviewPanel: React.FC<ReviewPanelProps> = ({
         )
       ) : diffState.status === "loading" ? (
         <div className="text-muted flex h-full items-center justify-center text-sm">
-          Loading diff...
+          {t("Loading diff...")}
         </div>
       ) : !isImmersive ? (
         // Immersive review renders into its own overlay, so skip the regular review DOM
@@ -2464,7 +2469,7 @@ export const ReviewPanel: React.FC<ReviewPanelProps> = ({
               {planOrphanReviews.length > 0 && (
                 <div className="border-border-light mb-2 border-b pb-2">
                   <div className="text-muted mb-1 px-2 text-[10px] font-medium tracking-wider uppercase">
-                    Plan annotations
+                    {t("Plan annotations")}
                   </div>
                   <div className="flex flex-col gap-1">
                     {planOrphanReviews.map((review) => (
@@ -2497,19 +2502,24 @@ export const ReviewPanel: React.FC<ReviewPanelProps> = ({
                   />
                   <div className="flex min-w-0 flex-1 flex-col gap-0.5">
                     <div className="flex flex-wrap items-baseline gap-1">
-                      <span className="text-foreground font-medium">Assisted review</span>
+                      <span className="text-foreground font-medium">{t("Assisted review")}</span>
                       {assistedMatchByHunkId.size === 0 ? (
                         <span className="text-muted">
-                          · {assistedHunks.length} agent pin
-                          {assistedHunks.length === 1 ? "" : "s"} — none match the current diff
+                          · {assistedHunks.length}
+                          {t("agent pin")}
+                          {assistedHunks.length === 1 ? "" : "s"}
+                          {t("— none match the current diff")}
                         </span>
                       ) : unreadAssistedInDiff === 0 ? (
                         <span className="text-muted">
-                          · all caught up ({assistedMatchByHunkId.size} read)
+                          {t("· all caught up (")}
+                          {assistedMatchByHunkId.size}
+                          {t("read)")}
                         </span>
                       ) : (
                         <span className="text-muted">
-                          · {unreadAssistedInDiff} of {assistedMatchByHunkId.size} unread
+                          · {unreadAssistedInDiff} {t("of")} {assistedMatchByHunkId.size}
+                          {t("unread")}
                         </span>
                       )}
                     </div>
@@ -2520,7 +2530,8 @@ export const ReviewPanel: React.FC<ReviewPanelProps> = ({
                         className="hover:text-foreground cursor-pointer border-none bg-transparent p-0 underline-offset-2 transition-colors hover:underline"
                         data-testid="assisted-mode-banner-exit"
                       >
-                        Exit Assisted ({formatKeybind(KEYBINDS.TOGGLE_ASSISTED_REVIEW)})
+                        {t("Exit Assisted (")}
+                        {formatKeybind(KEYBINDS.TOGGLE_ASSISTED_REVIEW)})
                       </button>
                       {!filters.assistedShowReadHunks && unreadAssistedInDiff === 0 && (
                         <button
@@ -2533,7 +2544,7 @@ export const ReviewPanel: React.FC<ReviewPanelProps> = ({
                           }
                           className="hover:text-foreground cursor-pointer border-none bg-transparent p-0 underline-offset-2 transition-colors hover:underline"
                         >
-                          Show read pins
+                          {t("Show read pins")}
                         </button>
                       )}
                     </div>
@@ -2543,36 +2554,39 @@ export const ReviewPanel: React.FC<ReviewPanelProps> = ({
 
               {hunks.length === 0 ? (
                 <div className="text-muted flex flex-col items-center justify-start gap-3 px-6 pt-12 pb-6 text-center">
-                  <div className="text-foreground text-base font-medium">No changes found</div>
+                  <div className="text-foreground text-base font-medium">
+                    {t("No changes found")}
+                  </div>
                   <div className="text-[13px] leading-[1.5]">
-                    No changes found for the selected diff base.
+                    {t("No changes found for the selected diff base.")}
                     <br />
-                    Try selecting a different base or make some changes.
+                    {t("Try selecting a different base or make some changes.")}
                   </div>
                   {diagnosticInfo && (
                     <details className="bg-modal-bg border-border-light [&_summary]:text-muted mt-4 w-full max-w-96 cursor-pointer rounded border p-3 [&_summary]:flex [&_summary]:list-none [&_summary]:items-center [&_summary]:gap-1.5 [&_summary]:text-xs [&_summary]:font-medium [&_summary]:select-none [&_summary::-webkit-details-marker]:hidden [&_summary::before]:text-[10px] [&_summary::before]:transition-transform [&_summary::before]:duration-200 [&_summary::before]:content-['▶'] [&[open]_summary::before]:rotate-90">
-                      <summary>Show diagnostic info</summary>
+                      <summary>{t("Show diagnostic info")}</summary>
                       <div className="font-monospace text-foreground mt-3 text-[11px] leading-[1.6]">
                         <div className="[&:not(:last-child)]:border-border-light grid grid-cols-[140px_1fr] gap-3 py-1 [&:not(:last-child)]:border-b">
-                          <div className="text-muted font-medium">Command:</div>
+                          <div className="text-muted font-medium">{t("Command:")}</div>
                           <div className="text-foreground break-all select-all">
                             {diagnosticInfo.command}
                           </div>
                         </div>
                         <div className="[&:not(:last-child)]:border-border-light grid grid-cols-[140px_1fr] gap-3 py-1 [&:not(:last-child)]:border-b">
-                          <div className="text-muted font-medium">Output size:</div>
+                          <div className="text-muted font-medium">{t("Output size:")}</div>
                           <div className="text-foreground break-all select-all">
-                            {diagnosticInfo.outputLength.toLocaleString()} bytes
+                            {diagnosticInfo.outputLength.toLocaleString()}
+                            {t("bytes")}
                           </div>
                         </div>
                         <div className="[&:not(:last-child)]:border-border-light grid grid-cols-[140px_1fr] gap-3 py-1 [&:not(:last-child)]:border-b">
-                          <div className="text-muted font-medium">Files parsed:</div>
+                          <div className="text-muted font-medium">{t("Files parsed:")}</div>
                           <div className="text-foreground break-all select-all">
                             {diagnosticInfo.fileDiffCount}
                           </div>
                         </div>
                         <div className="grid grid-cols-[140px_1fr] gap-3 py-1">
-                          <div className="text-muted font-medium">Hunks extracted:</div>
+                          <div className="text-muted font-medium">{t("Hunks extracted:")}</div>
                           <div className="text-foreground break-all select-all">
                             {diagnosticInfo.hunkCount}
                           </div>
@@ -2617,7 +2631,7 @@ export const ReviewPanel: React.FC<ReviewPanelProps> = ({
                         className="border-border-light hover:bg-hover hover:text-foreground rounded border bg-transparent px-2 py-0.5 transition-colors"
                         data-testid="review-assisted-empty-exit"
                       >
-                        Exit Assisted
+                        {t("Exit Assisted")}
                       </button>
                       {assistedHunks.length > 0 && !filters.assistedShowReadHunks && (
                         <button
@@ -2628,7 +2642,7 @@ export const ReviewPanel: React.FC<ReviewPanelProps> = ({
                           className="border-border-light hover:bg-hover hover:text-foreground rounded border bg-transparent px-2 py-0.5 transition-colors"
                           data-testid="review-assisted-empty-show-read"
                         >
-                          Show read pins
+                          {t("Show read pins")}
                         </button>
                       )}
                     </div>

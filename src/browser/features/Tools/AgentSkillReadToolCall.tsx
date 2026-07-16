@@ -21,6 +21,7 @@ import {
 } from "./Shared/toolUtils";
 import { MarkdownRenderer } from "../Messages/MarkdownRenderer";
 import { JsonHighlight } from "./Shared/HighlightedCode";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 interface AgentSkillReadToolCallProps {
   args: AgentSkillReadToolArgs;
@@ -75,6 +76,7 @@ export const AgentSkillReadToolCall: React.FC<AgentSkillReadToolCallProps> = ({
   result,
   status = "pending",
 }) => {
+  const { t } = useLanguage();
   const { expanded, toggleExpanded } = useToolExpansion();
 
   const successResult = isAgentSkillReadSuccessResult(result) ? result : null;
@@ -90,12 +92,12 @@ export const AgentSkillReadToolCall: React.FC<AgentSkillReadToolCallProps> = ({
         <ExpandIcon expanded={expanded}>▶</ExpandIcon>
         <ToolIcon toolName="agent_skill_read" />
         <div className="text-text font-monospace flex max-w-96 min-w-0 items-baseline gap-1.5">
-          <span className="text-secondary whitespace-nowrap">Read skill:</span>
+          <span className="text-secondary whitespace-nowrap">{t("Read skill:")}</span>
           <span className="truncate">{args.name}</span>
         </div>
         {successResult && (
           <span className="text-secondary ml-2 text-[10px] whitespace-nowrap">
-            <span className="hidden @sm:inline">scope </span>
+            <span className="hidden @sm:inline">{t("scope")} </span>
             {successResult.skill.scope}
           </span>
         )}
@@ -107,19 +109,19 @@ export const AgentSkillReadToolCall: React.FC<AgentSkillReadToolCallProps> = ({
           <DetailSection>
             <div className="bg-code-bg flex flex-wrap gap-4 rounded px-2 py-1.5 text-[11px] leading-[1.4]">
               <div className="flex items-baseline gap-1.5">
-                <span className="text-secondary font-medium">Skill:</span>
+                <span className="text-secondary font-medium">{t("Skill:")}</span>
                 <span className="text-text font-monospace break-all">{args.name}</span>
               </div>
               {successResult && (
                 <>
                   <div className="flex items-baseline gap-1.5">
-                    <span className="text-secondary font-medium">Scope:</span>
+                    <span className="text-secondary font-medium">{t("Scope:")}</span>
                     <span className="text-text font-monospace break-all">
                       {successResult.skill.scope}
                     </span>
                   </div>
                   <div className="flex items-baseline gap-1.5">
-                    <span className="text-secondary font-medium">Directory:</span>
+                    <span className="text-secondary font-medium">{t("Directory:")}</span>
                     <span className="text-text font-monospace break-all">
                       {successResult.skill.directoryName}
                     </span>
@@ -131,7 +133,7 @@ export const AgentSkillReadToolCall: React.FC<AgentSkillReadToolCallProps> = ({
 
           {errorResult && (
             <DetailSection>
-              <DetailLabel>Error</DetailLabel>
+              <DetailLabel>{t("Error")}</DetailLabel>
               <ErrorBox>{errorResult.error}</ErrorBox>
             </DetailSection>
           )}
@@ -139,11 +141,11 @@ export const AgentSkillReadToolCall: React.FC<AgentSkillReadToolCallProps> = ({
           {hasUnrecognizedResult && (
             <>
               <DetailSection>
-                <DetailLabel>Error</DetailLabel>
-                <ErrorBox>Unrecognized tool output shape</ErrorBox>
+                <DetailLabel>{t("Error")}</DetailLabel>
+                <ErrorBox>{t("Unrecognized tool output shape")}</ErrorBox>
               </DetailSection>
               <DetailSection>
-                <DetailLabel>Result</DetailLabel>
+                <DetailLabel>{t("Result")}</DetailLabel>
                 <DetailContent>
                   <JsonHighlight value={result} />
                 </DetailContent>
@@ -154,27 +156,27 @@ export const AgentSkillReadToolCall: React.FC<AgentSkillReadToolCallProps> = ({
           {successResult && frontmatter && (
             <>
               <DetailSection>
-                <DetailLabel>Description</DetailLabel>
+                <DetailLabel>{t("Description")}</DetailLabel>
                 <DetailContent className="px-2 py-1.5">{frontmatter.description}</DetailContent>
               </DetailSection>
 
               {frontmatter.license && (
                 <DetailSection>
-                  <DetailLabel>License</DetailLabel>
+                  <DetailLabel>{t("License")}</DetailLabel>
                   <DetailContent className="px-2 py-1.5">{frontmatter.license}</DetailContent>
                 </DetailSection>
               )}
 
               {frontmatter.compatibility && (
                 <DetailSection>
-                  <DetailLabel>Compatibility</DetailLabel>
+                  <DetailLabel>{t("Compatibility")}</DetailLabel>
                   <DetailContent className="px-2 py-1.5">{frontmatter.compatibility}</DetailContent>
                 </DetailSection>
               )}
 
               {frontmatter.metadata && (
                 <DetailSection>
-                  <DetailLabel>Metadata</DetailLabel>
+                  <DetailLabel>{t("Metadata")}</DetailLabel>
                   <DetailContent>
                     <JsonHighlight value={frontmatter.metadata} />
                   </DetailContent>
@@ -182,7 +184,7 @@ export const AgentSkillReadToolCall: React.FC<AgentSkillReadToolCallProps> = ({
               )}
 
               <DetailSection>
-                <DetailLabel>Contents</DetailLabel>
+                <DetailLabel>{t("Contents")}</DetailLabel>
                 <div className="bg-code-bg max-h-[300px] overflow-y-auto rounded px-3 py-2 text-[12px]">
                   <MarkdownRenderer content={successResult.skill.body} />
                 </div>
@@ -193,7 +195,7 @@ export const AgentSkillReadToolCall: React.FC<AgentSkillReadToolCallProps> = ({
           {status === "executing" && !hasResult && (
             <DetailSection>
               <div className="text-secondary text-[11px]">
-                Reading skill
+                {t("Reading skill")}
                 <LoadingDots />
               </div>
             </DetailSection>

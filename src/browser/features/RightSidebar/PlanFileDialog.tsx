@@ -10,6 +10,7 @@ import {
   DialogTitle,
 } from "@/browser/components/Dialog/Dialog";
 import { getErrorMessage } from "@/common/utils/errors";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 interface PlanFileDialogProps {
   open: boolean;
@@ -18,6 +19,7 @@ interface PlanFileDialogProps {
 }
 
 export const PlanFileDialog: React.FC<PlanFileDialogProps> = (props) => {
+  const { t } = useLanguage();
   const { api } = useAPI();
 
   const [isLoading, setIsLoading] = useState(false);
@@ -88,7 +90,7 @@ export const PlanFileDialog: React.FC<PlanFileDialogProps> = (props) => {
       <DialogContent className="flex max-h-[80vh] min-h-0 max-w-5xl flex-col overflow-hidden">
         <DialogHeader>
           <DialogTitle className="flex flex-col gap-1">
-            <span>Plan file</span>
+            <span>{t("Plan file")}</span>
             {path && (
               <code className="rounded bg-[var(--color-bg-tertiary)] px-1.5 py-0.5 font-mono text-[10px]">
                 {path}
@@ -103,17 +105,17 @@ export const PlanFileDialog: React.FC<PlanFileDialogProps> = (props) => {
               {error}
             </div>
           ) : isLoading ? (
-            <div className="text-muted text-[11px] italic">Loading plan…</div>
+            <div className="text-muted text-[11px] italic">{t("Loading plan…")}</div>
           ) : content !== null ? (
             content.length > 0 ? (
               <PlanMarkdownContainer>
                 <MarkdownCore content={content} />
               </PlanMarkdownContainer>
             ) : (
-              <div className="text-muted text-[11px] italic">Plan file is empty</div>
+              <div className="text-muted text-[11px] italic">{t("Plan file is empty")}</div>
             )
           ) : (
-            <div className="text-muted text-[11px] italic">No plan loaded</div>
+            <div className="text-muted text-[11px] italic">{t("No plan loaded")}</div>
           )}
         </div>
       </DialogContent>

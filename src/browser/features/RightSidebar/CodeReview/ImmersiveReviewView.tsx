@@ -65,6 +65,7 @@ import {
 } from "@/common/types/review";
 import type { FileTreeNode } from "@/common/utils/git/numstatParser";
 import type { ReviewActionCallbacks } from "../../Shared/InlineReviewNote";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 interface ImmersiveReviewViewProps {
   workspaceId: string;
@@ -281,6 +282,7 @@ function findReviewHunkId(review: Review, fileHunks: DiffHunk[]): string | null 
 }
 
 export const ImmersiveReviewView: React.FC<ImmersiveReviewViewProps> = (props) => {
+  const { t } = useLanguage();
   const containerRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const notesSidebarRef = useRef<HTMLDivElement>(null);
@@ -1849,10 +1851,10 @@ export const ImmersiveReviewView: React.FC<ImmersiveReviewViewProps> = (props) =
         <button
           onClick={onExit}
           className="text-muted hover:text-foreground flex shrink-0 cursor-pointer items-center gap-1 border-none bg-transparent p-0 text-xs transition-colors"
-          aria-label="Exit immersive review"
+          aria-label={t("Exit immersive review")}
         >
           <ArrowLeft className="h-4 w-4" />
-          <span className="hidden sm:inline">Back</span>
+          <span className="hidden sm:inline">{t("Back")}</span>
         </button>
 
         <div className="bg-border-light hidden h-4 w-px shrink-0 sm:block" />
@@ -1863,7 +1865,7 @@ export const ImmersiveReviewView: React.FC<ImmersiveReviewViewProps> = (props) =
             onClick={() => navigateFile(-1)}
             disabled={isReviewComplete || fileCount <= 1}
             className="text-muted hover:text-foreground disabled:text-dim flex shrink-0 cursor-pointer items-center border-none bg-transparent p-0 transition-colors disabled:cursor-default"
-            aria-label="Previous file"
+            aria-label={t("Previous file")}
           >
             <ChevronLeft className="h-4 w-4" />
           </button>
@@ -1896,7 +1898,7 @@ export const ImmersiveReviewView: React.FC<ImmersiveReviewViewProps> = (props) =
             onClick={() => navigateFile(1)}
             disabled={isReviewComplete || fileCount <= 1}
             className="text-muted hover:text-foreground disabled:text-dim flex shrink-0 cursor-pointer items-center border-none bg-transparent p-0 transition-colors disabled:cursor-default"
-            aria-label="Next file"
+            aria-label={t("Next file")}
           >
             <ChevronRight className="h-4 w-4" />
           </button>
@@ -1926,7 +1928,9 @@ export const ImmersiveReviewView: React.FC<ImmersiveReviewViewProps> = (props) =
         {(isReviewComplete || currentFileHunks.length > 0) && (
           <div className="text-muted hidden items-center gap-1 text-[10px] sm:flex">
             {isReviewComplete ? (
-              <span>All {reviewedHunkLabel} reviewed</span>
+              <span>
+                {t("All")} {reviewedHunkLabel} {t("reviewed")}
+              </span>
             ) : (
               <>
                 {selectedHunk && (
@@ -1949,14 +1953,19 @@ export const ImmersiveReviewView: React.FC<ImmersiveReviewViewProps> = (props) =
                   </button>
                 )}
                 <span>
-                  Hunk {currentHunkIdx >= 0 ? currentHunkIdx + 1 : "–"}/{currentFileHunks.length}
+                  {t("Hunk")}
+                  {currentHunkIdx >= 0 ? currentHunkIdx + 1 : "–"}/{currentFileHunks.length}
                 </span>
                 <span className="text-dim">·</span>
-                <span>Lines {selectedLineSummaryLabel}</span>
+                <span>
+                  {t("Lines")} {selectedLineSummaryLabel}
+                </span>
                 {selectedHunkLineCount > 0 && (
                   <>
                     <span className="text-dim">·</span>
-                    <span>{selectedHunkLineCount} lines</span>
+                    <span>
+                      {selectedHunkLineCount} {t("lines")}
+                    </span>
                   </>
                 )}
               </>
@@ -1974,7 +1983,7 @@ export const ImmersiveReviewView: React.FC<ImmersiveReviewViewProps> = (props) =
             role="status"
           >
             <Sparkles aria-hidden="true" className="h-3 w-3 shrink-0" />
-            <span>Assisted</span>
+            <span>{t("Assisted")}</span>
             {(props.assistedCount ?? 0) > 0 && (
               <span className="text-review-accent/70 counter-nums">
                 {props.assistedUnreadCount ?? 0}/{props.assistedCount ?? 0}
@@ -1989,7 +1998,8 @@ export const ImmersiveReviewView: React.FC<ImmersiveReviewViewProps> = (props) =
                 <>
                   <span>{reviewCompletionSummary}</span>
                   <span className="text-muted block text-[10px]">
-                    {reviewedChangedLineCount}/{totalChangedLineCount} changed lines reviewed
+                    {reviewedChangedLineCount}/{totalChangedLineCount}
+                    {t("changed lines reviewed")}
                   </span>
                   <span className="text-muted block text-[10px]">
                     {reviewCompletionHunkDetails}
@@ -2002,7 +2012,7 @@ export const ImmersiveReviewView: React.FC<ImmersiveReviewViewProps> = (props) =
               <div
                 role="progressbar"
                 tabIndex={0}
-                aria-label="Review completion by changed lines"
+                aria-label={t("Review completion by changed lines")}
                 aria-valuemin={0}
                 aria-valuemax={100}
                 aria-valuenow={reviewCompletionPercent}
@@ -2078,7 +2088,7 @@ export const ImmersiveReviewView: React.FC<ImmersiveReviewViewProps> = (props) =
             >
               {props.isLoading && currentFileHunks.length === 0 ? (
                 <div className="text-muted flex items-center justify-center py-12 text-sm">
-                  <span className="animate-pulse">Loading diff...</span>
+                  <span className="animate-pulse">{t("Loading diff...")}</span>
                 </div>
               ) : isReviewComplete ? (
                 <div className="flex min-h-full items-center justify-center px-6 py-12">
@@ -2090,11 +2100,15 @@ export const ImmersiveReviewView: React.FC<ImmersiveReviewViewProps> = (props) =
                       <CheckCircle2 aria-hidden="true" className="h-8 w-8" />
                     </div>
                     <div className="space-y-2">
-                      <h2 className="text-foreground text-base font-medium">Review complete</h2>
+                      <h2 className="text-foreground text-base font-medium">
+                        {t("Review complete")}
+                      </h2>
                       <p className="text-muted text-sm leading-relaxed">
-                        You have already reviewed all {reviewedHunkLabel} in this diff. Return to
-                        chat to keep going, or reopen reviewed hunks from the review panel if you
-                        want another pass.
+                        {t("You have already reviewed all")}
+                        {reviewedHunkLabel}
+                        {t(
+                          "in this diff. Return to chat to keep going, or reopen reviewed hunks from the review panel if you want another pass."
+                        )}
                       </p>
                     </div>
                     <button
@@ -2102,7 +2116,7 @@ export const ImmersiveReviewView: React.FC<ImmersiveReviewViewProps> = (props) =
                       onClick={onExit}
                       className="bg-accent hover:bg-accent/80 text-accent-foreground inline-flex items-center rounded-md px-3 py-1.5 text-xs font-medium transition-colors"
                     >
-                      Return to chat
+                      {t("Return to chat")}
                     </button>
                   </div>
                 </div>
@@ -2188,7 +2202,7 @@ export const ImmersiveReviewView: React.FC<ImmersiveReviewViewProps> = (props) =
                   focusedPanel === "notes" && "text-[var(--color-review-accent)]"
                 )}
               >
-                Notes
+                {t("Notes")}
               </h2>
               <span className="bg-muted/20 text-muted rounded px-1.5 py-0.5 font-mono text-[10px]">
                 {allReviews.length}
@@ -2198,8 +2212,8 @@ export const ImmersiveReviewView: React.FC<ImmersiveReviewViewProps> = (props) =
             <div ref={notesSidebarRef} className="min-h-0 flex-1 overflow-y-auto px-2 py-2">
               {allReviews.length === 0 ? (
                 <div className="text-muted flex h-full flex-col items-center justify-center text-center text-xs">
-                  <p>No notes yet</p>
-                  <p className="text-dim mt-1">Press Shift+L to add one</p>
+                  <p>{t("No notes yet")}</p>
+                  <p className="text-dim mt-1">{t("Press Shift+L to add one")}</p>
                 </div>
               ) : (
                 <div className="space-y-1.5">
@@ -2289,7 +2303,7 @@ export const ImmersiveReviewView: React.FC<ImmersiveReviewViewProps> = (props) =
                                     event.stopPropagation();
                                     props.reviewActions?.onDelete?.(review.id);
                                   }}
-                                  aria-label="Delete review note"
+                                  aria-label={t("Delete review note")}
                                 >
                                   <Trash2 className="size-3" />
                                 </button>
@@ -2320,18 +2334,18 @@ export const ImmersiveReviewView: React.FC<ImmersiveReviewViewProps> = (props) =
         <>
           {/* Shortcut bar */}
           <div className="border-border-light bg-dark flex flex-wrap items-center justify-center gap-3 border-t px-3 py-1.5">
-            <KeycapGroup keys={["Esc"]} label="back" />
-            <KeycapGroup keys={["H", "L"]} label="file" />
-            <KeycapGroup keys={["J", "K"]} label="hunk" />
-            <KeycapGroup keys={["↑", "↓"]} label="line" />
-            <KeycapGroup keys={["Shift", "↑↓"]} label="select" />
-            <KeycapGroup keys={["m"]} label="read" />
-            <KeycapGroup keys={["u"]} label="undo" />
-            <KeycapGroup keys={["⇧M"]} label="file read" />
-            <KeycapGroup keys={["⇧C"]} label="comment" />
-            <KeycapGroup keys={["⇧L", "⇧D"]} label="like / dislike" />
-            <KeycapGroup keys={["Enter"]} label="submit" />
-            <KeycapGroup keys={["Tab"]} label="notes" />
+            <KeycapGroup keys={["Esc"]} label={t("back")} />
+            <KeycapGroup keys={["H", "L"]} label={t("file")} />
+            <KeycapGroup keys={["J", "K"]} label={t("hunk")} />
+            <KeycapGroup keys={["↑", "↓"]} label={t("line")} />
+            <KeycapGroup keys={["Shift", "↑↓"]} label={t("select")} />
+            <KeycapGroup keys={["m"]} label={t("read")} />
+            <KeycapGroup keys={["u"]} label={t("undo")} />
+            <KeycapGroup keys={["⇧M"]} label={t("file read")} />
+            <KeycapGroup keys={["⇧C"]} label={t("comment")} />
+            <KeycapGroup keys={["⇧L", "⇧D"]} label={t("like / dislike")} />
+            <KeycapGroup keys={["Enter"]} label={t("submit")} />
+            <KeycapGroup keys={["Tab"]} label={t("notes")} />
           </div>
         </>
       )}

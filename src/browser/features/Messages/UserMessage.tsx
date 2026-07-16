@@ -38,6 +38,7 @@ import {
   SIDE_QUESTION_MESSAGE_WINDOW_CLASS,
   SIDE_QUESTION_USER_BLOCK_CLASS,
 } from "./sideQuestionStyles";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 function base64ToBlob(dataBase64: string, mediaType: string): Blob {
   const binary = atob(dataBase64);
@@ -87,6 +88,7 @@ export const UserMessage: React.FC<UserMessageProps> = ({
   clipboardWriteText = copyToClipboard,
   navigation,
 }) => {
+  const { t } = useLanguage();
   const isSynthetic = message.isSynthetic === true;
   const isGoalContinuation = message.isGoalContinuation === true;
   const isBudgetLimitWrapup = message.isBudgetLimitWrapup === true;
@@ -214,27 +216,27 @@ export const UserMessage: React.FC<UserMessageProps> = ({
     label = (
       <span className="bg-warning/10 text-warning flex items-center gap-1 rounded-sm px-1.5 py-0.5 text-[10px] font-medium uppercase">
         <Target aria-hidden="true" className="h-3 w-3" />
-        budget limit wrap-up
+        {t("budget limit wrap-up")}
       </span>
     );
   } else if (isGoalContinuation) {
     label = (
       <span className="bg-muted/20 text-muted flex items-center gap-1 rounded-sm px-1.5 py-0.5 text-[10px] font-medium uppercase">
         <Target aria-hidden="true" className="h-3 w-3" />
-        goal continuation
+        {t("goal continuation")}
       </span>
     );
   } else if (bashMonitorWake) {
     label = (
       <span className="bg-muted/20 text-muted flex items-center gap-1 rounded-sm px-1.5 py-0.5 text-[10px] font-medium uppercase">
         <Radar aria-hidden="true" className="h-3 w-3" />
-        monitor wake
+        {t("monitor wake")}
       </span>
     );
   } else if (isSynthetic) {
     label = (
       <span className="bg-muted/20 text-muted rounded-sm px-1.5 py-0.5 text-[10px] font-medium uppercase">
-        auto
+        {t("auto")}
       </span>
     );
   }
@@ -304,7 +306,7 @@ export const UserMessage: React.FC<UserMessageProps> = ({
       >
         <div className={SIDE_QUESTION_HEADER_CLASS}>
           <MessageCircleQuestion aria-hidden="true" className="h-3 w-3" />
-          Side question
+          {t("Side question")}
         </div>
         {messageWindow}
       </div>

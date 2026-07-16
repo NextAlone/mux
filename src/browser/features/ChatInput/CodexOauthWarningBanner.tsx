@@ -1,5 +1,6 @@
 import { AlertTriangle } from "lucide-react";
 import { Button } from "@/browser/components/Button/Button";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 interface Props {
   requiresCodexOauth: boolean;
@@ -8,6 +9,7 @@ interface Props {
 }
 
 export function CodexOauthWarningBanner(props: Props) {
+  const { t } = useLanguage();
   const shouldShowWarning = props.requiresCodexOauth && props.codexOauthSet === false;
 
   if (!shouldShowWarning) {
@@ -22,8 +24,8 @@ export function CodexOauthWarningBanner(props: Props) {
       <div className="flex min-w-0 items-start gap-2">
         <AlertTriangle aria-hidden="true" className="mt-0.5 h-3.5 w-3.5 shrink-0" />
         <p className="leading-relaxed">
-          <span className="font-medium">This model requires Codex OAuth.</span> Open Settings →
-          Providers to connect OpenAI before sending.
+          <span className="font-medium">{t("This model requires Codex OAuth.")}</span>
+          {t("Open Settings → Providers to connect OpenAI before sending.")}
         </p>
       </div>
       <Button
@@ -33,7 +35,7 @@ export function CodexOauthWarningBanner(props: Props) {
         onClick={props.onOpenProviders}
         className="border-warning/40 text-warning hover:bg-warning/15 hover:text-warning shrink-0"
       >
-        Providers
+        {t("Providers")}
       </Button>
     </div>
   );

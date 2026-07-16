@@ -17,6 +17,7 @@ import {
   useToolExpansion,
   type ToolStatus,
 } from "./Shared/toolUtils";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 interface DesktopScreenshotArgs {
   scaledWidth?: number | null;
@@ -86,6 +87,7 @@ export const DesktopScreenshotToolCall: React.FC<DesktopScreenshotToolCallProps>
   result,
   status = "pending",
 }) => {
+  const { t } = useLanguage();
   const { expanded, toggleExpanded } = useToolExpansion();
   const errorResult = isToolErrorResult(result) ? result : null;
   const images = extractImagesFromToolResult(result);
@@ -101,7 +103,7 @@ export const DesktopScreenshotToolCall: React.FC<DesktopScreenshotToolCallProps>
       <ToolHeader onClick={() => hasDetails && toggleExpanded()}>
         {hasDetails && <ExpandIcon expanded={shouldShowDetails}>▶</ExpandIcon>}
         <ToolIcon toolName="desktop_screenshot" />
-        <ToolName>Desktop Screenshot</ToolName>
+        <ToolName>{t("Desktop Screenshot")}</ToolName>
         {screenshotDimensions && (
           <span className="text-secondary text-[10px] whitespace-nowrap">
             {screenshotDimensions}
@@ -114,11 +116,14 @@ export const DesktopScreenshotToolCall: React.FC<DesktopScreenshotToolCallProps>
         <ToolDetails>
           {screenshotDimensions && (
             <div className="text-secondary mb-2 text-[11px]">
-              Captured at {screenshotDimensions}
+              {t("Captured at")}
+              {screenshotDimensions}
             </div>
           )}
           {scaleHint && (
-            <div className="text-secondary mb-2 text-[11px]">Scale hint: {scaleHint}</div>
+            <div className="text-secondary mb-2 text-[11px]">
+              {t("Scale hint:")} {scaleHint}
+            </div>
           )}
           {hasImages && <ToolResultImages result={result} />}
           {errorResult && <ErrorBox>{errorResult.error}</ErrorBox>}
@@ -128,7 +133,7 @@ export const DesktopScreenshotToolCall: React.FC<DesktopScreenshotToolCallProps>
             scaleHint === null &&
             status === "executing" && (
               <div className="text-secondary text-[11px]">
-                Waiting for screenshot
+                {t("Waiting for screenshot")}
                 <LoadingDots />
               </div>
             )}

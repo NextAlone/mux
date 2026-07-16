@@ -3,6 +3,7 @@ import { ArrowRightLeft } from "lucide-react";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/browser/components/Tooltip/Tooltip";
 import type { ModelFallbackRecord } from "@/common/types/message";
 import { formatModelStringForDisplay } from "@/common/utils/ai/models";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 /**
  * Tooltip copy for a fallback badge, one line per entry.
@@ -42,6 +43,7 @@ interface ModelFallbackBadgeProps {
  * without this badge the swap would be invisible in the transcript.
  */
 export const ModelFallbackBadge: React.FC<ModelFallbackBadgeProps> = (props) => {
+  const { t } = useLanguage();
   const lines = buildModelFallbackTooltipLines(props.modelFallback, props.effectiveModel);
   return (
     <Tooltip>
@@ -54,7 +56,7 @@ export const ModelFallbackBadge: React.FC<ModelFallbackBadgeProps> = (props) => 
           data-model-fallback-badge
         >
           <ArrowRightLeft aria-hidden="true" className="h-3 w-3" />
-          <span>fallback</span>
+          <span>{t("fallback")}</span>
         </span>
       </TooltipTrigger>
       <TooltipContent align="center">

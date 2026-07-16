@@ -39,6 +39,7 @@ import {
   hasDisplayableWorkflowReport,
   workflowStructuredOutputEntries,
 } from "./workflowDisplay";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 const ASK_MODE_BORDER = "color-mix(in srgb, var(--color-ask-mode) 35%, transparent)";
 const MAX_INLINE_NESTED_WORKFLOW_DEPTH = 3;
@@ -62,18 +63,21 @@ interface WorkflowStepRowProps {
   nestedDepth: number;
 }
 
-function getNestedWorkflowSummary(input: {
-  childView: WorkflowRunView | null;
-  fallbackStatus?: WorkflowStepView["nestedWorkflowStatus"];
-}): string {
+function getNestedWorkflowSummary(
+  input: {
+    childView: WorkflowRunView | null;
+    fallbackStatus?: WorkflowStepView["nestedWorkflowStatus"];
+  },
+  t: (text: string) => string
+): string {
   if (input.childView == null) {
-    return input.fallbackStatus ?? "loading";
+    return t(input.fallbackStatus ?? "loading");
   }
   const activePhase =
     input.childView.phases.find((phase) => phase.running) ?? input.childView.phases.at(-1);
   const phaseLabel =
     activePhase != null && activePhase.label.length > 0 ? ` · ${activePhase.label}` : "";
-  return `${input.childView.status} · ${input.childView.stats.done}/${input.childView.stats.total} steps${phaseLabel}`;
+  return `${t(input.childView.status)} · ${input.childView.stats.done}/${input.childView.stats.total} ${t("steps")}${phaseLabel}`;
 }
 
 const WorkflowStepNode: React.FC<{ step: WorkflowStepView; color: string }> = (props) => {
@@ -125,6 +129,7 @@ const NestedWorkflowStepPanel: React.FC<{
   nestedDepth: number;
   parentOpen: boolean;
 }> = (props) => {
+  const { t } = useLanguage();
   const nestedRunId = props.step.nestedWorkflowRunId;
   const withinDepthLimit = props.nestedDepth < MAX_INLINE_NESTED_WORKFLOW_DEPTH;
   const fallbackActive = isActiveWorkflowChildEventStatus(props.step.nestedWorkflowStatus);
@@ -144,10 +149,13 @@ const NestedWorkflowStepPanel: React.FC<{
   const childRun = childRunState.run;
   const childView = childRun != null ? projectWorkflowRun(childRun) : null;
   const childActive = childRun != null && isActiveWorkflowRunStatus(childRun.status);
-  const childSummary = getNestedWorkflowSummary({
-    childView,
-    fallbackStatus: props.step.nestedWorkflowStatus,
-  });
+  const childSummary = getNestedWorkflowSummary(
+    {
+      childView,
+      fallbackStatus: props.step.nestedWorkflowStatus,
+    },
+    t
+  );
 
   if (nestedRunId == null) {
     return null;
@@ -158,7 +166,7 @@ const NestedWorkflowStepPanel: React.FC<{
       <div className="flex min-w-0 items-center gap-2">
         {childActive || (childRun == null && fallbackActive) ? <WorkflowLiveDot /> : null}
         <span className="text-content-primary min-w-0 truncate text-xs font-semibold">
-          Nested workflow {props.step.nestedWorkflowName ?? props.step.title}
+          {t("Nested workflow")} {props.step.nestedWorkflowName ?? props.step.title}
         </span>
         <span className="text-muted counter-nums-mono min-w-0 truncate text-[10px]">
           {nestedRunId}
@@ -168,12 +176,12 @@ const NestedWorkflowStepPanel: React.FC<{
 
       {!withinDepthLimit ? (
         <div className="text-muted text-[11px]">
-          Nested workflow depth limit reached; showing summary only.
+          {t("Nested workflow depth limit reached; showing summary only.")}
         </div>
       ) : childRunState.error != null ? (
         <div className="text-danger text-[11px]">{childRunState.error}</div>
       ) : childRunState.loading && childRun == null ? (
-        <div className="text-muted text-[11px]">Loading nested workflow…</div>
+        <div className="text-muted text-[11px]">{t("Loading nested workflow…")}</div>
       ) : childRun != null && childView != null ? (
         <div className="border-border/70 border-l pl-3">
           <WorkflowTimeline
@@ -183,13 +191,14 @@ const NestedWorkflowStepPanel: React.FC<{
           />
         </div>
       ) : (
-        <div className="text-muted text-[11px]">Nested workflow run is not available.</div>
+        <div className="text-muted text-[11px]">{t("Nested workflow run is not available.")}</div>
       )}
     </div>
   );
 };
 
 const WorkflowStepRow: React.FC<WorkflowStepRowProps> = (props) => {
+  const { t } = useLanguage();
   const step = props.step;
   const hasNestedWorkflow = step.nestedWorkflowRunId != null;
   const showReport = hasDisplayableWorkflowReport(
@@ -246,16 +255,16 @@ const WorkflowStepRow: React.FC<WorkflowStepRowProps> = (props) => {
         </span>
       )}
       {step.status === "running" && (
-        <span className="text-accent shrink-0 text-[11px]">running…</span>
+        <span className="text-accent shrink-0 text-[11px]">{t("running…")}</span>
       )}
       {step.status === "failed" && (
         <span className="shrink-0 text-[11px]" style={{ color }}>
-          failed
+          {t("failed")}
         </span>
       )}
       {hasNestedWorkflow && (
         <span className="border-border text-plan-mode shrink-0 rounded border px-1.5 py-px text-[10px]">
-          nested
+          {t("nested")}
         </span>
       )}
       {expandable &&
@@ -306,11 +315,11 @@ const WorkflowStepRow: React.FC<WorkflowStepRowProps> = (props) => {
           {canOpenWorkspace && (
             <button
               type="button"
-              aria-label={`Open workspace for workflow step ${step.title}`}
+              aria-label={`${t("Open workspace for workflow step")} ${step.title}`}
               onClick={openTaskWorkspace}
               className="border-border bg-surface-primary text-content-secondary hover:bg-surface-secondary shrink-0 rounded-md border px-2 py-1 text-[11px] font-medium"
             >
-              Open
+              {t("Open")}
             </button>
           )}
         </div>
@@ -339,12 +348,12 @@ const WorkflowStepRow: React.FC<WorkflowStepRowProps> = (props) => {
                   {hasStructuredOutput && (
                     <div className="mt-2.5 flex flex-col gap-1">
                       <div className="text-muted text-[10px] font-semibold tracking-wide uppercase">
-                        Structured output
+                        {t("Structured output")}
                       </div>
                       <WorkflowJsonBlock
                         value={step.result?.structuredOutput}
                         className="max-h-[220px]"
-                        ariaLabel={`Structured output for ${step.title}`}
+                        ariaLabel={`${t("Structured output for")} ${step.title}`}
                       />
                     </div>
                   )}
@@ -365,7 +374,11 @@ const WorkflowStepRow: React.FC<WorkflowStepRowProps> = (props) => {
                           <Coins className="h-3 w-3" /> {formatWorkflowCost(step.usage.costUsd)}
                         </span>
                       )}
-                      {step.taskId != null && <span className="font-mono">task {step.taskId}</span>}
+                      {step.taskId != null && (
+                        <span className="font-mono">
+                          {t("task")} {step.taskId}
+                        </span>
+                      )}
                     </div>
                   )}
                 </>
@@ -381,6 +394,7 @@ const WorkflowStepRow: React.FC<WorkflowStepRowProps> = (props) => {
 };
 
 const WorkflowPhaseSection: React.FC<WorkflowPhaseSectionProps> = (props) => {
+  const { t } = useLanguage();
   const phase = props.phase;
   const allDone = phase.total > 0 && phase.done === phase.total;
   // Phase events can carry a structured `details` info object (e.g. {angleCount, maxSources}).
@@ -411,7 +425,8 @@ const WorkflowPhaseSection: React.FC<WorkflowPhaseSectionProps> = (props) => {
           className="text-ask-mode inline-flex items-center gap-1 rounded border px-1.5 py-px text-[10px]"
           style={{ borderColor: ASK_MODE_BORDER }}
         >
-          <GitBranch className="h-2.5 w-2.5" /> parallel
+          <GitBranch className="h-2.5 w-2.5" />
+          {t("parallel")}
         </span>
       )}
       <span className="ml-auto flex items-center gap-1.5">
@@ -455,7 +470,7 @@ const WorkflowPhaseSection: React.FC<WorkflowPhaseSectionProps> = (props) => {
             <WorkflowJsonBlock
               value={detailObject}
               className="max-h-[200px]"
-              ariaLabel={`${phase.label} details`}
+              ariaLabel={`${phase.label} ${t("details")}`}
             />
           )}
         </div>
@@ -478,6 +493,7 @@ const WorkflowPhaseSection: React.FC<WorkflowPhaseSectionProps> = (props) => {
 };
 
 const WorkflowFinalReport: React.FC<{ view: WorkflowRunView }> = (props) => {
+  const { t } = useLanguage();
   // Collapsible (expanded by default) so a long report/structured output can be folded away.
   const [open, setOpen] = React.useState(true);
   const result = props.view.result;
@@ -504,7 +520,8 @@ const WorkflowFinalReport: React.FC<{ view: WorkflowRunView }> = (props) => {
         className="text-muted flex w-full items-center gap-1.5 text-[11px] font-semibold tracking-wide uppercase"
         aria-expanded={open}
       >
-        <FileText className="h-3 w-3" /> Final report
+        <FileText className="h-3 w-3" />
+        {t("Final report")}
         <span className="ml-auto">
           {open ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
         </span>
@@ -532,12 +549,12 @@ const WorkflowFinalReport: React.FC<{ view: WorkflowRunView }> = (props) => {
           {hasStructuredOutput && (
             <div className="flex flex-col gap-1">
               <div className="text-muted text-[10px] font-semibold tracking-wide uppercase">
-                Structured output
+                {t("Structured output")}
               </div>
               <WorkflowJsonBlock
                 value={result.structuredOutput}
                 className="max-h-[280px]"
-                ariaLabel="Workflow structured output"
+                ariaLabel={t("Workflow structured output")}
               />
             </div>
           )}
@@ -549,6 +566,7 @@ const WorkflowFinalReport: React.FC<{ view: WorkflowRunView }> = (props) => {
 
 /** "Timeline" run body: a vertical stream of phases and their agent steps. */
 export const WorkflowTimeline: React.FC<WorkflowTimelineProps> = (props) => {
+  const { t } = useLanguage();
   const view = props.view;
   const nestedDepth = props.nestedDepth ?? 0;
   return (
@@ -571,10 +589,11 @@ export const WorkflowTimeline: React.FC<WorkflowTimelineProps> = (props) => {
       <WorkflowFinalReport view={view} />
       <div className="flex flex-col gap-1">
         <div className="text-muted flex items-center gap-1.5 text-[11px] font-semibold tracking-wide uppercase">
-          <ListTree className="h-3 w-3" /> Step stream
+          <ListTree className="h-3 w-3" />
+          {t("Step stream")}
         </div>
         {view.phases.length === 0 ? (
-          <div className="text-muted px-2 py-3 text-xs">No steps yet.</div>
+          <div className="text-muted px-2 py-3 text-xs">{t("No steps yet.")}</div>
         ) : (
           view.phases.map((phase) => (
             <WorkflowPhaseSection

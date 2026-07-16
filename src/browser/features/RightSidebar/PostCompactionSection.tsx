@@ -5,6 +5,7 @@ import { useOpenInEditor } from "@/browser/hooks/useOpenInEditor";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/browser/components/Tooltip/Tooltip";
 import type { RuntimeConfig } from "@/common/types/runtime";
 import { PlanFileDialog } from "./PlanFileDialog";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 interface PostCompactionSectionProps {
   workspaceId: string;
@@ -25,6 +26,7 @@ function getFileName(filePath: string): string {
  * Collapsible section in the right sidebar below the context usage bar.
  */
 export const PostCompactionSection: React.FC<PostCompactionSectionProps> = (props) => {
+  const { t } = useLanguage();
   const openInEditor = useOpenInEditor();
   const [collapsed, setCollapsed] = usePersistedState("postCompaction:collapsed", true);
   const [filesExpanded, setFilesExpanded] = usePersistedState(
@@ -79,7 +81,7 @@ export const PostCompactionSection: React.FC<PostCompactionSectionProps> = (prop
         type="button"
       >
         <div className="flex items-center gap-1.5">
-          <span className="text-muted text-xs font-medium">Artifacts</span>
+          <span className="text-muted text-xs font-medium">{t("Artifacts")}</span>
           <Tooltip>
             <TooltipTrigger asChild>
               <span className="text-muted hover:text-foreground inline-flex items-center">
@@ -87,8 +89,9 @@ export const PostCompactionSection: React.FC<PostCompactionSectionProps> = (prop
               </span>
             </TooltipTrigger>
             <TooltipContent side="top" showArrow={false}>
-              After compaction, included artifacts in this list (plan + selected file diffs) are
-              attached to your next message so the agent keeps important earlier context.
+              {t(
+                "After compaction, included artifacts in this list (plan + selected file diffs) are attached to your next message so the agent keeps important earlier context."
+              )}
             </TooltipContent>
           </Tooltip>
         </div>
@@ -130,11 +133,11 @@ export const PostCompactionSection: React.FC<PostCompactionSectionProps> = (prop
                       type="button"
                     >
                       <FileText className="h-3.5 w-3.5" />
-                      <span>Plan file</span>
+                      <span>{t("Plan file")}</span>
                     </button>
                   </TooltipTrigger>
                   <TooltipContent side="top" showArrow={false}>
-                    View plan
+                    {t("View plan")}
                   </TooltipContent>
                 </Tooltip>
                 <Tooltip>
@@ -148,7 +151,7 @@ export const PostCompactionSection: React.FC<PostCompactionSectionProps> = (prop
                     </button>
                   </TooltipTrigger>
                   <TooltipContent side="top" showArrow={false}>
-                    Open in editor
+                    {t("Open in editor")}
                   </TooltipContent>
                 </Tooltip>
               </div>
@@ -201,7 +204,8 @@ export const PostCompactionSection: React.FC<PostCompactionSectionProps> = (prop
                     className={`h-3 w-3 transition-transform duration-200 ${filesExpanded ? "rotate-90" : ""}`}
                   />
                   <span>
-                    {includedFilesCount}/{trackedFilesCount} file diff
+                    {includedFilesCount}/{trackedFilesCount}
+                    {t("file diff")}
                     {trackedFilesCount !== 1 ? "s" : ""}
                   </span>
                 </button>
@@ -245,7 +249,7 @@ export const PostCompactionSection: React.FC<PostCompactionSectionProps> = (prop
           )}
 
           <p className="text-muted mt-1 text-[10px] italic">
-            Keeps agent aligned with your plan and prior edits
+            {t("Keeps agent aligned with your plan and prior edits")}
           </p>
         </div>
       )}

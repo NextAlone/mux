@@ -113,6 +113,7 @@ import {
   type DragEndEvent,
 } from "@dnd-kit/core";
 import { SortableContext, rectSortingStrategy } from "@dnd-kit/sortable";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 // Re-export for consumers
 export type { ReviewStats };
@@ -623,6 +624,7 @@ const RightSidebarComponent: React.FC<RightSidebarProps> = ({
   immersiveHidden = false,
   addTerminalRef,
 }) => {
+  const { t } = useLanguage();
   // Trigger for focusing Review panel (preserves hunk selection)
   const [focusTrigger, _setFocusTrigger] = React.useState(0);
 
@@ -1710,7 +1712,7 @@ const RightSidebarComponent: React.FC<RightSidebarProps> = ({
         immersiveHidden={immersiveHidden}
         customWidth={width} // Unified width from AIView (applies to all tabs)
         role="complementary"
-        aria-label="Workspace insights"
+        aria-label={t("Workspace insights")}
       >
         {!collapsed && (
           <div className="flex min-h-0 min-w-0 flex-1 flex-row">

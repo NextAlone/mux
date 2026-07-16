@@ -26,6 +26,7 @@ import { Tooltip, TooltipTrigger, TooltipContent } from "@/browser/components/To
 import { buildBashCollapsedSummary } from "./bashCollapsedSummary";
 import { useBashCollapsedSummaryMode } from "./BashCollapsedSummaryModeContext";
 import { BackgroundBashOutputDialog } from "@/browser/components/BackgroundBashOutputDialog/BackgroundBashOutputDialog";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 interface BashToolCallProps {
   workspaceId?: string;
@@ -53,6 +54,7 @@ export const BashToolCall: React.FC<BashToolCallProps> = ({
   status = "pending",
   startedAt,
 }) => {
+  const { t } = useLanguage();
   // Bash uses the per-workspace sticky auto-expand preference like every other tool
   // (via useToolExpansion), keyed by tool name. It no longer special-cases the latest
   // streaming command; live output still renders below when the row is expanded.
@@ -154,10 +156,12 @@ export const BashToolCall: React.FC<BashToolCallProps> = ({
                   )}
                 >
                   {bashCollapsedSummary.durationLabel ? (
-                    <>for {bashCollapsedSummary.durationLabel}</>
+                    <>
+                      {t("for")} {bashCollapsedSummary.durationLabel}
+                    </>
                   ) : (
                     <>
-                      timeout: {args.timeout_secs ?? BASH_DEFAULT_TIMEOUT_SECS}s
+                      {t("timeout:")} {args.timeout_secs ?? BASH_DEFAULT_TIMEOUT_SECS}s
                       <ElapsedTimeDisplay
                         startedAt={startedAt}
                         isActive={isPending}
@@ -190,7 +194,7 @@ export const BashToolCall: React.FC<BashToolCallProps> = ({
                 <FileText size={12} />
               </button>
             </TooltipTrigger>
-            <TooltipContent>View output</TooltipContent>
+            <TooltipContent>{t("View output")}</TooltipContent>
           </Tooltip>
         )}
         {isBackground && (
@@ -208,8 +212,8 @@ export const BashToolCall: React.FC<BashToolCallProps> = ({
               isPending ? "text-pending" : "text-text-secondary"
             )}
           >
-            timeout: {args.timeout_secs ?? BASH_DEFAULT_TIMEOUT_SECS}s
-            {result && ` • took ${formatDuration(result.wall_duration_ms)}`}
+            {t("timeout:")} {args.timeout_secs ?? BASH_DEFAULT_TIMEOUT_SECS}s
+            {result && ` • ${t("took")} ${formatDuration(result.wall_duration_ms)}`}
             {!result && <ElapsedTimeDisplay startedAt={startedAt} isActive={isPending} />}
           </span>
         )}
@@ -240,7 +244,7 @@ export const BashToolCall: React.FC<BashToolCallProps> = ({
               </button>
             </TooltipTrigger>
             <TooltipContent>
-              Send to background — process continues but agent stops waiting
+              {t("Send to background — process continues but agent stops waiting")}
             </TooltipContent>
           </Tooltip>
         )}
@@ -260,21 +264,21 @@ export const BashToolCall: React.FC<BashToolCallProps> = ({
         <ToolDetails>
           {typeof args.model_intent === "string" && args.model_intent.trim().length > 0 && (
             <DetailSection>
-              <DetailLabel>Intent</DetailLabel>
+              <DetailLabel>{t("Intent")}</DetailLabel>
               <DetailContent className="px-2 py-1.5 whitespace-pre-wrap">
                 {args.model_intent}
               </DetailContent>
             </DetailSection>
           )}
           <DetailSection>
-            <DetailLabel>Script</DetailLabel>
+            <DetailLabel>{t("Script")}</DetailLabel>
             <DetailContent className="px-2 py-1.5">{args.script}</DetailContent>
           </DetailSection>
 
           {/* Truncation notices */}
           {showLiveOutput && liveOutputView.truncated && (
             <div className="text-muted px-2 text-[10px] italic">
-              Live output truncated (showing last ~1MB)
+              {t("Live output truncated (showing last ~1MB)")}
             </div>
           )}
 
@@ -282,14 +286,14 @@ export const BashToolCall: React.FC<BashToolCallProps> = ({
             <>
               {result.success === false && result.error && (
                 <DetailSection>
-                  <DetailLabel>Error</DetailLabel>
+                  <DetailLabel>{t("Error")}</DetailLabel>
                   <ErrorBox>{result.error}</ErrorBox>
                 </DetailSection>
               )}
 
               {truncatedInfo && (
                 <div className="text-muted px-2 text-[10px] italic">
-                  Output truncated — reason: {truncatedInfo.reason} • totalLines:{" "}
+                  {t("Output truncated — reason:")} {truncatedInfo.reason} • totalLines:{" "}
                   {truncatedInfo.totalLines}
                 </div>
               )}
@@ -302,13 +306,13 @@ export const BashToolCall: React.FC<BashToolCallProps> = ({
           {(showLiveOutput || showCompletedOutputSection) && (
             <DetailSection>
               <DetailLabel className="flex items-center gap-1">
-                <span>Output</span>
+                <span>{t("Output")}</span>
                 {note && (
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <button
                         type="button"
-                        aria-label="View notice"
+                        aria-label={t("View notice")}
                         className="text-muted hover:text-secondary translate-y-[-1px] rounded p-0.5 transition-colors"
                       >
                         <Info size={12} />
@@ -334,11 +338,11 @@ export const BashToolCall: React.FC<BashToolCallProps> = ({
                     ? combinedLiveOutput.length > 0
                       ? combinedLiveOutput
                       : status === "redacted"
-                        ? "Output excluded from shared transcript"
-                        : "No output yet"
+                        ? t("Output excluded from shared transcript")
+                        : t("No output yet")
                     : completedHasOutput
                       ? completedOutput
-                      : "No output"}
+                      : t("No output")}
                 </DetailContent>
               </div>
             </DetailSection>
@@ -348,7 +352,7 @@ export const BashToolCall: React.FC<BashToolCallProps> = ({
           {backgroundProcessId && (
             <div className="flex items-center gap-2 text-[11px]">
               <Layers size={12} className="text-muted shrink-0" />
-              <span className="text-muted">Background process</span>
+              <span className="text-muted">{t("Background process")}</span>
               <code className="rounded bg-[var(--color-bg-tertiary)] px-1.5 py-0.5 font-mono text-[10px]">
                 {backgroundProcessId}
               </code>

@@ -10,6 +10,7 @@ import { getModelProvider } from "@/common/utils/ai/models";
 import type { DisplayedMessage } from "@/common/types/message";
 import { formatTokens } from "@/common/utils/tokens/tokenMeterUtils";
 import { useOptionalMessageListContext } from "./MessageListContext";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 interface StreamErrorMessageProps {
   message: DisplayedMessage & { type: "stream-error" };
@@ -26,6 +27,7 @@ function formatContextTokens(tokens: number): string {
 }
 
 const StreamErrorMessageBase: React.FC<StreamErrorMessageBaseProps> = (props) => {
+  const { t } = useLanguage();
   const message = props.message;
   const className = props.className;
   const compactRetryAction = props.compactRetryAction;
@@ -40,7 +42,7 @@ const StreamErrorMessageBase: React.FC<StreamErrorMessageBaseProps> = (props) =>
           onClick={() => {
             window.dispatchEvent(createCustomEvent(CUSTOM_EVENTS.OPEN_DEBUG_LLM_REQUEST));
           }}
-          aria-label="Open last LLM request debug modal"
+          aria-label={t("Open last LLM request debug modal")}
           className="text-error/80 hover:text-error h-6 w-6"
         >
           <Bug className="h-3.5 w-3.5" />
@@ -48,7 +50,7 @@ const StreamErrorMessageBase: React.FC<StreamErrorMessageBaseProps> = (props) =>
       </TooltipTrigger>
       <TooltipContent align="center">
         <div className="flex items-center gap-2">
-          <span>Debug last LLM request</span>
+          <span>{t("Debug last LLM request")}</span>
           <code className="bg-foreground/5 text-foreground/80 border-foreground/10 rounded-sm border px-1.5 py-0.5 font-mono text-[10px]">
             /debug-llm-request
           </code>
@@ -114,7 +116,8 @@ const StreamErrorMessageBase: React.FC<StreamErrorMessageBaseProps> = (props) =>
       className="text-error/80 hover:text-error h-6 px-2 text-[10px]"
     >
       <a href={MUX_GATEWAY_ORIGIN} target="_blank" rel="noopener noreferrer">
-        Add credits <ExternalLink className="ml-1 h-3 w-3" />
+        {t("Add credits")}
+        <ExternalLink className="ml-1 h-3 w-3" />
       </a>
     </Button>
   ) : isAnthropicOverloaded ? (
@@ -125,7 +128,8 @@ const StreamErrorMessageBase: React.FC<StreamErrorMessageBaseProps> = (props) =>
       className="text-error/80 hover:text-error h-6 px-2 text-[10px]"
     >
       <a href="https://status.anthropic.com" target="_blank" rel="noopener noreferrer">
-        Status <ExternalLink className="ml-1 h-3 w-3" />
+        {t("Status")}
+        <ExternalLink className="ml-1 h-3 w-3" />
       </a>
     </Button>
   ) : null;
@@ -166,6 +170,7 @@ interface StreamErrorMessageWithRetryProps extends StreamErrorMessageProps {
 }
 
 const StreamErrorMessageWithRetry: React.FC<StreamErrorMessageWithRetryProps> = (props) => {
+  const { t } = useLanguage();
   const compactAndRetry = useCompactAndRetry({ workspaceId: props.workspaceId });
   const showCompactRetry = compactAndRetry.showCompactionUI;
 
@@ -197,33 +202,39 @@ const StreamErrorMessageWithRetry: React.FC<StreamErrorMessageWithRetryProps> = 
   const compactionSuggestion = compactAndRetry.compactionSuggestion;
   const compactionDetails = showCompactRetry ? (
     <div className="font-primary text-foreground/80 mt-3 text-[12px]">
-      <span className="text-foreground font-semibold">Context window exceeded.</span>{" "}
+      <span className="text-foreground font-semibold">{t("Context window exceeded.")}</span>{" "}
       {compactionSuggestion ? (
         compactionSuggestion.kind === "preferred" ? (
           <>
-            We&apos;ll compact with your configured compaction model{" "}
+            {t("We'll compact with your configured compaction model")}{" "}
             <span className="text-foreground font-semibold">
               {compactionSuggestion.displayName}
             </span>
             {compactionSuggestion.maxInputTokens !== null ? (
-              <> ({formatContextTokens(compactionSuggestion.maxInputTokens)} context)</>
+              <>
+                {" "}
+                ({formatContextTokens(compactionSuggestion.maxInputTokens)} {t("context")})
+              </>
             ) : null}{" "}
-            to unblock you. Your workspace model stays the same.
+            {t("to unblock you. Your workspace model stays the same.")}
           </>
         ) : (
           <>
-            We&apos;ll compact with{" "}
+            {t("We'll compact with")}{" "}
             <span className="text-foreground font-semibold">
               {compactionSuggestion.displayName}
             </span>
             {compactionSuggestion.maxInputTokens !== null ? (
-              <> ({formatContextTokens(compactionSuggestion.maxInputTokens)} context)</>
+              <>
+                {" "}
+                ({formatContextTokens(compactionSuggestion.maxInputTokens)} {t("context")})
+              </>
             ) : null}{" "}
-            to unblock you with a higher-context model. Your workspace model stays the same.
+            {t("to unblock you with a higher-context model. Your workspace model stays the same.")}
           </>
         )
       ) : (
-        <>Compact this chat to unblock you. Your workspace model stays the same.</>
+        <>{t("Compact this chat to unblock you. Your workspace model stays the same.")}</>
       )}
     </div>
   ) : null;

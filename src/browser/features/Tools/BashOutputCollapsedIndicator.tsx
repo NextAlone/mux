@@ -1,4 +1,5 @@
 import React from "react";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 interface BashOutputCollapsedIndicatorProps {
   processId: string;
@@ -18,6 +19,7 @@ export const BashOutputCollapsedIndicator: React.FC<BashOutputCollapsedIndicator
   isExpanded,
   onToggle,
 }) => {
+  const { t } = useLanguage();
   return (
     <div className="px-3 py-1">
       <button
@@ -42,8 +44,9 @@ export const BashOutputCollapsedIndicator: React.FC<BashOutputCollapsedIndicator
           />
         </svg>
         <span className="text-[10px] font-medium">
-          {isExpanded ? "Hide" : "Show"} {collapsedCount} more output check
-          {collapsedCount === 1 ? "" : "s"} for{" "}
+          {isExpanded ? "Hide" : "Show"} {collapsedCount}
+          {t("more output check")}
+          {collapsedCount === 1 ? "" : "s"} {t("for")}{" "}
           <code className="font-monospace text-text-muted">{processId}</code>
         </span>
       </button>

@@ -38,6 +38,7 @@ import {
   parseGoalBudgetInputCents,
   parseGoalTurnCapInput,
 } from "@/common/utils/goals/budgetParser";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 /**
  * Renderer for the three non-active board sections (upcoming, completed,
@@ -178,6 +179,7 @@ interface UpcomingSectionProps {
 }
 
 function UpcomingSection(props: UpcomingSectionProps) {
+  const { t } = useLanguage();
   const { api } = useAPI();
   // Surfaces any backend rejection so users see why a click had no
   // effect. Cleared on next mutation. Backend errors arrive with the
@@ -261,7 +263,7 @@ function UpcomingSection(props: UpcomingSectionProps) {
   const ids = props.entries.map((e) => e.goal.goalId);
 
   return (
-    <SectionShell title="Upcoming" count={props.entries.length} defaultOpen>
+    <SectionShell title={t("Upcoming")} count={props.entries.length} defaultOpen>
       <div className="flex flex-col gap-1.5">
         <DndContext
           sensors={sensors}
@@ -305,6 +307,7 @@ interface UpcomingRowProps {
 }
 
 function UpcomingRow(props: UpcomingRowProps) {
+  const { t } = useLanguage();
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: props.goal.goalId,
   });
@@ -373,7 +376,7 @@ function UpcomingRow(props: UpcomingRowProps) {
           onClick={() => void props.onPromote()}
         >
           <Play className="h-3 w-3" aria-hidden="true" />
-          Promote
+          {t("Promote")}
         </RowActionButton>
         <RowActionButton
           tone="destructive"
@@ -394,6 +397,7 @@ interface UpcomingRowEditorProps {
 }
 
 function UpcomingRowEditor(props: UpcomingRowEditorProps) {
+  const { t } = useLanguage();
   const objectiveRef = useRef<HTMLInputElement | null>(null);
   const budgetRef = useRef<HTMLInputElement | null>(null);
   const turnCapRef = useRef<HTMLInputElement | null>(null);
@@ -455,7 +459,7 @@ function UpcomingRowEditor(props: UpcomingRowEditorProps) {
     <div className="border-border-light bg-surface-primary flex flex-col gap-2 rounded-md border p-2">
       <input
         ref={objectiveRef}
-        aria-label="Goal objective"
+        aria-label={t("Goal objective")}
         defaultValue={props.goal.objective}
         className="border-border bg-surface-primary text-foreground focus:border-accent rounded-md border p-1.5 text-sm outline-none"
         autoFocus
@@ -472,18 +476,18 @@ function UpcomingRowEditor(props: UpcomingRowEditorProps) {
       <div className="flex items-center gap-2">
         <input
           ref={budgetRef}
-          aria-label="Goal budget"
+          aria-label={t("Goal budget")}
           defaultValue={
             props.goal.budgetCents == null ? "" : (props.goal.budgetCents / 100).toFixed(2)
           }
-          placeholder="$ budget (blank = no budget)"
+          placeholder={t("$ budget (blank = no budget)")}
           className="border-border bg-surface-primary text-foreground focus:border-accent w-28 rounded-md border p-1.5 text-xs outline-none"
         />
         <input
           ref={turnCapRef}
-          aria-label="Goal turn cap"
+          aria-label={t("Goal turn cap")}
           defaultValue={props.goal.turnCap == null ? "" : String(props.goal.turnCap)}
-          placeholder="turns (blank = no cap)"
+          placeholder={t("turns (blank = no cap)")}
           inputMode="numeric"
           className="border-border bg-surface-primary text-foreground focus:border-accent w-28 rounded-md border p-1.5 text-xs outline-none"
         />
@@ -499,10 +503,10 @@ function UpcomingRowEditor(props: UpcomingRowEditorProps) {
           type="button"
           className="border-border-light text-muted hover:text-foreground inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs"
           onClick={props.onCancel}
-          aria-label="Cancel goal edit"
+          aria-label={t("Cancel goal edit")}
         >
           <X className="h-3 w-3" aria-hidden="true" />
-          Cancel
+          {t("Cancel")}
         </button>
       </div>
       {localError && (
@@ -521,6 +525,7 @@ interface CompletedSectionProps {
 }
 
 function CompletedSection(props: CompletedSectionProps) {
+  const { t } = useLanguage();
   const { api } = useAPI();
   const [error, setError] = useState<string | null>(null);
 
@@ -538,7 +543,7 @@ function CompletedSection(props: CompletedSectionProps) {
   };
 
   return (
-    <SectionShell title="Completed" count={props.entries.length} defaultOpen={false}>
+    <SectionShell title={t("Completed")} count={props.entries.length} defaultOpen={false}>
       <div className="flex flex-col gap-1.5">
         {props.entries.map((entry) => (
           <div
@@ -554,7 +559,7 @@ function CompletedSection(props: CompletedSectionProps) {
               onClick={() => void archive(entry.goal.goalId)}
             >
               <Inbox className="h-3 w-3" aria-hidden="true" />
-              Archive
+              {t("Archive")}
             </RowActionButton>
           </div>
         ))}
@@ -575,6 +580,7 @@ interface ArchivedSectionProps {
 }
 
 function ArchivedSection(props: ArchivedSectionProps) {
+  const { t } = useLanguage();
   const { api } = useAPI();
   const [error, setError] = useState<string | null>(null);
   if (props.entries.length === 0) return null;
@@ -591,7 +597,7 @@ function ArchivedSection(props: ArchivedSectionProps) {
   };
 
   return (
-    <SectionShell title="Archived" count={props.entries.length} defaultOpen={false}>
+    <SectionShell title={t("Archived")} count={props.entries.length} defaultOpen={false}>
       <div className="flex flex-col gap-1.5">
         {props.entries.map((entry) => (
           <div
@@ -604,7 +610,7 @@ function ArchivedSection(props: ArchivedSectionProps) {
               onClick={() => void revive(entry.goal.goalId)}
             >
               <ArchiveRestore className="h-3 w-3" aria-hidden="true" />
-              Revive
+              {t("Revive")}
             </RowActionButton>
           </div>
         ))}
@@ -624,6 +630,7 @@ interface UpcomingAdderProps {
 }
 
 function UpcomingAdder(props: UpcomingAdderProps) {
+  const { t } = useLanguage();
   const { api } = useAPI();
   const { defaults } = useGoalDefaults(props.workspaceId);
   const [isOpen, setIsOpen] = useState(false);
@@ -713,11 +720,11 @@ function UpcomingAdder(props: UpcomingAdderProps) {
           "text-muted hover:text-foreground border-border-light inline-flex items-center gap-1",
           "rounded-md border border-dashed px-2 py-1.5 text-xs"
         )}
-        aria-label="Queue another goal"
+        aria-label={t("Queue another goal")}
         onClick={() => setIsOpen(true)}
       >
         <Plus className="h-3 w-3" aria-hidden="true" />
-        Queue another goal
+        {t("Queue another goal")}
       </button>
     );
   }
@@ -726,7 +733,7 @@ function UpcomingAdder(props: UpcomingAdderProps) {
     <div className="border-border-light bg-surface-primary flex flex-col gap-2 rounded-md border p-2">
       <input
         ref={objectiveRef}
-        aria-label="Queued goal objective"
+        aria-label={t("Queued goal objective")}
         placeholder={GOAL_OBJECTIVE_PLACEHOLDER}
         className="border-border bg-surface-primary text-foreground focus:border-accent rounded-md border p-1.5 text-sm outline-none"
         autoFocus
@@ -744,7 +751,7 @@ function UpcomingAdder(props: UpcomingAdderProps) {
       <div className="flex items-center gap-2">
         <input
           ref={budgetRef}
-          aria-label="Queued goal budget"
+          aria-label={t("Queued goal budget")}
           // Keep the placeholder aligned with resolveGoalSetIntent's
           // blank-budget behavior so the queued goal uses the limit the
           // user expects.
@@ -757,7 +764,7 @@ function UpcomingAdder(props: UpcomingAdderProps) {
         />
         <input
           ref={turnCapRef}
-          aria-label="Queued goal turn cap"
+          aria-label={t("Queued goal turn cap")}
           // Show the inherited turn cap before auto-promote so queued
           // goals do not pick up an invisible limit.
           placeholder={
@@ -784,7 +791,7 @@ function UpcomingAdder(props: UpcomingAdderProps) {
             reset();
           }}
         >
-          Cancel
+          {t("Cancel")}
         </button>
       </div>
       {error && (

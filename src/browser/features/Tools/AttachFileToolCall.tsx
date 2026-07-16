@@ -30,6 +30,7 @@ import { useToolExpansion, getStatusDisplay, type ToolStatus } from "./Shared/to
 import { JsonHighlight } from "./Shared/HighlightedCode";
 import { redactToolResultAttachmentsForDisplay } from "./Shared/toolResultDisplay";
 import { ToolResultImages, extractImagesFromToolResult } from "./Shared/ToolResultImages";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 const MARKDOWN_PREVIEW_CHAR_LIMIT = 50_000;
 const MARKDOWN_PREVIEW_MEDIA_TYPES = new Set([MARKDOWN_MEDIA_TYPE, "text/x-markdown"]);
@@ -90,6 +91,7 @@ function createMarkdownPreview(markdown: string): { content: string; truncated: 
 }
 
 const DisplayOnlyFile: React.FC<{ file: DisplayOnlyFilePart }> = (props) => {
+  const { t } = useLanguage();
   const dataUrl = createSafeDataUrl(props.file);
   const baseMediaType = normalizeAttachmentMediaType(props.file.mediaType);
   const label = props.file.filename ?? `Attachment (${baseMediaType})`;
@@ -121,15 +123,15 @@ const DisplayOnlyFile: React.FC<{ file: DisplayOnlyFilePart }> = (props) => {
           <MarkdownRenderer content={markdownPreview.content} />
           {markdownPreview.truncated && (
             <div className="text-muted mt-3 border-t border-white/10 pt-2 text-xs">
-              Preview truncated. Download the file to view the full markdown.
+              {t("Preview truncated. Download the file to view the full markdown.")}
             </div>
           )}
         </div>
       )}
 
       <div className="mt-2 flex items-center gap-2 text-xs text-[var(--color-subtle)]">
-        <span>Shown to the user only; not sent to the model as a file attachment.</span>
-        {dataUrl == null && <span>File data is unavailable for preview or download.</span>}
+        <span>{t("Shown to the user only; not sent to the model as a file attachment.")}</span>
+        {dataUrl == null && <span>{t("File data is unavailable for preview or download.")}</span>}
         {dataUrl != null && (
           <a
             href={dataUrl}
@@ -137,7 +139,7 @@ const DisplayOnlyFile: React.FC<{ file: DisplayOnlyFilePart }> = (props) => {
             className="border-border-light hover:bg-surface flex items-center gap-1 rounded border px-2 py-1 text-[var(--color-text)]"
           >
             <Download className="h-3 w-3" />
-            Download
+            {t("Download")}
           </a>
         )}
       </div>
@@ -146,6 +148,7 @@ const DisplayOnlyFile: React.FC<{ file: DisplayOnlyFilePart }> = (props) => {
 };
 
 export const AttachFileToolCall: React.FC<AttachFileToolCallProps> = (props) => {
+  const { t } = useLanguage();
   const { expanded, toggleExpanded } = useToolExpansion();
   const displayFiles = extractDisplayFilesFromToolResult(props.result);
   const hasDisplayFiles = displayFiles.length > 0;
@@ -178,7 +181,7 @@ export const AttachFileToolCall: React.FC<AttachFileToolCallProps> = (props) => 
         <ToolDetails>
           {props.args !== undefined && (
             <DetailSection>
-              <DetailLabel>Arguments</DetailLabel>
+              <DetailLabel>{t("Arguments")}</DetailLabel>
               <DetailContent>
                 <JsonHighlight value={props.args} />
               </DetailContent>
@@ -187,7 +190,7 @@ export const AttachFileToolCall: React.FC<AttachFileToolCallProps> = (props) => 
 
           {props.result !== undefined && (
             <DetailSection>
-              <DetailLabel>Result</DetailLabel>
+              <DetailLabel>{t("Result")}</DetailLabel>
               <DetailContent>
                 <JsonHighlight value={redactToolResultAttachmentsForDisplay(props.result)} />
               </DetailContent>
@@ -197,7 +200,7 @@ export const AttachFileToolCall: React.FC<AttachFileToolCallProps> = (props) => 
           {props.status === "executing" && props.result === undefined && (
             <DetailSection>
               <DetailContent>
-                Waiting for result
+                {t("Waiting for result")}
                 <LoadingDots />
               </DetailContent>
             </DetailSection>
@@ -205,7 +208,7 @@ export const AttachFileToolCall: React.FC<AttachFileToolCallProps> = (props) => 
           {props.status === "redacted" && (
             <DetailSection>
               <DetailContent className="text-muted italic">
-                Output excluded from shared transcript
+                {t("Output excluded from shared transcript")}
               </DetailContent>
             </DetailSection>
           )}

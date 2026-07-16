@@ -15,6 +15,7 @@ import { MessageRenderer } from "@/browser/features/Messages/MessageRenderer";
 import { ModelDisplay } from "@/browser/features/Messages/ModelDisplay";
 import { BashCollapsedSummaryModeProvider } from "./BashCollapsedSummaryModeContext";
 import { getErrorMessage } from "@/common/utils/errors";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 interface SubagentTranscriptDialogProps {
   open: boolean;
@@ -26,6 +27,7 @@ interface SubagentTranscriptDialogProps {
 }
 
 export const SubagentTranscriptDialog: React.FC<SubagentTranscriptDialogProps> = (props) => {
+  const { t } = useLanguage();
   const [model, setModel] = useState<string | undefined>();
   const [thinkingLevel, setThinkingLevel] = useState<ThinkingLevel | undefined>();
 
@@ -35,7 +37,7 @@ export const SubagentTranscriptDialog: React.FC<SubagentTranscriptDialogProps> =
         <DialogHeader>
           <DialogTitle className="flex flex-col gap-1">
             <div className="flex items-center gap-2">
-              <span>Transcript</span>
+              <span>{t("Transcript")}</span>
               <code className="rounded bg-[var(--color-bg-tertiary)] px-1.5 py-0.5 font-mono text-[10px]">
                 {props.taskId}
               </code>
@@ -46,7 +48,7 @@ export const SubagentTranscriptDialog: React.FC<SubagentTranscriptDialogProps> =
                 {model && <ModelDisplay modelString={model} />}
                 {thinkingLevel && (
                   <span className="inline-flex items-center rounded bg-[var(--color-bg-tertiary)] px-1.5 py-0.5 font-mono text-[10px] leading-none">
-                    thinking: {thinkingLevel}
+                    {t("thinking:")} {thinkingLevel}
                   </span>
                 )}
               </div>
@@ -73,6 +75,7 @@ const SubagentTranscriptViewer: React.FC<{
   setModel?: (model: string | undefined) => void;
   setThinkingLevel?: (thinkingLevel: ThinkingLevel | undefined) => void;
 }> = (props) => {
+  const { t } = useLanguage();
   const { api } = useAPI();
 
   const open = props.open;
@@ -160,7 +163,7 @@ const SubagentTranscriptViewer: React.FC<{
       <div className="min-h-0 flex-1 overflow-y-auto rounded bg-[var(--color-bg-secondary)] p-3">
         {isLoading ? (
           <div className="text-muted text-[11px] italic">
-            Loading transcript
+            {t("Loading transcript")}
             <LoadingDots />
           </div>
         ) : displayedMessages ? (
@@ -173,10 +176,10 @@ const SubagentTranscriptViewer: React.FC<{
               </div>
             </BashCollapsedSummaryModeProvider>
           ) : (
-            <div className="text-muted text-[11px] italic">Transcript is empty</div>
+            <div className="text-muted text-[11px] italic">{t("Transcript is empty")}</div>
           )
         ) : error ? null : (
-          <div className="text-muted text-[11px] italic">No transcript loaded</div>
+          <div className="text-muted text-[11px] italic">{t("No transcript loaded")}</div>
         )}
       </div>
     </div>

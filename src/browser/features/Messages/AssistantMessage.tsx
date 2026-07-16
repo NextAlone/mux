@@ -32,6 +32,7 @@ import { ModelDisplay } from "./ModelDisplay";
 import { ModelFallbackBadge } from "./ModelFallbackBadge";
 import { TypewriterMarkdown } from "./TypewriterMarkdown";
 import { formatDuration } from "@/common/utils/formatDuration";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 interface AssistantMessageProps {
   message: DisplayedMessage & { type: "assistant" };
@@ -48,6 +49,7 @@ export const AssistantMessage: React.FC<AssistantMessageProps> = ({
   isCompacting = false,
   clipboardWriteText = copyToClipboard,
 }) => {
+  const { t } = useLanguage();
   const [showRaw, setShowRaw] = useState(false);
   const { api } = useAPI();
   const forkError = usePopoverError();
@@ -154,7 +156,9 @@ export const AssistantMessage: React.FC<AssistantMessageProps> = ({
   const renderContent = () => {
     // Empty streaming state
     if (isStreaming && !content) {
-      return <div className="font-primary text-secondary italic">Waiting for response...</div>;
+      return (
+        <div className="font-primary text-secondary italic">{t("Waiting for response...")}</div>
+      );
     }
 
     if (!content) {

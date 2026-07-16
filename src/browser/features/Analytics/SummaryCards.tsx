@@ -1,6 +1,7 @@
 import { Skeleton } from "@/browser/components/Skeleton/Skeleton";
 import type { Summary } from "@/browser/hooks/useAnalytics";
 import { formatCompactNumber, formatPercent, formatUsd } from "./analyticsUtils";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 interface SummaryCardsProps {
   data: Summary | null;
@@ -9,10 +10,12 @@ interface SummaryCardsProps {
 }
 
 export function SummaryCards(props: SummaryCardsProps) {
+  const { t } = useLanguage();
   if (props.error) {
     return (
       <div className="bg-background-secondary border-danger-soft text-danger rounded-lg border px-3 py-2 text-xs">
-        Failed to load analytics summary: {props.error}
+        {t("Failed to load analytics summary:")}
+        {props.error}
       </div>
     );
   }

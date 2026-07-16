@@ -28,6 +28,7 @@ import { Tooltip, TooltipTrigger, TooltipContent } from "@/browser/components/To
 import { PostCompactionSection } from "./PostCompactionSection";
 import { usePostCompactionState } from "@/browser/hooks/usePostCompactionState";
 import { useOptionalWorkspaceContext } from "@/browser/contexts/WorkspaceContext";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 type ViewMode = "last-request" | "session";
 
@@ -41,6 +42,7 @@ interface CostsTabProps {
 }
 
 const CostsTabComponent: React.FC<CostsTabProps> = ({ workspaceId }) => {
+  const { t } = useLanguage();
   const usage = useWorkspaceUsage(workspaceId);
   const consumers = useWorkspaceConsumers(workspaceId);
   const [viewMode, setViewMode] = usePersistedState<ViewMode>("costsTab:viewMode", "session");
@@ -96,8 +98,8 @@ const CostsTabComponent: React.FC<CostsTabProps> = ({ workspaceId }) => {
     return (
       <div className="text-light font-primary text-[13px] leading-relaxed">
         <div className="text-secondary px-5 py-10 text-center">
-          <p>No messages yet.</p>
-          <p>Send a message to see token usage statistics.</p>
+          <p>{t("No messages yet.")}</p>
+          <p>{t("Send a message to see token usage statistics.")}</p>
         </div>
       </div>
     );
@@ -264,7 +266,7 @@ const CostsTabComponent: React.FC<CostsTabProps> = ({ workspaceId }) => {
                       >
                         <div className="flex items-center gap-3">
                           <span className="text-foreground inline-flex items-baseline gap-1 font-medium">
-                            Cost
+                            {t("Cost")}
                           </span>
                           <ToggleGroup
                             options={VIEW_MODE_OPTIONS}
@@ -280,8 +282,9 @@ const CostsTabComponent: React.FC<CostsTabProps> = ({ workspaceId }) => {
                                 <span className="text-warning cursor-help">?</span>
                               </TooltipTrigger>
                               <TooltipContent side="bottom" className="max-w-[200px]">
-                                Cost may be incomplete — some models in this session have unknown
-                                pricing
+                                {t(
+                                  "Cost may be incomplete — some models in this session have unknown pricing"
+                                )}
                               </TooltipContent>
                             </Tooltip>
                           )}
@@ -341,13 +344,13 @@ const CostsTabComponent: React.FC<CostsTabProps> = ({ workspaceId }) => {
                     <thead>
                       <tr className="border-border-light border-b">
                         <th className="text-muted py-1 pr-2 text-left font-medium [&:last-child]:pr-0 [&:last-child]:text-right">
-                          Component
+                          {t("Component")}
                         </th>
                         <th className="text-muted py-1 pr-2 text-left font-medium [&:last-child]:pr-0 [&:last-child]:text-right">
-                          Tokens
+                          {t("Tokens")}
                         </th>
                         <th className="text-muted py-1 pr-2 text-left font-medium [&:last-child]:pr-0 [&:last-child]:text-right">
-                          Cost
+                          {t("Cost")}
                         </th>
                       </tr>
                     </thead>
@@ -395,14 +398,15 @@ const CostsTabComponent: React.FC<CostsTabProps> = ({ workspaceId }) => {
       {consumers.topFilePaths && consumers.topFilePaths.length > 0 && (
         <div className="mb-4">
           <h3 className="text-subtle m-0 mb-2 flex items-center gap-1 text-xs font-semibold tracking-wide uppercase">
-            File Breakdown
+            {t("File Breakdown")}
             <Tooltip>
               <TooltipTrigger asChild>
                 <span className="text-dim cursor-help text-[10px] font-normal">ⓘ</span>
               </TooltipTrigger>
               <TooltipContent align="start" className="max-w-72 whitespace-normal">
-                Token usage from file_read and file_edit tools, aggregated by file path. Consider
-                splitting large files to reduce context usage.
+                {t(
+                  "Token usage from file_read and file_edit tools, aggregated by file path. Consider splitting large files to reduce context usage."
+                )}
               </TooltipContent>
             </Tooltip>
           </h3>
@@ -413,10 +417,10 @@ const CostsTabComponent: React.FC<CostsTabProps> = ({ workspaceId }) => {
       {consumers.consumers.length > 0 && (
         <div className="mb-4">
           <h3 className="text-subtle m-0 mb-2 text-xs font-semibold tracking-wide uppercase">
-            Consumer Breakdown
+            {t("Consumer Breakdown")}
           </h3>
           {consumers.isCalculating ? (
-            <div className="text-secondary py-2 text-xs italic">Calculating...</div>
+            <div className="text-secondary py-2 text-xs italic">{t("Calculating...")}</div>
           ) : (
             <ConsumerBreakdown
               consumers={consumers.consumers}
@@ -429,7 +433,7 @@ const CostsTabComponent: React.FC<CostsTabProps> = ({ workspaceId }) => {
       {!consumers.isCalculating &&
         consumers.consumers.length === 0 &&
         (!consumers.topFilePaths || consumers.topFilePaths.length === 0) && (
-          <div className="text-dim py-2 text-xs italic">No consumer data available</div>
+          <div className="text-dim py-2 text-xs italic">{t("No consumer data available")}</div>
         )}
     </div>
   );

@@ -12,6 +12,7 @@ import {
   formatWorkflowDuration,
   formatWorkflowTokens,
 } from "./workflowDisplay";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 const BTN_BASE =
   "inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium transition-colors disabled:cursor-default disabled:opacity-50";
@@ -47,6 +48,7 @@ interface WorkflowRunHeaderProps {
 }
 
 export const WorkflowRunHeader: React.FC<WorkflowRunHeaderProps> = (props) => {
+  const { t } = useLanguage();
   const { api } = useAPI();
   const [busy, setBusy] = React.useState(false);
   const [actionError, setActionError] = React.useState<string | null>(null);
@@ -70,7 +72,7 @@ export const WorkflowRunHeader: React.FC<WorkflowRunHeaderProps> = (props) => {
       await action();
       props.onAfterAction?.();
     } catch (error) {
-      setActionError(error instanceof Error ? error.message : "Workflow action failed");
+      setActionError(error instanceof Error ? error.message : t("Workflow action failed"));
     } finally {
       setBusy(false);
     }
@@ -147,7 +149,8 @@ export const WorkflowRunHeader: React.FC<WorkflowRunHeaderProps> = (props) => {
         </span>
         <span className="inline-flex items-center gap-1">
           <Check className="h-3 w-3" />
-          {view.stats.done}/{view.stats.total} steps
+          {view.stats.done}/{view.stats.total}
+          {t("steps")}
         </span>
         {view.stats.usage != null && (
           <span className="inline-flex items-center gap-1">
@@ -162,16 +165,19 @@ export const WorkflowRunHeader: React.FC<WorkflowRunHeaderProps> = (props) => {
       <div className="flex flex-wrap gap-2">
         {isLive ? (
           <button type="button" className={BTN_DEFAULT} onClick={interrupt} disabled={busy}>
-            <Square className="h-3 w-3" /> Interrupt
+            <Square className="h-3 w-3" />
+            {t("Interrupt")}
           </button>
         ) : run.status === "interrupted" ? (
           <>
             <button type="button" className={BTN_ACCENT} onClick={resume} disabled={busy}>
-              <Play className="h-3 w-3" /> Resume
+              <Play className="h-3 w-3" />
+              {t("Resume")}
             </button>
             {canRerun && (
               <button type="button" className={BTN_DEFAULT} onClick={rerun} disabled={busy}>
-                <RotateCcw className="h-3 w-3" /> Re-run
+                <RotateCcw className="h-3 w-3" />
+                {t("Re-run")}
               </button>
             )}
           </>
@@ -179,12 +185,14 @@ export const WorkflowRunHeader: React.FC<WorkflowRunHeaderProps> = (props) => {
           <>
             {canRetry && (
               <button type="button" className={BTN_ACCENT} onClick={retry} disabled={busy}>
-                <Play className="h-3 w-3" /> Retry from checkpoint
+                <Play className="h-3 w-3" />
+                {t("Retry from checkpoint")}
               </button>
             )}
             {canRerun && (
               <button type="button" className={BTN_DEFAULT} onClick={rerun} disabled={busy}>
-                <RotateCcw className="h-3 w-3" /> Re-run
+                <RotateCcw className="h-3 w-3" />
+                {t("Re-run")}
               </button>
             )}
           </>

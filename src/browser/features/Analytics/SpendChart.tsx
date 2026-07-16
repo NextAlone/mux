@@ -19,6 +19,7 @@ import {
   formatBucketTooltipLabel,
   formatUsd,
 } from "./analyticsUtils";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 interface SpendChartProps {
   data: SpendOverTimeItem[] | null;
@@ -34,11 +35,14 @@ interface SpendChartRow {
 }
 
 export function SpendChart(props: SpendChartProps) {
+  const { t } = useLanguage();
   if (props.error) {
     return (
       <div className="bg-background-secondary border-danger-soft rounded-lg border p-4">
-        <h2 className="text-foreground text-sm font-semibold">Spend over time</h2>
-        <p className="text-danger mt-2 text-xs">Failed to load chart data: {props.error}</p>
+        <h2 className="text-foreground text-sm font-semibold">{t("Spend over time")}</h2>
+        <p className="text-danger mt-2 text-xs">
+          {t("Failed to load chart data:")} {props.error}
+        </p>
       </div>
     );
   }
@@ -69,7 +73,7 @@ export function SpendChart(props: SpendChartProps) {
 
   return (
     <div className="bg-background-secondary border-border-medium rounded-lg border p-4">
-      <h2 className="text-foreground text-sm font-semibold">Spend over time</h2>
+      <h2 className="text-foreground text-sm font-semibold">{t("Spend over time")}</h2>
       <p className="text-muted mt-1 text-xs">
         {props.granularity === "week"
           ? "Model-attributed weekly spend."
@@ -84,7 +88,7 @@ export function SpendChart(props: SpendChartProps) {
         </div>
       ) : rows.length === 0 ? (
         <div className="text-muted mt-3 rounded border border-dashed px-3 py-10 text-center text-sm">
-          No spend data for the selected filters.
+          {t("No spend data for the selected filters.")}
         </div>
       ) : (
         <div className="mt-3 h-80 w-full">

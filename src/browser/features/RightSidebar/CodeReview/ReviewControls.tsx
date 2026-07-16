@@ -18,6 +18,7 @@ import type { ReviewFilters, ReviewStats, ReviewSortOrder } from "@/common/types
 import type { LastRefreshInfo, RefreshFailureInfo } from "@/browser/utils/RefreshController";
 import { RefreshButton } from "./RefreshButton";
 import { BaseSelectorPopover } from "./BaseSelectorPopover";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 const SORT_OPTIONS: Array<{ value: ReviewSortOrder; label: string }> = [
   { value: "file-order", label: "File order" },
@@ -74,6 +75,7 @@ export const ReviewControls: React.FC<ReviewControlsProps> = ({
   assistedCount = 0,
   assistedUnreadCount = 0,
 }) => {
+  const { t } = useLanguage();
   // Per-project default base (used for new workspaces in this project)
   const [defaultBase, setDefaultBase] = usePersistedState<string>(
     STORAGE_KEYS.reviewDefaultBase(projectPath),
@@ -140,7 +142,7 @@ export const ReviewControls: React.FC<ReviewControlsProps> = ({
               <button
                 onClick={onToggleImmersive}
                 className="text-muted hover:text-foreground flex cursor-pointer items-center gap-1 border-none bg-transparent p-0 text-[11px] transition-colors duration-150"
-                aria-label={isImmersive ? "Exit immersive review" : "Enter immersive review"}
+                aria-label={isImmersive ? t("Exit immersive review") : t("Enter immersive review")}
                 data-tutorial="immersive-review"
               >
                 {isImmersive ? (
@@ -148,11 +150,12 @@ export const ReviewControls: React.FC<ReviewControlsProps> = ({
                 ) : (
                   <Maximize2 aria-hidden="true" className="h-3 w-3 shrink-0" />
                 )}
-                <span>{isImmersive ? "Exit" : "Full-screen review"}</span>
+                <span>{isImmersive ? t("Exit") : t("Full-screen review")}</span>
               </button>
             </TooltipTrigger>
             <TooltipContent side="bottom">
-              {isImmersive ? "Exit" : "Enter"} immersive review (
+              {isImmersive ? t("Exit") : t("Enter")}
+              {t("immersive review (")}
               {formatKeybind(KEYBINDS.TOGGLE_REVIEW_IMMERSIVE)})
             </TooltipContent>
           </Tooltip>
@@ -174,14 +177,14 @@ export const ReviewControls: React.FC<ReviewControlsProps> = ({
         className="text-muted flex items-center gap-1 whitespace-nowrap"
         data-testid="review-base-selector"
       >
-        <span>Base:</span>
+        <span>{t("Base:")}</span>
         <BaseSelectorPopover
           value={filters.diffBase}
           onChange={handleBaseChange}
           data-testid="review-base-value"
         />
         {showSetDefault && (
-          <TooltipIfPresent tooltip="Set as default base" side="bottom">
+          <TooltipIfPresent tooltip={t("Set as default base")} side="bottom">
             <button
               onClick={handleSetDefault}
               className="text-dim font-primary hover:text-muted cursor-pointer border-none bg-transparent p-0 text-[10px] whitespace-nowrap transition-colors duration-150"
@@ -201,7 +204,7 @@ export const ReviewControls: React.FC<ReviewControlsProps> = ({
       <TooltipIfPresent
         tooltip={
           filters.assistedOnly
-            ? "Always on while Assisted is enabled — agent pins often target working-copy edits"
+            ? t("Always on while Assisted is enabled — agent pins often target working-copy edits")
             : undefined
         }
         side="bottom"
@@ -213,7 +216,7 @@ export const ReviewControls: React.FC<ReviewControlsProps> = ({
               : "text-muted hover:text-foreground cursor-pointer"
           }`}
         >
-          <span>Working copy:</span>
+          <span>{t("Working copy:")}</span>
           <input
             type="checkbox"
             checked={filters.assistedOnly ? true : filters.includeUncommitted}
@@ -229,13 +232,15 @@ export const ReviewControls: React.FC<ReviewControlsProps> = ({
       <TooltipIfPresent
         tooltip={
           filters.assistedOnly
-            ? "Show pins you've already marked as read (Assisted-scoped — your general 'Read:' preference is unaffected)"
+            ? t(
+                "Show pins you've already marked as read (Assisted-scoped — your general 'Read:' preference is unaffected)"
+              )
             : undefined
         }
         side="bottom"
       >
         <label className="text-muted hover:text-foreground flex cursor-pointer items-center gap-1 whitespace-nowrap">
-          <span>Read:</span>
+          <span>{t("Read:")}</span>
           <input
             type="checkbox"
             checked={filters.assistedOnly ? filters.assistedShowReadHunks : filters.showReadHunks}
@@ -261,10 +266,10 @@ export const ReviewControls: React.FC<ReviewControlsProps> = ({
           >
             <label className="text-muted hover:text-foreground flex cursor-pointer items-center gap-1 whitespace-nowrap">
               <Sparkles aria-hidden="true" className="text-review-accent h-3 w-3 shrink-0" />
-              <span>Assisted:</span>
+              <span>{t("Assisted:")}</span>
               <input
                 type="checkbox"
-                aria-label="Show only agent-flagged hunks"
+                aria-label={t("Show only agent-flagged hunks")}
                 checked={filters.assistedOnly}
                 onChange={handleAssistedToggle}
                 className="h-3 w-3 cursor-pointer"
@@ -283,16 +288,16 @@ export const ReviewControls: React.FC<ReviewControlsProps> = ({
       <div className="bg-border-light h-3 w-px" />
 
       <label className="text-muted flex items-center gap-1 whitespace-nowrap">
-        <span>Sort:</span>
+        <span>{t("Sort:")}</span>
         <select
-          aria-label="Sort hunks by"
+          aria-label={t("Sort hunks by")}
           value={filters.sortOrder}
           onChange={handleSortChange}
           className="text-muted-light hover:bg-hover hover:text-foreground cursor-pointer rounded-sm bg-transparent px-1 py-0.5 font-mono transition-colors focus:outline-none"
         >
           {SORT_OPTIONS.map((opt) => (
             <option key={opt.value} value={opt.value}>
-              {opt.label}
+              {t(opt.label)}
             </option>
           ))}
         </select>

@@ -4,6 +4,7 @@ import type { DisplayedMessage } from "@/common/types/message";
 import { Loader2, Wrench, CheckCircle2, AlertCircle } from "lucide-react";
 import { Shimmer } from "../AIElements/Shimmer";
 import { formatDuration } from "@/common/utils/formatDuration";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 interface InitMessageProps {
   message: Extract<DisplayedMessage, { type: "workspace-init" }>;
@@ -11,6 +12,7 @@ interface InitMessageProps {
 }
 
 export const InitMessage = React.memo<InitMessageProps>(({ message, className }) => {
+  const { t } = useLanguage();
   const isError = message.status === "error";
   const isRunning = message.status === "running";
   const isSuccess = message.status === "success";
@@ -24,7 +26,9 @@ export const InitMessage = React.memo<InitMessageProps>(({ message, className })
   }, [isRunning, message.lines.length]);
 
   const durationText =
-    message.durationMs !== null ? ` in ${formatDuration(message.durationMs, "precise")}` : "";
+    message.durationMs !== null
+      ? `${t(" in ")}${formatDuration(message.durationMs, "precise")}`
+      : "";
 
   return (
     <div
@@ -53,12 +57,12 @@ export const InitMessage = React.memo<InitMessageProps>(({ message, className })
         </span>
         <span className="font-primary text-foreground text-[12px]">
           {isRunning ? (
-            <Shimmer colorClass="var(--color-accent)">Running init hook...</Shimmer>
+            <Shimmer colorClass="var(--color-accent)">{t("Running init hook...")}</Shimmer>
           ) : isSuccess ? (
-            `Init hook completed${durationText}`
+            `${t("Init hook completed")}${durationText}`
           ) : (
             <span className="text-error">
-              Init hook failed (exit code {message.exitCode}){durationText}
+              {t("Init hook failed (exit code")} {message.exitCode}){durationText}
             </span>
           )}
         </span>
@@ -75,7 +79,7 @@ export const InitMessage = React.memo<InitMessageProps>(({ message, className })
         >
           {message.truncatedLines && (
             <span className="text-muted">
-              ... {message.truncatedLines.toLocaleString()} earlier lines truncated ...
+              ... {message.truncatedLines.toLocaleString()} {t("earlier lines truncated ...")}
               {"\n"}
             </span>
           )}

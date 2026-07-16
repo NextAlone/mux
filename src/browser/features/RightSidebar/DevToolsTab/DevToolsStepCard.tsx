@@ -22,6 +22,7 @@ import { assertNever } from "@/common/utils/assertNever";
 import { formatDuration } from "@/common/utils/formatDuration";
 import type { ToolPolicy } from "@/common/utils/tools/toolPolicy";
 import { truncateToFirstLine } from "./devToolsStepCardHelpers";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 const PRE_CLASS_NAME =
   "whitespace-pre-wrap break-words text-[10px] text-muted bg-background-primary rounded border border-border-light p-2 mt-1 max-h-[220px] overflow-auto min-w-0";
@@ -53,6 +54,7 @@ interface DevToolsStepCardProps {
 }
 
 export function DevToolsStepCard(props: DevToolsStepCardProps) {
+  const { t } = useLanguage();
   const [expanded, setExpanded] = useState(false);
   const [activeMetadataSection, setActiveMetadataSection] = useState<MetadataSection | null>(null);
 
@@ -74,7 +76,9 @@ export function DevToolsStepCard(props: DevToolsStepCardProps) {
         <ChevronRight
           className={cn("h-3 w-3 shrink-0 transition-transform", expanded && "rotate-90")}
         />
-        <span className="text-foreground text-xs font-medium">Step {props.step.stepNumber}</span>
+        <span className="text-foreground text-xs font-medium">
+          {t("Step")} {props.step.stepNumber}
+        </span>
         <span className="text-muted min-w-0 truncate text-[10px]">{props.step.modelId}</span>
         {props.step.durationMs != null && (
           <span className="text-muted text-[10px]">
@@ -106,12 +110,16 @@ export function DevToolsStepCard(props: DevToolsStepCardProps) {
 
           <div className="border-border-light mt-2 grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-2 border-t pt-2">
             <div className="border-border-light min-w-0 border-r pr-2">
-              <p className="text-muted text-[9px] font-semibold tracking-wide uppercase">Input</p>
+              <p className="text-muted text-[9px] font-semibold tracking-wide uppercase">
+                {t("Input")}
+              </p>
               <StepInputPanel step={props.step} />
             </div>
 
             <div className="min-w-0 pl-0.5">
-              <p className="text-muted text-[9px] font-semibold tracking-wide uppercase">Output</p>
+              <p className="text-muted text-[9px] font-semibold tracking-wide uppercase">
+                {t("Output")}
+              </p>
               <StepOutputPanel step={props.step} />
             </div>
           </div>
@@ -130,6 +138,7 @@ function MetadataBar(props: {
   activeSection: MetadataSection | null;
   onToggleSection: (section: MetadataSection) => void;
 }) {
+  const { t } = useLanguage();
   const details: string[] = [];
   if (props.step.input?.maxOutputTokens != null) {
     details.push(`max tokens: ${props.step.input.maxOutputTokens.toLocaleString()}`);
@@ -179,7 +188,7 @@ function MetadataBar(props: {
           {hasProviderOptions && (
             <MetadataPill
               icon={Settings}
-              label="Provider options"
+              label={t("Provider options")}
               active={props.activeSection === "options"}
               onClick={() => props.onToggleSection("options")}
             />
@@ -188,7 +197,7 @@ function MetadataBar(props: {
           {hasUsage && (
             <MetadataPill
               icon={BarChart3}
-              label="Usage"
+              label={t("Usage")}
               active={props.activeSection === "usage"}
               onClick={() => props.onToggleSection("usage")}
             />
@@ -239,6 +248,7 @@ function MetadataSectionContent(props: {
   tools: ParsedTool[];
   toolPolicy?: ToolPolicy;
 }) {
+  const { t } = useLanguage();
   switch (props.section) {
     case "tools":
       return <AvailableToolsSection tools={props.tools} />;
@@ -248,13 +258,13 @@ function MetadataSectionContent(props: {
       return props.step.usage != null ? (
         <TokenUsageSection usage={props.step.usage} />
       ) : (
-        <p className="text-muted mt-1 text-[10px]">No usage recorded</p>
+        <p className="text-muted mt-1 text-[10px]">{t("No usage recorded")}</p>
       );
     case "policy":
       return props.toolPolicy != null && props.toolPolicy.length > 0 ? (
         <ToolPolicySection policy={props.toolPolicy} />
       ) : (
-        <p className="text-muted mt-1 text-[10px]">No policy configured</p>
+        <p className="text-muted mt-1 text-[10px]">{t("No policy configured")}</p>
       );
     default:
       return assertNever(props.section);
@@ -262,8 +272,9 @@ function MetadataSectionContent(props: {
 }
 
 function AvailableToolsSection(props: { tools: ParsedTool[] }) {
+  const { t } = useLanguage();
   if (props.tools.length === 0) {
-    return <p className="text-muted mt-1 text-[10px]">No tools available</p>;
+    return <p className="text-muted mt-1 text-[10px]">{t("No tools available")}</p>;
   }
 
   return (
@@ -287,7 +298,7 @@ function AvailableToolsSection(props: { tools: ParsedTool[] }) {
           {tool.parameters != null && (
             <div className="mt-1">
               <p className="text-muted text-[9px] font-semibold tracking-wide uppercase">
-                Parameters
+                {t("Parameters")}
               </p>
               <JsonBlock data={tool.parameters} maxHeight="160px" />
             </div>
@@ -359,6 +370,7 @@ function ProviderOptionsSection(props: { providerOptions: unknown }) {
 }
 
 function TokenUsageSection(props: { usage: DevToolsUsage }) {
+  const { t } = useLanguage();
   const inputTotal = getTokenTotal(props.usage.inputTokens);
   const outputTotal = getTokenTotal(props.usage.outputTokens);
   const inputBreakdown = isInputTokenBreakdown(props.usage.inputTokens)
@@ -372,7 +384,7 @@ function TokenUsageSection(props: { usage: DevToolsUsage }) {
     <div className="border-border-light bg-background-primary mt-1 rounded border p-2">
       <div className="grid grid-cols-2 gap-2">
         <TokenUsageCard
-          title="Input Tokens"
+          title={t("Input Tokens")}
           total={inputTotal}
           lines={[
             { label: "No cache", value: inputBreakdown?.noCache },
@@ -382,7 +394,7 @@ function TokenUsageSection(props: { usage: DevToolsUsage }) {
         />
 
         <TokenUsageCard
-          title="Output Tokens"
+          title={t("Output Tokens")}
           total={outputTotal}
           lines={[
             { label: "Text", value: outputBreakdown?.text },
@@ -392,14 +404,14 @@ function TokenUsageSection(props: { usage: DevToolsUsage }) {
       </div>
 
       <p className="text-muted mt-2 text-[10px]">
-        Total:{" "}
+        {t("Total:")}{" "}
         {formatTokenCount(props.usage.totalTokens ?? getCombinedTotal(inputTotal, outputTotal))}
       </p>
 
       {props.usage.raw != null && (
         <div className="mt-2">
           <p className="text-muted text-[9px] font-semibold tracking-wide uppercase">
-            Raw Provider Usage
+            {t("Raw Provider Usage")}
           </p>
           <JsonBlock data={props.usage.raw} maxHeight="160px" />
         </div>
@@ -433,12 +445,13 @@ function TokenUsageCard(props: {
 }
 
 function StepInputPanel(props: { step: DevToolsStep }) {
+  const { t } = useLanguage();
   const [showAllMessages, setShowAllMessages] = useState(false);
   const prompt = props.step.input?.prompt;
 
   if (!isUnknownArray(prompt)) {
     if (props.step.input == null) {
-      return <p className="text-muted mt-1 text-[10px]">No input recorded</p>;
+      return <p className="text-muted mt-1 text-[10px]">{t("No input recorded")}</p>;
     }
 
     return (
@@ -449,7 +462,7 @@ function StepInputPanel(props: { step: DevToolsStep }) {
   }
 
   if (prompt.length === 0) {
-    return <p className="text-muted mt-1 text-[10px]">No prompt messages</p>;
+    return <p className="text-muted mt-1 text-[10px]">{t("No prompt messages")}</p>;
   }
 
   const visibleMessages = showAllMessages ? prompt : prompt.slice(Math.max(0, prompt.length - 2));
@@ -474,6 +487,7 @@ function StepInputPanel(props: { step: DevToolsStep }) {
 }
 
 function StepOutputPanel(props: { step: DevToolsStep }) {
+  const { t } = useLanguage();
   const textParts = props.step.output?.textParts ?? [];
   const reasoningParts = props.step.output?.reasoningParts ?? [];
   const toolCalls = props.step.output?.toolCalls ?? [];
@@ -488,7 +502,7 @@ function StepOutputPanel(props: { step: DevToolsStep }) {
     props.step.error != null;
 
   if (!hasOutput) {
-    return <p className="text-muted mt-1 text-[10px]">No output recorded</p>;
+    return <p className="text-muted mt-1 text-[10px]">{t("No output recorded")}</p>;
   }
 
   return (
@@ -509,30 +523,35 @@ function StepOutputPanel(props: { step: DevToolsStep }) {
 
       {textParts.map((textPart) => (
         <div key={textPart.id}>
-          <p className="text-foreground text-[10px] font-semibold">Text</p>
+          <p className="text-foreground text-[10px] font-semibold">{t("Text")}</p>
           <pre className={PRE_CLASS_NAME}>{textPart.text}</pre>
         </div>
       ))}
 
       {textParts.length === 0 && props.step.output?.content != null && (
         <div>
-          <p className="text-foreground text-[10px] font-semibold">Content</p>
+          <p className="text-foreground text-[10px] font-semibold">{t("Content")}</p>
           <pre className={PRE_CLASS_NAME}>{extractDisplayContent(props.step.output.content)}</pre>
         </div>
       )}
 
       {finishReason != null && (
-        <p className="text-muted text-[10px]">Finish reason: {finishReason}</p>
+        <p className="text-muted text-[10px]">
+          {t("Finish reason:")} {finishReason}
+        </p>
       )}
 
       {props.step.error != null && (
-        <p className="text-destructive text-[10px] break-all">Error: {props.step.error}</p>
+        <p className="text-destructive text-[10px] break-all">
+          {t("Error:")} {props.step.error}
+        </p>
       )}
     </div>
   );
 }
 
 function RequestResponseSection(props: { step: DevToolsStep }) {
+  const { t } = useLanguage();
   const [expanded, setExpanded] = useState(false);
   const [viewMode, setViewMode] = useState<RawViewMode>("ai-sdk");
 
@@ -560,7 +579,7 @@ function RequestResponseSection(props: { step: DevToolsStep }) {
             expanded && "rotate-90"
           )}
         />
-        <span className="text-foreground text-[10px] font-semibold">Request / Response</span>
+        <span className="text-foreground text-[10px] font-semibold">{t("Request / Response")}</span>
       </button>
 
       {expanded && (
@@ -569,18 +588,20 @@ function RequestResponseSection(props: { step: DevToolsStep }) {
             <ToggleButton
               active={viewMode === "ai-sdk"}
               onClick={() => setViewMode("ai-sdk")}
-              label="AI SDK"
+              label={t("AI SDK")}
             />
             <ToggleButton
               active={viewMode === "provider"}
               onClick={() => setViewMode("provider")}
-              label="Provider"
+              label={t("Provider")}
             />
           </div>
 
           <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-2">
             <div className="min-w-0">
-              <p className="text-muted text-[9px] font-semibold tracking-wide uppercase">Request</p>
+              <p className="text-muted text-[9px] font-semibold tracking-wide uppercase">
+                {t("Request")}
+              </p>
               <JsonBlock data={requestData} emptyMessage="No request captured" />
             </div>
             <div className="min-w-0">
@@ -596,7 +617,7 @@ function RequestResponseSection(props: { step: DevToolsStep }) {
             Object.keys(props.step.requestHeaders).length > 0 && (
               <div className="mt-2 min-w-0">
                 <p className="text-muted text-[9px] font-semibold tracking-wide uppercase">
-                  Request Headers
+                  {t("Request Headers")}
                 </p>
                 <JsonBlock data={props.step.requestHeaders} maxHeight="120px" />
               </div>
@@ -607,7 +628,7 @@ function RequestResponseSection(props: { step: DevToolsStep }) {
             Object.keys(props.step.responseHeaders).length > 0 && (
               <div className="mt-2 min-w-0">
                 <p className="text-muted text-[9px] font-semibold tracking-wide uppercase">
-                  Response Headers
+                  {t("Response Headers")}
                 </p>
                 <JsonBlock data={props.step.responseHeaders} maxHeight="120px" />
               </div>
@@ -752,10 +773,13 @@ function RoleBadge(props: { role: string }) {
 }
 
 function ReasoningBlock(props: { text: string }) {
+  const { t } = useLanguage();
   return (
     <CollapsibleCard
       icon={<Brain className="h-3 w-3 shrink-0 text-amber-500" />}
-      label={<span className="text-foreground min-w-0 text-[10px] font-medium">Thinking</span>}
+      label={
+        <span className="text-foreground min-w-0 text-[10px] font-medium">{t("Thinking")}</span>
+      }
       preview={truncateToFirstLine(props.text, 80)}
       borderColorClass="border-amber-500/30"
     >

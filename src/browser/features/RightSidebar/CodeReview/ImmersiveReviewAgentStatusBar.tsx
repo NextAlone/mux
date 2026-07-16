@@ -34,6 +34,7 @@ import {
 } from "@/browser/hooks/useWorkspaceStreamingStatusPhase";
 import { cn } from "@/common/lib/utils";
 import type { TodoItem } from "@/common/types/tools";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 // Stable empty-plan reference for the unregistered case (tests, storybook,
 // teardown). Module-level so the `todos` snapshot stays referentially stable
@@ -47,6 +48,7 @@ interface ImmersiveReviewAgentStatusBarProps {
 export const ImmersiveReviewAgentStatusBar: React.FC<ImmersiveReviewAgentStatusBarProps> = ({
   workspaceId,
 }) => {
+  const { t } = useLanguage();
   // Subscribe to each field this bar uses as its OWN snapshot rather than
   // returning the whole WorkspaceState object. getWorkspaceState is version-
   // cached, so its reference changes on EVERY state bump (e.g. each streamed
@@ -101,7 +103,7 @@ export const ImmersiveReviewAgentStatusBar: React.FC<ImmersiveReviewAgentStatusB
       return (
         <span className="bg-plan-mode-alpha text-plan-mode-light flex items-center gap-1 rounded px-1.5 py-0.5 font-medium">
           <CircleHelp aria-hidden="true" className="h-3 w-3 shrink-0" />
-          <span>Mux has a question</span>
+          <span>{t("Mux has a question")}</span>
         </span>
       );
     }
@@ -109,7 +111,7 @@ export const ImmersiveReviewAgentStatusBar: React.FC<ImmersiveReviewAgentStatusB
       return (
         <span className="text-muted flex items-center gap-1">
           <Loader2 aria-hidden="true" className="h-3 w-3 shrink-0 animate-spin opacity-70" />
-          <span>Starting…</span>
+          <span>{t("Starting…")}</span>
         </span>
       );
     }
@@ -117,7 +119,7 @@ export const ImmersiveReviewAgentStatusBar: React.FC<ImmersiveReviewAgentStatusB
       return (
         <span className="text-muted flex items-center gap-1">
           <Loader2 aria-hidden="true" className="h-3 w-3 shrink-0 animate-spin opacity-70" />
-          <span>Streaming…</span>
+          <span>{t("Streaming…")}</span>
         </span>
       );
     }

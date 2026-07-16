@@ -2,6 +2,7 @@ import React from "react";
 import { cn } from "@/common/lib/utils";
 import type { DisplayedMessage } from "@/common/types/message";
 import { showAllMessages } from "@/browser/stores/WorkspaceStore";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 interface HistoryHiddenMessageProps {
   message: DisplayedMessage & { type: "history-hidden" };
@@ -14,6 +15,7 @@ export const HistoryHiddenMessage: React.FC<HistoryHiddenMessageProps> = ({
   workspaceId,
   className,
 }) => {
+  const { t } = useLanguage();
   const omittedMessageDetails: string[] = [];
   if (message.omittedMessageCounts?.tool) {
     omittedMessageDetails.push(
@@ -56,14 +58,16 @@ export const HistoryHiddenMessage: React.FC<HistoryHiddenMessageProps> = ({
           fill="none"
         />
       </svg>
-      <span className="text-muted">Some messages are hidden for performance • {detailSummary}</span>
+      <span className="text-muted">
+        {t("Some messages are hidden for performance •")} {detailSummary}
+      </span>
       {workspaceId && (
         <button
           type="button"
           className="text-link hover:text-link-hover cursor-pointer border-none bg-transparent p-0 font-medium underline"
           onClick={() => showAllMessages(workspaceId)}
         >
-          Load all
+          {t("Load all")}
         </button>
       )}
       <svg

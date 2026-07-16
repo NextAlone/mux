@@ -10,6 +10,7 @@ import { isCodexOauthAllowedModelId } from "@/common/constants/codexOAuth";
 import type { CodexUsageSnapshot, CodexUsageWindow } from "@/common/orpc/types";
 import { getModelName } from "@/common/utils/ai/models";
 import { BaseBarrier } from "./BaseBarrier";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 interface LastResponseStatsBarrierProps {
   workspaceId: string;
@@ -97,6 +98,7 @@ const CodexUsageDetailRow: React.FC<{
 };
 
 const CodexUsageRemaining: React.FC<{ snapshot: CodexUsageSnapshot }> = (props) => {
+  const { t } = useLanguage();
   const [open, setOpen] = React.useState(false);
   const remainingLabel = formatPercent(props.snapshot.remainingPercent);
   const stale = Date.now() - props.snapshot.updatedAt > STALE_USAGE_MS;
@@ -124,7 +126,7 @@ const CodexUsageRemaining: React.FC<{ snapshot: CodexUsageSnapshot }> = (props) 
         <span className="bg-border-medium mx-0.5 hidden h-3 w-px sm:inline-block" />
         <CodexUsageWindowSummary label="5h" window={props.snapshot.windows.fiveHour} />
         <CodexUsageWindowSummary label="1w" window={props.snapshot.windows.weekly} />
-        {stale && <span className="text-dim hidden sm:inline">stale</span>}
+        {stale && <span className="text-dim hidden sm:inline">{t("stale")}</span>}
         <ChevronDown
           className={cn("text-muted h-3 w-3 shrink-0 transition-transform", open && "rotate-180")}
           aria-hidden="true"
@@ -134,7 +136,7 @@ const CodexUsageRemaining: React.FC<{ snapshot: CodexUsageSnapshot }> = (props) 
       {open && (
         <div
           role="dialog"
-          aria-label="Codex usage details"
+          aria-label={t("Codex usage details")}
           className="bg-background border-border-medium absolute right-0 bottom-full z-30 mb-2 w-64 rounded-md border p-3 shadow-lg"
         >
           <div className="mb-3 flex items-baseline justify-between gap-3">
@@ -153,7 +155,8 @@ const CodexUsageRemaining: React.FC<{ snapshot: CodexUsageSnapshot }> = (props) 
             <CodexUsageDetailRow label="1 周" window={props.snapshot.windows.weekly} />
           </div>
           <div className="text-dim mt-3 text-[10px]">
-            Updated {formatResetAt(props.snapshot.updatedAt)}
+            {t("Updated")}
+            {formatResetAt(props.snapshot.updatedAt)}
             {stale ? " · stale" : ""}
           </div>
         </div>
@@ -163,6 +166,7 @@ const CodexUsageRemaining: React.FC<{ snapshot: CodexUsageSnapshot }> = (props) 
 };
 
 export const LastResponseStatsBarrier: React.FC<LastResponseStatsBarrierProps> = (props) => {
+  const { t } = useLanguage();
   const snapshot = useWorkspaceStatsSnapshot(props.workspaceId);
   const codexUsageSnapshot = useCodexUsageSnapshot();
   const lastRequest = snapshot?.lastRequest;
@@ -199,7 +203,9 @@ export const LastResponseStatsBarrier: React.FC<LastResponseStatsBarrierProps> =
               data-testid="last-response-stats"
               className="text-assistant-border counter-nums-mono inline-flex min-w-[14ch] items-center justify-end text-[11px] leading-none whitespace-nowrap select-none"
             >
-              <span>~{totalTokens.toLocaleString()} tokens</span>
+              <span>
+                ~{totalTokens.toLocaleString()} {t("tokens")}
+              </span>
               <span className="text-dim ml-1 inline-flex min-w-[7ch] items-center justify-end gap-1">
                 <span>@</span>
                 <span>{Math.round(avgTPS)}</span>

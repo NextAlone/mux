@@ -20,6 +20,7 @@ import {
   type ToolStatus,
 } from "./Shared/toolUtils";
 import { JsonHighlight } from "./Shared/HighlightedCode";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 /**
  * Renderer for Google's native search grounding tool (Gemini 3+), which the provider
@@ -132,6 +133,7 @@ export const GoogleSearchToolCall: React.FC<GoogleSearchToolCallProps> = ({
   result,
   status = "pending",
 }) => {
+  const { t } = useLanguage();
   const { expanded, toggleExpanded } = useToolExpansion();
   const queries = args.queries ?? [];
   const suggestionsHtml = extractSuggestionsHtml(result);
@@ -150,13 +152,14 @@ export const GoogleSearchToolCall: React.FC<GoogleSearchToolCallProps> = ({
       <ToolHeader onClick={toggleExpanded}>
         <ExpandIcon expanded={expanded}>▶</ExpandIcon>
         <ToolIcon toolName="server:GOOGLE_SEARCH_WEB" />
-        <ToolName className="shrink-0">Google Search</ToolName>
+        <ToolName className="shrink-0">{t("Google Search")}</ToolName>
         <div className="text-text flex max-w-96 min-w-0 items-center gap-1.5">
           <span className="font-monospace truncate">{queries[0] ?? "searching..."}</span>
         </div>
         {queries.length > 1 && (
           <span className="text-secondary ml-2 text-[10px] whitespace-nowrap">
-            +{queries.length - 1} more
+            +{queries.length - 1}
+            {t("more")}
           </span>
         )}
         <StatusIndicator status={status}>{getStatusDisplay(status)}</StatusIndicator>
@@ -166,7 +169,7 @@ export const GoogleSearchToolCall: React.FC<GoogleSearchToolCallProps> = ({
         <ToolDetails>
           {queries.length > 0 && (
             <DetailSection>
-              <DetailLabel>Queries</DetailLabel>
+              <DetailLabel>{t("Queries")}</DetailLabel>
               <div className="bg-code-bg rounded px-2 py-1.5 text-[11px] leading-[1.4]">
                 {queries.map((query, i) => (
                   // break-words (not truncate): the expanded view is the only place a long
@@ -181,7 +184,7 @@ export const GoogleSearchToolCall: React.FC<GoogleSearchToolCallProps> = ({
 
           {chips.length > 0 && (
             <DetailSection>
-              <DetailLabel>Suggested searches</DetailLabel>
+              <DetailLabel>{t("Suggested searches")}</DetailLabel>
               <div className="flex flex-wrap gap-1.5">
                 {chips.map((chip) => (
                   <a
@@ -201,14 +204,14 @@ export const GoogleSearchToolCall: React.FC<GoogleSearchToolCallProps> = ({
 
           {failureError !== undefined && (
             <DetailSection>
-              <DetailLabel>Error</DetailLabel>
+              <DetailLabel>{t("Error")}</DetailLabel>
               <ErrorBox>{failureError}</ErrorBox>
             </DetailSection>
           )}
 
           {showRawFailureResult && (
             <DetailSection>
-              <DetailLabel>Result</DetailLabel>
+              <DetailLabel>{t("Result")}</DetailLabel>
               <div className="bg-code-bg max-h-[300px] overflow-y-auto rounded px-3 py-2 text-[12px]">
                 <JsonHighlight value={result} />
               </div>
@@ -218,7 +221,7 @@ export const GoogleSearchToolCall: React.FC<GoogleSearchToolCallProps> = ({
           {status === "executing" && !result && (
             <DetailSection>
               <div className="text-secondary text-[11px]">
-                Searching
+                {t("Searching")}
                 <LoadingDots />
               </div>
             </DetailSection>

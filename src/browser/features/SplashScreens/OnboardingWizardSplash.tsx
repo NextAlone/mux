@@ -48,6 +48,7 @@ import {
   formatProviderDisplayName,
   isBuiltInProvider,
 } from "@/common/utils/providers/customProviders";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 interface OAuthMessage {
   type?: unknown;
@@ -127,28 +128,31 @@ function Card(props: {
 }
 
 function CommandPalettePreview(props: { shortcut: string }) {
+  const { t } = useLanguage();
   return (
     <div
       className="font-primary overflow-hidden rounded-lg border border-[var(--color-command-border)] bg-[var(--color-command-surface)] text-[var(--color-command-foreground)]"
-      aria-label="Command palette preview"
+      aria-label={t("Command palette preview")}
     >
       <div className="border-b border-[var(--color-command-input-border)] bg-[var(--color-command-input)] px-3.5 py-3 text-sm">
         <span className="text-[var(--color-command-subdued)]">
-          Switch workspaces or type <span className="font-mono">&gt;</span> for all commands…
+          {t("Switch workspaces or type")}
+          <span className="font-mono">&gt;</span>
+          {t("for all commands…")}
         </span>
       </div>
 
       <div className="px-1.5 py-2">
         <div className="px-2.5 py-1 text-[11px] tracking-[0.08em] text-[var(--color-command-subdued)] uppercase">
-          Recent
+          {t("Recent")}
         </div>
 
         <div className="hover:bg-hover mx-1 my-0.5 grid grid-cols-[1fr_auto] items-center gap-2 rounded-md px-3 py-2 text-[13px]">
           <div>
-            Create New Workspace…
+            {t("Create New Workspace…")}
             <br />
             <span className="text-xs text-[var(--color-command-subdued)]">
-              Start a new workspace (Local / JJ Workspace / SSH / Docker)
+              {t("Start a new workspace (Local / JJ Workspace / SSH / Docker)")}
             </span>
           </div>
           <span className="font-monospace text-[11px] text-[var(--color-command-subdued)]">
@@ -158,10 +162,10 @@ function CommandPalettePreview(props: { shortcut: string }) {
 
         <div className="bg-hover mx-1 my-0.5 grid grid-cols-[1fr_auto] items-center gap-2 rounded-md px-3 py-2 text-[13px]">
           <div>
-            Open Settings…
+            {t("Open Settings…")}
             <br />
             <span className="text-xs text-[var(--color-command-subdued)]">
-              Jump to providers, models, MCP…
+              {t("Jump to providers, models, MCP…")}
             </span>
           </div>
           <span className="font-monospace text-[11px] text-[var(--color-command-subdued)]">
@@ -171,10 +175,10 @@ function CommandPalettePreview(props: { shortcut: string }) {
 
         <div className="hover:bg-hover mx-1 my-0.5 grid grid-cols-[1fr_auto] items-center gap-2 rounded-md px-3 py-2 text-[13px]">
           <div>
-            Help: Keybinds
+            {t("Help: Keybinds")}
             <br />
             <span className="text-xs text-[var(--color-command-subdued)]">
-              Discover shortcuts for the whole app
+              {t("Discover shortcuts for the whole app")}
             </span>
           </div>
           <span className="font-monospace text-[11px] text-[var(--color-command-subdued)]">
@@ -187,6 +191,7 @@ function CommandPalettePreview(props: { shortcut: string }) {
 }
 
 export function OnboardingWizardSplash(props: { onDismiss: () => void }) {
+  const { t } = useLanguage();
   const onboardingPause = useOnboardingPause();
   const [stepIndex, setStepIndex] = useState(onboardingPause.paused?.stepIndex ?? 0);
 
@@ -579,11 +584,11 @@ export function OnboardingWizardSplash(props: { onDismiss: () => void }) {
       return [
         {
           key: "loading",
-          title: "Getting started",
+          title: t("Getting started"),
           icon: <Sparkles className="h-4 w-4" />,
           body: (
             <>
-              <p>Checking your provider configuration…</p>
+              <p>{t("Checking your provider configuration…")}</p>
             </>
           ),
         },
@@ -595,12 +600,12 @@ export function OnboardingWizardSplash(props: { onDismiss: () => void }) {
     if (hasConfiguredProvidersAtStart === false) {
       nextSteps.push({
         key: "mux-gateway",
-        title: "Mux Gateway (evaluation credits)",
+        title: t("Mux Gateway (evaluation credits)"),
         icon: <Sparkles className="h-4 w-4" />,
         body: (
           <>
             <p>
-              Mux Gateway enables you to use free AI tokens from{" "}
+              {t("Mux Gateway enables you to use free AI tokens from")}{" "}
               <a
                 href="https://coder.com"
                 target="_blank"
@@ -613,15 +618,16 @@ export function OnboardingWizardSplash(props: { onDismiss: () => void }) {
             </p>
 
             <p>
-              OSS contributors with GitHub accounts older than 12 months (or GitHub Pro members) can
-              use this to get free evaluation credits.
+              {t(
+                "OSS contributors with GitHub accounts older than 12 months (or GitHub Pro members) can use this to get free evaluation credits."
+              )}
             </p>
 
             {muxGatewayIsLoggedIn ? (
               <div className="mt-3 space-y-2">
                 <div className="border-border-medium bg-background-secondary rounded-md border p-2 text-xs">
                   <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="text-foreground font-medium">Mux Gateway account</div>
+                    <div className="text-foreground font-medium">{t("Mux Gateway account")}</div>
                     <Button
                       variant="secondary"
                       size="sm"
@@ -636,14 +642,14 @@ export function OnboardingWizardSplash(props: { onDismiss: () => void }) {
 
                   <div className="mt-2 space-y-1">
                     <div className="flex items-center justify-between gap-4">
-                      <span className="text-muted">Balance</span>
+                      <span className="text-muted">{t("Balance")}</span>
                       <span className="text-foreground font-mono">
                         {formatMuxGatewayBalance(muxGatewayAccountStatus?.remaining_microdollars)}
                       </span>
                     </div>
 
                     <div className="flex items-center justify-between gap-4">
-                      <span className="text-muted">Concurrent requests per user</span>
+                      <span className="text-muted">{t("Concurrent requests per user")}</span>
                       <span className="text-foreground font-mono">
                         {muxGatewayAccountStatus?.ai_gateway_concurrent_requests_per_user ?? "—"}
                       </span>
@@ -658,10 +664,12 @@ export function OnboardingWizardSplash(props: { onDismiss: () => void }) {
                 {muxGatewayAccountStatus?.remaining_microdollars === 0 && (
                   <div className="border-destructive/20 bg-destructive/5 mt-2 rounded-md border p-2 text-xs">
                     <p className="text-destructive font-medium">
-                      Your Mux Gateway credits are depleted.
+                      {t("Your Mux Gateway credits are depleted.")}
                     </p>
                     <p className="text-muted mt-1">
-                      Gateway routing has been disabled. Configure another provider below, or visit{" "}
+                      {t(
+                        "Gateway routing has been disabled. Configure another provider below, or visit"
+                      )}{" "}
                       <a
                         href="https://gateway.mux.coder.com"
                         target="_blank"
@@ -670,7 +678,7 @@ export function OnboardingWizardSplash(props: { onDismiss: () => void }) {
                       >
                         gateway.mux.coder.com
                       </a>{" "}
-                      to add credits.
+                      {t("to add credits.")}
                     </p>
                   </div>
                 )}
@@ -689,29 +697,31 @@ export function OnboardingWizardSplash(props: { onDismiss: () => void }) {
 
                   {muxGatewayLoginInProgress && (
                     <Button variant="secondary" onClick={cancelMuxGatewayLogin}>
-                      Cancel
+                      {t("Cancel")}
                     </Button>
                   )}
                 </div>
 
                 {muxGatewayLoginStatus === "waiting" && (
-                  <p className="mt-3">Finish the login flow in your browser, then return here.</p>
+                  <p className="mt-3">
+                    {t("Finish the login flow in your browser, then return here.")}
+                  </p>
                 )}
 
                 {muxGatewayLoginStatus === "error" && muxGatewayLoginError && (
                   <p className="mt-3">
-                    <strong className="text-destructive">Login failed:</strong>{" "}
+                    <strong className="text-destructive">{t("Login failed:")}</strong>{" "}
                     {muxGatewayLoginError}
                   </p>
                 )}
               </>
             )}
 
-            <p className="mt-3">You can also receive those credits through:</p>
+            <p className="mt-3">{t("You can also receive those credits through:")}</p>
 
             <ul className="ml-4 list-disc space-y-1">
               <li>
-                early adopters can request credits tied to their GH logins on our{" "}
+                {t("early adopters can request credits tied to their GH logins on our")}{" "}
                 <a
                   href="https://discord.gg/VfZXvtnR"
                   target="_blank"
@@ -722,26 +732,26 @@ export function OnboardingWizardSplash(props: { onDismiss: () => void }) {
                 </a>
               </li>
               <li>
-                vouchers which you can{" "}
+                {t("vouchers which you can")}{" "}
                 <a
                   href="https://gateway.mux.coder.com"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-accent hover:underline"
                 >
-                  claim here
+                  {t("claim here")}
                 </a>
               </li>
             </ul>
 
             <p className="mt-3">
-              You can enable this in{" "}
+              {t("You can enable this in")}{" "}
               <button
                 type="button"
                 className="text-accent hover:underline"
                 onClick={() => openProvidersSettings()}
               >
-                Settings → Providers
+                {t("Settings → Providers")}
               </button>
               .
             </p>
@@ -752,25 +762,29 @@ export function OnboardingWizardSplash(props: { onDismiss: () => void }) {
 
     nextSteps.push({
       key: "providers",
-      title: "Choose your own AI providers",
+      title: t("Choose your own AI providers"),
       icon: <Sparkles className="h-4 w-4" />,
       body: (
         <>
           <p>
-            Mux is provider-agnostic: bring your own keys, mix and match models, or run locally.
+            {t(
+              "Mux is provider-agnostic: bring your own keys, mix and match models, or run locally."
+            )}
           </p>
 
           {configuredProviders.length > 0 && configuredProvidersSummary ? (
             <p className="mt-3 text-xs">
-              <span className="text-foreground font-medium">Configured:</span>{" "}
+              <span className="text-foreground font-medium">{t("Configured:")}</span>{" "}
               {configuredProvidersSummary}
             </p>
           ) : (
-            <p className="mt-3 text-xs">No providers configured yet.</p>
+            <p className="mt-3 text-xs">{t("No providers configured yet.")}</p>
           )}
 
           <div className="mt-3">
-            <div className="text-foreground mb-2 text-xs font-medium">Available providers</div>
+            <div className="text-foreground mb-2 text-xs font-medium">
+              {t("Available providers")}
+            </div>
             <div className="grid grid-cols-2 gap-2">
               {onboardingProviders.map((provider) => {
                 const configured = providersConfig?.[provider]?.isConfigured === true;
@@ -796,20 +810,20 @@ export function OnboardingWizardSplash(props: { onDismiss: () => void }) {
 
             <div className="text-muted mt-2 flex items-center gap-2 text-xs">
               <span className="h-2 w-2 rounded-full bg-green-500" />
-              <span>Configured</span>
+              <span>{t("Configured")}</span>
               <span className="bg-border-medium h-2 w-2 rounded-full" />
-              <span>Not configured</span>
+              <span>{t("Not configured")}</span>
             </div>
           </div>
 
           <p className="mt-3">
-            Configure keys and endpoints in{" "}
+            {t("Configure keys and endpoints in")}{" "}
             <button
               type="button"
               className="text-accent hover:underline"
               onClick={() => openProvidersSettings()}
             >
-              Settings → Providers
+              {t("Settings → Providers")}
             </button>
             .
           </p>
@@ -821,23 +835,23 @@ export function OnboardingWizardSplash(props: { onDismiss: () => void }) {
 
     nextSteps.push({
       key: "projects",
-      title: "Add your first project",
+      title: t("Add your first project"),
       icon: <Briefcase className="h-4 w-4" />,
       body: (
         <>
           <p>
-            Projects are the folders or repos you want Mux to work in. Add a local folder or clone
-            from GitHub, then click Next.
+            {t(
+              "Projects are the folders or repos you want Mux to work in. Add a local folder or clone from GitHub, then click Next."
+            )}
           </p>
 
           {userProjects.size > 0 ? (
             <p className="mt-3 text-xs">
-              <span className="text-foreground font-medium">Configured:</span> {userProjects.size}{" "}
-              project
-              {userProjects.size === 1 ? "" : "s"}
+              <span className="text-foreground font-medium">{t("Configured:")}</span>{" "}
+              {userProjects.size} {t(userProjects.size === 1 ? "project" : "projects")}
             </p>
           ) : (
-            <p className="mt-3 text-xs">No projects added yet.</p>
+            <p className="mt-3 text-xs">{t("No projects added yet.")}</p>
           )}
 
           <div className="mt-3">
@@ -871,36 +885,40 @@ export function OnboardingWizardSplash(props: { onDismiss: () => void }) {
 
     nextSteps.push({
       key: "agents",
-      title: "Agents: Plan, Exec, and custom",
+      title: t("Agents: Plan, Exec, and custom"),
       icon: <Bot className="h-4 w-4" />,
       body: (
         <>
           <p>
-            Agents are file-based definitions (system prompt + tool policy). You can create
-            project-local agents in <code className="text-accent">.mux/agents/*.md</code> or global
-            agents in <code className="text-accent">~/.mux/agents/*.md</code>.
+            {t(
+              "Agents are file-based definitions (system prompt + tool policy). You can create project-local agents in"
+            )}
+            <code className="text-accent">.mux/agents/*.md</code>
+            {t("or global agents in")}
+            <code className="text-accent">~/.mux/agents/*.md</code>.
           </p>
 
           <div className="mt-3 grid gap-2">
-            <Card icon={<Sparkles className="h-4 w-4" />} title="Use Plan to design the spec">
-              When the change is complex, switch to a plan-like agent first: write an explicit plan
-              (files, steps, risks), then execute.
+            <Card icon={<Sparkles className="h-4 w-4" />} title={t("Use Plan to design the spec")}>
+              {t(
+                "When the change is complex, switch to a plan-like agent first: write an explicit plan (files, steps, risks), then execute."
+              )}
             </Card>
 
-            <Card icon={<Bot className="h-4 w-4" />} title="Quick shortcuts">
+            <Card icon={<Bot className="h-4 w-4" />} title={t("Quick shortcuts")}>
               <div className="mt-1 flex flex-wrap items-center gap-2">
-                <span>Agent picker</span>
+                <span>{t("Agent picker")}</span>
                 <kbd className={KBD_CLASSNAME}>{agentPickerShortcut}</kbd>
                 <span className="text-muted mx-1">•</span>
-                <span>Cycle agent</span>
+                <span>{t("Cycle agent")}</span>
                 <kbd className={KBD_CLASSNAME}>{cycleAgentShortcut}</kbd>
               </div>
             </Card>
           </div>
 
           <div className="mt-3 flex items-center gap-3">
-            <DocsLink path="/agents">Agent docs</DocsLink>
-            <DocsLink path="/agents/plan-mode">Plan mode</DocsLink>
+            <DocsLink path="/agents">{t("Agent docs")}</DocsLink>
+            <DocsLink path="/agents/plan-mode">{t("Plan mode")}</DocsLink>
           </div>
         </>
       ),
@@ -908,63 +926,68 @@ export function OnboardingWizardSplash(props: { onDismiss: () => void }) {
 
     nextSteps.push({
       key: "runtimes",
-      title: "Multiple runtimes",
+      title: t("Multiple runtimes"),
       icon: <Boxes className="h-4 w-4" />,
       body: (
         <>
           <p>
-            Each workspace can run in the environment that fits the job: keep it local, isolate with
-            a jj workspace, run remotely over SSH, or use a per-workspace Docker container.
+            {t(
+              "Each workspace can run in the environment that fits the job: keep it local, isolate with a jj workspace, run remotely over SSH, or use a per-workspace Docker container."
+            )}
           </p>
 
           <div className="mt-3 grid gap-2">
-            <Card icon={<LocalIcon size={14} />} title="Local">
-              Work directly in your project directory.
+            <Card icon={<LocalIcon size={14} />} title={t("Local")}>
+              {t("Work directly in your project directory.")}
             </Card>
             <Card icon={<WorktreeIcon size={14} />} title="JJ Workspace">
               {getWorktreeRuntimeDescription(workspaceCheckoutLocation)}.
             </Card>
             <Card icon={<SSHIcon size={14} />} title="SSH">
-              Remote clone and commands run on an SSH host.
+              {t("Remote clone and commands run on an SSH host.")}
             </Card>
-            <Card icon={<CoderIcon size={14} />} title="Coder (SSH)">
-              Use Coder workspaces over SSH for a managed remote dev environment.
+            <Card icon={<CoderIcon size={14} />} title={t("Coder (SSH)")}>
+              {t("Use Coder workspaces over SSH for a managed remote dev environment.")}
             </Card>
-            <Card icon={<DockerIcon size={14} />} title="Docker">
-              Isolated container per workspace.
+            <Card icon={<DockerIcon size={14} />} title={t("Docker")}>
+              {t("Isolated container per workspace.")}
             </Card>
           </div>
 
-          <p className="mt-3">You can set a project default runtime in the workspace controls.</p>
+          <p className="mt-3">
+            {t("You can set a project default runtime in the workspace controls.")}
+          </p>
         </>
       ),
     });
 
     nextSteps.push({
       key: "mcp",
-      title: "MCP servers",
+      title: t("MCP servers"),
       icon: <Server className="h-4 w-4" />,
       body: (
         <>
           <p>
-            MCP servers extend Mux with tools (memory, ticketing, databases, internal APIs).
-            Configure them globally, with optional repo overrides and per-workspace overrides.
+            {t(
+              "MCP servers extend Mux with tools (memory, ticketing, databases, internal APIs). Configure them globally, with optional repo overrides and per-workspace overrides."
+            )}
           </p>
 
           <div className="mt-3 grid gap-2">
-            <Card icon={<Server className="h-4 w-4" />} title="Global config">
+            <Card icon={<Server className="h-4 w-4" />} title={t("Global config")}>
               <code className="text-accent">~/.mux/mcp.jsonc</code>
             </Card>
-            <Card icon={<Server className="h-4 w-4" />} title="Repo overrides">
+            <Card icon={<Server className="h-4 w-4" />} title={t("Repo overrides")}>
               <code className="text-accent">./.mux/mcp.jsonc</code>
             </Card>
-            <Card icon={<Server className="h-4 w-4" />} title="Workspace overrides">
+            <Card icon={<Server className="h-4 w-4" />} title={t("Workspace overrides")}>
               <code className="text-accent">.mux/mcp.local.jsonc</code>
             </Card>
           </div>
 
           <p className="mt-3">
-            Manage servers in <span className="text-foreground">Settings → MCP</span>.
+            {t("Manage servers in")}
+            <span className="text-foreground">{t("Settings → MCP")}</span>.
           </p>
         </>
       ),
@@ -972,17 +995,18 @@ export function OnboardingWizardSplash(props: { onDismiss: () => void }) {
 
     nextSteps.push({
       key: "palette",
-      title: "Command palette",
+      title: t("Command palette"),
       icon: <CommandIcon className="h-4 w-4" />,
       body: (
         <>
           <p>
-            The command palette is the fastest way to navigate, create workspaces, and discover
-            features.
+            {t(
+              "The command palette is the fastest way to navigate, create workspaces, and discover features."
+            )}
           </p>
 
           <div className="mt-3 flex flex-wrap items-center gap-2">
-            <span className="text-muted text-sm">Open command palette</span>
+            <span className="text-muted text-sm">{t("Open command palette")}</span>
             <kbd className={KBD_CLASSNAME}>{commandPaletteShortcut}</kbd>
           </div>
 
@@ -991,9 +1015,12 @@ export function OnboardingWizardSplash(props: { onDismiss: () => void }) {
           </div>
 
           <p className="mt-3">
-            Tip: type <code className="text-accent">&gt;</code> for commands, press{" "}
-            <kbd className={KBD_CLASSNAME}>{commandPaletteActionsShortcut}</kbd> to open command
-            mode directly, and use <code className="text-accent">/</code> for slash commands.
+            {t("Tip: type")}
+            <code className="text-accent">&gt;</code> {t("for commands, press")}{" "}
+            <kbd className={KBD_CLASSNAME}>{commandPaletteActionsShortcut}</kbd>
+            {t("to open command mode directly, and use")}
+            <code className="text-accent">/</code>
+            {t("for slash commands.")}
           </p>
         </>
       ),
@@ -1024,6 +1051,7 @@ export function OnboardingWizardSplash(props: { onDismiss: () => void }) {
     providersConfig,
     refreshMuxGatewayAccountStatus,
     startMuxGatewayLogin,
+    t,
     onboardingProviders,
     workspaceCheckoutLocation,
   ]);
@@ -1094,7 +1122,7 @@ export function OnboardingWizardSplash(props: { onDismiss: () => void }) {
             {canGoBack && (
               <Button variant="secondary" onClick={goBack} className="min-w-24">
                 <ArrowLeft className="h-4 w-4" />
-                Back
+                {t("Back")}
               </Button>
             )}
           </div>
@@ -1137,7 +1165,7 @@ export function OnboardingWizardSplash(props: { onDismiss: () => void }) {
             </Button>
 
             <Button variant="secondary" onClick={props.onDismiss} className="min-w-24">
-              Skip
+              {t("Skip")}
             </Button>
           </div>
         </>

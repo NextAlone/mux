@@ -7,6 +7,7 @@ import {
   TooltipContent,
   HelpIndicator,
 } from "@/browser/components/Tooltip/Tooltip";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 interface ConsumerBreakdownProps {
   consumers: TokenConsumer[];
@@ -17,6 +18,7 @@ const ConsumerBreakdownComponent: React.FC<ConsumerBreakdownProps> = ({
   consumers,
   totalTokens,
 }) => {
+  const { t } = useLanguage();
   if (consumers.length === 0) {
     return null;
   }
@@ -43,8 +45,9 @@ const ConsumerBreakdownComponent: React.FC<ConsumerBreakdownProps> = ({
                       <HelpIndicator>?</HelpIndicator>
                     </TooltipTrigger>
                     <TooltipContent align="center" className="max-w-80 whitespace-normal">
-                      Web search results are encrypted and decrypted server-side. This estimate is
-                      approximate.
+                      {t(
+                        "Web search results are encrypted and decrypted server-side. This estimate is approximate."
+                      )}
                     </TooltipContent>
                   </Tooltip>
                 )}

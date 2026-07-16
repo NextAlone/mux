@@ -31,6 +31,7 @@ import { TimingChart } from "./TimingChart";
 import { TokensByModelChart } from "./TokensByModelChart";
 import { formatProjectDisplayName } from "./analyticsUtils";
 import { buildTimeFilterPredicate } from "./sqlTimeFilter";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 interface AnalyticsDashboardProps {
   leftSidebarCollapsed: boolean;
@@ -87,6 +88,7 @@ function computeDateRange(timeRange: TimeRange): {
 }
 
 export function AnalyticsDashboard(props: AnalyticsDashboardProps) {
+  const { t } = useLanguage();
   const { navigateFromAnalytics } = useRouter();
   const { userProjects } = useProjectContext();
 
@@ -207,8 +209,8 @@ export function AnalyticsDashboard(props: AnalyticsDashboardProps) {
               variant="ghost"
               size="icon"
               onClick={props.onToggleLeftSidebarCollapsed}
-              title="Open sidebar"
-              aria-label="Open sidebar"
+              title={t("Open sidebar")}
+              aria-label={t("Open sidebar")}
               className="text-muted hover:text-foreground hidden h-6 w-6 md:inline-flex"
             >
               <Menu className="h-4 w-4" />
@@ -219,13 +221,13 @@ export function AnalyticsDashboard(props: AnalyticsDashboardProps) {
             size="sm"
             onClick={navigateFromAnalytics}
             className="text-muted hover:text-foreground h-6 gap-1 px-2 text-xs"
-            title="Back"
-            aria-label="Back to previous view"
+            title={t("Back")}
+            aria-label={t("Back to previous view")}
           >
             <ArrowLeft className="h-3.5 w-3.5" />
-            Back
+            {t("Back")}
           </Button>
-          <h1 className="text-foreground text-sm font-semibold">Analytics</h1>
+          <h1 className="text-foreground text-sm font-semibold">{t("Analytics")}</h1>
         </div>
 
         <div
@@ -241,7 +243,7 @@ export function AnalyticsDashboard(props: AnalyticsDashboardProps) {
             className="text-muted sr-only text-xs md:not-sr-only md:inline"
             htmlFor="analytics-project-filter"
           >
-            Project
+            {t("Project")}
           </label>
           <select
             id="analytics-project-filter"
@@ -252,7 +254,7 @@ export function AnalyticsDashboard(props: AnalyticsDashboardProps) {
             }}
             className="border-border-medium bg-separator text-foreground h-6 min-w-0 flex-1 rounded border px-2 text-xs md:max-w-56 md:flex-none"
           >
-            <option value="__all">All projects</option>
+            <option value="__all">{t("All projects")}</option>
             {projectRows.map((project) => (
               <option key={project.path} value={project.path}>
                 {project.label}

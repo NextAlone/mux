@@ -24,6 +24,7 @@ import {
   formatUsd,
 } from "@/browser/features/Analytics/analyticsUtils";
 import type { ChartType, DrillDownContext } from "./types";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 interface DynamicChartProps {
   chartType: Exclude<ChartType, "table">;
@@ -131,10 +132,11 @@ function getDrillDownValue(value: unknown): string {
 }
 
 export function DynamicChart(props: DynamicChartProps): JSX.Element {
+  const { t } = useLanguage();
   if (props.data.length === 0 || props.xAxis.length === 0 || props.yAxes.length === 0) {
     return (
       <div className="border-border-medium text-muted rounded border border-dashed px-2 py-3 text-[11px]">
-        Not enough structured data to render a chart.
+        {t("Not enough structured data to render a chart.")}
       </div>
     );
   }

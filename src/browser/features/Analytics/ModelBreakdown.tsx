@@ -25,6 +25,7 @@ import {
   formatProjectDisplayName,
   formatUsd,
 } from "./analyticsUtils";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 interface ModelBreakdownProps {
   spendByProject: AsyncState<SpendByProjectItem[]>;
@@ -36,6 +37,7 @@ interface ProjectChartRow extends SpendByProjectItem {
 }
 
 export function ModelBreakdown(props: ModelBreakdownProps) {
+  const { t } = useLanguage();
   const projectRows: ProjectChartRow[] = (props.spendByProject.data ?? [])
     .map((row) => ({
       ...row,
@@ -54,7 +56,7 @@ export function ModelBreakdown(props: ModelBreakdownProps) {
   return (
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
       <div className="bg-background-secondary border-border-medium rounded-lg border p-4">
-        <h2 className="text-foreground text-sm font-semibold">Spend by project</h2>
+        <h2 className="text-foreground text-sm font-semibold">{t("Spend by project")}</h2>
 
         {props.spendByProject.error ? (
           <p className="text-danger mt-2 text-xs">{props.spendByProject.error}</p>
@@ -64,7 +66,7 @@ export function ModelBreakdown(props: ModelBreakdownProps) {
           </div>
         ) : projectRows.length === 0 ? (
           <div className="text-muted mt-3 rounded border border-dashed px-3 py-10 text-center text-sm">
-            No project spend data yet.
+            {t("No project spend data yet.")}
           </div>
         ) : (
           <div className="mt-3 h-72 w-full">
@@ -100,7 +102,7 @@ export function ModelBreakdown(props: ModelBreakdownProps) {
       </div>
 
       <div className="bg-background-secondary border-border-medium rounded-lg border p-4">
-        <h2 className="text-foreground text-sm font-semibold">Spend by model</h2>
+        <h2 className="text-foreground text-sm font-semibold">{t("Spend by model")}</h2>
 
         {props.spendByModel.error ? (
           <p className="text-danger mt-2 text-xs">{props.spendByModel.error}</p>
@@ -110,7 +112,7 @@ export function ModelBreakdown(props: ModelBreakdownProps) {
           </div>
         ) : modelRows.length === 0 ? (
           <div className="text-muted mt-3 rounded border border-dashed px-3 py-10 text-center text-sm">
-            No model spend data yet.
+            {t("No model spend data yet.")}
           </div>
         ) : (
           <div className="mt-3 h-72 w-full">

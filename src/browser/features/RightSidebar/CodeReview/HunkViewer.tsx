@@ -26,6 +26,7 @@ import { cn } from "@/common/lib/utils";
 import { ContextCollapseIndicator } from "./ContextCollapseIndicator";
 import { useReadMore } from "./useReadMore";
 import { sliceHunkByNewLineRange } from "@/browser/utils/review/sliceHunkContent";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 interface HunkViewerProps {
   hunk: DiffHunk;
@@ -161,6 +162,7 @@ export const HunkViewer = React.memo<HunkViewerProps>(
     isAssistedNew = false,
     visibleNewLineRange,
   }) => {
+    const { t } = useLanguage();
     // Ref for the hunk container to track visibility
     const hunkRef = React.useRef<HTMLDivElement>(null);
 
@@ -368,18 +370,18 @@ export const HunkViewer = React.memo<HunkViewerProps>(
                 {assistedComment ? (
                   <span className="min-w-0 break-words whitespace-pre-wrap">{assistedComment}</span>
                 ) : (
-                  <span className="text-muted italic">Flagged by agent for review</span>
+                  <span className="text-muted italic">{t("Flagged by agent for review")}</span>
                 )}
                 {isAssistedNew && (
                   // Transient highlight for pins added recently. Uses the same
                   // accent as the rest of the strip so it reads as a single
                   // visual group instead of a competing status pill.
                   <span
-                    aria-label="Newly flagged"
+                    aria-label={t("Newly flagged")}
                     className="border-review-accent/40 text-review-accent bg-review-accent/10 inline-flex shrink-0 items-center rounded border px-1 text-[9px] tracking-wide uppercase"
                     data-testid="hunk-assisted-new-badge"
                   >
-                    new
+                    {t("new")}
                   </span>
                 )}
               </div>
@@ -402,7 +404,7 @@ export const HunkViewer = React.memo<HunkViewerProps>(
                   )}
                   data-hunk-id={hunkId}
                   onClick={handleToggleRead}
-                  aria-label={`Mark as read (${formatKeybind(KEYBINDS.TOGGLE_HUNK_READ)})`}
+                  aria-label={`${t("Mark as read")} (${formatKeybind(KEYBINDS.TOGGLE_HUNK_READ)})`}
                 >
                   {isRead ? (
                     <Check aria-hidden="true" className="h-3 w-3" />
@@ -412,7 +414,9 @@ export const HunkViewer = React.memo<HunkViewerProps>(
                 </button>
               </TooltipTrigger>
               <TooltipContent align="start" side="top">
-                Mark as read ({formatKeybind(KEYBINDS.TOGGLE_HUNK_READ)}) · Mark file (
+                {t("Mark as read (")}
+                {formatKeybind(KEYBINDS.TOGGLE_HUNK_READ)}
+                {t(") · Mark file (")}
                 {formatKeybind(KEYBINDS.MARK_FILE_READ)})
               </TooltipContent>
             </Tooltip>
@@ -432,7 +436,7 @@ export const HunkViewer = React.memo<HunkViewerProps>(
                 <span className="text-dim cursor-default">{formatRelativeTime(firstSeenAt)}</span>
               </TooltipTrigger>
               <TooltipContent align="center" side="top">
-                First seen: {new Date(firstSeenAt).toLocaleString()}
+                {t("First seen:")} {new Date(firstSeenAt).toLocaleString()}
               </TooltipContent>
             </Tooltip>
           </div>
@@ -440,7 +444,7 @@ export const HunkViewer = React.memo<HunkViewerProps>(
 
         {isPureRename ? (
           <div className="text-muted bg-code-keyword-overlay-light before:text-code-keyword flex items-center gap-2 p-3 text-[11px] before:text-sm before:content-['→']">
-            Renamed from <code>{hunk.oldPath}</code>
+            {t("Renamed from")} <code>{hunk.oldPath}</code>
           </div>
         ) : isExpanded ? (
           <div className="font-monospace bg-code-bg overflow-x-auto text-[11px] leading-[1.4]">
@@ -452,18 +456,18 @@ export const HunkViewer = React.memo<HunkViewerProps>(
                     <button
                       onClick={handleExpandUp}
                       className="text-link hover:text-link-hover cursor-pointer px-1"
-                      aria-label="Show more context above"
+                      aria-label={t("Show more context above")}
                     >
                       ▲
                     </button>
                   </TooltipTrigger>
-                  <TooltipContent side="top">Show more context above</TooltipContent>
+                  <TooltipContent side="top">{t("Show more context above")}</TooltipContent>
                 </Tooltip>
               </div>
             )}
             {upLoading && (
               <div className="text-muted flex h-[18px] items-center justify-center text-[10px]">
-                <span>Loading...</span>
+                <span>{t("Loading...")}</span>
               </div>
             )}
 
@@ -622,24 +626,24 @@ export const HunkViewer = React.memo<HunkViewerProps>(
                     <button
                       onClick={handleExpandDown}
                       className="text-link hover:text-link-hover cursor-pointer px-1"
-                      aria-label="Show more context below"
+                      aria-label={t("Show more context below")}
                     >
                       ▼
                     </button>
                   </TooltipTrigger>
-                  <TooltipContent side="bottom">Show more context below</TooltipContent>
+                  <TooltipContent side="bottom">{t("Show more context below")}</TooltipContent>
                 </Tooltip>
               </div>
             )}
             {downLoading && (
               <div className="text-muted flex h-[18px] items-center justify-center text-[10px]">
-                <span>Loading...</span>
+                <span>{t("Loading...")}</span>
               </div>
             )}
             {/* EOF indicator - show when at EOF with expanded content */}
             {atEOF && downContent && !downLoading && (
               <div className="text-dim flex h-[18px] items-center justify-center text-[10px]">
-                — end of file —
+                {t("— end of file —")}
               </div>
             )}
           </div>
@@ -648,8 +652,9 @@ export const HunkViewer = React.memo<HunkViewerProps>(
             className="text-muted hover:text-foreground cursor-pointer px-3 py-2 text-center text-[11px] italic"
             onClick={handleToggleExpand}
           >
-            {isRead && "Hunk marked as read. "}Click to expand ({lineCount} lines) or press{" "}
-            {formatKeybind(KEYBINDS.TOGGLE_HUNK_COLLAPSE)}
+            {isRead && t("Hunk marked as read. ")}
+            {t("Click to expand (")}
+            {lineCount} {t("lines) or press")} {formatKeybind(KEYBINDS.TOGGLE_HUNK_COLLAPSE)}
           </div>
         )}
 
@@ -658,7 +663,8 @@ export const HunkViewer = React.memo<HunkViewerProps>(
             className="text-muted hover:text-foreground cursor-pointer px-3 py-2 text-center text-[11px] italic"
             onClick={handleToggleExpand}
           >
-            Click here or press {formatKeybind(KEYBINDS.TOGGLE_HUNK_COLLAPSE)} to collapse
+            {t("Click here or press")} {formatKeybind(KEYBINDS.TOGGLE_HUNK_COLLAPSE)}{" "}
+            {t("to collapse")}
           </div>
         )}
       </div>

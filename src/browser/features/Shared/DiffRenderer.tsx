@@ -31,6 +31,7 @@ import {
   type Review,
   type ReviewNoteData,
 } from "@/common/types/review";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 // Shared type for diff line types
 export type DiffLineType = "add" | "remove" | "context" | "header";
@@ -320,6 +321,7 @@ export const DiffContainer: React.FC<
     lastLineType?: DiffLineType;
   }>
 > = ({ children, fontSize, maxHeight, className, firstLineType, lastLineType }) => {
+  const { t } = useLanguage();
   const resolvedMaxHeight = maxHeight ?? "400px";
   const [isExpanded, setIsExpanded] = React.useState(false);
   const contentRef = React.useRef<HTMLDivElement>(null);
@@ -389,7 +391,7 @@ export const DiffContainer: React.FC<
               className="bg-dark/60 text-foreground/80 hover:text-foreground border border-white/20 px-2 py-0.5 text-[10px] tracking-wide uppercase backdrop-blur transition hover:border-white/40"
               onClick={() => setIsExpanded(true)}
             >
-              Expand diff
+              {t("Expand diff")}
             </button>
           </div>
         </>
@@ -820,6 +822,7 @@ const ReviewNoteInput: React.FC<ReviewNoteInputProps> = React.memo(
     onCancel,
     initialNoteText,
   }) => {
+    const { t } = useLanguage();
     const { showOld, showNew } = getLineNumberModeFlags(lineNumberMode);
     const textareaRef = React.useRef<HTMLTextAreaElement>(null);
 
@@ -963,7 +966,9 @@ const ReviewNoteInput: React.FC<ReviewNoteInputProps> = React.memo(
                 minHeight: "calc(12px * 1.5 * 3 + 12px)",
                 maxHeight: "12rem",
               }}
-              placeholder="Add a review note… (Enter to submit, Shift+Enter for newline, Esc to cancel)"
+              placeholder={t(
+                "Add a review note… (Enter to submit, Shift+Enter for newline, Esc to cancel)"
+              )}
               defaultValue={initialNoteText ?? ""}
               rows={3}
               onClick={(e) => e.stopPropagation()}
@@ -990,7 +995,7 @@ const ReviewNoteInput: React.FC<ReviewNoteInputProps> = React.memo(
             <button
               type="button"
               className="text-muted hover:text-primary shrink-0 px-2"
-              aria-label="Submit review note"
+              aria-label={t("Submit review note")}
               onClick={(e) => {
                 e.stopPropagation();
                 handleSubmit();
@@ -1099,6 +1104,7 @@ export const SelectableDiffRenderer = React.memo<SelectableDiffRendererProps>(
     externalEditRequest,
     onComposerCancel,
   }) => {
+    const { t } = useLanguage();
     const dragAnchorRef = React.useRef<number | null>(null);
     const dragUpdateFrameRef = React.useRef<number | null>(null);
     const pendingDragLineIndexRef = React.useRef<number | null>(null);
@@ -1670,7 +1676,7 @@ export const SelectableDiffRenderer = React.memo<SelectableDiffRendererProps>(
                               e.stopPropagation();
                               handleCommentButtonClick(displayIndex, e.shiftKey);
                             }}
-                            aria-label="Add review comment"
+                            aria-label={t("Add review comment")}
                           >
                             <MessageSquare className="size-3" />
                           </button>

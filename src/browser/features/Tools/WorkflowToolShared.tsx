@@ -4,14 +4,16 @@ import { cn } from "@/common/lib/utils";
 import type { WorkflowScriptDescriptor } from "@/common/types/workflow";
 import { DetailSection } from "./Shared/ToolPrimitives";
 import { HighlightedCode, JsonHighlight } from "./Shared/HighlightedCode";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 export const WORKFLOW_ACTION_BUTTON_CLASS =
   "text-muted hover:text-foreground border-border rounded border px-2 py-1 disabled:opacity-50 disabled:hover:text-muted";
 
 export function WorkflowKindBadge() {
+  const { t } = useLanguage();
   return (
     <span className="border-border-light text-plan-mode shrink-0 rounded border px-1 py-0.5 text-[9px] tracking-wide uppercase">
-      Workflow
+      {t("Workflow")}
     </span>
   );
 }
@@ -37,7 +39,8 @@ export function WorkflowBadge(props: {
 }
 
 export function BlockedBadge() {
-  return <WorkflowBadge tone="danger">blocked</WorkflowBadge>;
+  const { t } = useLanguage();
+  return <WorkflowBadge tone="danger">{t("blocked")}</WorkflowBadge>;
 }
 
 export function WorkflowSection(props: {

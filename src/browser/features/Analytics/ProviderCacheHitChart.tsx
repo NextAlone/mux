@@ -8,6 +8,7 @@ import {
   formatCompactNumber,
   formatPercent,
 } from "./analyticsUtils";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 interface ProviderCacheHitChartProps {
   data: ProviderCacheHitRatioItem[] | null;
@@ -54,6 +55,7 @@ function ProviderCacheHitTooltipContent(props: {
   active?: boolean;
   payload?: Array<{ payload?: unknown }>;
 }) {
+  const { t } = useLanguage();
   if (!props.active || !props.payload || props.payload.length === 0) {
     return null;
   }
@@ -72,11 +74,11 @@ function ProviderCacheHitTooltipContent(props: {
     >
       <div className="text-foreground mb-1 font-medium">{row.providerLabel}</div>
       <div className="text-muted flex items-center justify-between gap-2">
-        <span>Cache hit ratio</span>
+        <span>{t("Cache hit ratio")}</span>
         <span className="text-foreground font-mono">{formatPercent(row.cacheHitRatio)}</span>
       </div>
       <div className="text-muted flex items-center justify-between gap-2">
-        <span>Responses</span>
+        <span>{t("Responses")}</span>
         <span className="text-foreground font-mono">{formatCompactNumber(row.responseCount)}</span>
       </div>
     </div>
@@ -84,6 +86,7 @@ function ProviderCacheHitTooltipContent(props: {
 }
 
 export function ProviderCacheHitChart(props: ProviderCacheHitChartProps) {
+  const { t } = useLanguage();
   const rows: ProviderCacheHitChartRow[] = [...(props.data ?? [])]
     .sort((left, right) => right.responseCount - left.responseCount)
     .slice(0, 10)
@@ -94,12 +97,15 @@ export function ProviderCacheHitChart(props: ProviderCacheHitChartProps) {
 
   return (
     <div className="bg-background-secondary border-border-medium rounded-lg border p-4">
-      <h2 className="text-foreground text-sm font-semibold">Cache hit ratio by provider</h2>
-      <p className="text-muted mt-1 text-xs">Prompt cache hit rate grouped by model provider.</p>
+      <h2 className="text-foreground text-sm font-semibold">{t("Cache hit ratio by provider")}</h2>
+      <p className="text-muted mt-1 text-xs">
+        {t("Prompt cache hit rate grouped by model provider.")}
+      </p>
 
       {props.error ? (
         <p className="text-danger mt-3 text-xs">
-          Failed to load provider cache hit ratios: {props.error}
+          {t("Failed to load provider cache hit ratios:")}
+          {props.error}
         </p>
       ) : props.loading ? (
         <div className="mt-3">
@@ -107,7 +113,7 @@ export function ProviderCacheHitChart(props: ProviderCacheHitChartProps) {
         </div>
       ) : rows.length === 0 ? (
         <div className="text-muted mt-3 rounded border border-dashed px-3 py-10 text-center text-sm">
-          No provider cache hit data available.
+          {t("No provider cache hit data available.")}
         </div>
       ) : (
         <div className="mt-3 h-72 w-full">

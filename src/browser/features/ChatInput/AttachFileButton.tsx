@@ -7,6 +7,7 @@ import React, { useRef } from "react";
 import { Paperclip } from "lucide-react";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/browser/components/Tooltip/Tooltip";
 import { cn } from "@/common/lib/utils";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 /** Accept filter for the file picker: provider attachments plus workspace-staged ZIPs. */
 const FILE_ACCEPT = "image/*,.svg,.pdf,.zip,application/zip,application/x-zip-compressed";
@@ -17,6 +18,7 @@ interface AttachFileButtonProps {
 }
 
 export const AttachFileButton: React.FC<AttachFileButtonProps> = (props) => {
+  const { t } = useLanguage();
   const inputRef = useRef<HTMLInputElement>(null);
 
   function handleClick() {
@@ -42,7 +44,7 @@ export const AttachFileButton: React.FC<AttachFileButtonProps> = (props) => {
             type="button"
             onClick={handleClick}
             disabled={props.disabled ?? false}
-            aria-label="Attach file"
+            aria-label={t("Attach file")}
             className={cn(
               "inline-flex h-7 w-7 items-center justify-center rounded-sm border border-transparent p-0 transition-colors duration-150 hover:border-border-light hover:bg-hover",
               "disabled:cursor-not-allowed disabled:opacity-40",
@@ -53,7 +55,8 @@ export const AttachFileButton: React.FC<AttachFileButtonProps> = (props) => {
           </button>
         </TooltipTrigger>
         <TooltipContent>
-          <strong>Attach file</strong> — images, SVGs, PDFs, ZIPs
+          <strong>{t("Attach file")}</strong>
+          {t("— images, SVGs, PDFs, ZIPs")}
         </TooltipContent>
       </Tooltip>
       {/* Hidden file input — kept outside Tooltip to avoid stray DOM children */}

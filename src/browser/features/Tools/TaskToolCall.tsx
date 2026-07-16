@@ -60,6 +60,7 @@ import {
 import { resolvePersistedAgentId } from "@/common/utils/agentIds";
 import { formatDuration } from "@/common/utils/formatDuration";
 import { ElapsedTimeDisplay } from "./Shared/ElapsedTimeDisplay";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 /**
  * Clean SVG icon for task tools - represents spawning/branching work
@@ -200,6 +201,7 @@ const AgentTypeBadge: React.FC<{
   taskId?: string;
   openWorkspaceId?: string;
 }> = ({ type, className, taskId, openWorkspaceId }) => {
+  const { t } = useLanguage();
   const workspaceContext = useOptionalWorkspaceContext();
   const targetTaskId = trimToNonEmptyString(taskId);
   const workspace = targetTaskId
@@ -232,7 +234,7 @@ const AgentTypeBadge: React.FC<{
           {type}
         </button>
       </TooltipTrigger>
-      <TooltipContent>Open workspace</TooltipContent>
+      <TooltipContent>{t("Open workspace")}</TooltipContent>
     </Tooltip>
   );
 };
@@ -791,6 +793,7 @@ const TaskToolCandidateCard: React.FC<{
   groupKind: TaskGroupKind;
   onOpenTranscript: (taskId: string) => void;
 }> = ({ entry, index, total, groupKind, onOpenTranscript }) => {
+  const { t } = useLanguage();
   const canViewTranscript = entry.status === "completed";
   const hasReport = hasNonEmptyText(entry.reportMarkdown);
   const memberLabel = formatTaskGroupMemberLabel({
@@ -816,7 +819,7 @@ const TaskToolCandidateCard: React.FC<{
               onOpenTranscript(entry.taskId);
             }}
           >
-            View transcript
+            {t("View transcript")}
           </button>
         )}
       </div>
@@ -840,6 +843,7 @@ export const TaskToolCall: React.FC<TaskToolCallProps> = ({
   startedAt,
   toolCallTimestamp,
 }) => {
+  const { t } = useLanguage();
   const errorResult = isToolErrorResult(result) ? result : null;
   const successResult: TaskToolSuccessResult | null =
     result && typeof result === "object" && "status" in result ? result : null;
@@ -989,7 +993,7 @@ export const TaskToolCall: React.FC<TaskToolCallProps> = ({
           </span>
         )}
         {isBackground && (
-          <span className="text-backgrounded text-[10px] font-medium">background</span>
+          <span className="text-backgrounded text-[10px] font-medium">{t("background")}</span>
         )}
         <StatusIndicator status={effectiveStatus}>
           {getStatusDisplay(effectiveStatus)}
@@ -1020,7 +1024,8 @@ export const TaskToolCall: React.FC<TaskToolCallProps> = ({
               </span>
               {isTaskGroup ? (
                 <span className="text-muted text-[10px]">
-                  {completedTaskGroupCount}/{totalTaskGroupCount} completed
+                  {completedTaskGroupCount}/{totalTaskGroupCount}
+                  {t("completed")}
                 </span>
               ) : (
                 singleEntry?.taskId && (
@@ -1038,13 +1043,15 @@ export const TaskToolCall: React.FC<TaskToolCallProps> = ({
                     setTranscriptTaskId(singleEntry.taskId);
                   }}
                 >
-                  View transcript
+                  {t("View transcript")}
                 </button>
               )}
             </div>
 
             <div className="mb-2">
-              <div className="text-muted mb-1 text-[10px] tracking-wide uppercase">Prompt</div>
+              <div className="text-muted mb-1 text-[10px] tracking-wide uppercase">
+                {t("Prompt")}
+              </div>
               <div className="text-foreground bg-code-bg max-h-[140px] overflow-y-auto rounded-sm p-2 text-[11px] break-words whitespace-pre-wrap">
                 {prompt}
               </div>
@@ -1071,7 +1078,9 @@ export const TaskToolCall: React.FC<TaskToolCallProps> = ({
             ) : (
               singleEntry?.reportMarkdown && (
                 <div className="task-divider border-t pt-2">
-                  <div className="text-muted mb-1 text-[10px] tracking-wide uppercase">Report</div>
+                  <div className="text-muted mb-1 text-[10px] tracking-wide uppercase">
+                    {t("Report")}
+                  </div>
                   <div className="text-[11px]">
                     <MarkdownRenderer content={singleEntry.reportMarkdown} />
                   </div>
@@ -1089,7 +1098,8 @@ export const TaskToolCall: React.FC<TaskToolCallProps> = ({
 
             {effectiveStatus === "executing" && !hasAnyReport && !shouldShowCreationProgress && (
               <div className="text-muted mt-2 text-[11px] italic">
-                Task {isBackground ? "running in background" : "executing"}
+                {t("Task")}
+                {isBackground ? "running in background" : "executing"}
                 <LoadingDots />
               </div>
             )}
@@ -1123,6 +1133,7 @@ export const TaskAwaitToolCall: React.FC<TaskAwaitToolCallProps> = ({
   startedAt,
   taskReportLinking,
 }) => {
+  const { t } = useLanguage();
   const taskIds = args.task_ids;
   const timeoutSecs = args.timeout_secs;
   const results = result?.results ?? [];
@@ -1221,10 +1232,15 @@ export const TaskAwaitToolCall: React.FC<TaskAwaitToolCallProps> = ({
         )}
         {totalCount > 0 && (
           <span className="text-muted text-[10px]">
-            {completedCount}/{totalCount} completed
+            {completedCount}/{totalCount}
+            {t("completed")}
           </span>
         )}
-        {failedCount > 0 && <span className="text-danger text-[10px]">{failedCount} failed</span>}
+        {failedCount > 0 && (
+          <span className="text-danger text-[10px]">
+            {failedCount} {t("failed")}
+          </span>
+        )}
         <StatusIndicator status={effectiveStatus}>
           {getStatusDisplay(effectiveStatus)}
         </StatusIndicator>
@@ -1236,10 +1252,22 @@ export const TaskAwaitToolCall: React.FC<TaskAwaitToolCallProps> = ({
             {/* Config info */}
             {showConfigInfo && (
               <div className="task-divider text-muted mb-2 flex flex-wrap gap-2 border-b pb-2 text-[10px]">
-                {taskIds != null && <span>Waiting for: {taskIds.length} task(s)</span>}
-                {timeoutSecs != null && <span>Timeout: {timeoutSecs}s</span>}
-                {args.filter != null && <span>Filter: {args.filter}</span>}
-                {args.filter_exclude === true && <span>Exclude: true</span>}
+                {taskIds != null && (
+                  <span>
+                    {t("Waiting for:")} {taskIds.length} {t("task(s)")}
+                  </span>
+                )}
+                {timeoutSecs != null && (
+                  <span>
+                    {t("Timeout:")} {timeoutSecs}s
+                  </span>
+                )}
+                {args.filter != null && (
+                  <span>
+                    {t("Filter:")} {args.filter}
+                  </span>
+                )}
+                {args.filter_exclude === true && <span>{t("Exclude: true")}</span>}
               </div>
             )}
 
@@ -1276,12 +1304,12 @@ export const TaskAwaitToolCall: React.FC<TaskAwaitToolCallProps> = ({
                   <TaskRow key={row.taskId} {...row} />
                 ))}
                 <div className="text-muted text-[11px] italic">
-                  Waiting for tasks to complete
+                  {t("Waiting for tasks to complete")}
                   <LoadingDots />
                 </div>
               </div>
             ) : (
-              <div className="text-muted text-[11px] italic">No tasks specified</div>
+              <div className="text-muted text-[11px] italic">{t("No tasks specified")}</div>
             )}
           </div>
         </ToolDetails>
@@ -1296,6 +1324,7 @@ const TaskAwaitResult: React.FC<{
   fallbackTitle?: string;
   suppressReport?: boolean;
 }> = ({ result, fallbackTitle, suppressReport }) => {
+  const { t } = useLanguage();
   const isCompleted = result.status === "completed";
   const reportMarkdown = isCompleted ? result.reportMarkdown : undefined;
 
@@ -1324,10 +1353,15 @@ const TaskAwaitResult: React.FC<{
         <TaskId id={result.taskId} openWorkspaceId={openWorkspaceId} />
         <TaskStatusBadge status={result.status} />
         {title && <span className="text-foreground text-[11px] font-medium">{title}</span>}
-        {exitCode !== undefined && <span className="text-muted text-[10px]">exit {exitCode}</span>}
+        {exitCode !== undefined && (
+          <span className="text-muted text-[10px]">
+            {t("exit")} {exitCode}
+          </span>
+        )}
         {elapsedMs !== undefined && (
           <span className="text-muted counter-nums text-[10px]">
-            took {formatDuration(elapsedMs)}
+            {t("took")}
+            {formatDuration(elapsedMs)}
           </span>
         )}
         {note && (
@@ -1335,7 +1369,7 @@ const TaskAwaitResult: React.FC<{
             <TooltipTrigger asChild>
               <button
                 type="button"
-                aria-label="View notice"
+                aria-label={t("View notice")}
                 className="text-muted hover:text-secondary translate-y-[-1px] rounded p-0.5 transition-colors"
               >
                 <Info size={12} />
@@ -1384,6 +1418,7 @@ export const TaskListToolCall: React.FC<TaskListToolCallProps> = ({
   result,
   status = "pending",
 }) => {
+  const { t } = useLanguage();
   const tasks = result?.tasks ?? [];
   const { expanded, toggleExpanded } = useToolExpansion(false);
 
@@ -1395,7 +1430,9 @@ export const TaskListToolCall: React.FC<TaskListToolCallProps> = ({
         <ExpandIcon expanded={expanded}>▶</ExpandIcon>
         <TaskIcon toolName="task_list" />
         <ToolName>task_list</ToolName>
-        <span className="text-muted text-[10px]">{tasks.length} task(s)</span>
+        <span className="text-muted text-[10px]">
+          {tasks.length} {t("task(s)")}
+        </span>
         <StatusIndicator status={status}>{getStatusDisplay(status)}</StatusIndicator>
       </ToolHeader>
 
@@ -1404,7 +1441,8 @@ export const TaskListToolCall: React.FC<TaskListToolCallProps> = ({
           <div className="task-surface mt-1 rounded-md p-3">
             {statusFilter && statusFilter.length > 0 && (
               <div className="task-divider text-muted mb-2 border-b pb-2 text-[10px]">
-                Filter: {statusFilter.join(", ")}
+                {t("Filter:")}
+                {statusFilter.join(", ")}
               </div>
             )}
 
@@ -1416,11 +1454,11 @@ export const TaskListToolCall: React.FC<TaskListToolCallProps> = ({
               </div>
             ) : status === "executing" ? (
               <div className="text-muted text-[11px] italic">
-                Fetching tasks
+                {t("Fetching tasks")}
                 <LoadingDots />
               </div>
             ) : (
-              <div className="text-muted text-[11px] italic">No tasks found</div>
+              <div className="text-muted text-[11px] italic">{t("No tasks found")}</div>
             )}
           </div>
         </ToolDetails>
@@ -1458,6 +1496,7 @@ export const TaskTerminateToolCall: React.FC<TaskTerminateToolCallProps> = ({
   result,
   status = "pending",
 }) => {
+  const { t } = useLanguage();
   const { expanded, toggleExpanded } = useToolExpansion(false);
 
   const taskIds = args.task_ids;
@@ -1497,7 +1536,7 @@ export const TaskTerminateToolCall: React.FC<TaskTerminateToolCallProps> = ({
                     </div>
                     {"terminatedTaskIds" in r && r.terminatedTaskIds.length > 1 && (
                       <div className="text-muted mt-1 text-[10px]">
-                        Also terminated:{" "}
+                        {t("Also terminated:")}{" "}
                         {r.terminatedTaskIds.filter((id) => id !== r.taskId).join(", ")}
                       </div>
                     )}
@@ -1512,11 +1551,13 @@ export const TaskTerminateToolCall: React.FC<TaskTerminateToolCallProps> = ({
               </div>
             ) : status === "executing" ? (
               <div className="text-muted text-[11px] italic">
-                Terminating tasks
+                {t("Terminating tasks")}
                 <LoadingDots />
               </div>
             ) : (
-              <div className="text-muted text-[10px]">Tasks to terminate: {taskIds.join(", ")}</div>
+              <div className="text-muted text-[10px]">
+                {t("Tasks to terminate:")} {taskIds.join(", ")}
+              </div>
             )}
           </div>
         </ToolDetails>

@@ -8,6 +8,7 @@
 import React, { useState, useRef, useEffect } from "react";
 import { Check } from "lucide-react";
 import { cn } from "@/common/lib/utils";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 const BASE_SUGGESTIONS = [
   "@-",
@@ -34,6 +35,7 @@ export function BaseSelectorPopover({
   className,
   "data-testid": testId,
 }: BaseSelectorPopoverProps) {
+  const { t } = useLanguage();
   const [isOpen, setIsOpen] = useState(false);
   const [inputValue, setInputValue] = useState(value);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -119,7 +121,7 @@ export function BaseSelectorPopover({
               value={inputValue}
               onChange={(e) => setInputValue(e.target.value)}
               onKeyDown={handleInputKeyDown}
-              placeholder="Enter base..."
+              placeholder={t("Enter base...")}
               className="text-foreground placeholder:text-muted w-full bg-transparent font-mono text-[11px] outline-none"
             />
           </div>
@@ -127,7 +129,7 @@ export function BaseSelectorPopover({
           <div className="max-h-[200px] overflow-y-auto p-1">
             {filteredSuggestions.length === 0 ? (
               <div className="text-muted py-2 text-center text-[10px]">
-                Press Enter to use &ldquo;{inputValue}&rdquo;
+                {t("Press Enter to use")} “{inputValue}”
               </div>
             ) : (
               filteredSuggestions.map((suggestion) => (

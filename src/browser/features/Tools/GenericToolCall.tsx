@@ -18,6 +18,7 @@ import { useToolExpansion, getStatusDisplay, type ToolStatus } from "./Shared/to
 import { JsonHighlight } from "./Shared/HighlightedCode";
 import { redactToolResultAttachmentsForDisplay } from "./Shared/toolResultDisplay";
 import { ToolResultImages, extractImagesFromToolResult } from "./Shared/ToolResultImages";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 interface GenericToolCallProps {
   toolName: string;
@@ -32,6 +33,7 @@ export const GenericToolCall: React.FC<GenericToolCallProps> = ({
   result,
   status = "pending",
 }) => {
+  const { t } = useLanguage();
   const { expanded, toggleExpanded } = useToolExpansion();
 
   const hasDetails = args !== undefined || result !== undefined;
@@ -66,7 +68,7 @@ export const GenericToolCall: React.FC<GenericToolCallProps> = ({
         <ToolDetails>
           {args !== undefined && (
             <DetailSection>
-              <DetailLabel>Arguments</DetailLabel>
+              <DetailLabel>{t("Arguments")}</DetailLabel>
               <DetailContent>
                 <JsonHighlight value={args} />
               </DetailContent>
@@ -75,7 +77,7 @@ export const GenericToolCall: React.FC<GenericToolCallProps> = ({
 
           {result !== undefined && (
             <DetailSection>
-              <DetailLabel>Result</DetailLabel>
+              <DetailLabel>{t("Result")}</DetailLabel>
               <DetailContent>
                 <JsonHighlight value={redactToolResultAttachmentsForDisplay(result)} />
               </DetailContent>
@@ -85,7 +87,7 @@ export const GenericToolCall: React.FC<GenericToolCallProps> = ({
           {status === "executing" && result === undefined && (
             <DetailSection>
               <DetailContent>
-                Waiting for result
+                {t("Waiting for result")}
                 <LoadingDots />
               </DetailContent>
             </DetailSection>
@@ -93,7 +95,7 @@ export const GenericToolCall: React.FC<GenericToolCallProps> = ({
           {status === "redacted" && (
             <DetailSection>
               <DetailContent className="text-muted italic">
-                Output excluded from shared transcript
+                {t("Output excluded from shared transcript")}
               </DetailContent>
             </DetailSection>
           )}

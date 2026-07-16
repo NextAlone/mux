@@ -20,6 +20,7 @@ import {
 } from "./Shared/toolUtils";
 import { MarkdownRenderer } from "../Messages/MarkdownRenderer";
 import { formatBytes } from "@/common/utils/formatBytes";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 interface WebFetchToolCallProps {
   args: WebFetchToolArgs;
@@ -116,6 +117,7 @@ export const WebFetchToolCall: React.FC<WebFetchToolCallProps> = ({
   result,
   status = "pending",
 }) => {
+  const { t } = useLanguage();
   const { expanded, toggleExpanded } = useToolExpansion();
   const normalized = normalizeResult(result);
 
@@ -131,7 +133,7 @@ export const WebFetchToolCall: React.FC<WebFetchToolCallProps> = ({
         </div>
         {normalized?.success && normalized.length != null && (
           <span className="text-secondary ml-2 text-[10px] whitespace-nowrap">
-            <span className="hidden @sm:inline">fetched </span>
+            <span className="hidden @sm:inline">{t("fetched")} </span>
             {formatBytes(normalized.length)}
           </span>
         )}
@@ -143,7 +145,7 @@ export const WebFetchToolCall: React.FC<WebFetchToolCallProps> = ({
           <DetailSection>
             <div className="bg-code-bg flex flex-wrap gap-4 rounded px-2 py-1.5 text-[11px] leading-[1.4]">
               <div className="flex min-w-0 gap-1.5">
-                <span className="text-secondary font-medium">URL:</span>
+                <span className="text-secondary font-medium">{t("URL:")}</span>
                 {isSafeHref(args.url) ? (
                   <a
                     href={args.url}
@@ -159,7 +161,7 @@ export const WebFetchToolCall: React.FC<WebFetchToolCallProps> = ({
               </div>
               {normalized?.success && normalized.title && (
                 <div className="flex min-w-0 gap-1.5">
-                  <span className="text-secondary font-medium">Title:</span>
+                  <span className="text-secondary font-medium">{t("Title:")}</span>
                   <span className="text-text truncate">{normalized.title}</span>
                 </div>
               )}
@@ -170,7 +172,7 @@ export const WebFetchToolCall: React.FC<WebFetchToolCallProps> = ({
             <>
               {normalized.success === false && normalized.error && (
                 <DetailSection>
-                  <DetailLabel>Error</DetailLabel>
+                  <DetailLabel>{t("Error")}</DetailLabel>
                   <ErrorBox>{normalized.error}</ErrorBox>
                 </DetailSection>
               )}
@@ -190,7 +192,7 @@ export const WebFetchToolCall: React.FC<WebFetchToolCallProps> = ({
           {status === "executing" && !normalized && (
             <DetailSection>
               <div className="text-secondary text-[11px]">
-                Fetching page
+                {t("Fetching page")}
                 <LoadingDots />
               </div>
             </DetailSection>

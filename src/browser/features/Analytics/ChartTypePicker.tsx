@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/common/lib/utils";
 import type { ChartType } from "../Tools/analyticsQuery/types";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 const CHART_TYPE_OPTIONS: Array<{
   value: ChartType;
@@ -28,6 +29,7 @@ interface ChartTypePickerProps {
 }
 
 export function ChartTypePicker(props: ChartTypePickerProps) {
+  const { t } = useLanguage();
   return (
     <div className="flex items-center gap-1">
       {CHART_TYPE_OPTIONS.map((option) => (
@@ -43,7 +45,7 @@ export function ChartTypePicker(props: ChartTypePickerProps) {
           )}
         >
           <option.icon className="size-3" />
-          {option.label}
+          {t(option.label)}
         </button>
       ))}
     </div>

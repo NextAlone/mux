@@ -9,6 +9,7 @@ import { KEYBINDS, matchesKeybind } from "@/browser/utils/ui/keybinds";
 import { cn } from "@/common/lib/utils";
 import type { MemorySaveError } from "@/common/orpc/schemas/memory";
 import { getErrorMessage } from "@/common/utils/errors";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 interface MemoryFileEditorProps {
   /** null = no workspace (Settings → Memory); only global paths are editable. */
@@ -24,6 +25,7 @@ interface MemoryFileEditorProps {
  * silently overwrites the other writer's changes).
  */
 export function MemoryFileEditor(props: MemoryFileEditorProps) {
+  const { t } = useLanguage();
   const { api } = useAPI();
   const [loaded, setLoaded] = useState<{ content: string; sha256: string } | null>(null);
   const [draft, setDraft] = useState("");
@@ -93,13 +95,13 @@ export function MemoryFileEditor(props: MemoryFileEditorProps) {
     // (Settings → Memory). Each is inert in the other context.
     <div className="flex h-full min-h-0 flex-1 flex-col">
       <div className="border-border-light flex items-center gap-2 border-b px-2 py-2">
-        <RowActionButton aria-label="Back to memory list" onClick={props.onBack}>
+        <RowActionButton aria-label={t("Back to memory list")} onClick={props.onBack}>
           <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />
         </RowActionButton>
         <span className="min-w-0 flex-1 truncate text-xs font-medium">{props.path}</span>
         <Button
           size="sm"
-          aria-label="Save memory file"
+          aria-label={t("Save memory file")}
           disabled={loaded === null || saving}
           onClick={() => void handleSave()}
         >
@@ -118,10 +120,10 @@ export function MemoryFileEditor(props: MemoryFileEditorProps) {
           {saveError.kind === "conflict" && (
             <RowActionButton
               className="shrink-0"
-              aria-label="Reload memory file"
+              aria-label={t("Reload memory file")}
               onClick={handleReload}
             >
-              Reload
+              {t("Reload")}
             </RowActionButton>
           )}
         </div>
@@ -136,7 +138,7 @@ export function MemoryFileEditor(props: MemoryFileEditorProps) {
           // flex-1 fills the available height; the min-h floor keeps the
           // editor usable on very short viewports.
           className="min-h-48 flex-1 resize-none bg-transparent p-3 font-mono text-xs outline-none"
-          aria-label="Memory file content"
+          aria-label={t("Memory file content")}
           value={draft}
           spellCheck={false}
           onChange={(e) => setDraft(e.target.value)}

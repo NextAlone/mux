@@ -50,6 +50,7 @@ import {
   type CoderAvailabilityState,
   type CoderControlsProps,
 } from "../Runtime/CoderControls";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 /**
  * Shared styling for inline form controls in the creation UI.
@@ -80,6 +81,7 @@ function CredentialSharingCheckbox(props: {
   disabled?: boolean;
   docsPath: string;
 }) {
+  const { t } = useLanguage();
   return (
     <label className="flex items-center gap-1.5 text-xs">
       <input
@@ -89,13 +91,14 @@ function CredentialSharingCheckbox(props: {
         disabled={props.disabled}
         className="accent-accent"
       />
-      <span className="text-muted">Share credentials (SSH, repository auth)</span>
+      <span className="text-muted">{t("Share credentials (SSH, repository auth)")}</span>
       <DocsLink path={props.docsPath} />
     </label>
   );
 }
 
 function NameErrorDisplay(props: { error: WorkspaceNameUIError }) {
+  const { t } = useLanguage();
   // Validation and transport errors are already human-readable plain text.
   if (props.error.kind === "validation" || props.error.kind === "transport") {
     return <span className="text-xs text-red-500">{props.error.message}</span>;
@@ -106,10 +109,14 @@ function NameErrorDisplay(props: { error: WorkspaceNameUIError }) {
     <div className="text-primary rounded border border-red-500/40 bg-red-500/10 px-2 py-1 text-xs">
       <div className="font-medium">{formatted.title}</div>
       <div>{formatted.message}</div>
-      {formatted.hint && <div className="text-secondary mt-1">Fix: {formatted.hint}</div>}
+      {formatted.hint && (
+        <div className="text-secondary mt-1">
+          {t("Fix:")} {formatted.hint}
+        </div>
+      )}
       {formatted.docsPath && (
         <DocsLink path={formatted.docsPath} className="mt-1 text-xs">
-          Troubleshooting
+          {t("Troubleshooting")}
         </DocsLink>
       )}
     </div>
@@ -339,6 +346,7 @@ const resolveRuntimeButtonState = (
 };
 
 export function RuntimeButtonGroup(props: RuntimeButtonGroupProps) {
+  const { t } = useLanguage();
   const state = props.runtimeAvailabilityState;
   const availabilityMap = state?.status === "loaded" ? state.data : null;
   const coderInfo = props.coderInfo ?? null;
@@ -433,7 +441,7 @@ export function RuntimeButtonGroup(props: RuntimeButtonGroupProps) {
       : undefined;
 
   return (
-    <div className="flex min-w-0 flex-col gap-1" role="group" aria-label="Runtime type">
+    <div className="flex min-w-0 flex-col gap-1" role="group" aria-label={t("Runtime type")}>
       <RadixSelect
         value={selectedOption?.value}
         onValueChange={(value) => {
@@ -448,7 +456,7 @@ export function RuntimeButtonGroup(props: RuntimeButtonGroupProps) {
         <Tooltip>
           <TooltipTrigger asChild>
             <SelectTrigger
-              aria-label="Workspace type"
+              aria-label={t("Workspace type")}
               className={cn(
                 "h-7 w-full justify-between gap-2 rounded-md border px-2.5 text-xs font-medium shadow-none md:w-[168px]",
                 selectedOption?.triggerClass
@@ -463,7 +471,7 @@ export function RuntimeButtonGroup(props: RuntimeButtonGroupProps) {
                   <span className="truncate">{selectedOption.label}</span>
                 </div>
               ) : (
-                <SelectValue placeholder="Select workspace type" />
+                <SelectValue placeholder={t("Select workspace type")} />
               )}
             </SelectTrigger>
           </TooltipTrigger>
@@ -542,6 +550,7 @@ export function RuntimeButtonGroup(props: RuntimeButtonGroupProps) {
  * Displays project name as header, workspace name with magic wand, and runtime/bookmark selectors.
  */
 export function CreationControls(props: CreationControlsProps) {
+  const { t } = useLanguage();
   const { userProjects } = useProjectContext();
   const settings = useSettings();
   const { beginWorkspaceCreation } = useWorkspaceContext();
@@ -767,7 +776,7 @@ export function CreationControls(props: CreationControlsProps) {
               <Tooltip>
                 <TooltipTrigger asChild>
                   <SelectTrigger
-                    aria-label="Select project"
+                    aria-label={t("Select project")}
                     data-testid="project-selector"
                     className="text-foreground hover:bg-toggle-bg/70 h-7 w-auto max-w-[280px] shrink-0 border-transparent bg-transparent px-0 text-lg font-semibold shadow-none"
                   >
@@ -827,8 +836,9 @@ export function CreationControls(props: CreationControlsProps) {
                 />
               </TooltipTrigger>
               <TooltipContent align="start" className="max-w-64">
-                A stable identifier used for jj bookmarks, workspace folders, and session
-                directories.
+                {t(
+                  "A stable identifier used for jj bookmarks, workspace folders, and session directories."
+                )}
               </TooltipContent>
             </Tooltip>
             {/* Magic wand / loading indicator */}
@@ -875,7 +885,7 @@ export function CreationControls(props: CreationControlsProps) {
               <div className="flex items-center gap-1.5">
                 <label className="text-muted-foreground flex items-center gap-1 text-xs font-medium">
                   <Blocks className="h-3.5 w-3.5" />
-                  Workspace Type
+                  {t("Workspace Type")}
                 </label>
                 {/* Keep this compact while preserving quick access to project runtime defaults. */}
                 <Tooltip>
@@ -890,7 +900,7 @@ export function CreationControls(props: CreationControlsProps) {
                         runtimeChoice !== props.defaultRuntimeMode &&
                           "text-warning hover:text-warning"
                       )}
-                      aria-label="Configure runtimes"
+                      aria-label={t("Configure runtimes")}
                     >
                       <Cog className="h-3 w-3" />
                     </button>
@@ -985,7 +995,7 @@ export function CreationControls(props: CreationControlsProps) {
               >
                 <label className="text-muted-foreground flex items-center gap-1 text-xs font-medium">
                   <Bookmark className="h-3.5 w-3.5" />
-                  Source Bookmark
+                  {t("Source Bookmark")}
                 </label>
                 {props.branchesLoaded ? (
                   <RadixSelect
@@ -995,9 +1005,9 @@ export function CreationControls(props: CreationControlsProps) {
                   >
                     <SelectTrigger
                       className={cn(INLINE_CONTROL_CLASSES, "w-full md:w-[140px]")}
-                      aria-label="Select source bookmark"
+                      aria-label={t("Select source bookmark")}
                     >
-                      <SelectValue placeholder="Select source bookmark" />
+                      <SelectValue placeholder={t("Select source bookmark")} />
                     </SelectTrigger>
                     <SelectContent className="border-border-medium">
                       {bookmarkOptions.map((bookmark) => (
@@ -1085,9 +1095,9 @@ export function CreationControls(props: CreationControlsProps) {
                 >
                   <SelectTrigger
                     className="h-6 w-[280px] text-xs"
-                    aria-label="Dev container config"
+                    aria-label={t("Dev container config")}
                   >
-                    <SelectValue placeholder="Select config" />
+                    <SelectValue placeholder={t("Select config")} />
                   </SelectTrigger>
                   <SelectContent>
                     {devcontainerSelection.configs.map((config) => (
@@ -1113,7 +1123,7 @@ export function CreationControls(props: CreationControlsProps) {
                   className={cn(
                     "bg-bg-dark text-foreground border-border-medium focus:border-accent h-7 w-[280px] rounded-md border px-2 text-xs focus:outline-none disabled:opacity-50"
                   )}
-                  aria-label="Dev container config path"
+                  aria-label={t("Dev container config path")}
                 />
               )}
             </div>

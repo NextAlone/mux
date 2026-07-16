@@ -4,6 +4,7 @@ import mermaid from "mermaid";
 import { StreamingContext } from "./StreamingContext";
 import { TooltipIfPresent } from "@/browser/components/Tooltip/Tooltip";
 import { usePersistedState } from "@/browser/hooks/usePersistedState";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 const MIN_HEIGHT = 300;
 const DEFAULT_ZOOM = 1;
@@ -217,6 +218,7 @@ const DiagramModal: React.FC<{ children: ReactNode; onClose: () => void }> = ({
   children,
   onClose,
 }) => {
+  const { t } = useLanguage();
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
@@ -271,7 +273,7 @@ const DiagramModal: React.FC<{ children: ReactNode; onClose: () => void }> = ({
             fontFamily: "var(--font-primary)",
           }}
         >
-          Close
+          {t("Close")}
         </button>
       </div>
     </div>
@@ -280,6 +282,7 @@ const DiagramModal: React.FC<{ children: ReactNode; onClose: () => void }> = ({
 
 // Mermaid diagram component
 export const Mermaid: React.FC<{ chart: string }> = ({ chart }) => {
+  const { t } = useLanguage();
   const { isStreaming } = useContext(StreamingContext);
   const modalContainerRef = useRef<HTMLDivElement>(null);
   const [error, setError] = useState<string | null>(null);
@@ -377,7 +380,7 @@ export const Mermaid: React.FC<{ chart: string }> = ({ chart }) => {
           padding: "12px",
         }}
       >
-        Mermaid Error: {error}
+        {t("Mermaid Error:")} {error}
       </pre>
     );
   }
@@ -408,17 +411,17 @@ export const Mermaid: React.FC<{ chart: string }> = ({ chart }) => {
             gap: "4px",
           }}
         >
-          <TooltipIfPresent tooltip="Zoom out diagram" side="bottom">
+          <TooltipIfPresent tooltip={t("Zoom out diagram")} side="bottom">
             <button onClick={handleZoomOut} disabled={atMinZoom} style={getButtonStyle(atMinZoom)}>
               −
             </button>
           </TooltipIfPresent>
-          <TooltipIfPresent tooltip="Zoom in diagram" side="bottom">
+          <TooltipIfPresent tooltip={t("Zoom in diagram")} side="bottom">
             <button onClick={handleZoomIn} disabled={atMaxZoom} style={getButtonStyle(atMaxZoom)}>
               +
             </button>
           </TooltipIfPresent>
-          <TooltipIfPresent tooltip="Expand diagram" side="bottom">
+          <TooltipIfPresent tooltip={t("Expand diagram")} side="bottom">
             <button onClick={() => setIsModalOpen(true)} style={getButtonStyle()}>
               ⤢
             </button>

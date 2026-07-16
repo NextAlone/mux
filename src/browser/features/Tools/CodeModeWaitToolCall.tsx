@@ -14,6 +14,7 @@ import {
 } from "./Shared/ToolPrimitives";
 import { getStatusDisplay, type ToolStatus, useToolExpansion } from "./Shared/toolUtils";
 import { redactToolResultAttachmentsForDisplay } from "./Shared/toolResultDisplay";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 interface CodeModeWaitArgs {
   cell_id: string;
@@ -37,6 +38,7 @@ interface CodeModeWaitGroupSummaryProps {
 
 /** One transcript row for repeated completed polls; expanding restores their individual details. */
 export function CodeModeWaitGroupSummary(props: CodeModeWaitGroupSummaryProps) {
+  const { t } = useLanguage();
   return (
     <ToolContainer expanded={false}>
       <ToolHeader onClick={props.onToggle}>
@@ -44,7 +46,8 @@ export function CodeModeWaitGroupSummary(props: CodeModeWaitGroupSummaryProps) {
         <Clock3Icon className="h-3.5 w-3.5 shrink-0" />
         <ToolName>wait ×{props.count}</ToolName>
         <span className="text-muted min-w-0 truncate text-[10px]">
-          cell {props.cellId.slice(0, 8)}
+          {t("cell")}
+          {props.cellId.slice(0, 8)}
         </span>
         <StatusIndicator status="completed">{getStatusDisplay("completed")}</StatusIndicator>
       </ToolHeader>
@@ -54,6 +57,7 @@ export function CodeModeWaitGroupSummary(props: CodeModeWaitGroupSummaryProps) {
 
 /** Keep repeated polls compact while exposing which yielded code cell they advance. */
 export function CodeModeWaitToolCall(props: CodeModeWaitToolCallProps) {
+  const { t } = useLanguage();
   const { expanded, toggleExpanded } = useToolExpansion();
   const cellLabel = props.args.cell_id.slice(0, 8);
   const hasDetails = props.result !== undefined;
@@ -65,20 +69,22 @@ export function CodeModeWaitToolCall(props: CodeModeWaitToolCallProps) {
         {hasDetails && <ExpandIcon expanded={expanded}>▶</ExpandIcon>}
         <Clock3Icon className="h-3.5 w-3.5 shrink-0" />
         <ToolName>wait</ToolName>
-        <span className="text-muted min-w-0 truncate text-[10px]">cell {cellLabel}</span>
+        <span className="text-muted min-w-0 truncate text-[10px]">
+          {t("cell")} {cellLabel}
+        </span>
         <StatusIndicator status={status}>{getStatusDisplay(status)}</StatusIndicator>
       </ToolHeader>
 
       {expanded && hasDetails && (
         <ToolDetails>
           <DetailSection>
-            <DetailLabel>Arguments</DetailLabel>
+            <DetailLabel>{t("Arguments")}</DetailLabel>
             <DetailContent>
               <JsonHighlight value={props.args} />
             </DetailContent>
           </DetailSection>
           <DetailSection>
-            <DetailLabel>Result</DetailLabel>
+            <DetailLabel>{t("Result")}</DetailLabel>
             <DetailContent>
               <JsonHighlight value={redactToolResultAttachmentsForDisplay(props.result)} />
             </DetailContent>

@@ -12,6 +12,7 @@ import {
 } from "@/browser/utils/ui/keybinds";
 import { cn } from "@/common/lib/utils";
 import assert from "@/common/utils/assert";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 interface BrowserToolbarProps {
   workspaceId: string;
@@ -40,6 +41,7 @@ const BROWSER_TOOLBAR_TITLES = {
 } as const;
 
 export function BrowserToolbar(props: BrowserToolbarProps) {
+  const { t } = useLanguage();
   assert(props.workspaceId.trim().length > 0, "BrowserToolbar requires a workspaceId");
 
   const { api } = useAPI();
@@ -249,7 +251,7 @@ export function BrowserToolbar(props: BrowserToolbarProps) {
       <TooltipIfPresent tooltip={BROWSER_TOOLBAR_TITLES.back}>
         <button
           type="button"
-          aria-label="Back"
+          aria-label={t("Back")}
           className={cn(TOOLBAR_BUTTON_CLASS_NAME)}
           disabled={controlsDisabled}
           onClick={() => {
@@ -262,7 +264,7 @@ export function BrowserToolbar(props: BrowserToolbarProps) {
       <TooltipIfPresent tooltip={BROWSER_TOOLBAR_TITLES.forward}>
         <button
           type="button"
-          aria-label="Forward"
+          aria-label={t("Forward")}
           className={cn(TOOLBAR_BUTTON_CLASS_NAME)}
           disabled={controlsDisabled}
           onClick={() => {
@@ -275,7 +277,7 @@ export function BrowserToolbar(props: BrowserToolbarProps) {
       <TooltipIfPresent tooltip={BROWSER_TOOLBAR_TITLES.reload}>
         <button
           type="button"
-          aria-label="Reload"
+          aria-label={t("Reload")}
           className={cn(TOOLBAR_BUTTON_CLASS_NAME)}
           disabled={controlsDisabled}
           onClick={() => {
@@ -293,7 +295,7 @@ export function BrowserToolbar(props: BrowserToolbarProps) {
         <input
           {...escapeInterruptProps}
           ref={urlInputRef}
-          aria-label="Browser URL"
+          aria-label={t("Browser URL")}
           type="text"
           className={cn(
             "flex-1 min-w-0 rounded border border-border-light bg-background-secondary px-2 py-0.5 text-[11px] text-foreground outline-none placeholder:text-muted-foreground focus:border-accent",
@@ -301,7 +303,7 @@ export function BrowserToolbar(props: BrowserToolbarProps) {
           )}
           value={editingUrl ?? displayUrl}
           disabled={controlsDisabled}
-          placeholder="Enter a URL"
+          placeholder={t("Enter a URL")}
           autoCapitalize="none"
           autoCorrect="off"
           autoComplete="off"

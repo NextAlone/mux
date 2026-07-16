@@ -16,6 +16,7 @@ import type {
 import { BrowserToolbar } from "./BrowserToolbar";
 import { BrowserViewport } from "./BrowserViewport";
 import { useBrowserBridgeConnection } from "./useBrowserBridgeConnection";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 type BrowserSelectedSession =
   | { sessionName: string; source: "current" }
@@ -551,6 +552,7 @@ function BrowserPageTabStrip(props: {
   pendingTabId: string | null;
   onSelect: (tabRef: string) => void;
 }) {
+  const { t } = useLanguage();
   const buttonRefs = useRef(new Map<string, HTMLButtonElement>());
   const [focusedTabId, setFocusedTabId] = useState<string | null>(null);
   const activeTabId = props.tabs.find((tab) => tab.active)?.tabId ?? props.tabs[0]?.tabId ?? null;
@@ -611,7 +613,7 @@ function BrowserPageTabStrip(props: {
           <div className="min-w-0 flex-1 overflow-x-auto overflow-y-hidden pb-px">
             <div
               role="tablist"
-              aria-label="Browser tabs"
+              aria-label={t("Browser tabs")}
               className="flex w-max min-w-full items-end gap-1 pr-1"
             >
               {props.tabs.map((tab, index) => (
@@ -659,6 +661,7 @@ function BrowserPageTabStripButton(props: {
   onKeyDown: (event: ReactKeyboardEvent<HTMLButtonElement>) => void;
   onSelect: () => void;
 }) {
+  const { t } = useLanguage();
   const primaryLabel = formatBrowserPageTabPrimaryLabel(props.tab);
   const auxLabel = formatBrowserPageTabAuxLabel(props.tab, primaryLabel);
   const isSwitching = props.pendingTabId != null;
@@ -706,7 +709,7 @@ function BrowserPageTabStripButton(props: {
       <span className="text-muted counter-nums-mono shrink-0 text-[9px] leading-none">
         {isPending ? "…" : auxLabel}
       </span>
-      {isPending && <span className="sr-only">Switching</span>}
+      {isPending && <span className="sr-only">{t("Switching")}</span>}
     </button>
   );
 }
@@ -774,6 +777,7 @@ function BrowserSessionPicker(props: {
   onSelectCurrent: (sessionName: string) => void;
   onSelectOther: (sessionName: string) => void;
 }) {
+  const { t } = useLanguage();
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -811,7 +815,7 @@ function BrowserSessionPicker(props: {
         <div className="bg-dark border-border absolute top-full right-0 z-[10001] mt-1 min-w-[16rem] overflow-hidden rounded-md border shadow-md">
           <div
             role="listbox"
-            aria-label="Browser sessions"
+            aria-label={t("Browser sessions")}
             className="max-h-[280px] overflow-y-auto p-1"
           >
             {props.currentSessions.map((session) => (
@@ -830,7 +834,7 @@ function BrowserSessionPicker(props: {
             ))}
             {props.otherSessions.length > 0 && (
               <div className="text-muted px-2 pt-1 pb-0.5 text-[10px] font-medium">
-                Other sessions
+                {t("Other sessions")}
               </div>
             )}
             {props.otherSessions.map((session) => (
@@ -860,6 +864,7 @@ function BrowserSessionPickerOption(props: {
   testId: string;
   onSelect: () => void;
 }) {
+  const { t } = useLanguage();
   return (
     <button
       type="button"
@@ -882,7 +887,7 @@ function BrowserSessionPickerOption(props: {
         )}
       </span>
       {props.session.status === "missing_stream" && (
-        <span className="text-accent mt-0.5 shrink-0 text-[10px]">Activating</span>
+        <span className="text-accent mt-0.5 shrink-0 text-[10px]">{t("Activating")}</span>
       )}
     </button>
   );

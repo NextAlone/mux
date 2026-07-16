@@ -10,6 +10,7 @@ import {
   isDesktopMode,
   DESKTOP_TITLEBAR_MIN_HEIGHT_CLASS,
 } from "@/browser/hooks/useDesktopTitlebar";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 // Re-export for consumers that import from this file
 export { getTabName } from "./Tabs";
@@ -139,6 +140,7 @@ export const RightSidebarTabStrip: React.FC<RightSidebarTabStripProps> = ({
   tabsetId,
   onAddTerminal,
 }) => {
+  const { t } = useLanguage();
   const { active } = useDndContext();
   const activeData = active?.data.current as TabDragData | undefined;
 
@@ -191,12 +193,12 @@ export const RightSidebarTabStrip: React.FC<RightSidebarTabStripProps> = ({
                   isDesktop && "titlebar-no-drag"
                 )}
                 onClick={onAddTerminal}
-                aria-label="New terminal"
+                aria-label={t("New terminal")}
               >
                 <Plus className="h-3.5 w-3.5" />
               </button>
             </TooltipTrigger>
-            <TooltipContent side="bottom">New terminal</TooltipContent>
+            <TooltipContent side="bottom">{t("New terminal")}</TooltipContent>
           </Tooltip>
         )}
       </div>
