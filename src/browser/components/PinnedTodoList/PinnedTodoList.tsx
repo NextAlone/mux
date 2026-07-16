@@ -5,6 +5,7 @@ import { ChatInputDecoration } from "../ChatPane/ChatInputDecoration";
 import { useWorkspaceStoreRaw } from "@/browser/stores/WorkspaceStore";
 import { usePersistedState } from "@/browser/hooks/usePersistedState";
 import { getPinnedTodoExpandedKey } from "@/common/constants/storage";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 interface PinnedTodoListProps {
   workspaceId: string;
@@ -23,6 +24,7 @@ interface PinnedTodoListProps {
  * - MapStore caches WorkspaceState per version, avoiding unnecessary recomputation
  */
 export const PinnedTodoList: React.FC<PinnedTodoListProps> = ({ workspaceId }) => {
+  const { t } = useLanguage();
   const [expanded, setExpanded] = usePersistedState(getPinnedTodoExpandedKey(workspaceId), true);
 
   const workspaceStore = useWorkspaceStoreRaw();
@@ -66,7 +68,7 @@ export const PinnedTodoList: React.FC<PinnedTodoListProps> = ({ workspaceId }) =
         <>
           <List className="text-muted group-hover:text-secondary size-3.5 transition-colors" />
           <span className="text-muted group-hover:text-secondary transition-colors">
-            <span className="font-medium">TODO</span>
+            <span className="font-medium">{t("TODO")}</span>
             {summaryParts.length > 0 && <> · {summaryParts.join(" · ")}</>}
           </span>
         </>

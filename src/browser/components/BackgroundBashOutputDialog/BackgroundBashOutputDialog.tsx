@@ -147,15 +147,13 @@ const BackgroundBashOutputViewer: React.FC<{ workspaceId: string; processId: str
     <div className="flex min-h-0 flex-col gap-2 overflow-hidden">
       <div className="flex items-center justify-between gap-3">
         <div className="text-muted min-w-0 flex-1 truncate font-mono text-[11px]">
-          {t("status:")}
-          {status}
+          {t("status:")} {status}
           {monitor && (
             <>
-              {" · watching "}
-              {monitor.filter_exclude && "not "}/{monitor.filter}/ · {monitor.totalMatches}{" "}
-              {t("match")}
-              {monitor.totalMatches === 1 ? "" : "es"}
-              {monitor.stopped && " · stopped"}
+              {" · "}
+              {t("watching")} {monitor.filter_exclude && `${t("not")} `}/{monitor.filter}/ ·{" "}
+              {monitor.totalMatches} {t(monitor.totalMatches === 1 ? "match" : "matches")}
+              {monitor.stopped && <> {t("· stopped")}</>}
             </>
           )}
         </div>
@@ -164,8 +162,9 @@ const BackgroundBashOutputViewer: React.FC<{ workspaceId: string; processId: str
 
       {truncatedStart && (
         <div className="text-muted text-[10px] italic">
-          {t("Showing last")}
-          {Math.round(BACKGROUND_BASH_INITIAL_TAIL_BYTES / 1000)}KB
+          {t("Showing last")} {Math.round(BACKGROUND_BASH_INITIAL_TAIL_BYTES / 1000)}
+          {/* i18n-ignore: KB is a standardized byte-size unit and must remain unchanged. */}
+          {"KB"}
         </div>
       )}
 

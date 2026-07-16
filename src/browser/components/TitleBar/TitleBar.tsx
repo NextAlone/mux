@@ -250,7 +250,7 @@ export function TitleBar(props: TitleBarProps) {
                   }
                 }}
                 className="border-border-light text-muted-foreground hover:border-border-medium/80 hover:bg-toggle-bg/70 flex h-5 w-5 cursor-pointer items-center justify-center rounded border transition-opacity hover:opacity-70"
-                aria-label={`${activeRoute.displayName} routing`}
+                aria-label={`${activeRoute.displayName} ${t("routing")}`}
               >
                 {isMuxGatewayRoute ? (
                   <GatewayIcon className="h-3.5 w-3.5" aria-hidden />

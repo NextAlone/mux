@@ -86,9 +86,8 @@ export const BackgroundProcessesBanner: React.FC<BackgroundProcessesBannerProps>
             <>
               <Terminal className="text-muted group-hover:text-secondary size-3.5 transition-colors" />
               <span className="text-muted group-hover:text-secondary transition-colors">
-                <span className="font-medium">{count}</span>
-                {" background bash"}
-                {count !== 1 && "es"}
+                <span className="font-medium">{count}</span>{" "}
+                {t(count === 1 ? "background bash" : "background bashes")}
               </span>
             </>
           }
@@ -111,9 +110,9 @@ export const BackgroundProcessesBanner: React.FC<BackgroundProcessesBannerProps>
                     {proc.monitor && (
                       <div className="text-muted truncate text-[10px]">
                         {t("watching /")}
-                        {proc.monitor.filter}/ · {proc.monitor.totalMatches} {t("match")}
-                        {proc.monitor.totalMatches === 1 ? "" : "es"}
-                        {proc.monitor.stopped ? " · stopped" : ""}
+                        {proc.monitor.filter}/ · {proc.monitor.totalMatches}{" "}
+                        {t(proc.monitor.totalMatches === 1 ? "match" : "matches")}
+                        {proc.monitor.stopped && <> {t("· stopped")}</>}
                       </div>
                     )}
                     <div className="text-muted font-mono text-[10px]">

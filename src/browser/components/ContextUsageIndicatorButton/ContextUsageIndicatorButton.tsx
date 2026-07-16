@@ -370,6 +370,7 @@ export const ContextUsageIndicatorButton: React.FC<ContextUsageIndicatorButtonPr
         <div className="text-muted text-[10px]">
           <div>
             {t("Run")}
+            {/* i18n-ignore: /compact is a literal slash command users must type unchanged. */}
             <span className="font-mono">/compact</span> {t("to compact manually")}
           </div>
           <div className="mt-1">

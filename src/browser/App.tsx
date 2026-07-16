@@ -336,6 +336,7 @@ function AppInner() {
     } else {
       // Set document.title locally for browser mode, call backend for Electron
       document.title = "mux";
+      // i18n-ignore: mux is the product's brand identifier in the native window title API.
       void api?.window.setTitle({ title: "mux" });
     }
   }, [selectedWorkspace, workspaceMetadata, api]);
@@ -1340,7 +1341,7 @@ function AppInner() {
                 // Keep a lightweight loading shell while WorkspaceContext validates or
                 // self-heals stale `/workspace/:id` routes. Restoring a path alone is not
                 // enough; we only render AIView once metadata hydration confirms it exists.
-                <LoadingScreen statusText="Opening workspace..." />
+                <LoadingScreen statusText={t("Opening workspace...")} />
               ) : (
                 // If metadata never hydrated for the routed workspace, avoid trapping the user
                 // on a permanent spinner. Show the same non-blocking root shell while the route

@@ -845,7 +845,7 @@ export const WorkspaceMenuBar: React.FC<WorkspaceMenuBarProps> = ({
           archiveUntrackedPaths
         )}
         warning={buildArchiveConfirmWarning(archiveConfirmIsStreaming, archiveUntrackedPaths)}
-        confirmLabel={archiveUntrackedPaths ? "Archive and delete files" : "Archive"}
+        confirmLabel={archiveUntrackedPaths ? t("Archive and delete files") : t("Archive")}
         confirmVariant="destructive"
         onConfirm={() => {
           const paths = archiveUntrackedPaths;

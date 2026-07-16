@@ -136,6 +136,7 @@ function Header({ totalTokens, fileCount, loading, onRefresh }: HeaderProps) {
 }
 
 function InstructionsBody({ data }: { data: WorkspaceInstructions }) {
+  const { t } = useLanguage();
   // Render structured groups so the panel layout reflects the prompt structure.
   const groups: Array<{ title: string; sets: InstructionSet[] }> = [];
   if (data.sources.global) {
@@ -161,7 +162,7 @@ function InstructionsBody({ data }: { data: WorkspaceInstructions }) {
       {groups.map((group) => (
         <li key={group.title}>
           <div className="text-muted px-3 py-1.5 text-[10px] font-semibold tracking-wider uppercase">
-            {group.title}
+            {t(group.title)}
           </div>
           <ul>
             {group.sets.flatMap((set) =>
