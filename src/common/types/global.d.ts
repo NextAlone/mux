@@ -30,6 +30,8 @@ declare global {
     isWindowsWslShell?: boolean;
     // Async getter (Electron) for Windows environments where WSL may win PATH.
     getIsWindowsWslShell?: () => Promise<boolean>;
+    // Synchronize renderer language selection with Electron's native menus.
+    setUiLanguage?: (language: "en" | "zh-CN") => void;
     // Register a callback for notification clicks (navigates to workspace)
     // Returns an unsubscribe function.
     onNotificationClicked?: (callback: (data: { workspaceId: string }) => void) => () => void;

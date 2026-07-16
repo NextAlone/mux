@@ -72,6 +72,9 @@ contextBridge.exposeInMainWorld("api", {
   // like `child_process` (which can break in hardened/sandboxed environments).
   getIsRosetta: () => ipcRenderer.invoke("mux:get-is-rosetta"),
   getIsWindowsWslShell: () => ipcRenderer.invoke("mux:get-is-windows-wsl-shell"),
+  setUiLanguage: (language: "en" | "zh-CN") => {
+    ipcRenderer.send("mux:set-ui-language", language);
+  },
   // Unsupported attachment types stay on the user's machine; expose only Electron's narrow
   // File-to-path conversion so dropping one can reference it without granting renderer fs access.
   getPathForFile: (file: File) => webUtils.getPathForFile(file),

@@ -41,6 +41,7 @@ describe("LanguageContext", () => {
     expect(view.getByText("设置")).toBeTruthy();
     expect(view.getByText("Untranslated")).toBeTruthy();
     expect(localStorage.getItem(UI_LANGUAGE_KEY)).toBe(JSON.stringify("zh-CN"));
+    expect(document.documentElement.lang).toBe("zh-CN");
   });
 
   test("normalizes unsupported persisted values to English", () => {

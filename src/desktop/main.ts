@@ -105,6 +105,12 @@ import {
 } from "./utils/muxProtocolRegistration";
 import { getErrorMessage } from "@/common/utils/errors";
 import { log } from "@/node/services/log";
+import {
+  normalizeUiLanguage,
+  translateDesktopUi,
+  uiLanguageFromLocale,
+  type UiLanguage,
+} from "@/common/i18n/uiLanguage";
 
 // React DevTools for development profiling
 // Using dynamic import() to avoid loading electron-devtools-installer at module init time
@@ -224,6 +230,11 @@ let tray: Tray | null = null;
 let isQuitting = false;
 let latestUpdateStatus: UpdateStatus = { type: "idle" };
 let isUpdateClosePromptOpen = false;
+let desktopLanguage: UiLanguage = "en";
+
+function desktopT(text: string): string {
+  return translateDesktopUi(desktopLanguage, text);
+}
 
 // mux:// deep links can arrive before the main window exists / finishes loading.
 const bufferedMuxDeepLinks: MuxDeepLinkPayload[] = [];
@@ -330,46 +341,50 @@ function timestamp(): string {
 function createMenu() {
   const template: MenuItemConstructorOptions[] = [
     {
-      label: "Edit",
+      label: desktopT("Edit"),
       submenu: [
-        { role: "undo" },
-        { role: "redo" },
+        { role: "undo", label: desktopT("Undo") },
+        { role: "redo", label: desktopT("Redo") },
         { type: "separator" },
-        { role: "cut" },
-        { role: "copy" },
-        { role: "paste" },
-        { role: "selectAll" },
+        { role: "cut", label: desktopT("Cut") },
+        { role: "copy", label: desktopT("Copy") },
+        { role: "paste", label: desktopT("Paste") },
+        { role: "selectAll", label: desktopT("Select All") },
       ],
     },
     {
-      label: "View",
+      label: desktopT("View"),
       submenu: [
         // Reload without Ctrl+R shortcut (reserved for Code Review refresh)
         {
-          label: "Reload",
+          label: desktopT("Reload"),
           click: (_item, focusedWindow) => {
             if (focusedWindow && "reload" in focusedWindow) {
               (focusedWindow as BrowserWindow).reload();
             }
           },
         },
-        { role: "forceReload" },
-        { role: "toggleDevTools" },
+        { role: "forceReload", label: desktopT("Force Reload") },
+        { role: "toggleDevTools", label: desktopT("Toggle Developer Tools") },
         { type: "separator" },
-        { role: "resetZoom" },
+        { role: "resetZoom", label: desktopT("Actual Size") },
         // Bind zoom-in to Ctrl/Cmd+= so the standard shortcut works without requiring Shift.
-        { role: "zoomIn", accelerator: "CommandOrControl+=" },
-        { role: "zoomOut" },
+        { role: "zoomIn", label: desktopT("Zoom In"), accelerator: "CommandOrControl+=" },
+        { role: "zoomOut", label: desktopT("Zoom Out") },
         { type: "separator" },
         {
           role: "togglefullscreen",
+          label: desktopT("Toggle Full Screen"),
           accelerator: process.platform === "darwin" ? "Ctrl+Command+F" : "F11",
         },
       ],
     },
     {
-      label: "Window",
-      submenu: [{ role: "minimize" }, { role: "close" }],
+      label: desktopT("Window"),
+      submenu: [
+        { role: "minimize", label: desktopT("Minimize") },
+        { role: "close", label: desktopT("Close") },
+      ],
     },
   ];
 
@@ -377,23 +392,23 @@ function createMenu() {
     template.unshift({
       label: app.getName(),
       submenu: [
-        { role: "about" },
+        { role: "about", label: desktopT("About") },
         { type: "separator" },
         {
-          label: "Settings...",
+          label: desktopT("Settings..."),
           accelerator: "Cmd+,",
           click: () => {
             services?.menuEventService.emitOpenSettings();
           },
         },
         { type: "separator" },
-        { role: "services", submenu: [] },
+        { role: "services", label: desktopT("Services"), submenu: [] },
         { type: "separator" },
-        { role: "hide" },
-        { role: "hideOthers" },
-        { role: "unhide" },
+        { role: "hide", label: desktopT("Hide") },
+        { role: "hideOthers", label: desktopT("Hide Others") },
+        { role: "unhide", label: desktopT("Show All") },
         { type: "separator" },
-        { role: "quit" },
+        { role: "quit", label: desktopT("Quit") },
       ],
     });
   }
@@ -480,6 +495,27 @@ function updateTrayIcon() {
   tray.setImage(image);
 }
 
+function updateTrayMenu() {
+  if (!tray) return;
+
+  tray.setContextMenu(
+    Menu.buildFromTemplate([
+      {
+        label: desktopT("Open mux"),
+        click: () => {
+          openMuxFromTray();
+        },
+      },
+      {
+        label: desktopT("Exit"),
+        click: () => {
+          app.quit();
+        },
+      },
+    ])
+  );
+}
+
 function createTray() {
   if (tray) return;
 
@@ -497,22 +533,7 @@ function createTray() {
     return;
   }
 
-  const menu = Menu.buildFromTemplate([
-    {
-      label: "Open mux",
-      click: () => {
-        openMuxFromTray();
-      },
-    },
-    {
-      label: "Exit",
-      click: () => {
-        app.quit();
-      },
-    },
-  ]);
-
-  tray.setContextMenu(menu);
+  updateTrayMenu();
 
   // Best-effort: update tray icon when OS appearance changes.
   nativeTheme.on("updated", () => {
@@ -709,6 +730,12 @@ async function loadServices(): Promise<void> {
     }
 
     return looksLikeWsl;
+  });
+
+  electronIpcMain.on("mux:set-ui-language", (_event, value: unknown) => {
+    desktopLanguage = normalizeUiLanguage(value);
+    createMenu();
+    updateTrayMenu();
   });
 
   electronIpcMain.on("start-orpc-server", (event) => {
@@ -941,11 +968,13 @@ function createWindow() {
       isUpdateClosePromptOpen = true;
       const messageBoxOptions: MessageBoxOptions = {
         type: "question",
-        buttons: ["Install & restart", "Later", "Cancel"],
+        buttons: [desktopT("Install & restart"), desktopT("Later"), desktopT("Cancel")],
         defaultId: 0,
         cancelId: 2,
-        message: "An update is ready to install.",
-        detail: "Install now to restart and apply the update, or keep Mux running in the tray.",
+        message: desktopT("An update is ready to install."),
+        detail: desktopT(
+          "Install now to restart and apply the update, or keep Mux running in the tray."
+        ),
       };
 
       const promptWindow = mainWindow;
@@ -1157,6 +1186,7 @@ if (gotTheLock) {
         }
       }
 
+      desktopLanguage = uiLanguageFromLocale(app.getLocale());
       createMenu();
 
       // Three-phase startup:
