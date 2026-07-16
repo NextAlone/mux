@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test";
-import { formatRelativeTime } from "./dateTime";
+import { formatRelativeTime, localizeRelativeTime } from "./dateTime";
 
 describe("formatRelativeTime", () => {
   test("should return 'just now' for very recent timestamps", () => {
@@ -52,5 +52,18 @@ describe("formatRelativeTime", () => {
     const now = Date.now();
     expect(formatRelativeTime(now - 365 * 24 * 60 * 60 * 1000)).toBe("1 year ago");
     expect(formatRelativeTime(now - 730 * 24 * 60 * 60 * 1000)).toBe("2 years ago");
+  });
+});
+
+describe("localizeRelativeTime", () => {
+  const t = (text: string) =>
+    ({
+      "just now": "刚刚",
+      "{count} minutes ago": "{count} 分钟前",
+    })[text] ?? text;
+
+  test("localizes fixed and counted relative-time output", () => {
+    expect(localizeRelativeTime("just now", t)).toBe("刚刚");
+    expect(localizeRelativeTime("5 minutes ago", t)).toBe("5 分钟前");
   });
 });

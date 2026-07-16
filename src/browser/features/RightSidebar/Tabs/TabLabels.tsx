@@ -119,10 +119,11 @@ export const ReviewTabLabel: React.FC<ReviewTabLabelProps> = ({ reviewStats }) =
         <TooltipTrigger asChild>
           <span
             className="text-review-accent inline-flex items-center gap-1"
-            aria-label={t("Review — {count} unread agent-flagged hunks").replace(
-              "{count}",
-              String(unreadAssisted)
-            )}
+            aria-label={t(
+              unreadAssisted === 1
+                ? "Review — {count} unread agent-flagged hunk"
+                : "Review — {count} unread agent-flagged hunks"
+            ).replace("{count}", String(unreadAssisted))}
             data-testid="review-tab-assisted-pizzazz"
           >
             {t("Review")}
@@ -131,9 +132,11 @@ export const ReviewTabLabel: React.FC<ReviewTabLabelProps> = ({ reviewStats }) =
           </span>
         </TooltipTrigger>
         <TooltipContent side="bottom">
-          {unreadAssisted} {t("agent-flagged hunk")}
-          {unreadAssisted === 1 ? "" : "s"}
-          {t("pending review")}
+          {t(
+            unreadAssisted === 1
+              ? "{count} agent-flagged hunk pending review"
+              : "{count} agent-flagged hunks pending review"
+          ).replace("{count}", String(unreadAssisted))}
         </TooltipContent>
       </Tooltip>
     );

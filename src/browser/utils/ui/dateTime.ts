@@ -76,6 +76,19 @@ export function formatRelativeTime(timestamp: number): string {
   }
 }
 
+/** Localizes the bounded vocabulary emitted by formatRelativeTime. */
+export function localizeRelativeTime(value: string, t: (text: string) => string): string {
+  const match =
+    /^(\d+) (minute|minutes|hour|hours|day|days|week|weeks|month|months|year|years) ago$/.exec(
+      value
+    );
+  if (match?.[1] && match[2]) {
+    // i18n-ignore: formatRelativeTime can only emit the translated keys listed above.
+    return t(`{count} ${match[2]} ago`).replace("{count}", match[1]);
+  }
+  return t(value);
+}
+
 /**
  * Compact relative time format for space-constrained UI (tooltips, badges).
  * Examples: "5s ago", "2m ago", "3h ago", "1d ago"

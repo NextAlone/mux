@@ -15,7 +15,7 @@ import { TooltipIfPresent } from "@/browser/components/Tooltip/Tooltip";
 import { useAPI } from "@/browser/contexts/API";
 import { RowActionButton } from "@/browser/features/RightSidebar/GoalBoardSections";
 import { isAbortError } from "@/browser/utils/isAbortError";
-import { formatRelativeTime } from "@/browser/utils/ui/dateTime";
+import { formatRelativeTime, localizeRelativeTime } from "@/browser/utils/ui/dateTime";
 import { cn } from "@/common/lib/utils";
 import { MEMORY_SCOPES, MEMORY_VIRTUAL_ROOT, type MemoryScope } from "@/common/constants/memory";
 import type {
@@ -26,6 +26,7 @@ import type {
 import { EXPERIMENT_IDS } from "@/common/constants/experiments";
 import { useExperimentValue } from "@/browser/hooks/useExperiments";
 import { getErrorMessage } from "@/common/utils/errors";
+import { assertNever } from "@/common/utils/assertNever";
 import { MemoryFileEditor } from "./MemoryFileEditor";
 import { useLanguage } from "@/browser/contexts/LanguageContext";
 
@@ -486,8 +487,12 @@ function MemoryFileRow(props: MemoryFileRowProps) {
       )}
       {props.file.accessCount > 0 && props.file.lastAccessedAt !== null && (
         <div className="text-muted counter-nums pl-[22px] text-[10px]">
-          {t("Used")}
-          {props.file.accessCount}× · {formatRelativeTime(props.file.lastAccessedAt)}
+          {t("Used {count}× · {time}")
+            .replace("{count}", String(props.file.accessCount))
+            .replace(
+              "{time}",
+              localizeRelativeTime(formatRelativeTime(props.file.lastAccessedAt), t)
+            )}
         </div>
       )}
     </div>
@@ -508,10 +513,61 @@ function uniqueConsolidationSummaryLines(
   return lines;
 }
 
-function formatConsolidationRecord(record: MemoryConsolidationRecordPayload | null): string {
-  if (record === null) return "never";
+function translateConsolidationTrigger(
+  trigger: MemoryConsolidationRecordPayload["trigger"],
+  t: (text: string) => string
+): string {
+  switch (trigger) {
+    case "compaction":
+      return t("compaction");
+    case "launch":
+      return t("launch");
+    case "archive":
+      return t("archive");
+    case "manual":
+      return t("manual");
+    default:
+      return assertNever(trigger);
+  }
+}
+
+function translateHarvestStatus(
+  status: NonNullable<MemoryConsolidationStatusPayload["latestHarvestRecord"]>["status"],
+  t: (text: string) => string
+): string {
+  switch (status) {
+    case "pending":
+      return t("pending");
+    case "completed":
+      return t("completed");
+    case "failed":
+      return t("failed");
+    default:
+      return assertNever(status);
+  }
+}
+
+function formatConsolidationRecord(
+  record: MemoryConsolidationRecordPayload | null,
+  t: (text: string) => string
+): string {
+  if (record === null) return t("never");
   const appliedCount = record.ops.filter((op) => op.applied).length;
-  return `${formatRelativeTime(record.lastRunAt)} · ${record.trigger} · ${appliedCount} change${appliedCount === 1 ? "" : "s"}`;
+  const changeCount = t(appliedCount === 1 ? "{count} change" : "{count} changes").replace(
+    "{count}",
+    String(appliedCount)
+  );
+  return `${localizeRelativeTime(formatRelativeTime(record.lastRunAt), t)} · ${translateConsolidationTrigger(record.trigger, t)} · ${changeCount}`;
+}
+
+function formatHarvestRecord(
+  record: NonNullable<MemoryConsolidationStatusPayload["latestHarvestRecord"]>,
+  t: (text: string) => string
+): string {
+  return t("{status}: {accepted} accepted / {skipped} skipped")
+    .replace("{status}", translateHarvestStatus(record.status, t))
+    .replace("{accepted}", String(record.acceptedCandidates))
+    .replace("{skipped}", String(record.skippedCandidates));
 }
 
 /**
@@ -573,11 +629,11 @@ function ConsolidationFooter(props: {
 
   const projectLabel =
     status?.projectAvailable === false
-      ? "unavailable"
-      : formatConsolidationRecord(status?.projectRecord ?? null);
+      ? t("unavailable")
+      : formatConsolidationRecord(status?.projectRecord ?? null, t);
   const harvestLabel = status?.latestHarvestRecord
-    ? `${status.latestHarvestRecord.status}: ${status.latestHarvestRecord.acceptedCandidates} accepted / ${status.latestHarvestRecord.skippedCandidates} skipped`
-    : "never";
+    ? formatHarvestRecord(status.latestHarvestRecord, t)
+    : t("never");
   const harvestError =
     status?.latestHarvestRecord?.status === "failed" ? status.latestHarvestRecord.error : undefined;
   // One consolidation pass can cover workspace, project, and global memory at
@@ -602,23 +658,26 @@ function ConsolidationFooter(props: {
         {/* Use the shared, portaled tooltip only: a native title duplicates the UI tooltip and ignores z-index. */}
         <div className="text-muted min-w-0 flex-1 space-y-0.5">
           <div className="counter-nums truncate">
-            {t("Workspace:")}
-            {formatConsolidationRecord(status?.workspaceRecord ?? null)}
+            {t("Workspace: {status}").replace(
+              "{status}",
+              formatConsolidationRecord(status?.workspaceRecord ?? null, t)
+            )}
           </div>
           <div className="counter-nums truncate">
-            {t("Project:")} {projectLabel}
+            {t("Project: {status}").replace("{status}", projectLabel)}
           </div>
           <div className="counter-nums truncate">
-            {t("Global:")}
-            {formatConsolidationRecord(status?.globalRecord ?? null)}
+            {t("Global: {status}").replace(
+              "{status}",
+              formatConsolidationRecord(status?.globalRecord ?? null, t)
+            )}
           </div>
           <div className="counter-nums truncate">
-            {t("Harvest:")} {harvestLabel}
+            {t("Harvest: {status}").replace("{status}", harvestLabel)}
           </div>
           {harvestError !== undefined && (
             <div role="alert" className="text-error truncate">
-              {t("Harvest error:")}
-              {harvestError}
+              {t("Harvest error: {error}").replace("{error}", harvestError)}
             </div>
           )}
           {runError !== null && <div className="text-error truncate">{runError}</div>}

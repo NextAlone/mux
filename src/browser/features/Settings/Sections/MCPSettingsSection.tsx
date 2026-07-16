@@ -28,7 +28,7 @@ import { createEditKeyHandler } from "@/browser/utils/ui/keybinds";
 import { Switch } from "@/browser/components/Switch/Switch";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/browser/components/Tooltip/Tooltip";
 import { cn } from "@/common/lib/utils";
-import { formatRelativeTime } from "@/browser/utils/ui/dateTime";
+import { formatRelativeTime, localizeRelativeTime } from "@/browser/utils/ui/dateTime";
 import type { CachedMCPTestResult, MCPServerInfo, MCPServerTransport } from "@/common/types/mcp";
 import type { MCPOAuthPendingServerConfig } from "@/common/types/mcpOauth";
 import { useMCPTestCache } from "@/browser/hooks/useMCPTestCache";
@@ -41,18 +41,6 @@ import {
 import { ToolSelector } from "@/browser/components/ToolSelector/ToolSelector";
 import { KebabMenu, type KebabMenuItem } from "@/browser/components/KebabMenu/KebabMenu";
 import { getErrorMessage } from "@/common/utils/errors";
-
-function localizeRelativeTime(value: string, t: (text: string) => string): string {
-  const match =
-    /^(\d+) (minute|minutes|hour|hours|day|days|week|weeks|month|months|year|years) ago$/.exec(
-      value
-    );
-  if (match?.[1] && match[2]) {
-    // i18n-ignore: bounded translated relative-time keys
-    return t(`{count} ${match[2]} ago`).replace("{count}", match[1]);
-  }
-  return t(value);
-}
 
 /** Component for managing tool allowlist for a single MCP server */
 const ToolAllowlistSection: React.FC<{

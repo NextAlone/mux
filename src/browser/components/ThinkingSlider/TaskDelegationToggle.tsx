@@ -34,9 +34,9 @@ export function TaskDelegationToggle(props: TaskDelegationToggleProps) {
       return [
         {
           id: CommandIds.toggleTaskDelegation(),
-          title: "Toggle Proactive Task Delegation",
-          subtitle: `Current: ${state.mode === "proactive" ? "Proactive" : "Explicit only"}`,
-          section: "Mode",
+          title: t("Toggle Proactive Task Delegation"),
+          subtitle: t(state.mode === "proactive" ? "Current: Proactive" : "Current: Explicit only"),
+          section: t("Mode"),
           keywords: ["task", "delegate", "delegation", "subagent", "proactive"],
           run: () => {
             const latest = stateRef.current;
@@ -47,7 +47,7 @@ export function TaskDelegationToggle(props: TaskDelegationToggleProps) {
         },
       ];
     });
-  }, [available, props.busy, registerSource]);
+  }, [available, props.busy, registerSource, t]);
 
   if (!available) {
     return null;
@@ -55,8 +55,8 @@ export function TaskDelegationToggle(props: TaskDelegationToggleProps) {
 
   const active = mode === "proactive";
   const label = active
-    ? t("Proactive task delegation is on.")
-    : t("Proactive task delegation is off.");
+    ? t("Proactive task delegation preference: on.")
+    : t("Proactive task delegation preference: off.");
 
   return (
     <Tooltip>

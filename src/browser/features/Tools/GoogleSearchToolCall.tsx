@@ -158,8 +158,7 @@ export const GoogleSearchToolCall: React.FC<GoogleSearchToolCallProps> = ({
         </div>
         {queries.length > 1 && (
           <span className="text-secondary ml-2 text-[10px] whitespace-nowrap">
-            +{queries.length - 1}
-            {t("more")}
+            {t("+{count} more").replace("{count}", String(queries.length - 1))}
           </span>
         )}
         <StatusIndicator status={status}>{getStatusDisplay(status)}</StatusIndicator>

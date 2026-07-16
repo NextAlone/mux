@@ -354,6 +354,8 @@ export const SHELL_ZH_CN: Record<string, string> = {
     "专业推理模式：速度较慢，但回答更深入。按工作区保存。",
   "Proactive task delegation is off.": "主动任务委派已关闭。",
   "Proactive task delegation is on.": "主动任务委派已开启。",
+  "Proactive task delegation preference: off.": "主动任务委派偏好：关闭。",
+  "Proactive task delegation preference: on.": "主动任务委派偏好：开启。",
   Project: "项目",
   "Project name confirmation": "确认项目名称",
   "Project options": "项目选项",
