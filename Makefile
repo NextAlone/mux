@@ -81,7 +81,7 @@ include fmt.mk
 .PHONY: storybook storybook-run storybook-build test-storybook chromatic
 .PHONY: benchmark-terminal
 .PHONY: ensure-deps rebuild-native mux
-.PHONY: check-eager-imports check-bundle-size check-startup check-node-dist-aliases
+.PHONY: check-eager-imports check-bundle-size check-startup check-node-dist-aliases check-ui-i18n
 
 # Build tools
 TSGO := bun run node_modules/@typescript/native-preview/bin/tsgo.js
@@ -366,7 +366,7 @@ build/icon.png: docs/img/logo-white.svg scripts/generate-icons.ts
 ## Quality checks (can run in parallel)
 # Keep the default local path fast. Docs link crawling and lockfile-free bench-agent
 # verification stay in static-check-full so local validation remains responsive.
-static-check: lint typecheck fmt-check check-eager-imports check-code-docs-links lint-shellcheck lint-hadolint ## Run fast local static checks
+static-check: lint typecheck fmt-check check-eager-imports check-code-docs-links check-ui-i18n lint-shellcheck lint-hadolint ## Run fast local static checks
 
 static-check-full: static-check check-bench-agent check-docs-links ## Run the full CI static check suite
 
@@ -552,6 +552,9 @@ check-docs-links: ## Check documentation for broken links
 
 check-code-docs-links: ## Validate code references to docs paths
 	@./scripts/check-code-docs-links.sh
+
+check-ui-i18n: node_modules/.installed ## Ensure visible renderer text uses the translation layer
+	@bun run scripts/check-ui-i18n.ts
 
 ## Storybook
 storybook: node_modules/.installed src/version.ts ## Start Storybook development server
