@@ -5,18 +5,28 @@ import { ZH_CN } from "../src/browser/i18n/translations/zh-CN";
 
 const SOURCE_ROOT = path.resolve(import.meta.dir, "../src/browser");
 const USER_VISIBLE_ATTRIBUTES = new Set([
+  "alt",
   "aria-label",
+  "ariaLabel",
   "buttonLabel",
   "cancelLabel",
   "confirmLabel",
   "description",
+  "dismissLabel",
+  "emptyLabel",
   "detail",
   "emptyMessage",
+  "helperText",
   "label",
   "message",
   "placeholder",
+  "statusText",
+  "subtitle",
+  "text",
   "title",
   "tooltip",
+  "tooltipLabel",
+  "warning",
 ]);
 
 const EXCLUDED_FILE_PARTS = [
@@ -79,6 +89,11 @@ function isInsideTechnicalTextElement(node: ts.Node): boolean {
 function collectRenderableStrings(node: ts.Node, output: ts.StringLiteralLike[]): void {
   if (ts.isStringLiteralLike(node)) {
     output.push(node);
+    return;
+  }
+  if (ts.isTemplateExpression(node)) {
+    output.push(node.head);
+    for (const span of node.templateSpans) output.push(span.literal);
     return;
   }
   if (ts.isConditionalExpression(node)) {
@@ -153,21 +168,28 @@ function auditFile(file: string): {
       ts.isCallExpression(node) &&
       ts.isIdentifier(node.expression) &&
       node.expression.text === "t" &&
-      node.arguments.length === 1 &&
-      ts.isStringLiteralLike(node.arguments[0])
+      node.arguments.length === 1
     ) {
       const keyNode = node.arguments[0];
-      const key = keyNode.text;
-      if (
-        containsEnglishWords(key) &&
-        !Object.prototype.hasOwnProperty.call(ZH_CN, key) &&
-        !isIgnored(sourceFile, node)
-      ) {
-        missingTranslations.push({
-          file: path.relative(path.resolve(import.meta.dir, ".."), file),
-          line: sourceFile.getLineAndCharacterOfPosition(keyNode.getStart(sourceFile)).line + 1,
-          key,
-        });
+      if (ts.isStringLiteralLike(keyNode)) {
+        const key = keyNode.text;
+        if (
+          containsEnglishWords(key) &&
+          !Object.prototype.hasOwnProperty.call(ZH_CN, key) &&
+          !isIgnored(sourceFile, node)
+        ) {
+          missingTranslations.push({
+            file: path.relative(path.resolve(import.meta.dir, ".."), file),
+            line: sourceFile.getLineAndCharacterOfPosition(keyNode.getStart(sourceFile)).line + 1,
+            key,
+          });
+        }
+      } else if (ts.isTemplateExpression(keyNode)) {
+        // Exact-key dictionaries cannot translate a template after runtime values
+        // have been interpolated. Translate its static pieces around the values.
+        const strings: ts.StringLiteralLike[] = [];
+        collectRenderableStrings(keyNode, strings);
+        for (const stringNode of strings) addFinding(stringNode, stringNode.text);
       }
     }
 
