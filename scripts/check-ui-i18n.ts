@@ -150,6 +150,21 @@ function collectRenderableStrings(node: ts.Node, output: ts.StringLiteralLike[])
   }
 }
 
+function collectExactTranslationKeys(node: ts.Node, output: ts.StringLiteralLike[]): void {
+  if (ts.isStringLiteralLike(node)) {
+    output.push(node);
+    return;
+  }
+  if (ts.isConditionalExpression(node)) {
+    collectExactTranslationKeys(node.whenTrue, output);
+    collectExactTranslationKeys(node.whenFalse, output);
+    return;
+  }
+  if (ts.isParenthesizedExpression(node)) {
+    collectExactTranslationKeys(node.expression, output);
+  }
+}
+
 function getJsxTagName(attribute: ts.JsxAttribute): string | null {
   const parent = attribute.parent.parent;
   if (!ts.isJsxOpeningElement(parent) && !ts.isJsxSelfClosingElement(parent)) return null;
@@ -181,6 +196,21 @@ function auditFile(file: string): {
       line,
       text: normalized,
     });
+  };
+
+  const addMissingTranslation = (node: ts.StringLiteralLike) => {
+    const key = node.text;
+    if (
+      containsEnglishWords(key) &&
+      !Object.prototype.hasOwnProperty.call(ZH_CN, key) &&
+      !isIgnored(sourceFile, node)
+    ) {
+      missingTranslations.push({
+        file: path.relative(path.resolve(import.meta.dir, ".."), file),
+        line: sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1,
+        key,
+      });
+    }
   };
 
   const visit = (node: ts.Node) => {
@@ -215,25 +245,18 @@ function auditFile(file: string): {
       node.arguments.length === 1
     ) {
       const keyNode = node.arguments[0];
-      if (ts.isStringLiteralLike(keyNode)) {
-        const key = keyNode.text;
-        if (
-          containsEnglishWords(key) &&
-          !Object.prototype.hasOwnProperty.call(ZH_CN, key) &&
-          !isIgnored(sourceFile, node)
-        ) {
-          missingTranslations.push({
-            file: path.relative(path.resolve(import.meta.dir, ".."), file),
-            line: sourceFile.getLineAndCharacterOfPosition(keyNode.getStart(sourceFile)).line + 1,
-            key,
-          });
-        }
-      } else if (ts.isTemplateExpression(keyNode)) {
+      if (ts.isTemplateExpression(keyNode)) {
         // Exact-key dictionaries cannot translate a template after runtime values
         // have been interpolated. Translate its static pieces around the values.
         const strings: ts.StringLiteralLike[] = [];
         collectRenderableStrings(keyNode, strings);
         for (const stringNode of strings) addFinding(stringNode, stringNode.text);
+      } else {
+        // Conditional translation calls still resolve to exact keys at runtime, so every
+        // statically knowable branch must have its own dictionary entry.
+        const keys: ts.StringLiteralLike[] = [];
+        collectExactTranslationKeys(keyNode, keys);
+        for (const key of keys) addMissingTranslation(key);
       }
     } else if (ts.isPropertyAssignment(node)) {
       const propertyName =
