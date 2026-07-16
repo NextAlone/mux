@@ -1877,8 +1877,8 @@ export const ImmersiveReviewView: React.FC<ImmersiveReviewViewProps> = (props) =
           >
             <span className="text-foreground min-w-0 flex-1 truncate font-mono text-xs sm:hidden">
               {isReviewComplete
-                ? "Review complete"
-                : (activeFilePath?.split("/").pop() ?? "No files")}
+                ? t("Review complete")
+                : (activeFilePath?.split("/").pop() ?? t("No files"))}
             </span>
           </TooltipIfPresent>
           {/* Desktop: show full path */}
@@ -1888,7 +1888,7 @@ export const ImmersiveReviewView: React.FC<ImmersiveReviewViewProps> = (props) =
             align="start"
           >
             <span className="text-foreground hidden max-w-[400px] truncate font-mono text-xs sm:block">
-              {isReviewComplete ? "Review complete" : (activeFilePath ?? "No files")}
+              {isReviewComplete ? t("Review complete") : (activeFilePath ?? t("No files"))}
             </span>
           </TooltipIfPresent>
           <span className="text-dim hidden shrink-0 text-[10px] sm:inline">
@@ -1915,7 +1915,7 @@ export const ImmersiveReviewView: React.FC<ImmersiveReviewViewProps> = (props) =
               isRead(selectedHunk.id) && "text-read"
             )}
             onClick={() => handleToggleReadWithUndo(selectedHunk.id)}
-            aria-label={isRead(selectedHunk.id) ? "Mark hunk as unread" : "Mark hunk as read"}
+            aria-label={t(isRead(selectedHunk.id) ? "Mark hunk as unread" : "Mark hunk as read")}
           >
             {isRead(selectedHunk.id) ? (
               <Check aria-hidden="true" className="h-3 w-3" />
@@ -1941,9 +1941,9 @@ export const ImmersiveReviewView: React.FC<ImmersiveReviewViewProps> = (props) =
                       isRead(selectedHunk.id) && "text-read"
                     )}
                     onClick={() => handleToggleReadWithUndo(selectedHunk.id)}
-                    aria-label={
+                    aria-label={t(
                       isRead(selectedHunk.id) ? "Mark hunk as unread" : "Mark hunk as read"
-                    }
+                    )}
                   >
                     {isRead(selectedHunk.id) ? (
                       <Check aria-hidden="true" className="h-3 w-3" />
@@ -2122,7 +2122,7 @@ export const ImmersiveReviewView: React.FC<ImmersiveReviewViewProps> = (props) =
                 </div>
               ) : currentFileHunks.length === 0 ? (
                 <div className="text-muted flex items-center justify-center py-12 text-sm">
-                  {activeFilePath ? "No hunks for this file" : "No files to review"}
+                  {t(activeFilePath ? "No hunks for this file" : "No files to review")}
                 </div>
               ) : (
                 <div

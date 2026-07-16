@@ -44,6 +44,7 @@ export function CodeModeWaitGroupSummary(props: CodeModeWaitGroupSummaryProps) {
       <ToolHeader onClick={props.onToggle}>
         <ExpandIcon expanded={props.expanded}>▶</ExpandIcon>
         <Clock3Icon className="h-3.5 w-3.5 shrink-0" />
+        {/* i18n-ignore: canonical tool name */}
         <ToolName>wait ×{props.count}</ToolName>
         <span className="text-muted min-w-0 truncate text-[10px]">
           {t("cell")}
@@ -68,6 +69,7 @@ export function CodeModeWaitToolCall(props: CodeModeWaitToolCallProps) {
       <ToolHeader onClick={() => hasDetails && toggleExpanded()}>
         {hasDetails && <ExpandIcon expanded={expanded}>▶</ExpandIcon>}
         <Clock3Icon className="h-3.5 w-3.5 shrink-0" />
+        {/* i18n-ignore: canonical tool name */}
         <ToolName>wait</ToolName>
         <span className="text-muted min-w-0 truncate text-[10px]">
           {t("cell")} {cellLabel}

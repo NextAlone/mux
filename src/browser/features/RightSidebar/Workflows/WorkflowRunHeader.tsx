@@ -145,7 +145,7 @@ export const WorkflowRunHeader: React.FC<WorkflowRunHeaderProps> = (props) => {
         <span className="inline-flex items-center gap-1">
           <Clock className="h-3 w-3" />
           {formatWorkflowDuration(view.stats.elapsedMs)}
-          {isLive ? " elapsed" : ""}
+          {isLive ? ` ${t("elapsed")}` : ""}
         </span>
         <span className="inline-flex items-center gap-1">
           <Check className="h-3 w-3" />
@@ -155,8 +155,8 @@ export const WorkflowRunHeader: React.FC<WorkflowRunHeaderProps> = (props) => {
         {view.stats.usage != null && (
           <span className="inline-flex items-center gap-1">
             <Coins className="h-3 w-3" />
-            {formatWorkflowTokens(view.stats.usage.tokens)} tok ·{" "}
-            {formatWorkflowCost(view.stats.usage.costUsd)}
+            {formatWorkflowTokens(view.stats.usage.tokens)}
+            {/* i18n-ignore -- token unit */} tok · {formatWorkflowCost(view.stats.usage.costUsd)}
           </span>
         )}
         <span className="ml-auto font-mono text-[10.5px] opacity-70">{run.id}</span>

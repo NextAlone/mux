@@ -2351,9 +2351,7 @@ export const ReviewPanel: React.FC<ReviewPanelProps> = ({
           <div className="text-muted flex flex-col items-center justify-start gap-3 px-6 pt-12 pb-6 text-center">
             <div className="text-foreground text-base font-medium">{t("Not a jj repository")}</div>
             <div className="text-[13px] leading-[1.5]">
-              {t("This project is not a jj repository, so changes")}
-              {"can't"}
-              {t("be computed.")}
+              {t("This project is not a jj repository, so changes can't be computed.")}
             </div>
           </div>
         ) : (
@@ -2394,7 +2392,9 @@ export const ReviewPanel: React.FC<ReviewPanelProps> = ({
             <input
               ref={searchInputRef}
               type="text"
-              placeholder={`Search... (${formatKeybind(KEYBINDS.FOCUS_REVIEW_SEARCH)}, ${formatKeybind(KEYBINDS.FOCUS_REVIEW_SEARCH_QUICK)})`}
+              placeholder={t("Search... ({primary}, {quick})")
+                .replace("{primary}", formatKeybind(KEYBINDS.FOCUS_REVIEW_SEARCH))
+                .replace("{quick}", formatKeybind(KEYBINDS.FOCUS_REVIEW_SEARCH_QUICK))}
               value={searchState.input}
               onChange={(e) => setSearchState({ ...searchState, input: e.target.value })}
               className="bg-dark text-foreground border-border-medium placeholder:text-dim hover:border-accent focus:border-accent min-w-0 flex-1 rounded border px-1.5 py-0.5 font-mono text-[11px] transition-[border-color] duration-150 focus:outline-none"
@@ -2414,7 +2414,7 @@ export const ReviewPanel: React.FC<ReviewPanelProps> = ({
                 </button>
               </TooltipTrigger>
               <TooltipContent side="bottom">
-                {searchState.useRegex ? "Using regex search" : "Using substring search"}
+                {t(searchState.useRegex ? "Using regex search" : "Using substring search")}
               </TooltipContent>
             </Tooltip>
             <Tooltip>
@@ -2428,13 +2428,15 @@ export const ReviewPanel: React.FC<ReviewPanelProps> = ({
                     setSearchState({ ...searchState, matchCase: !searchState.matchCase })
                   }
                 >
-                  Aa
+                  {/* i18n-ignore -- conventional case-sensitivity glyph */}Aa
                 </button>
               </TooltipTrigger>
               <TooltipContent side="bottom">
-                {searchState.matchCase
-                  ? "Match case (case-sensitive)"
-                  : "Ignore case (case-insensitive)"}
+                {t(
+                  searchState.matchCase
+                    ? "Match case (case-sensitive)"
+                    : "Ignore case (case-insensitive)"
+                )}
               </TooltipContent>
             </Tooltip>
           </div>
@@ -2600,24 +2602,40 @@ export const ReviewPanel: React.FC<ReviewPanelProps> = ({
                   <div className="text-[13px] leading-[1.5]">
                     {filters.assistedOnly
                       ? assistedHunks.length === 0
-                        ? "The agent hasn't pinned any hunks."
+                        ? t("The agent hasn't pinned any hunks.")
                         : assistedMatchByHunkId.size === 0
-                          ? "None of the agent-flagged hunks match the current diff. The bookmark may have moved since the agent flagged them."
+                          ? t(
+                              "None of the agent-flagged hunks match the current diff. The bookmark may have moved since the agent flagged them."
+                            )
                           : debouncedSearchTerm.trim()
                             ? // Search-driven empty state takes precedence over
                               // the read-state copy: claiming "all read" when
                               // the user simply has unmatched search terms is
                               // confusing (they'd flip Read and still see
                               // nothing). Point them at clearing the search.
-                              `No agent-flagged hunks match "${debouncedSearchTerm}". Clear the search or try a different term.`
+                              t(
+                                'No agent-flagged hunks match "{term}". Clear the search or try a different term.'
+                              ).replace("{term}", debouncedSearchTerm)
                             : unreadAssistedInDiff === 0
-                              ? "You've read every agent-flagged hunk. Toggle Read to see them again, or exit Assisted to keep reviewing the rest of the diff."
-                              : "All agent-flagged hunks in this diff are read. Toggle Read or exit Assisted to see more."
+                              ? t(
+                                  "You've read every agent-flagged hunk. Toggle Read to see them again, or exit Assisted to keep reviewing the rest of the diff."
+                                )
+                              : t(
+                                  "All agent-flagged hunks in this diff are read. Toggle Read or exit Assisted to see more."
+                                )
                       : debouncedSearchTerm.trim()
-                        ? `No hunks match "${debouncedSearchTerm}". Try a different search term.`
+                        ? t('No hunks match "{term}". Try a different search term.').replace(
+                            "{term}",
+                            debouncedSearchTerm
+                          )
                         : selectedFilePath
-                          ? `No hunks in ${selectedFilePath}. Try selecting a different file.`
-                          : "No hunks match the current filters. Try adjusting your filter settings."}
+                          ? t("No hunks in {path}. Try selecting a different file.").replace(
+                              "{path}",
+                              selectedFilePath
+                            )
+                          : t(
+                              "No hunks match the current filters. Try adjusting your filter settings."
+                            )}
                   </div>
                   {filters.assistedOnly && (
                     <div className="flex flex-wrap items-center justify-center gap-2 text-[11px]">

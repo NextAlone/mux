@@ -797,7 +797,7 @@ export const ProposePlanToolCall: React.FC<ProposePlanToolCallProps> = (props) =
           onClick={() => void copyToClipboard(planContent)}
         >
           {copied ? <ClipboardCheck /> : <Clipboard />}
-          {copied ? "Copied" : "Copy to clipboard"}
+          {copied ? t("Copied") : t("Copy to clipboard")}
         </Button>
       </div>
     </div>
@@ -957,6 +957,7 @@ export const ProposePlanToolCall: React.FC<ProposePlanToolCallProps> = (props) =
       <ToolContainer expanded={expanded}>
         <ToolHeader onClick={toggleExpanded}>
           <ExpandIcon expanded={expanded}>▶</ExpandIcon>
+          {/* i18n-ignore: canonical tool name */}
           <ToolName>propose_plan</ToolName>
           <StatusIndicator status={status}>{statusDisplay}</StatusIndicator>
         </ToolHeader>

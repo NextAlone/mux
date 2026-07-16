@@ -44,7 +44,7 @@ export const BashOutputCollapsedIndicator: React.FC<BashOutputCollapsedIndicator
           />
         </svg>
         <span className="text-[10px] font-medium">
-          {isExpanded ? "Hide" : "Show"} {collapsedCount}
+          {isExpanded ? t("Hide") : t("Show")} {collapsedCount}
           {t("more output check")}
           {collapsedCount === 1 ? "" : "s"} {t("for")}{" "}
           <code className="font-monospace text-text-muted">{processId}</code>

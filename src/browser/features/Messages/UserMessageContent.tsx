@@ -14,6 +14,7 @@ import {
   HoverCardTrigger,
 } from "@/browser/components/HoverCard/HoverCard";
 import { isDesktopMode } from "@/browser/hooks/useDesktopTitlebar";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 import { MarkdownRenderer } from "./MarkdownRenderer";
 import { AgentSkillBadge } from "./AgentSkillBadge";
 import { buildAgentSkillSnapshotMarkdown } from "./agentSkillSnapshotMarkdown";
@@ -101,6 +102,7 @@ const imageStyles = {
  * Handles reviews, text content, and attachments.
  */
 export const UserMessageContent: React.FC<UserMessageContentProps> = (props) => {
+  const { t } = useLanguage();
   const reviews = props.reviews ?? [];
   const fileParts = props.fileParts ?? [];
   const parsedStagedNotice = parseStagedAttachmentNotice(props.content);
@@ -153,7 +155,10 @@ export const UserMessageContent: React.FC<UserMessageContentProps> = (props) => 
         <HoverCardTrigger asChild>
           <AgentSkillBadge
             as="button"
-            aria-label={`Show skill preview for ${shouldHighlightPrefix}`}
+            aria-label={t("Show skill preview for {skill}").replace(
+              "{skill}",
+              shouldHighlightPrefix
+            )}
             className="cursor-help"
           >
             {shouldHighlightPrefix}
@@ -179,7 +184,7 @@ export const UserMessageContent: React.FC<UserMessageContentProps> = (props) => 
     return (
       <div className={hasNewlineAfterPrefix ? "" : "flex flex-wrap items-baseline"}>
         {badge}
-        {hasSpaceAfterPrefix && <span>&nbsp;</span>}
+        {hasSpaceAfterPrefix && <span> </span>}
         {remainingContent.trim() && (
           <MarkdownRenderer
             content={remainingContent.trim()}
@@ -214,7 +219,7 @@ export const UserMessageContent: React.FC<UserMessageContentProps> = (props) => 
                 <img
                   key={idx}
                   src={part.url}
-                  alt={`Attachment ${idx + 1}`}
+                  alt={t("Attachment {count}").replace("{count}", String(idx + 1))}
                   className={imageStyles[props.variant]}
                 />
               );
@@ -278,7 +283,7 @@ export const UserMessageContent: React.FC<UserMessageContentProps> = (props) => 
             <button
               key={attachment.stagedPath}
               type="button"
-              aria-label={`Download ${attachment.filename}`}
+              aria-label={t("Download {filename}").replace("{filename}", attachment.filename)}
               disabled={!props.onDownloadStagedAttachment}
               className={`${fileAttachmentStyles[props.variant]} ${
                 props.onDownloadStagedAttachment

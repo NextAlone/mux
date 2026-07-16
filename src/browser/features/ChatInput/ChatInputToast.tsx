@@ -14,6 +14,9 @@ export interface Toast {
   type: "success" | "error";
   title?: string;
   message: string;
+  /** Stable key + values let dynamic messages translate without using interpolated dictionary keys. */
+  messageKey?: string;
+  messageReplacements?: Readonly<Record<string, string>>;
   solution?: ReactNode;
   duration?: number;
 }
@@ -28,9 +31,32 @@ interface ChatInputToastProps {
   wrap?: boolean;
 }
 
-export const SolutionLabel: React.FC<{ children: ReactNode }> = ({ children }) => (
-  <div className="text-muted-light mb-1 text-[10px] uppercase">{children}</div>
-);
+function translateWithReplacements(
+  translationKey: string,
+  replacements: Readonly<Record<string, string>> | undefined,
+  t: (text: string) => string
+): string {
+  let translated = t(translationKey);
+  for (const [key, value] of Object.entries(replacements ?? {})) {
+    translated = translated.replaceAll(`{${key}}`, value);
+  }
+  return translated;
+}
+
+export const ToastTranslation: React.FC<{
+  translationKey: string;
+  replacements?: Readonly<Record<string, string>>;
+}> = (props) => {
+  const { t } = useLanguage();
+  return translateWithReplacements(props.translationKey, props.replacements, t);
+};
+
+export const SolutionLabel: React.FC<{ translationKey: string }> = (props) => {
+  const { t } = useLanguage();
+  return (
+    <div className="text-muted-light mb-1 text-[10px] uppercase">{t(props.translationKey)}</div>
+  );
+};
 
 const wrapperClassName =
   "pointer-events-none absolute right-[15px] bottom-full left-[15px] z-[1000] mb-2 [&>*]:pointer-events-auto";
@@ -98,6 +124,12 @@ export const ChatInputToast: React.FC<ChatInputToastProps> = ({
 
   if (!toast) return null;
 
+  const translatedMessage = translateWithReplacements(
+    toast.messageKey ?? toast.message,
+    toast.messageReplacements,
+    t
+  );
+
   // Use rich error style when there's a title or solution
   const isRichError = toast.type === "error" && (toast.title ?? toast.solution);
 
@@ -111,7 +143,7 @@ export const ChatInputToast: React.FC<ChatInputToastProps> = ({
         <AlertTriangle aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0" />
         <div className="flex-1">
           {toast.title && <div className="mb-1.5 font-semibold">{t(toast.title)}</div>}
-          <div className="text-light mt-1.5 leading-[1.4]">{t(toast.message)}</div>
+          <div className="text-light mt-1.5 leading-[1.4]">{translatedMessage}</div>
           {toast.solution && (
             <div className="bg-dark font-monospace text-code-type mt-2 rounded px-2 py-1.5 text-[11px]">
               {translateToastNode(toast.solution, t)}
@@ -159,7 +191,7 @@ export const ChatInputToast: React.FC<ChatInputToastProps> = ({
         )}
       </div>
       {/* Message on its own line */}
-      <div className="mt-1.5 opacity-90">{t(toast.message)}</div>
+      <div className="mt-1.5 opacity-90">{translatedMessage}</div>
     </div>
   );
 

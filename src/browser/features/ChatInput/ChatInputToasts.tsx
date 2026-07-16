@@ -1,9 +1,13 @@
 import type { Toast } from "./ChatInputToast";
-import { SolutionLabel } from "./ChatInputToast";
+import { SolutionLabel, ToastTranslation } from "./ChatInputToast";
 import { DocsLink } from "@/browser/components/DocsLink/DocsLink";
 import type { ParsedCommand } from "@/browser/utils/slashCommands/types";
 import type { SendMessageError as SendMessageErrorType } from "@/common/types/errors";
 import { formatSendMessageError } from "@/common/utils/errors/formatSendError";
+import { PROVIDER_DISPLAY_NAMES, type ProviderName } from "@/common/constants/providers";
+
+const getProviderDisplayName = (provider: string): string =>
+  PROVIDER_DISPLAY_NAMES[provider as ProviderName] ?? provider;
 
 export function createInvalidCompactModelToast(model: string): Toast {
   return {
@@ -11,15 +15,18 @@ export function createInvalidCompactModelToast(model: string): Toast {
     type: "error",
     title: "Invalid Model",
     message: `Invalid model format: "${model}". Use an alias or provider:model-id.`,
+    messageKey: 'Invalid model format: "{model}". Use an alias or provider:model-id.',
+    messageReplacements: { model },
     solution: (
       <>
-        <SolutionLabel>Try an alias:</SolutionLabel>
-        /compact -m sonnet
+        <SolutionLabel translationKey="Try an alias:" />
+        <code>/compact -m sonnet</code>
         <br />
-        /compact -m gpt
+        <code>/compact -m gpt</code>
         <br />
         <br />
-        <SolutionLabel>Supported models:</SolutionLabel>
+        <SolutionLabel translationKey="Supported models:" />
+        {/* i18n-ignore -- documentation URL */}
         <DocsLink path="/config/models">mux.coder.com/models</DocsLink>
       </>
     ),
@@ -41,24 +48,24 @@ export const createCommandToast = (parsed: ParsedCommand): Toast | null => {
         message: "Select AI model for this session or send a one-shot message",
         solution: (
           <>
-            <SolutionLabel>Set model for session:</SolutionLabel>
-            /model sonnet
+            <SolutionLabel translationKey="Set model for session:" />
+            <code>/model sonnet</code>
             <br />
-            /model anthropic:claude-sonnet-4-5
-            <br />
-            <br />
-            <SolutionLabel>One-shot (single message):</SolutionLabel>
-            /haiku explain this code
-            <br />
-            /opus review my changes
+            <code>/model anthropic:claude-sonnet-4-5</code>
             <br />
             <br />
-            <SolutionLabel>With thinking override:</SolutionLabel>
-            /opus+high deep review
+            <SolutionLabel translationKey="One-shot (single message):" />
+            <code>/haiku explain this code</code>
             <br />
-            /haiku+0 quick answer (0=lowest for model)
+            <code>/opus review my changes</code>
             <br />
-            /+2 use current model, thinking level 2
+            <br />
+            <SolutionLabel translationKey="With thinking override:" />
+            <code>/opus+high deep review</code>
+            <br />
+            <code>/haiku+0 quick answer (0=lowest for model)</code>
+            <br />
+            <code>/+2 use current model, thinking level 2</code>
           </>
         ),
       };
@@ -69,9 +76,11 @@ export const createCommandToast = (parsed: ParsedCommand): Toast | null => {
         type: "error",
         title: "Missing Arguments",
         message: `/${parsed.command} requires arguments`,
+        messageKey: "/{command} requires arguments",
+        messageReplacements: { command: parsed.command },
         solution: (
           <>
-            <SolutionLabel>Usage:</SolutionLabel>
+            <SolutionLabel translationKey="Usage:" />
             {parsed.usage}
           </>
         ),
@@ -83,9 +92,11 @@ export const createCommandToast = (parsed: ParsedCommand): Toast | null => {
         type: "error",
         title: "Invalid Argument",
         message: `'${parsed.input}' is not valid for /${parsed.command}`,
+        messageKey: "'{input}' is not valid for /{command}",
+        messageReplacements: { input: parsed.input, command: parsed.command },
         solution: (
           <>
-            <SolutionLabel>Usage:</SolutionLabel>
+            <SolutionLabel translationKey="Usage:" />
             {parsed.usage}
           </>
         ),
@@ -97,9 +108,11 @@ export const createCommandToast = (parsed: ParsedCommand): Toast | null => {
         type: "error",
         title: "Unknown Flag",
         message: `Unknown flag for /${parsed.command}: ${parsed.flag}`,
+        messageKey: "Unknown flag for /{command}: {flag}",
+        messageReplacements: { command: parsed.command, flag: parsed.flag },
         solution: parsed.usage ? (
           <>
-            <SolutionLabel>Usage:</SolutionLabel>
+            <SolutionLabel translationKey="Usage:" />
             {parsed.usage}
           </>
         ) : undefined,
@@ -111,6 +124,8 @@ export const createCommandToast = (parsed: ParsedCommand): Toast | null => {
         id: Date.now().toString(),
         type: "error",
         message: `Unknown command: ${cmd}`,
+        messageKey: "Unknown command: {command}",
+        messageReplacements: { command: cmd },
       };
     }
 
@@ -125,17 +140,22 @@ export const createCommandToast = (parsed: ParsedCommand): Toast | null => {
 export const createErrorToast = (error: SendMessageErrorType): Toast => {
   switch (error.type) {
     case "api_key_not_found": {
-      const formatted = formatSendMessageError(error);
       return {
         id: Date.now().toString(),
         type: "error",
         title: "API Key Not Found",
         message: `The ${error.provider} provider requires an API key to function.`,
+        messageKey: "The {provider} provider requires an API key to function.",
+        messageReplacements: { provider: error.provider },
         solution: (
           <>
-            <SolutionLabel>Fix:</SolutionLabel>
-            {formatted.resolutionHint ?? "Open Settings → Providers and add an API key."}
+            <SolutionLabel translationKey="Fix:" />
+            <ToastTranslation
+              translationKey="Open Settings → Providers and add an API key for {provider}."
+              replacements={{ provider: getProviderDisplayName(error.provider) }}
+            />
             <br />
+            {/* i18n-ignore -- documentation URL */}
             <DocsLink path="/config/providers">mux.coder.com/providers</DocsLink>
           </>
         ),
@@ -143,17 +163,22 @@ export const createErrorToast = (error: SendMessageErrorType): Toast => {
     }
 
     case "oauth_not_connected": {
-      const formatted = formatSendMessageError(error);
       return {
         id: Date.now().toString(),
         type: "error",
         title: "OAuth Not Connected",
         message: `The ${error.provider} provider requires an OAuth connection to function.`,
+        messageKey: "The {provider} provider requires an OAuth connection to function.",
+        messageReplacements: { provider: error.provider },
         solution: (
           <>
-            <SolutionLabel>Fix:</SolutionLabel>
-            {formatted.resolutionHint ?? "Open Settings → Providers and connect your account."}
+            <SolutionLabel translationKey="Fix:" />
+            <ToastTranslation
+              translationKey="Open Settings → Providers and connect your {provider} account."
+              replacements={{ provider: getProviderDisplayName(error.provider) }}
+            />
             <br />
+            {/* i18n-ignore -- documentation URL */}
             <DocsLink path="/config/providers">mux.coder.com/providers</DocsLink>
           </>
         ),
@@ -167,11 +192,17 @@ export const createErrorToast = (error: SendMessageErrorType): Toast => {
         type: "error",
         title: "Provider Disabled",
         message: formatted.message,
+        messageKey: "Provider {provider} is disabled.",
+        messageReplacements: { provider: getProviderDisplayName(error.provider) },
         solution: (
           <>
-            <SolutionLabel>Fix:</SolutionLabel>
-            {formatted.resolutionHint ?? "Open Settings → Providers and enable this provider."}
+            <SolutionLabel translationKey="Fix:" />
+            <ToastTranslation
+              translationKey="Open Settings → Providers and enable {provider}."
+              replacements={{ provider: getProviderDisplayName(error.provider) }}
+            />
             <br />
+            {/* i18n-ignore -- documentation URL */}
             <DocsLink path="/config/providers">mux.coder.com/providers</DocsLink>
           </>
         ),
@@ -185,11 +216,14 @@ export const createErrorToast = (error: SendMessageErrorType): Toast => {
         type: "error",
         title: "Provider Not Supported",
         message: formatted.message,
+        messageKey: "Provider {provider} is not supported yet.",
+        messageReplacements: { provider: getProviderDisplayName(error.provider) },
         solution: (
           <>
-            <SolutionLabel>Try This:</SolutionLabel>
-            Choose a supported provider in Settings → Providers.
+            <SolutionLabel translationKey="Try This:" />
+            <ToastTranslation translationKey="Choose a supported provider in Settings → Providers." />
             <br />
+            {/* i18n-ignore -- documentation URL */}
             <DocsLink path="/config/providers">mux.coder.com/providers</DocsLink>
           </>
         ),
@@ -205,8 +239,8 @@ export const createErrorToast = (error: SendMessageErrorType): Toast => {
         message: formatted.message,
         solution: (
           <>
-            <SolutionLabel>Expected Format:</SolutionLabel>
-            provider:model-name (e.g., anthropic:claude-opus-4-1)
+            <SolutionLabel translationKey="Expected Format:" />
+            <code>provider:model-name (e.g., anthropic:claude-opus-4-1)</code>
           </>
         ),
       };
@@ -220,8 +254,8 @@ export const createErrorToast = (error: SendMessageErrorType): Toast => {
         message: error.message,
         solution: (
           <>
-            <SolutionLabel>Solution:</SolutionLabel>
-            Upgrade mux to use this workspace, or delete it and create a new one.
+            <SolutionLabel translationKey="Solution:" />
+            <ToastTranslation translationKey="Upgrade mux to use this workspace, or delete it and create a new one." />
           </>
         ),
       };

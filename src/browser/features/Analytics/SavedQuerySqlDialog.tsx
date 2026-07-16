@@ -47,6 +47,7 @@ export function SavedQuerySqlDialog(props: SavedQuerySqlDialogProps) {
             spellCheck={false}
             autoFocus
             className="border-border-medium bg-background text-foreground focus:border-accent focus:ring-accent min-h-[220px] w-full resize-y rounded-lg border p-3 font-mono text-xs leading-relaxed focus:ring-1 focus:outline-none"
+            // i18n-ignore -- SQL example
             placeholder="SELECT * FROM events LIMIT 10;"
             onKeyDown={(event) => {
               if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {

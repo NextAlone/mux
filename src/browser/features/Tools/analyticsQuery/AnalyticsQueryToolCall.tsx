@@ -178,8 +178,14 @@ export function AnalyticsQueryToolCall(props: AnalyticsQueryToolCallProps): JSX.
         <ToolName>{title}</ToolName>
         {successResult && (
           <span className="text-muted text-[10px] whitespace-nowrap">
+            {/* i18n-ignore: compact row-count and millisecond units */}
             {successResult.rowCount.toLocaleString()}
-            {isRowCountLowerBound ? "+" : ""} rows · {successResult.durationMs}ms
+            {isRowCountLowerBound ? "+" : ""}
+            {/* i18n-ignore -- compact row-count and millisecond units */}
+            {" rows · "}
+            {successResult.durationMs}
+            {/* i18n-ignore -- millisecond unit */}
+            {"ms"}
           </span>
         )}
         <StatusIndicator status={status}>{getStatusDisplay(status)}</StatusIndicator>
@@ -248,7 +254,9 @@ export function AnalyticsQueryToolCall(props: AnalyticsQueryToolCallProps): JSX.
                     disabled={saveState.status === "saving"}
                     className="disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    {saveState.status === "saving" ? "Adding..." : "Add to analytics dashboard"}
+                    {saveState.status === "saving"
+                      ? t("Adding...")
+                      : t("Add to analytics dashboard")}
                   </HeaderButton>
                 )}
 
@@ -289,7 +297,7 @@ export function AnalyticsQueryToolCall(props: AnalyticsQueryToolCallProps): JSX.
                 onClick={() => setShowSql(!showSql)}
                 className="text-muted hover:text-foreground mt-2 text-[10px] transition-colors"
               >
-                {showSql ? "Hide SQL" : "Show SQL"}
+                {showSql ? t("Hide SQL") : t("Show SQL")}
               </button>
 
               {showSql && (

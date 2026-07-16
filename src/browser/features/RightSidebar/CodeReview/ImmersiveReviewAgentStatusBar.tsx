@@ -155,7 +155,7 @@ export const ImmersiveReviewAgentStatusBar: React.FC<ImmersiveReviewAgentStatusB
         <div className="flex min-h-7 w-full items-center gap-2 px-3 leading-none">
           <div className="text-muted flex shrink-0 items-center gap-1.5">
             <List aria-hidden="true" className="size-3.5 shrink-0" />
-            <span className="font-medium">TODO</span>
+            <span className="font-medium">{t("TODO")}</span>
           </div>
           {/* Horizontal strip fills the remaining width and scrolls sideways
               when the plan is longer than the bar; min-w-0 lets it shrink so

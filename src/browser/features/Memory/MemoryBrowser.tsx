@@ -261,7 +261,10 @@ export function MemoryBrowser(props: MemoryBrowserProps) {
         <ConfirmationModal
           isOpen
           title={t("Delete memory file?")}
-          description={`${scopeRelativeName(deleteTarget)} will be deleted. This cannot be undone.`}
+          description={t("{file} will be deleted. This cannot be undone.").replace(
+            "{file}",
+            scopeRelativeName(deleteTarget)
+          )}
           confirmLabel={t("Delete")}
           confirmVariant="destructive"
           onConfirm={async () => {
@@ -461,7 +464,7 @@ function MemoryFileRow(props: MemoryFileRowProps) {
             at rest without layout shift. */}
         <div className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100">
           <RowActionButton
-            aria-label={`${props.file.pinned ? "Unpin" : "Pin"} ${name}`}
+            aria-label={`${props.file.pinned ? t("Unpin") : t("Pin")} ${name}`}
             onClick={props.onTogglePin}
           >
             <Pin
@@ -471,7 +474,7 @@ function MemoryFileRow(props: MemoryFileRowProps) {
           </RowActionButton>
           <RowActionButton
             tone="destructive"
-            aria-label={`Delete ${name}`}
+            aria-label={t("Delete {name}").replace("{name}", name)}
             onClick={props.onRequestDelete}
           >
             <Trash2 className="h-3 w-3" aria-hidden="true" />
@@ -627,7 +630,7 @@ function ConsolidationFooter(props: {
         onClick={() => void handleConsolidate()}
         disabled={running}
       >
-        {running ? "Consolidating…" : "Consolidate now"}
+        {running ? t("Consolidating…") : t("Consolidate now")}
       </button>
     </div>
   );

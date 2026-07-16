@@ -366,7 +366,8 @@ const WorkflowStepRow: React.FC<WorkflowStepRowProps> = (props) => {
                       )}
                       {step.usage?.tokens != null && (
                         <span className="inline-flex items-center gap-1">
-                          <Zap className="h-3 w-3" /> {formatWorkflowTokens(step.usage.tokens)} tok
+                          <Zap className="h-3 w-3" /> {formatWorkflowTokens(step.usage.tokens)}
+                          {/* i18n-ignore -- token unit */} tok
                         </span>
                       )}
                       {step.usage?.costUsd != null && (

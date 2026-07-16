@@ -647,7 +647,7 @@ export function AskUserQuestionToolCall(props: {
                         {currentQuestion.question}
                       </div>
                       <div className="text-secondary text-[10px] tracking-wide uppercase">
-                        {currentQuestion.multiSelect ? "Select one or more" : "Select one"}
+                        {currentQuestion.multiSelect ? t("Select one or more") : t("Select one")}
                       </div>
                     </div>
 
@@ -661,8 +661,8 @@ export function AskUserQuestionToolCall(props: {
                         })),
                         {
                           label: OTHER_VALUE,
-                          displayLabel: "Other",
-                          description: "Provide a custom answer.",
+                          displayLabel: t("Other"),
+                          description: t("Provide a custom answer."),
                         },
                       ].map((opt) => {
                         const checked = currentDraft.selected.includes(opt.label);
@@ -909,7 +909,7 @@ export function AskUserQuestionToolCall(props: {
                     onClick={handleSubmit}
                     size="sm"
                   >
-                    {isSubmitting ? "Submitting…" : "Submit answers"}
+                    {isSubmitting ? t("Submitting…") : t("Submit answers")}
                   </Button>
                 ) : (
                   <Button

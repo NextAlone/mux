@@ -247,7 +247,7 @@ export const HeartbeatToolCall: React.FC<HeartbeatToolCallProps> = (props) => {
         <ExpandIcon expanded={expanded}>▶</ExpandIcon>
         <ToolIcon toolName="heartbeat" />
         <span className="text-secondary font-medium whitespace-nowrap">{verb}</span>
-        {badge && <HeartbeatBadge tone={badge.tone} label={badge.label} />}
+        {badge && <HeartbeatBadge tone={badge.tone} label={t(badge.label)} />}
         {summary && (
           <span className="text-foreground hidden truncate italic @sm:inline">{summary}</span>
         )}
@@ -267,7 +267,7 @@ export const HeartbeatToolCall: React.FC<HeartbeatToolCallProps> = (props) => {
                   label={t("State")}
                   value={
                     <span className={live ? "text-success" : "text-warning"}>
-                      {live ? "Enabled" : "Paused"}
+                      {live ? t("Enabled") : t("Paused")}
                     </span>
                   }
                 />
@@ -280,25 +280,27 @@ export const HeartbeatToolCall: React.FC<HeartbeatToolCallProps> = (props) => {
                     </span>
                   }
                 />
-                <HeartbeatStat label={t("Context")} value={ctx.label} />
+                <HeartbeatStat label={t("Context")} value={t(ctx.label)} />
                 <HeartbeatStat
                   label={t("Trigger")}
-                  value={schedulePolicy.trigger === "interval" ? "Fixed interval" : "When idle"}
+                  value={
+                    schedulePolicy.trigger === "interval" ? t("Fixed interval") : t("When idle")
+                  }
                 />
               </dl>
 
               <div className="text-muted text-[10.5px] leading-relaxed">
-                {ctx.blurb}.
+                {t(ctx.blurb)}.
                 {live
                   ? schedulePolicy.trigger === "interval"
-                    ? " Fires on a fixed schedule, regardless of activity."
-                    : " Fires only after the workspace goes idle for the interval — deferred while you're actively working."
-                  : " No check-ins will run until re-enabled."}
+                    ? ` ${t("Fires on a fixed schedule, regardless of activity.")}`
+                    : ` ${t("Fires only after the workspace goes idle for the interval — deferred while you're actively working.")}`
+                  : ` ${t("No check-ins will run until re-enabled.")}`}
                 {/* Surface a non-default when-busy delivery so the schedule is fully explained. */}
                 {live && schedulePolicy.whenBusy === "tool-end"
-                  ? " Queues after the current step when busy."
+                  ? ` ${t("Queues after the current step when busy.")}`
                   : live && schedulePolicy.whenBusy === "turn-end"
-                    ? " Queues after the current turn when busy."
+                    ? ` ${t("Queues after the current turn when busy.")}`
                     : null}
               </div>
 

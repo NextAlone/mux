@@ -2,6 +2,7 @@ import { useState, type ReactElement } from "react";
 import { ChevronRight, Radar } from "lucide-react";
 import { cn } from "@/common/lib/utils";
 import type { BashMonitorWakeDisplayRecord } from "@/common/types/message";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 interface BashMonitorWakeMessageContentProps {
   /** Full wake prompt text (matched lines, task_await guidance) shown when expanded. */
@@ -9,9 +10,9 @@ interface BashMonitorWakeMessageContentProps {
   records: BashMonitorWakeDisplayRecord[];
 }
 
-function describeRecord(record: BashMonitorWakeDisplayRecord): string {
-  const inverted = record.filterExclude ? " (inverted)" : "";
-  const lost = record.kind === "monitor-lost" ? " — monitor lost" : "";
+function describeRecord(record: BashMonitorWakeDisplayRecord, t: (text: string) => string): string {
+  const inverted = record.filterExclude ? ` (${t("inverted")})` : "";
+  const lost = record.kind === "monitor-lost" ? ` — ${t("monitor lost")}` : "";
   return `${record.displayName} · /${record.filter}/${inverted}${lost}`;
 }
 
@@ -25,15 +26,18 @@ function describeRecord(record: BashMonitorWakeDisplayRecord): string {
 export function BashMonitorWakeMessageContent(
   props: BashMonitorWakeMessageContentProps
 ): ReactElement {
+  const { t } = useLanguage();
   const [expanded, setExpanded] = useState(false);
 
   const hasMatch = props.records.some((record) => record.kind === "match");
   const hasLost = props.records.some((record) => record.kind === "monitor-lost");
-  const title = hasLost
-    ? hasMatch
-      ? "Background monitor updates"
-      : "Background monitors lost (Mux restarted)"
-    : "Background monitor matched output";
+  const title = t(
+    hasLost
+      ? hasMatch
+        ? "Background monitor updates"
+        : "Background monitors lost (Mux restarted)"
+      : "Background monitor matched output"
+  );
 
   return (
     <div>
@@ -45,7 +49,7 @@ export function BashMonitorWakeMessageContent(
           </div>
           {props.records.map((record, index) => (
             <div key={index} className="text-muted mt-0.5 truncate text-xs leading-snug">
-              {describeRecord(record)}
+              {describeRecord(record, t)}
             </div>
           ))}
         </div>
@@ -60,7 +64,7 @@ export function BashMonitorWakeMessageContent(
           aria-hidden="true"
           className={cn("size-3 transition-transform duration-200", expanded && "rotate-90")}
         />
-        {expanded ? "Hide details" : "Show details"}
+        {expanded ? t("Hide details") : t("Show details")}
       </button>
       {expanded && (
         <pre className="text-muted mt-1.5 max-h-[40vh] overflow-y-auto text-xs leading-relaxed whitespace-pre-wrap">

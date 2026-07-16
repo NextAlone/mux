@@ -49,6 +49,7 @@ import {
   isBuiltInProvider,
 } from "@/common/utils/providers/customProviders";
 import { useLanguage } from "@/browser/contexts/LanguageContext";
+import { TooltipIfPresent } from "@/browser/components/Tooltip/Tooltip";
 
 interface OAuthMessage {
   type?: unknown;
@@ -76,10 +77,13 @@ interface WizardStep {
 type Direction = "forward" | "back";
 
 function ProgressDots(props: { count: number; activeIndex: number }) {
+  const { t } = useLanguage();
   return (
     <div
       className="flex items-center gap-1"
-      aria-label={`Step ${props.activeIndex + 1} of ${props.count}`}
+      aria-label={t("Step {current} of {total}")
+        .replace("{current}", String(props.activeIndex + 1))
+        .replace("{total}", String(props.count))}
     >
       {Array.from({ length: props.count }).map((_, i) => (
         <span
@@ -137,7 +141,7 @@ function CommandPalettePreview(props: { shortcut: string }) {
       <div className="border-b border-[var(--color-command-input-border)] bg-[var(--color-command-input)] px-3.5 py-3 text-sm">
         <span className="text-[var(--color-command-subdued)]">
           {t("Switch workspaces or type")}
-          <span className="font-mono">&gt;</span>
+          <span className="font-mono">{">"}</span>
           {t("for all commands…")}
         </span>
       </div>
@@ -155,9 +159,9 @@ function CommandPalettePreview(props: { shortcut: string }) {
               {t("Start a new workspace (Local / JJ Workspace / SSH / Docker)")}
             </span>
           </div>
-          <span className="font-monospace text-[11px] text-[var(--color-command-subdued)]">
+          <code className="font-monospace text-[11px] text-[var(--color-command-subdued)]">
             &gt;new
-          </span>
+          </code>
         </div>
 
         <div className="bg-hover mx-1 my-0.5 grid grid-cols-[1fr_auto] items-center gap-2 rounded-md px-3 py-2 text-[13px]">
@@ -168,9 +172,9 @@ function CommandPalettePreview(props: { shortcut: string }) {
               {t("Jump to providers, models, MCP…")}
             </span>
           </div>
-          <span className="font-monospace text-[11px] text-[var(--color-command-subdued)]">
+          <code className="font-monospace text-[11px] text-[var(--color-command-subdued)]">
             &gt;settings
-          </span>
+          </code>
         </div>
 
         <div className="hover:bg-hover mx-1 my-0.5 grid grid-cols-[1fr_auto] items-center gap-2 rounded-md px-3 py-2 text-[13px]">
@@ -612,7 +616,7 @@ export function OnboardingWizardSplash(props: { onDismiss: () => void }) {
                 rel="noopener noreferrer"
                 className="text-accent hover:underline"
               >
-                Coder
+                {t("Coder")}
               </a>
               .
             </p>
@@ -636,7 +640,7 @@ export function OnboardingWizardSplash(props: { onDismiss: () => void }) {
                       }}
                       disabled={muxGatewayAccountLoading}
                     >
-                      {muxGatewayAccountLoading ? "Refreshing..." : "Refresh"}
+                      {t(muxGatewayAccountLoading ? "Refreshing..." : "Refresh")}
                     </Button>
                   </div>
 
@@ -676,7 +680,7 @@ export function OnboardingWizardSplash(props: { onDismiss: () => void }) {
                         rel="noopener noreferrer"
                         className="text-accent hover:underline"
                       >
-                        gateway.mux.coder.com
+                        <code>gateway.mux.coder.com</code>
                       </a>{" "}
                       {t("to add credits.")}
                     </p>
@@ -728,7 +732,7 @@ export function OnboardingWizardSplash(props: { onDismiss: () => void }) {
                   rel="noopener noreferrer"
                   className="text-accent hover:underline"
                 >
-                  Discord
+                  {t("Discord")}
                 </a>
               </li>
               <li>
@@ -790,20 +794,27 @@ export function OnboardingWizardSplash(props: { onDismiss: () => void }) {
                 const configured = providersConfig?.[provider]?.isConfigured === true;
 
                 return (
-                  <button
+                  <TooltipIfPresent
                     key={provider}
-                    type="button"
-                    className="bg-background-secondary border-border-medium text-foreground hover:bg-hover flex w-full cursor-pointer items-center justify-between rounded-md border px-2 py-1 text-left text-xs"
-                    title={configured ? "Configured" : "Not configured"}
-                    onClick={() => openProvidersSettings(provider)}
+                    tooltip={t(configured ? "Configured" : "Not configured")}
                   >
-                    <ProviderWithIcon provider={provider} displayName iconClassName="text-accent" />
-                    <span
-                      className={`h-2 w-2 rounded-full ${
-                        configured ? "bg-green-500" : "bg-border-medium"
-                      }`}
-                    />
-                  </button>
+                    <button
+                      type="button"
+                      className="bg-background-secondary border-border-medium text-foreground hover:bg-hover flex w-full cursor-pointer items-center justify-between rounded-md border px-2 py-1 text-left text-xs"
+                      onClick={() => openProvidersSettings(provider)}
+                    >
+                      <ProviderWithIcon
+                        provider={provider}
+                        displayName
+                        iconClassName="text-accent"
+                      />
+                      <span
+                        className={`h-2 w-2 rounded-full ${
+                          configured ? "bg-green-500" : "bg-border-medium"
+                        }`}
+                      />
+                    </button>
+                  </TooltipIfPresent>
                 );
               })}
             </div>
@@ -847,8 +858,9 @@ export function OnboardingWizardSplash(props: { onDismiss: () => void }) {
 
           {userProjects.size > 0 ? (
             <p className="mt-3 text-xs">
-              <span className="text-foreground font-medium">{t("Configured:")}</span>{" "}
-              {userProjects.size} {t(userProjects.size === 1 ? "project" : "projects")}
+              <span className="text-foreground font-medium">
+                {t("{count} projects configured").replace("{count}", String(userProjects.size))}
+              </span>
             </p>
           ) : (
             <p className="mt-3 text-xs">{t("No projects added yet.")}</p>
@@ -874,9 +886,11 @@ export function OnboardingWizardSplash(props: { onDismiss: () => void }) {
           {/* Hide the "click Next" nudge while the form shows an error; the two contradict. */}
           {!projectFormHasError && (
             <p className="mt-2 text-xs">
-              {userProjects.size > 0
-                ? "Add another folder or repo, or leave this blank and click Next to continue."
-                : "Click Next to add this project."}
+              {t(
+                userProjects.size > 0
+                  ? "Add another folder or repo, or leave this blank and click Next to continue."
+                  : "Click Next to add this project."
+              )}
             </p>
           )}
         </>
@@ -940,10 +954,10 @@ export function OnboardingWizardSplash(props: { onDismiss: () => void }) {
             <Card icon={<LocalIcon size={14} />} title={t("Local")}>
               {t("Work directly in your project directory.")}
             </Card>
-            <Card icon={<WorktreeIcon size={14} />} title="JJ Workspace">
+            <Card icon={<WorktreeIcon size={14} />} title={t("JJ Workspace")}>
               {getWorktreeRuntimeDescription(workspaceCheckoutLocation)}.
             </Card>
-            <Card icon={<SSHIcon size={14} />} title="SSH">
+            <Card icon={<SSHIcon size={14} />} title={t("SSH")}>
               {t("Remote clone and commands run on an SSH host.")}
             </Card>
             <Card icon={<CoderIcon size={14} />} title={t("Coder (SSH)")}>

@@ -319,6 +319,7 @@ interface RightSidebarTabsetNodeProps {
 }
 
 const RightSidebarTabsetNode: React.FC<RightSidebarTabsetNodeProps> = (props) => {
+  const { t } = useLanguage();
   const tabsetBaseId = `${props.baseId}-${props.node.id}`;
 
   // Content container class comes from tab registry - each tab defines its own padding/overflow
@@ -476,7 +477,7 @@ const RightSidebarTabsetNode: React.FC<RightSidebarTabsetNodeProps> = (props) =>
     <div className="flex min-h-0 min-w-0 flex-1 flex-col" onMouseDownCapture={setFocused}>
       <SortableContext items={sortableIds} strategy={rectSortingStrategy}>
         <RightSidebarTabStrip
-          ariaLabel="Sidebar views"
+          ariaLabel={t("Sidebar views")}
           items={items}
           tabsetId={props.node.id}
           onAddTerminal={props.onAddTerminal}

@@ -560,19 +560,19 @@ export function GoalTab(props: GoalTabProps) {
         <div
           className="border-border-light bg-surface-secondary rounded-md border p-3"
           role="group"
-          aria-label={editingField === "budget" ? "Edit goal budget" : "Edit goal turn cap"}
+          aria-label={t(editingField === "budget" ? "Edit goal budget" : "Edit goal turn cap")}
         >
           <label
             className="text-foreground mb-2 block text-sm font-medium"
             htmlFor={`goal-${editingField}-editor`}
           >
-            {editingField === "budget" ? "Budget" : "Turn cap"}
+            {t(editingField === "budget" ? "Budget" : "Turn cap")}
           </label>
           <input
             ref={editInputRef}
             id={`goal-${editingField}-editor`}
             className="border-border bg-surface-primary text-foreground focus:border-accent w-full rounded-md border p-2 text-sm outline-none"
-            aria-label={editingField === "budget" ? "Goal budget amount" : "Goal turn cap"}
+            aria-label={t(editingField === "budget" ? "Goal budget amount" : "Goal turn cap")}
             value={editValue}
             autoFocus
             onFocus={(event) => event.currentTarget.select()}
@@ -589,9 +589,11 @@ export function GoalTab(props: GoalTabProps) {
             }}
           />
           <p className="text-muted mt-1 text-xs">
-            {editingField === "budget"
-              ? "Use $5, 500c, 0, or blank for no budget."
-              : "Use a positive whole number, or blank for no cap."}
+            {t(
+              editingField === "budget"
+                ? "Use $5, 500c, 0, or blank for no budget."
+                : "Use a positive whole number, or blank for no cap."
+            )}
           </p>
           <div className="mt-2 flex gap-2">
             <button
@@ -600,7 +602,7 @@ export function GoalTab(props: GoalTabProps) {
               disabled={isSubmitting}
               onClick={() => void submitEditor()}
             >
-              {editingField === "budget" ? "Save budget" : "Save turn cap"}
+              {t(editingField === "budget" ? "Save budget" : "Save turn cap")}
             </button>
             <button
               type="button"
@@ -887,10 +889,10 @@ function BudgetTile(props: BudgetTileProps) {
           {hasBudget ? (
             <>
               <span>{formatGoalCents(overBudget ? overByCents : leftCents)}</span>
-              {overBudget ? " over" : " left"}
+              {overBudget ? ` ${t("over")}` : ` ${t("left")}`}
             </>
           ) : (
-            "no budget"
+            t("no budget")
           )}
         </span>
       </dd>
@@ -901,7 +903,10 @@ function BudgetTile(props: BudgetTileProps) {
           aria-valuemin={0}
           aria-valuemax={100}
           aria-valuenow={percent}
-          aria-valuetext={`${formatGoalCents(costCents)} of ${formatGoalCents(budgetCents)} used (${percent}%)`}
+          aria-valuetext={t("{cost} of {budget} used ({percent}%)")
+            .replace("{cost}", formatGoalCents(costCents))
+            .replace("{budget}", formatGoalCents(budgetCents))
+            .replace("{percent}", String(percent))}
           className="bg-border-light mt-2 h-1 overflow-hidden rounded-full"
         >
           <div
@@ -968,10 +973,10 @@ function TurnsTile(props: TurnsTileProps) {
           {hasCap ? (
             <>
               <span>{overCap ? turnsOverBy : turnsLeft}</span>
-              {overCap ? " over" : " left"}
+              {overCap ? ` ${t("over")}` : ` ${t("left")}`}
             </>
           ) : (
-            "no cap"
+            t("no cap")
           )}
         </div>
       </dd>
@@ -1173,9 +1178,11 @@ function GoalCreateForm(props: GoalCreateFormProps) {
       {props.workspaceId != null && (
         <div className="text-muted -mt-1 flex items-center justify-between text-[11px]">
           <span>
-            {defaults.alwaysRequireExplicitBudget
-              ? "Leave Budget / Turn cap blank to use the defaults shown above."
-              : "Leave Budget blank to create an unbudgeted goal; Turn cap blank uses the default shown above."}
+            {t(
+              defaults.alwaysRequireExplicitBudget
+                ? "Leave Budget / Turn cap blank to use the defaults shown above."
+                : "Leave Budget blank to create an unbudgeted goal; Turn cap blank uses the default shown above."
+            )}
           </span>
           <button
             type="button"
@@ -1202,7 +1209,7 @@ function GoalCreateForm(props: GoalCreateFormProps) {
           disabled={isSubmitting}
           aria-label={t("Set goal")}
         >
-          {isSubmitting ? "Setting goal…" : "Set goal"}
+          {t(isSubmitting ? "Setting goal…" : "Set goal")}
         </button>
       </div>
       {props.workspaceId != null && (

@@ -17,9 +17,6 @@ interface LastResponseStatsBarrierProps {
 }
 
 const STALE_USAGE_MS = 10 * 60 * 1000;
-const RESPONSE_RATE_TOOLTIP =
-  "Average completed-response rate. Excludes time to first token and tool execution; includes output and thinking tokens.";
-
 function formatPercent(value: number): string {
   return `${Math.round(value)}%`;
 }
@@ -108,13 +105,13 @@ const CodexUsageRemaining: React.FC<{ snapshot: CodexUsageSnapshot }> = (props) 
       <button
         type="button"
         aria-expanded={open}
-        aria-label={`Codex 剩余用量 ${remainingLabel}`}
+        aria-label={t("Codex remaining usage {remaining}").replace("{remaining}", remainingLabel)}
         className="hover:bg-background-secondary/80 focus-visible:ring-focus-ring flex max-w-full items-center gap-1.5 rounded px-2 py-1 text-[11px] whitespace-nowrap transition-colors focus-visible:ring-1 focus-visible:outline-none"
         onClick={() => setOpen((value) => !value)}
       >
         <Gauge className="text-muted h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-        <span className="text-muted hidden sm:inline">Codex</span>
-        <span className="text-foreground font-medium">剩余用量</span>
+        <span className="text-muted hidden sm:inline">{t("Codex")}</span>
+        <span className="text-foreground font-medium">{t("Remaining usage")}</span>
         <span
           className={cn(
             "counter-nums-mono font-medium",
@@ -140,7 +137,7 @@ const CodexUsageRemaining: React.FC<{ snapshot: CodexUsageSnapshot }> = (props) 
           className="bg-background border-border-medium absolute right-0 bottom-full z-30 mb-2 w-64 rounded-md border p-3 shadow-lg"
         >
           <div className="mb-3 flex items-baseline justify-between gap-3">
-            <span className="text-foreground text-sm font-semibold">剩余用量</span>
+            <span className="text-foreground text-sm font-semibold">{t("Remaining usage")}</span>
             <span
               className={cn(
                 "counter-nums-mono text-sm font-semibold",
@@ -151,13 +148,12 @@ const CodexUsageRemaining: React.FC<{ snapshot: CodexUsageSnapshot }> = (props) 
             </span>
           </div>
           <div className="flex flex-col gap-2">
-            <CodexUsageDetailRow label="5 小时" window={props.snapshot.windows.fiveHour} />
-            <CodexUsageDetailRow label="1 周" window={props.snapshot.windows.weekly} />
+            <CodexUsageDetailRow label={t("5 hours")} window={props.snapshot.windows.fiveHour} />
+            <CodexUsageDetailRow label={t("1 week")} window={props.snapshot.windows.weekly} />
           </div>
           <div className="text-dim mt-3 text-[10px]">
-            {t("Updated")}
-            {formatResetAt(props.snapshot.updatedAt)}
-            {stale ? " · stale" : ""}
+            {t("Updated")} {formatResetAt(props.snapshot.updatedAt)}
+            {stale ? ` · ${t("stale")}` : ""}
           </div>
         </div>
       )}
@@ -194,11 +190,15 @@ export const LastResponseStatsBarrier: React.FC<LastResponseStatsBarrierProps> =
       {showLastResponseStats && avgTPS && (
         <div className="flex min-w-0 flex-1 items-center gap-2">
           <BaseBarrier
-            text="Response rate"
+            text={t("Response rate")}
             color="var(--color-assistant-border)"
             className="my-0 py-0"
           />
-          <TooltipIfPresent tooltip={RESPONSE_RATE_TOOLTIP}>
+          <TooltipIfPresent
+            tooltip={t(
+              "Average completed-response rate. Excludes time to first token and tool execution; includes output and thinking tokens."
+            )}
+          >
             <span
               data-testid="last-response-stats"
               className="text-assistant-border counter-nums-mono inline-flex min-w-[14ch] items-center justify-end text-[11px] leading-none whitespace-nowrap select-none"

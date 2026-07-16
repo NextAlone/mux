@@ -257,10 +257,25 @@ export const ReviewControls: React.FC<ReviewControlsProps> = ({
           <TooltipIfPresent
             tooltip={
               assistedCount === 0
-                ? `No agent-flagged hunks remain — toggle off to see the full diff (${formatKeybind(KEYBINDS.TOGGLE_ASSISTED_REVIEW)})`
+                ? t(
+                    "No agent-flagged hunks remain — toggle off to see the full diff ({keybind})"
+                  ).replace("{keybind}", formatKeybind(KEYBINDS.TOGGLE_ASSISTED_REVIEW))
                 : assistedUnreadCount === assistedCount
-                  ? `Show only the ${assistedCount} hunk${assistedCount === 1 ? "" : "s"} the agent flagged for review (${formatKeybind(KEYBINDS.TOGGLE_ASSISTED_REVIEW)})`
-                  : `${assistedUnreadCount} of ${assistedCount} agent-flagged hunk${assistedCount === 1 ? "" : "s"} still unread (${formatKeybind(KEYBINDS.TOGGLE_ASSISTED_REVIEW)})`
+                  ? t(
+                      assistedCount === 1
+                        ? "Show only the {count} hunk the agent flagged for review ({keybind})"
+                        : "Show only the {count} hunks the agent flagged for review ({keybind})"
+                    )
+                      .replace("{count}", String(assistedCount))
+                      .replace("{keybind}", formatKeybind(KEYBINDS.TOGGLE_ASSISTED_REVIEW))
+                  : t(
+                      assistedCount === 1
+                        ? "{unread} of {count} agent-flagged hunk still unread ({keybind})"
+                        : "{unread} of {count} agent-flagged hunks still unread ({keybind})"
+                    )
+                      .replace("{unread}", String(assistedUnreadCount))
+                      .replace("{count}", String(assistedCount))
+                      .replace("{keybind}", formatKeybind(KEYBINDS.TOGGLE_ASSISTED_REVIEW))
             }
             side="bottom"
           >

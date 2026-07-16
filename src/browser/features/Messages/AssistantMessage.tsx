@@ -180,7 +180,7 @@ export const AssistantMessage: React.FC<AssistantMessageProps> = ({
               onClick={() => void copyToClipboard(content)}
             >
               {copied ? <ClipboardCheck /> : <Clipboard />}
-              {copied ? "Copied" : "Copy to clipboard"}
+              {copied ? t("Copied") : t("Copy to clipboard")}
             </Button>
           </div>
         </div>
@@ -242,7 +242,7 @@ export const AssistantMessage: React.FC<AssistantMessageProps> = ({
             ) : (
               <Package aria-hidden="true" className="h-3 w-3" />
             )}
-            <span>{isIdleCompacted ? "idle-compacted" : "compacted"}</span>
+            <span>{isIdleCompacted ? t("idle-compacted") : t("compacted")}</span>
             {message.compactionDurationMs !== undefined && (
               <span className="inline-flex items-center gap-0.5 normal-case">
                 <Clock aria-hidden="true" className="h-3 w-3" />

@@ -57,9 +57,9 @@ export const BashBackgroundListToolCall: React.FC<BashBackgroundListToolCallProp
         <span className="text-text-secondary">
           {result?.success
             ? runningCount === 0
-              ? "No background processes"
-              : `${runningCount} background process${runningCount !== 1 ? "es" : ""}`
-            : "Listing background processes"}
+              ? t("No background processes")
+              : t("{count} background processes").replace("{count}", String(runningCount))
+            : t("Listing background processes")}
         </span>
         <StatusIndicator status={status}>{getStatusDisplay(status)}</StatusIndicator>
       </ToolHeader>

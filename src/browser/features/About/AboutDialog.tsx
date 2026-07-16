@@ -252,8 +252,8 @@ export function AboutDialog() {
                   </div>
                   <div className="text-muted text-xs">
                     {channel === "stable"
-                      ? "Official releases only."
-                      : "Nightly pre-release builds from main."}
+                      ? t("Official releases only.")
+                      : t("Nightly pre-release builds from main.")}
                   </div>
                 </div>
               )}
@@ -312,7 +312,7 @@ export function AboutDialog() {
                     ) : (
                       <RefreshCw className="h-3.5 w-3.5" />
                     )}
-                    {pendingAction === "install" ? "Installing…" : "Install & restart"}
+                    {pendingAction === "install" ? t("Installing…") : t("Install & restart")}
                   </Button>
                 </div>
               )}
@@ -331,10 +331,10 @@ export function AboutDialog() {
                 <div className="space-y-2">
                   <div className="text-destructive text-xs">
                     {updateStatus.phase === "download"
-                      ? `Download failed: ${updateStatus.message}`
+                      ? `${t("Download failed:")} ${updateStatus.message}`
                       : updateStatus.phase === "install"
-                        ? `Install failed: ${updateStatus.message}`
-                        : `Update check failed: ${updateStatus.message}`}
+                        ? `${t("Install failed:")} ${updateStatus.message}`
+                        : `${t("Update check failed:")} ${updateStatus.message}`}
                   </div>
                   <div className="flex items-center gap-2">
                     {updateStatus.phase === "download" && (
@@ -372,7 +372,7 @@ export function AboutDialog() {
                       disabled={isChecking}
                     >
                       {isChecking ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
-                      {updateStatus.phase === "check" ? "Try again" : "Check again"}
+                      {updateStatus.phase === "check" ? t("Try again") : t("Check again")}
                     </Button>
                   </div>
                 </div>

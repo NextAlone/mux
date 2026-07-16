@@ -588,6 +588,7 @@ function WorkflowEventRow(props: {
   detailOverride?: unknown;
   tooltipEvent?: WorkflowRunEvent;
 }) {
+  const { t } = useLanguage();
   const event = props.event;
   const tooltipEvent = props.tooltipEvent ?? event;
   const detail =
@@ -614,7 +615,10 @@ function WorkflowEventRow(props: {
       >
         <span
           className="text-muted counter-nums-mono w-fit cursor-help"
-          aria-label={`Raw event #${tooltipEvent.sequence}`}
+          aria-label={t("Raw event #{sequence}").replace(
+            "{sequence}",
+            String(tooltipEvent.sequence)
+          )}
         >
           #{props.displayIndex}
         </span>
@@ -723,7 +727,10 @@ function WorkflowChildRunRow(props: {
             >
               <span
                 className="text-muted counter-nums-mono w-fit cursor-help"
-                aria-label={`Raw event #${props.row.firstEvent.sequence}`}
+                aria-label={t("Raw event #{sequence}").replace(
+                  "{sequence}",
+                  String(props.row.firstEvent.sequence)
+                )}
               >
                 #{props.displayIndex}
               </span>
@@ -879,9 +886,13 @@ function WorkflowTaskRow(props: {
     activateTaskRow();
   };
   const taskRowAriaLabel = canExpandStructuredOutput
-    ? `${structuredOutputExpanded ? "Collapse" : "Expand"} structured output for workflow task ${event.taskId}`
+    ? t(
+        structuredOutputExpanded
+          ? "Collapse structured output for workflow task {taskId}"
+          : "Expand structured output for workflow task {taskId}"
+      ).replace("{taskId}", event.taskId)
     : canNavigateViaRow
-      ? `Open workflow task ${event.taskId}`
+      ? t("Open workflow task {taskId}").replace("{taskId}", event.taskId)
       : undefined;
 
   const taskRow = (
@@ -913,7 +924,10 @@ function WorkflowTaskRow(props: {
       >
         <span
           className="text-muted counter-nums-mono w-fit cursor-help"
-          aria-label={`Raw event #${props.row.firstEvent.sequence}`}
+          aria-label={t("Raw event #{sequence}").replace(
+            "{sequence}",
+            String(props.row.firstEvent.sequence)
+          )}
         >
           #{props.displayIndex}
         </span>
@@ -936,7 +950,7 @@ function WorkflowTaskRow(props: {
     <button
       type="button"
       className={`${WORKFLOW_ACTION_BUTTON_CLASS} inline-flex items-center px-1.5 py-0.5 text-[10px] whitespace-nowrap`}
-      aria-label={`Open task workspace for ${event.taskId}`}
+      aria-label={t("Open task workspace for {taskId}").replace("{taskId}", event.taskId)}
       onClick={() => props.onNavigate(event.taskId)}
     >
       {t("Workspace")}
@@ -960,7 +974,7 @@ function WorkflowTaskRow(props: {
               <button
                 type="button"
                 className={`${WORKFLOW_ACTION_BUTTON_CLASS} inline-flex items-center px-1.5 py-0.5 text-[10px] whitespace-nowrap`}
-                aria-label={`Open report for ${event.taskId}`}
+                aria-label={t("Open report for {taskId}").replace("{taskId}", event.taskId)}
               >
                 {t("Report")}
               </button>
@@ -989,7 +1003,10 @@ function WorkflowTaskRow(props: {
           <WorkflowJsonBlock
             value={taskStructuredOutput}
             className="max-h-[180px]"
-            ariaLabel={`Structured output for workflow task ${event.taskId}`}
+            ariaLabel={t("Structured output for workflow task {taskId}").replace(
+              "{taskId}",
+              event.taskId
+            )}
           />
         </div>
       ) : null}
@@ -1637,7 +1654,9 @@ export const WorkflowRunToolCall: React.FC<WorkflowRunToolCallProps> = ({
           {actionError && <ErrorBox className="mb-2">{actionError}</ErrorBox>}
 
           {displayRows.length > 0 && (
-            <WorkflowSection title={`Workflow events (${displayRows.length})`}>
+            <WorkflowSection
+              title={t("Workflow events ({count})").replace("{count}", String(displayRows.length))}
+            >
               <div className="border-border bg-background/20 max-h-[220px] overflow-y-auto rounded border">
                 <ol className="divide-border/60 divide-y">
                   {displayRows.map((row, index) => {

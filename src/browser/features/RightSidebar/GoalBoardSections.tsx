@@ -351,7 +351,7 @@ function UpcomingRow(props: UpcomingRowProps) {
         // reader access; `aria-describedby` is unnecessary because the
         // row contents are already announced before the handle.
         className="text-muted hover:text-foreground cursor-grab rounded p-0.5 active:cursor-grabbing"
-        aria-label={`Reorder ${props.goal.objective}`}
+        aria-label={t("Reorder {objective}").replace("{objective}", props.goal.objective)}
         {...attributes}
         {...(listeners ?? {})}
       >
@@ -361,18 +361,18 @@ function UpcomingRow(props: UpcomingRowProps) {
         {props.goal.objective}
       </span>
       <span className="text-muted counter-nums shrink-0 text-xs">
-        {props.goal.budgetCents == null ? "no budget" : formatGoalCents(props.goal.budgetCents)}
+        {props.goal.budgetCents == null ? t("no budget") : formatGoalCents(props.goal.budgetCents)}
       </span>
       <div className="flex items-center gap-1.5">
         <RowActionButton
-          aria-label={`Edit ${props.goal.objective}`}
+          aria-label={t("Edit {objective}").replace("{objective}", props.goal.objective)}
           onClick={() => setIsEditing(true)}
         >
           <Pencil className="h-3 w-3" aria-hidden="true" />
         </RowActionButton>
         <RowActionButton
           tone="positive"
-          aria-label={`Promote ${props.goal.objective}`}
+          aria-label={t("Promote {objective}").replace("{objective}", props.goal.objective)}
           onClick={() => void props.onPromote()}
         >
           <Play className="h-3 w-3" aria-hidden="true" />
@@ -380,7 +380,7 @@ function UpcomingRow(props: UpcomingRowProps) {
         </RowActionButton>
         <RowActionButton
           tone="destructive"
-          aria-label={`Remove ${props.goal.objective}`}
+          aria-label={t("Remove {objective}").replace("{objective}", props.goal.objective)}
           onClick={() => void props.onArchive()}
         >
           <Trash2 className="h-3 w-3" aria-hidden="true" />
@@ -497,7 +497,7 @@ function UpcomingRowEditor(props: UpcomingRowEditorProps) {
           disabled={isSaving}
           onClick={() => void submit()}
         >
-          {isSaving ? "Saving…" : "Save"}
+          {t(isSaving ? "Saving…" : "Save")}
         </button>
         <button
           type="button"
@@ -555,7 +555,7 @@ function CompletedSection(props: CompletedSectionProps) {
               {formatGoalCents(entry.goal.costCents)}
             </span>
             <RowActionButton
-              aria-label={`Archive ${entry.goal.objective}`}
+              aria-label={t("Archive {objective}").replace("{objective}", entry.goal.objective)}
               onClick={() => void archive(entry.goal.goalId)}
             >
               <Inbox className="h-3 w-3" aria-hidden="true" />
@@ -606,7 +606,7 @@ function ArchivedSection(props: ArchivedSectionProps) {
           >
             <span className="text-foreground line-clamp-1 flex-1">{entry.goal.objective}</span>
             <RowActionButton
-              aria-label={`Revive ${entry.goal.objective}`}
+              aria-label={t("Revive {objective}").replace("{objective}", entry.goal.objective)}
               onClick={() => void revive(entry.goal.goalId)}
             >
               <ArchiveRestore className="h-3 w-3" aria-hidden="true" />
@@ -757,8 +757,11 @@ function UpcomingAdder(props: UpcomingAdderProps) {
           // user expects.
           placeholder={
             defaults.alwaysRequireExplicitBudget
-              ? `$${(defaults.defaultBudgetCents / 100).toFixed(2)} (default)`
-              : "no budget (default)"
+              ? t("{budget} (default)").replace(
+                  "{budget}",
+                  `$${(defaults.defaultBudgetCents / 100).toFixed(2)}`
+                )
+              : t("no budget (default)")
           }
           className="border-border bg-surface-primary text-foreground focus:border-accent w-28 rounded-md border p-1.5 text-xs outline-none"
         />
@@ -769,8 +772,8 @@ function UpcomingAdder(props: UpcomingAdderProps) {
           // goals do not pick up an invisible limit.
           placeholder={
             defaults.defaultTurnCap == null
-              ? "no cap (default)"
-              : `${defaults.defaultTurnCap} turns (default)`
+              ? t("no cap (default)")
+              : t("{turns} turns (default)").replace("{turns}", String(defaults.defaultTurnCap))
           }
           inputMode="numeric"
           className="border-border bg-surface-primary text-foreground focus:border-accent w-28 rounded-md border p-1.5 text-xs outline-none"
@@ -781,7 +784,7 @@ function UpcomingAdder(props: UpcomingAdderProps) {
           disabled={isSubmitting}
           onClick={() => void submit()}
         >
-          {isSubmitting ? "Queuing…" : "Queue goal"}
+          {t(isSubmitting ? "Queuing…" : "Queue goal")}
         </button>
         <button
           type="button"

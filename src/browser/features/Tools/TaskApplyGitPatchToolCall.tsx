@@ -178,6 +178,7 @@ const CopyableCode: React.FC<{
   tooltipLabel: string;
   className?: string;
 }> = ({ value, displayValue, tooltipLabel, className }) => {
+  const { t } = useLanguage();
   const { copied, copyToClipboard } = useCopyToClipboard();
 
   return (
@@ -194,7 +195,7 @@ const CopyableCode: React.FC<{
           {displayValue ?? value}
         </button>
       </TooltipTrigger>
-      <TooltipContent>{copied ? "Copied" : tooltipLabel}</TooltipContent>
+      <TooltipContent>{copied ? t("Copied") : tooltipLabel}</TooltipContent>
     </Tooltip>
   );
 };
@@ -225,11 +226,12 @@ export const TaskApplyGitPatchProjectResultCard: React.FC<{
           <span className="text-secondary font-mono text-[10px]">{projectResult.projectPath}</span>
         )}
         <span className="text-muted rounded border px-1.5 py-0.5 text-[10px] capitalize">
-          {projectResult.status}
+          {t(projectResult.status)}
         </span>
         {appliedCommitCount > 0 && (
           <span className="text-secondary text-[10px]">
-            {isDryRun ? "Would apply" : "Applied"} {formatAppliedChangeCount(appliedCommitCount)}
+            {isDryRun ? t("Would apply") : t("Applied")}{" "}
+            {formatAppliedChangeCount(appliedCommitCount)}
           </span>
         )}
       </div>
@@ -240,7 +242,7 @@ export const TaskApplyGitPatchProjectResultCard: React.FC<{
           <CopyableCode
             value={projectResult.headCommitSha}
             displayValue={formatShortSha(projectResult.headCommitSha)}
-            tooltipLabel="Copy HEAD SHA"
+            tooltipLabel={t("Copy HEAD SHA")}
           />
         </div>
       )}
@@ -258,7 +260,7 @@ export const TaskApplyGitPatchProjectResultCard: React.FC<{
                   <CopyableCode
                     value={commit.sha}
                     displayValue={formatShortSha(commit.sha)}
-                    tooltipLabel="Copy commit SHA"
+                    tooltipLabel={t("Copy commit SHA")}
                     className="shrink-0"
                   />
                 ) : (
@@ -387,7 +389,9 @@ export const TaskApplyGitPatchToolCall: React.FC<TaskApplyGitPatchToolCallProps>
         {successResult && (
           <span className="text-secondary ml-2 text-[10px] whitespace-nowrap">
             {projectResults && projectResults.length > 1 && appliedProjectCount != null
-              ? `${appliedProjectCount} projects, ${formatAppliedChangeCount(appliedCommitCount)}`
+              ? t("{count} projects, {changes}")
+                  .replace("{count}", String(appliedProjectCount))
+                  .replace("{changes}", formatAppliedChangeCount(appliedCommitCount))
               : formatAppliedChangeCount(appliedCommitCount)}
           </span>
         )}
@@ -406,7 +410,7 @@ export const TaskApplyGitPatchToolCall: React.FC<TaskApplyGitPatchToolCallProps>
                 <span className="text-secondary shrink-0 font-medium">{t("Task ID:")}</span>
                 <CopyableCode
                   value={taskId}
-                  tooltipLabel="Copy task ID"
+                  tooltipLabel={t("Copy task ID")}
                   className="max-w-[260px]"
                 />
               </div>
@@ -417,24 +421,33 @@ export const TaskApplyGitPatchToolCall: React.FC<TaskApplyGitPatchToolCallProps>
             <DetailLabel>{t("Options")}</DetailLabel>
             <div className="bg-code-bg flex flex-wrap gap-4 rounded px-2 py-1.5 text-[11px] leading-[1.4]">
               <div className="flex items-center gap-1.5">
+                {/* i18n-ignore: raw tool argument field name */}
                 <span className="text-secondary font-medium">project_path:</span>
                 <span className="text-text font-mono">
-                  {args.project_path ?? "all ready projects"}
+                  {args.project_path ?? t("all ready projects")}
                 </span>
               </div>
               <div className="flex items-center gap-1.5">
+                {/* i18n-ignore: raw tool argument field name */}
                 <span className="text-secondary font-medium">dry_run:</span>
                 <span className="text-text font-mono">
+                  {/* i18n-ignore: raw boolean tool argument value */}
                   {args.dry_run === true ? "true" : "false"}
                 </span>
               </div>
               <div className="flex items-center gap-1.5">
+                {/* i18n-ignore: raw tool argument field name */}
                 <span className="text-secondary font-medium">three_way:</span>
-                <span className="text-text font-mono">{effectiveThreeWay ? "true" : "false"}</span>
+                <span className="text-text font-mono">
+                  {/* i18n-ignore: raw boolean tool argument value */}
+                  {effectiveThreeWay ? "true" : "false"}
+                </span>
               </div>
               <div className="flex items-center gap-1.5">
+                {/* i18n-ignore: raw tool argument field name */}
                 <span className="text-secondary font-medium">force:</span>
                 <span className="text-text font-mono">
+                  {/* i18n-ignore: raw boolean tool argument value */}
                   {args.force === true ? "true" : "false"}
                 </span>
               </div>
@@ -457,11 +470,13 @@ export const TaskApplyGitPatchToolCall: React.FC<TaskApplyGitPatchToolCallProps>
                 <div className="bg-code-bg flex flex-wrap gap-4 rounded px-2 py-1.5 text-[11px] leading-[1.4]">
                   <div className="flex items-center gap-1.5">
                     <span className="text-secondary font-medium">
-                      {isDryRun ? "Would apply" : "Applied"}:
+                      {isDryRun ? t("Would apply") : t("Applied")}:
                     </span>
                     <span className="text-text font-mono">
                       {projectResults && projectResults.length > 1 && appliedProjectCount != null
-                        ? `${appliedProjectCount} projects, ${formatAppliedChangeCount(appliedCommitCount)}`
+                        ? t("{count} projects, {changes}")
+                            .replace("{count}", String(appliedProjectCount))
+                            .replace("{changes}", formatAppliedChangeCount(appliedCommitCount))
                         : formatAppliedChangeCount(appliedCommitCount)}
                     </span>
                   </div>
@@ -496,7 +511,7 @@ export const TaskApplyGitPatchToolCall: React.FC<TaskApplyGitPatchToolCallProps>
                             <CopyableCode
                               value={commit.sha}
                               displayValue={formatShortSha(commit.sha)}
-                              tooltipLabel="Copy commit SHA"
+                              tooltipLabel={t("Copy commit SHA")}
                               className="shrink-0"
                             />
                           ) : (
@@ -545,7 +560,7 @@ export const TaskApplyGitPatchToolCall: React.FC<TaskApplyGitPatchToolCallProps>
                     onClick={() => void copyErrorToClipboard(errorResult.error)}
                     active={copiedError}
                   >
-                    {copiedError ? "Copied" : "Copy"}
+                    {copiedError ? t("Copied") : t("Copy")}
                   </HeaderButton>
                 </DetailLabel>
                 <ErrorOutput error={errorResult.error} />

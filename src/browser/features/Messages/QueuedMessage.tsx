@@ -107,7 +107,7 @@ export const QueuedMessage: React.FC<QueuedMessageProps> = ({
                 className="text-muted hover:text-secondary flex items-center gap-1 text-xs transition-colors disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <Send className="size-3" />
-                {isSending ? "Sending…" : "Send now"}
+                {isSending ? t("Sending…") : t("Send now")}
               </button>
             )}
           </div>

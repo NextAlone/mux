@@ -253,7 +253,9 @@ export function GoalDefaultsSection(props: GoalDefaultsSectionProps) {
           <span className="tabular-nums">
             ${formatBudgetDollars(effective.defaultBudgetCents)}
             {" • "}
-            {effective.defaultTurnCap == null ? "no turn cap" : `${effective.defaultTurnCap} turns`}
+            {effective.defaultTurnCap == null
+              ? t("no turn cap")
+              : `${effective.defaultTurnCap} ${t("turns")}`}
           </span>
           <ChevronDown
             className="h-3.5 w-3.5 transition-transform group-open:rotate-180"
@@ -467,7 +469,10 @@ function ExplicitBudgetOverrideRow(props: ExplicitBudgetOverrideRowProps) {
   return (
     <OverrideRow
       label={t("Always require explicit budget")}
-      helperInherit={`Inherits ${props.inheritValue ? "ON" : "OFF"} from All workspaces`}
+      helperInherit={t("Inherits {value} from All workspaces").replace(
+        "{value}",
+        t(props.inheritValue ? "ON" : "OFF")
+      )}
       isOverriding={isOverriding}
       onToggleOverride={(next) => {
         if (next) {
@@ -486,7 +491,7 @@ function ExplicitBudgetOverrideRow(props: ExplicitBudgetOverrideRowProps) {
             onChange={(event) => props.onChange(event.target.checked)}
             className="accent-accent h-4 w-4"
           />
-          <span className="text-muted text-xs">{(props.override ?? false) ? "ON" : "OFF"}</span>
+          <span className="text-muted text-xs">{t((props.override ?? false) ? "ON" : "OFF")}</span>
         </label>
       }
     />
@@ -503,6 +508,7 @@ interface OverrideRowProps {
 }
 
 function OverrideRow(props: OverrideRowProps) {
+  const { t } = useLanguage();
   return (
     <div
       className={cn(
@@ -514,7 +520,7 @@ function OverrideRow(props: OverrideRowProps) {
       <div className="min-w-0 flex-1">
         <div className="text-foreground text-sm font-medium">{props.label}</div>
         <div className="text-muted mt-0.5 text-xs">
-          {props.isOverriding ? "Using a workspace-specific value." : props.helperInherit}
+          {props.isOverriding ? t("Using a workspace-specific value.") : props.helperInherit}
         </div>
       </div>
       <div className="flex items-center gap-2">
@@ -529,11 +535,13 @@ function OverrideRow(props: OverrideRowProps) {
           )}
           aria-pressed={props.isOverriding}
           aria-label={
-            props.isOverriding ? `Stop overriding ${props.label}` : `Override ${props.label}`
+            props.isOverriding
+              ? t("Stop overriding {label}").replace("{label}", props.label)
+              : t("Override {label}").replace("{label}", props.label)
           }
           disabled={props.disabled === true}
         >
-          {props.isOverriding ? "Override" : "Inherit"}
+          {t(props.isOverriding ? "Override" : "Inherit")}
         </button>
         {props.isOverriding && props.input}
       </div>

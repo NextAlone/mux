@@ -3818,7 +3818,7 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
         description={t(
           "Sending this edit will discard the latest compaction or reset summary and every message after the edited one, then continue from the rewritten history."
         )}
-        warning="This action cannot be undone."
+        warning={t("This action cannot be undone.")}
         confirmLabel={t("Edit and Send")}
         onConfirm={handleBoundaryEditConfirm}
         onCancel={handleBoundaryEditCancel}
@@ -3829,7 +3829,7 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
         isOpen={pendingDestructiveCommand}
         title={t("Clear Chat History?")}
         description={t("This will remove all messages from the conversation.")}
-        warning="This action cannot be undone."
+        warning={t("This action cannot be undone.")}
         confirmLabel={t("Clear")}
         onConfirm={handleDestructiveCommandConfirm}
         onCancel={handleDestructiveCommandCancel}

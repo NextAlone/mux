@@ -673,7 +673,7 @@ function BrowserPageTabStripButton(props: {
       type="button"
       role="tab"
       aria-selected={props.tab.active}
-      aria-label={`Browser tab: ${primaryLabel}`}
+      aria-label={t("Browser tab: {label}").replace("{label}", primaryLabel)}
       aria-controls={BROWSER_VIEWPORT_PANEL_ID}
       aria-disabled={isSwitching ? true : undefined}
       aria-busy={isPending ? true : undefined}

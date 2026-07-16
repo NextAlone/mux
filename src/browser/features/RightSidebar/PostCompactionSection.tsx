@@ -122,7 +122,7 @@ export const PostCompactionSection: React.FC<PostCompactionSectionProps> = (prop
                     </button>
                   </TooltipTrigger>
                   <TooltipContent side="top" showArrow={false}>
-                    {isPlanExcluded ? "Include in context" : "Exclude from context"}
+                    {t(isPlanExcluded ? "Include in context" : "Exclude from context")}
                   </TooltipContent>
                 </Tooltip>
                 <Tooltip>
@@ -192,7 +192,7 @@ export const PostCompactionSection: React.FC<PostCompactionSectionProps> = (prop
                     </button>
                   </TooltipTrigger>
                   <TooltipContent side="top" showArrow={false}>
-                    {includedFilesCount === 0 ? "Include all files" : "Exclude all files"}
+                    {t(includedFilesCount === 0 ? "Include all files" : "Exclude all files")}
                   </TooltipContent>
                 </Tooltip>
                 <button
@@ -233,7 +233,7 @@ export const PostCompactionSection: React.FC<PostCompactionSectionProps> = (prop
                           </button>
                         </TooltipTrigger>
                         <TooltipContent side="top" showArrow={false}>
-                          {file.isExcluded ? "Include in context" : "Exclude from context"}
+                          {t(file.isExcluded ? "Include in context" : "Exclude from context")}
                         </TooltipContent>
                       </Tooltip>
                       <span
