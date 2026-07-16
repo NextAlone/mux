@@ -110,3 +110,70 @@ export const ProjectSecrets: Story = {
     await canvas.findByDisplayValue("PROJECT_TOKEN");
   },
 };
+
+/**
+ * Fixed-width wrapper keeps the responsive contract active in the Storybook test runner,
+ * while the matching viewport mode makes Chromatic capture the same narrow Settings layout.
+ */
+export const NarrowProjectSecrets: Story = {
+  tags: ["secrets-responsive"],
+  globals: {
+    viewport: { value: "mobile1", isRotated: false },
+  },
+  parameters: {
+    chromatic: {
+      modes: {
+        "dark-mobile": { theme: "dark", viewport: 375 },
+      },
+    },
+  },
+  render: () => (
+    <div data-testid="secrets-mobile-container" className="bg-background w-[375px] max-w-full p-4">
+      <SettingsSectionStory setup={() => setupSecretsStory()}>
+        <SecretsSection />
+      </SettingsSectionStory>
+    </div>
+  ),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const accountInput = await canvas.findByPlaceholderText("my-team.1password.com");
+    const projectScopeToggle = await canvas.findByRole("radio", {
+      name: /^(Project|项目)$/i,
+    });
+
+    await userEvent.click(projectScopeToggle);
+
+    const keyInput = await canvas.findByDisplayValue("PROJECT_TOKEN");
+    const valueInput = await canvas.findByDisplayValue("project-secret");
+    const sourceSelect = await canvas.findByRole("combobox", {
+      name: /(Secret source|密钥来源)/i,
+    });
+
+    await new Promise<void>((resolve) =>
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+    );
+
+    const container = canvas.getByTestId("secrets-mobile-container");
+    if (container.scrollWidth > container.clientWidth + 1) {
+      throw new Error(
+        `Secrets settings overflowed its ${container.clientWidth}px container by ` +
+          `${container.scrollWidth - container.clientWidth}px`
+      );
+    }
+
+    const accountRect = accountInput.getBoundingClientRect();
+    if (accountRect.width < container.clientWidth * 0.75) {
+      throw new Error("1Password account input did not expand across the narrow settings row");
+    }
+
+    const keyRect = keyInput.getBoundingClientRect();
+    const valueRect = valueInput.getBoundingClientRect();
+    if (keyRect.bottom > valueRect.top + 1) {
+      throw new Error("Secret key and value controls did not stack in the narrow layout");
+    }
+
+    if (sourceSelect.getBoundingClientRect().width < container.clientWidth * 0.5) {
+      throw new Error("Secret source selector remained fixed-width in the narrow layout");
+    }
+  },
+};

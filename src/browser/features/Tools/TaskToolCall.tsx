@@ -213,7 +213,8 @@ const AgentTypeBadge: React.FC<{
     className
   );
 
-  const openWorkspaceLabel = type === "workspace" ? "Open workspace" : `Open ${type} workspace`;
+  const openWorkspaceLabel =
+    type === "workspace" ? t("Open workspace") : t("Open {type} workspace").replace("{type}", type);
 
   if (!workspace) {
     return <span className={classNames}>{type}</span>;
@@ -247,6 +248,7 @@ const TaskId: React.FC<{ id: string; openWorkspaceId?: string; className?: strin
   openWorkspaceId,
   className,
 }) => {
+  const { t } = useLanguage();
   const workspaceContext = useOptionalWorkspaceContext();
   const { copied, copyToClipboard } = useCopyToClipboard();
 
@@ -279,7 +281,7 @@ const TaskId: React.FC<{ id: string; openWorkspaceId?: string; className?: strin
         </button>
       </TooltipTrigger>
       <TooltipContent>
-        {canOpenWorkspace ? "Open workspace" : copied ? "Copied" : "Copy task ID"}
+        {canOpenWorkspace ? t("Open workspace") : copied ? t("Copied") : t("Copy task ID")}
       </TooltipContent>
     </Tooltip>
   );
@@ -343,6 +345,7 @@ const TaskRow: React.FC<TaskRowProps> = (props) => (
       <span className="text-foreground max-w-[200px] truncate text-[11px]">{props.title}</span>
     )}
     {typeof props.depth === "number" && props.depth > 0 && (
+      // i18n-ignore: raw task nesting field name
       <span className="text-muted text-[10px]">depth: {props.depth}</span>
     )}
     <TaskRowElapsed startedAtMs={props.startedAtMs} status={props.status} />
@@ -985,6 +988,7 @@ export const TaskToolCall: React.FC<TaskToolCallProps> = ({
       <ToolHeader onClick={toggleExpanded}>
         <ExpandIcon expanded={expanded}>▶</ExpandIcon>
         <TaskIcon toolName="task" />
+        {/* i18n-ignore: canonical tool name */}
         <ToolName>task</ToolName>
         {kindBadge}
         {isTaskGroup && (
@@ -1098,8 +1102,7 @@ export const TaskToolCall: React.FC<TaskToolCallProps> = ({
 
             {effectiveStatus === "executing" && !hasAnyReport && !shouldShowCreationProgress && (
               <div className="text-muted mt-2 text-[11px] italic">
-                {t("Task")}
-                {isBackground ? "running in background" : "executing"}
+                {t("Task")} {isBackground ? t("running in background") : t("executing")}
                 <LoadingDots />
               </div>
             )}
@@ -1219,6 +1222,7 @@ export const TaskAwaitToolCall: React.FC<TaskAwaitToolCallProps> = ({
       <ToolHeader onClick={toggleExpanded}>
         <ExpandIcon expanded={expanded}>▶</ExpandIcon>
         <TaskIcon toolName="task_await" />
+        {/* i18n-ignore: canonical tool name */}
         <ToolName>task_await</ToolName>
         {status === "executing" && (
           <span className="text-pending counter-nums ml-2 text-[10px] whitespace-nowrap [@container(max-width:500px)]:hidden">
@@ -1429,6 +1433,7 @@ export const TaskListToolCall: React.FC<TaskListToolCallProps> = ({
       <ToolHeader onClick={toggleExpanded}>
         <ExpandIcon expanded={expanded}>▶</ExpandIcon>
         <TaskIcon toolName="task_list" />
+        {/* i18n-ignore: canonical tool name */}
         <ToolName>task_list</ToolName>
         <span className="text-muted text-[10px]">
           {tasks.length} {t("task(s)")}
@@ -1518,6 +1523,7 @@ export const TaskTerminateToolCall: React.FC<TaskTerminateToolCallProps> = ({
       <ToolHeader onClick={toggleExpanded}>
         <ExpandIcon expanded={expanded}>▶</ExpandIcon>
         <TaskIcon toolName="task_terminate" />
+        {/* i18n-ignore: canonical tool name */}
         <ToolName>task_terminate</ToolName>
         <span className="text-interrupted text-[10px]">{summary}</span>
         <StatusIndicator status={status}>{getStatusDisplay(status)}</StatusIndicator>

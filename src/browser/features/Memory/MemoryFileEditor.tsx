@@ -105,7 +105,7 @@ export function MemoryFileEditor(props: MemoryFileEditorProps) {
           disabled={loaded === null || saving}
           onClick={() => void handleSave()}
         >
-          {saving ? "Saving…" : "Save"}
+          {saving ? t("Saving…") : t("Save")}
         </Button>
       </div>
       {saveError !== null && (

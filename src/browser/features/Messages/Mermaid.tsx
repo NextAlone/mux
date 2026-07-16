@@ -449,7 +449,7 @@ export const Mermaid: React.FC<{ chart: string }> = ({ chart }) => {
           // pending placeholder so untrusted chart text is never rendered as HTML.
           {...(!showPendingPlaceholder ? { dangerouslySetInnerHTML: { __html: displaySvg } } : {})}
         >
-          {showPendingPlaceholder ? "Rendering diagram..." : null}
+          {showPendingPlaceholder ? t("Rendering diagram...") : null}
         </div>
       </div>
       {isModalOpen && (

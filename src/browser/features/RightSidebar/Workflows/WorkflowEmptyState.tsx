@@ -244,10 +244,12 @@ export const WorkflowEmptyState: React.FC<WorkflowEmptyStateProps> = (props) => 
 
       <div className="text-muted pt-1 text-center text-[11.5px]">
         {t("Start one from chat with")}{" "}
-        <span className="border-border bg-surface-secondary rounded border px-1.5 py-px font-mono">
+        <code className="border-border bg-surface-secondary rounded border px-1.5 py-px font-mono">
+          {/* i18n-ignore -- slash-command example */}
           {`/workflow ${SLASH_COMMAND_HINTS.workflow}`}
-        </span>
-        ; workspace <span className="text-content-secondary font-mono">.md/.js</span>
+        </code>
+        {"; "}
+        {t("workspace")} <code className="text-content-secondary font-mono">.md/.js</code>{" "}
         {t("workflows are loaded by explicit path.")}
       </div>
     </div>

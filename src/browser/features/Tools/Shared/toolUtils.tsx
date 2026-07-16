@@ -106,52 +106,52 @@ export function getStatusDisplay(status: ToolStatus): React.ReactNode {
     case "executing":
       return (
         <>
-          <LoadingDots /> <LocalizedStatusText text="executing" />
+          <LoadingDots /> <LocalizedStatusText translationKey="executing" />
         </>
       );
     case "completed":
       return (
         <>
           <Check aria-hidden="true" className="mr-1 inline-block h-3 w-3 align-[-2px]" />
-          <LocalizedStatusText text="completed" />
+          <LocalizedStatusText translationKey="completed" />
         </>
       );
     case "failed":
       return (
         <>
           <X aria-hidden="true" className="mr-1 inline-block h-3 w-3 align-[-2px]" />
-          <LocalizedStatusText text="failed" />
+          <LocalizedStatusText translationKey="failed" />
         </>
       );
     case "interrupted":
       return (
         <>
           <AlertTriangle aria-hidden="true" className="mr-1 inline-block h-3 w-3 align-[-2px]" />
-          <LocalizedStatusText text="interrupted" />
+          <LocalizedStatusText translationKey="interrupted" />
         </>
       );
     case "redacted":
       return (
         <>
           <EyeOff aria-hidden="true" className="mr-1 inline-block h-3 w-3 align-[-2px]" />
-          <LocalizedStatusText text="redacted" />
+          <LocalizedStatusText translationKey="redacted" />
         </>
       );
     case "backgrounded":
       return (
         <>
           <CircleDot aria-hidden="true" className="mr-1 inline-block h-3 w-3 align-[-2px]" />
-          <LocalizedStatusText text="backgrounded" />
+          <LocalizedStatusText translationKey="backgrounded" />
         </>
       );
     default:
-      return <LocalizedStatusText text="pending" />;
+      return <LocalizedStatusText translationKey="pending" />;
   }
 }
 
-function LocalizedStatusText(props: { text: string }) {
+function LocalizedStatusText(props: { translationKey: string }) {
   const { t } = useLanguage();
-  return <span className="status-text">{t(props.text)}</span>;
+  return <span className="status-text">{t(props.translationKey)}</span>;
 }
 
 /**

@@ -412,7 +412,7 @@ export const FileTree: React.FC<FileTreeExternalProps> = ({
           </div>
           {selectedPath && (
             <TooltipIfPresent
-              tooltip={`Filtering: ${selectedPath}\nClick to clear`}
+              tooltip={t("Filtering: {path}\nClick to clear").replace("{path}", selectedPath)}
               side="bottom"
               align="end"
             >

@@ -319,7 +319,8 @@ export function SavedQueryPanel(props: SavedQueryPanelProps) {
         {data && (
           <div className="text-muted text-[10px]">
             {data.rowCount.toLocaleString()}
-            {data.rowCountExact ? "" : "+"} {t("rows ·")} {data.durationMs}ms
+            {data.rowCountExact ? "" : "+"} {t("rows ·")} {data.durationMs}
+            {/* i18n-ignore -- millisecond unit */}ms
             {data.truncated && ` · ${t("Results truncated")}`}
           </div>
         )}

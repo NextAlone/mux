@@ -345,7 +345,7 @@ export function StatsTab(props: StatsTabProps) {
                     void handleClearStats();
                   }}
                 >
-                  {isClearing ? "Clearing..." : "Clear stats"}
+                  {t(isClearing ? "Clearing..." : "Clear stats")}
                 </button>
               )}
               <span className="text-muted text-xs tabular-nums">
@@ -398,7 +398,8 @@ export function StatsTab(props: StatsTabProps) {
 
           {avgTPS !== null && avgTPS > 0 && (
             <div className="text-muted-light text-xs tabular-nums">
-              {rateLabel}: {avgTPS.toFixed(0)} tok/s
+              {rateLabel}: {avgTPS.toFixed(0)}
+              {/* i18n-ignore -- token-rate unit */} tok/s
             </div>
           )}
 
@@ -525,13 +526,19 @@ function ModelBreakdownView(props: {
                 {avgTtft !== null && (
                   <>
                     <span>·</span>
-                    <span>TTFT {formatDuration(avgTtft, "precise")}</span>
+                    <span>
+                      {/* i18n-ignore -- time-to-first-token abbreviation */}TTFT{" "}
+                      {formatDuration(avgTtft, "precise")}
+                    </span>
                   </>
                 )}
                 {entryAvgTPS !== null && entryAvgTPS > 0 && (
                   <>
                     <span>·</span>
-                    <span>{entryAvgTPS.toFixed(0)} tok/s</span>
+                    <span>
+                      {entryAvgTPS.toFixed(0)}
+                      {/* i18n-ignore -- token-rate unit */} tok/s
+                    </span>
                   </>
                 )}
               </div>
@@ -699,7 +706,7 @@ export function TimingPanel(props: TimingPanelProps) {
                     void handleClearStats();
                   }}
                 >
-                  {isClearing ? "Clearing..." : "Clear stats"}
+                  {t(isClearing ? "Clearing..." : "Clear stats")}
                 </button>
               )}
               <span className="text-muted text-xs">{formatDuration(totalDuration, "precise")}</span>
@@ -750,7 +757,8 @@ export function TimingPanel(props: TimingPanelProps) {
 
           {avgTPS !== null && avgTPS > 0 && (
             <div className="text-muted-light text-xs">
-              {rateLabel}: {avgTPS.toFixed(0)} tok/s
+              {rateLabel}: {avgTPS.toFixed(0)}
+              {/* i18n-ignore -- token-rate unit */} tok/s
             </div>
           )}
 

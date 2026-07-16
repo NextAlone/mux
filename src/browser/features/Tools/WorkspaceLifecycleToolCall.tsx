@@ -354,8 +354,8 @@ const WorkspaceRow: React.FC<{
           <DetailList
             label={
               row.status === "requires_confirmation"
-                ? "Untracked files that would be lost"
-                : "Paths"
+                ? t("Untracked files that would be lost")
+                : t("Paths")
             }
             items={row.paths}
           />

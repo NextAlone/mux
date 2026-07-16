@@ -823,7 +823,12 @@ export function CreationControls(props: CreationControlsProps) {
                   value={nameState.name}
                   onChange={handleNameChange}
                   onFocus={handleInputFocus}
-                  placeholder={nameState.isGenerating ? "Generating..." : "workspace-name"}
+                  placeholder={
+                    nameState.isGenerating
+                      ? t("Generating...")
+                      : // i18n-ignore: stable workspace identifier example
+                        "workspace-name"
+                  }
                   disabled={props.disabled}
                   className={cn(
                     `border-border-medium focus:border-accent h-7 rounded-md
@@ -853,7 +858,7 @@ export function CreationControls(props: CreationControlsProps) {
                     disabled={props.disabled}
                     className="flex shrink-0 items-center disabled:opacity-50"
                     aria-label={
-                      nameState.autoGenerate ? "Disable auto-naming" : "Enable auto-naming"
+                      nameState.autoGenerate ? t("Disable auto-naming") : t("Enable auto-naming")
                     }
                   >
                     <Wand2
@@ -867,7 +872,9 @@ export function CreationControls(props: CreationControlsProps) {
                   </button>
                 </TooltipTrigger>
                 <TooltipContent align="center">
-                  {nameState.autoGenerate ? "Auto-naming enabled" : "Click to enable auto-naming"}
+                  {nameState.autoGenerate
+                    ? t("Auto-naming enabled")
+                    : t("Click to enable auto-naming")}
                 </TooltipContent>
               </Tooltip>
             )}
@@ -907,8 +914,8 @@ export function CreationControls(props: CreationControlsProps) {
                   </TooltipTrigger>
                   <TooltipContent align="center">
                     {runtimeChoice !== props.defaultRuntimeMode
-                      ? "Set project runtime defaults"
-                      : "Configure runtimes"}
+                      ? t("Set project runtime defaults")
+                      : t("Configure runtimes")}
                   </TooltipContent>
                 </Tooltip>
               </div>
@@ -1059,7 +1066,7 @@ export function CreationControls(props: CreationControlsProps) {
               disabled={props.disabled}
               hasError={props.runtimeFieldError === "docker"}
               id="docker-image"
-              ariaLabel="Docker image"
+              ariaLabel={t("Docker image")}
               inputClassName={INLINE_CONTROL_CLASSES}
               stacked
             />

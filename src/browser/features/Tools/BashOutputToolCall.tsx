@@ -58,7 +58,7 @@ export const BashOutputToolCall: React.FC<BashOutputToolCallProps> = ({
           {args.filter && ` • ${args.filter_exclude ? "exclude" : "filter"}: ${args.filter}`}
           {groupPosition && (
             <span className="text-muted ml-1 flex items-center gap-0.5">
-              • <Link size={8} /> {groupPosition === "first" ? "start" : "end"}
+              • <Link size={8} /> {groupPosition === "first" ? t("start") : t("end")}
             </span>
           )}
         </span>
@@ -81,7 +81,11 @@ export const BashOutputToolCall: React.FC<BashOutputToolCallProps> = ({
               )}
 
               {result.success && (
-                <OutputSection output={result.output} note={note} emptyMessage="No new output" />
+                <OutputSection
+                  output={result.output}
+                  note={note}
+                  emptyMessage={t("No new output")}
+                />
               )}
             </>
           )}

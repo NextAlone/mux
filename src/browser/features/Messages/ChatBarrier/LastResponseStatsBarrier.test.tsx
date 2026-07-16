@@ -91,7 +91,7 @@ describe("LastResponseStatsBarrier", () => {
 
     const view = render(<LastResponseStatsBarrier workspaceId="ws-1" />);
 
-    const toggle = view.getByRole("button", { name: /Codex 剩余用量 8%/ });
+    const toggle = view.getByRole("button", { name: /Codex remaining usage 8%/ });
     expect(toggle.textContent).toContain("5h");
     expect(toggle.textContent).toContain("25%");
     expect(toggle.textContent).toContain("1w");
@@ -99,9 +99,9 @@ describe("LastResponseStatsBarrier", () => {
 
     fireEvent.click(toggle);
 
-    expect(view.getAllByText("剩余用量").length).toBeGreaterThan(0);
-    expect(view.getByText("5 小时")).toBeTruthy();
-    expect(view.getByText("1 周")).toBeTruthy();
+    expect(view.getAllByText("Remaining usage").length).toBeGreaterThan(0);
+    expect(view.getByText("5 hours")).toBeTruthy();
+    expect(view.getByText("1 week")).toBeTruthy();
     expect(view.getByText("Jul 7")).toBeTruthy();
   });
 
@@ -116,7 +116,7 @@ describe("LastResponseStatsBarrier", () => {
 
     const view = render(<LastResponseStatsBarrier workspaceId="ws-1" />);
 
-    expect(view.queryByText("剩余用量")).toBeNull();
+    expect(view.queryByText("Remaining usage")).toBeNull();
   });
 
   test("hides while a stream is active", () => {

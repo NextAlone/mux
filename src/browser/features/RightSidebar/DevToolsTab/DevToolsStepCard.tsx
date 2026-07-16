@@ -179,7 +179,7 @@ function MetadataBar(props: {
           {props.tools.length > 0 && (
             <MetadataPill
               icon={Wrench}
-              label={`${props.tools.length} available tools`}
+              label={t("{count} available tools").replace("{count}", String(props.tools.length))}
               active={props.activeSection === "tools"}
               onClick={() => props.onToggleSection("tools")}
             />
@@ -206,7 +206,10 @@ function MetadataBar(props: {
           {hasToolPolicy && (
             <MetadataPill
               icon={Shield}
-              label={`${props.toolPolicy?.length ?? 0} policy rules`}
+              label={t("{count} policy rules").replace(
+                "{count}",
+                String(props.toolPolicy?.length ?? 0)
+              )}
               active={props.activeSection === "policy"}
               onClick={() => props.onToggleSection("policy")}
             />
@@ -362,9 +365,10 @@ function sanitizeToolPolicy(value: unknown): ToolPolicy | null {
   return sanitized.length > 0 ? sanitized : null;
 }
 function ProviderOptionsSection(props: { providerOptions: unknown }) {
+  const { t } = useLanguage();
   return (
     <div className="mt-1">
-      <JsonBlock data={props.providerOptions} emptyMessage="No provider options captured" />
+      <JsonBlock data={props.providerOptions} emptyMessage={t("No provider options captured")} />
     </div>
   );
 }
@@ -456,7 +460,7 @@ function StepInputPanel(props: { step: DevToolsStep }) {
 
     return (
       <div className="mt-1">
-        <JsonBlock data={props.step.input} emptyMessage="No input captured" />
+        <JsonBlock data={props.step.input} emptyMessage={t("No input captured")} />
       </div>
     );
   }
@@ -475,7 +479,9 @@ function StepInputPanel(props: { step: DevToolsStep }) {
           onClick={() => setShowAllMessages(!showAllMessages)}
           className="text-link self-start text-[10px] hover:underline"
         >
-          {showAllMessages ? "Show latest 2 messages" : `Show all ${prompt.length} messages`}
+          {showAllMessages
+            ? t("Show latest 2 messages")
+            : t("Show all {count} messages").replace("{count}", String(prompt.length))}
         </button>
       )}
 
@@ -602,13 +608,13 @@ function RequestResponseSection(props: { step: DevToolsStep }) {
               <p className="text-muted text-[9px] font-semibold tracking-wide uppercase">
                 {t("Request")}
               </p>
-              <JsonBlock data={requestData} emptyMessage="No request captured" />
+              <JsonBlock data={requestData} emptyMessage={t("No request captured")} />
             </div>
             <div className="min-w-0">
               <p className="text-muted text-[9px] font-semibold tracking-wide uppercase">
                 {formatRawResponseLabel(viewMode, props.step)}
               </p>
-              <JsonBlock data={responseData} emptyMessage="No response captured" />
+              <JsonBlock data={responseData} emptyMessage={t("No response captured")} />
             </div>
           </div>
 
@@ -721,6 +727,7 @@ function CollapsibleCard(props: {
 }
 
 function ToolCallCard(props: { toolCall: unknown }) {
+  const { t } = useLanguage();
   const toolCallRecord = isRecord(props.toolCall) ? props.toolCall : null;
   const toolName =
     toolCallRecord != null && typeof toolCallRecord.toolName === "string"
@@ -739,7 +746,7 @@ function ToolCallCard(props: { toolCall: unknown }) {
       preview={formatArgsPreview(args)}
       borderColorClass="border-violet-500/30"
     >
-      <JsonBlock data={args} emptyMessage="No arguments" maxHeight="150px" />
+      <JsonBlock data={args} emptyMessage={t("No arguments")} maxHeight="150px" />
     </CollapsibleCard>
   );
 }

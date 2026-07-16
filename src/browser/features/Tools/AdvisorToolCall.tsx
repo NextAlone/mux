@@ -311,6 +311,7 @@ const AdvisorToolCallContent: React.FC<AdvisorToolCallContentProps> = ({
       <ToolHeader onClick={toggleExpanded}>
         <ExpandIcon expanded={expanded}>▶</ExpandIcon>
         <ToolIcon toolName="advisor" />
+        {/* i18n-ignore: canonical tool name */}
         <ToolName>advisor</ToolName>
         <StatusIndicator
           status={statusPresentation.status}

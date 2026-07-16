@@ -166,7 +166,7 @@ export const ReasoningMessage: React.FC<ReasoningMessageProps> = ({
                 )}
               </span>
             ) : (
-              "Thought"
+              t("Thought")
             )}
             {showEllipsis && (
               <span

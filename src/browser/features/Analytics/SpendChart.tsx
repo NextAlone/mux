@@ -76,10 +76,10 @@ export function SpendChart(props: SpendChartProps) {
       <h2 className="text-foreground text-sm font-semibold">{t("Spend over time")}</h2>
       <p className="text-muted mt-1 text-xs">
         {props.granularity === "week"
-          ? "Model-attributed weekly spend."
+          ? t("Model-attributed weekly spend.")
           : props.granularity === "hour"
-            ? "Model-attributed hourly spend."
-            : "Model-attributed daily spend."}
+            ? t("Model-attributed hourly spend.")
+            : t("Model-attributed daily spend.")}
       </p>
 
       {props.loading ? (

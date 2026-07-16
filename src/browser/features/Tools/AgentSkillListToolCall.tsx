@@ -197,7 +197,9 @@ const SkillRow: React.FC<{ skill: AgentSkillDescriptor; first: boolean }> = (pro
                 </span>
               )}
               {t("Invoke with")}
+              {/* i18n-ignore: canonical skill invocation syntax */}
               <InlineCode>${props.skill.name}</InlineCode> {t("or read it in full via")}{" "}
+              {/* i18n-ignore: canonical tool name */}
               <InlineCode>agent_skill_read</InlineCode>.
             </div>
           )}
@@ -303,9 +305,10 @@ export const AgentSkillListToolCall: React.FC<AgentSkillListToolCallProps> = (pr
           {skills.length > 0 && (
             <div className="text-muted mt-2 px-1 text-[10.5px] leading-relaxed">
               {t("Skills are project-local, global, or built-in — invoke any of them inline with")}{" "}
+              {/* i18n-ignore: canonical skill invocation syntax */}
               <InlineCode>$name</InlineCode>
               {unadvertisedCount > 0
-                ? "; unadvertised skills stay out of the index but remain callable by name."
+                ? `; ${t("unadvertised skills stay out of the index but remain callable by name.")}`
                 : "."}
             </div>
           )}

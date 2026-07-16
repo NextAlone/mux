@@ -163,6 +163,7 @@ export function SqlExplorer(props: SqlExplorerProps) {
             onChange={(event) => setSql(event.target.value)}
             spellCheck={false}
             className="border-border-medium bg-background text-foreground focus:border-accent focus:ring-accent min-h-[120px] w-full resize-y rounded-lg border p-3 font-mono text-xs leading-relaxed focus:ring-1 focus:outline-none"
+            // i18n-ignore -- SQL example
             placeholder="SELECT * FROM events LIMIT 10;"
             onKeyDown={(event) => {
               if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
@@ -211,7 +212,8 @@ export function SqlExplorer(props: SqlExplorerProps) {
               />
               <div className="text-muted text-[10px]">
                 {data.rowCount.toLocaleString()}
-                {data.rowCountExact ? "" : "+"} {t("rows ·")} {data.durationMs}ms
+                {data.rowCountExact ? "" : "+"} {t("rows ·")} {data.durationMs}
+                {/* i18n-ignore -- millisecond unit */}ms
                 {data.truncated && ` · ${t("Results truncated")}`}
               </div>
             </div>

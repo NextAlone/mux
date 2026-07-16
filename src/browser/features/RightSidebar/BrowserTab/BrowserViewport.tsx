@@ -508,7 +508,7 @@ export function BrowserViewport(props: BrowserViewportProps) {
       <>
         <img
           src={props.screenshotSrc}
-          alt="Browser session screenshot"
+          alt={t("Browser session screenshot")}
           onLoad={handleScreenshotLoad}
           // agent-browser may cap screencast frames below the viewport size; rendering the
           // captured bitmap at intrinsic size avoids making that capped stream blurrier.
@@ -557,7 +557,7 @@ export function BrowserViewport(props: BrowserViewportProps) {
     <div
       id={props.panelId}
       role={props.panelId != null ? "tabpanel" : undefined}
-      aria-label={props.panelId != null ? "Browser viewport" : undefined}
+      aria-label={props.panelId != null ? t("Browser viewport") : undefined}
       className="bg-background-secondary relative min-h-0 flex-1 overflow-hidden"
     >
       {interactiveSurface}

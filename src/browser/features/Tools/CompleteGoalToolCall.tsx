@@ -141,6 +141,7 @@ export const CompleteGoalToolCall: React.FC<CompleteGoalToolCallProps> = ({
               <CircleCheck aria-hidden="true" />
             </span>
           </TooltipTrigger>
+          {/* i18n-ignore: canonical tool name */}
           <TooltipContent>complete_goal</TooltipContent>
         </Tooltip>
         <span className="font-medium whitespace-nowrap">{t("Goal complete")}</span>

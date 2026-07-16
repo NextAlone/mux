@@ -387,17 +387,22 @@ interface OutputStatusBadgeProps {
   className?: string;
 }
 
-export const OutputStatusBadge: React.FC<OutputStatusBadgeProps> = ({ hasOutput, className }) => (
-  <span
-    className={cn(
-      "inline-block shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium whitespace-nowrap",
-      hasOutput ? "bg-pending/20 text-pending" : "bg-muted-foreground/20 text-muted-foreground",
-      className
-    )}
-  >
-    {hasOutput ? "new output" : "no output"}
-  </span>
-);
+export const OutputStatusBadge: React.FC<OutputStatusBadgeProps> = (props) => {
+  const { t } = useLanguage();
+  return (
+    <span
+      className={cn(
+        "inline-block shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium whitespace-nowrap",
+        props.hasOutput
+          ? "bg-pending/20 text-pending"
+          : "bg-muted-foreground/20 text-muted-foreground",
+        props.className
+      )}
+    >
+      {props.hasOutput ? t("new output") : t("no output")}
+    </span>
+  );
+};
 
 /**
  * Output display section for bash-like tools

@@ -180,7 +180,9 @@ export const WebFetchToolCall: React.FC<WebFetchToolCallProps> = ({
               {/* Show content for both success and error responses (error pages may have parsed content) */}
               {normalized.content && (
                 <DetailSection>
-                  <DetailLabel>{normalized.success ? "Content" : "Error Page Content"}</DetailLabel>
+                  <DetailLabel>
+                    {normalized.success ? t("Content") : t("Error Page Content")}
+                  </DetailLabel>
                   <div className="bg-code-bg max-h-[300px] overflow-y-auto rounded px-3 py-2 text-[12px]">
                     <MarkdownRenderer content={normalized.content} />
                   </div>

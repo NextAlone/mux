@@ -148,31 +148,31 @@ export function TokensByModelChart(props: TokensByModelChartProps) {
                 dataKey="inputTokens"
                 stackId="tokens"
                 fill={TOKEN_CATEGORY_COLORS.inputTokens}
-                name="Input"
+                name={t("Input")}
               />
               <Bar
                 dataKey="cachedTokens"
                 stackId="tokens"
                 fill={TOKEN_CATEGORY_COLORS.cachedTokens}
-                name="Cached"
+                name={t("Cached")}
               />
               <Bar
                 dataKey="cacheCreateTokens"
                 stackId="tokens"
                 fill={TOKEN_CATEGORY_COLORS.cacheCreateTokens}
-                name="Cache write"
+                name={t("Cache write")}
               />
               <Bar
                 dataKey="outputTokens"
                 stackId="tokens"
                 fill={TOKEN_CATEGORY_COLORS.outputTokens}
-                name="Output"
+                name={t("Output")}
               />
               <Bar
                 dataKey="reasoningTokens"
                 stackId="tokens"
                 fill={TOKEN_CATEGORY_COLORS.reasoningTokens}
-                name="Reasoning"
+                name={t("Reasoning")}
                 radius={[0, 4, 4, 0]}
               />
             </BarChart>

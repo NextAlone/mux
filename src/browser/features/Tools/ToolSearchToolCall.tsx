@@ -83,7 +83,7 @@ export const ToolSearchToolCall: React.FC<ToolSearchToolCallProps> = (props) => 
         {view.kind === "matches" && (
           // Hide the count in very narrow containers so the truncating query keeps priority.
           <span className="text-muted hidden whitespace-nowrap @[300px]:inline">
-            {matches.length} {matches.length === 1 ? "match" : "matches"}
+            {matches.length} {matches.length === 1 ? t("match") : t("matches")}
           </span>
         )}
         <StatusIndicator status={status}>{getStatusDisplay(status)}</StatusIndicator>

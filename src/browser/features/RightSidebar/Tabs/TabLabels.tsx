@@ -119,7 +119,10 @@ export const ReviewTabLabel: React.FC<ReviewTabLabelProps> = ({ reviewStats }) =
         <TooltipTrigger asChild>
           <span
             className="text-review-accent inline-flex items-center gap-1"
-            aria-label={`Review — ${unreadAssisted} unread agent-flagged hunk${unreadAssisted === 1 ? "" : "s"}`}
+            aria-label={t("Review — {count} unread agent-flagged hunks").replace(
+              "{count}",
+              String(unreadAssisted)
+            )}
             data-testid="review-tab-assisted-pizzazz"
           >
             {t("Review")}
@@ -257,7 +260,7 @@ export const WorkflowsTabLabel: React.FC<WorkflowsTabLabelProps> = ({ workspaceI
       {activeCount > 0 && (
         <span
           className="text-accent inline-flex items-center gap-1 text-[10px] tabular-nums"
-          aria-label={`${activeCount} running workflow${activeCount === 1 ? "" : "s"}`}
+          aria-label={t("{count} running workflows").replace("{count}", String(activeCount))}
         >
           <span className="bg-accent inline-block h-[6px] w-[6px] animate-pulse rounded-full motion-reduce:animate-none" />
           {activeCount}
@@ -320,8 +323,11 @@ export const InstructionsTabLabel: React.FC<InstructionsTabLabelProps> = ({ work
           className="text-muted text-[10px] tabular-nums"
           aria-label={
             chatInstructionsActive
-              ? `${baseCount} instruction files plus active Chat Instructions`
-              : `${baseCount} instruction files`
+              ? t("{count} instruction files plus active Chat Instructions").replace(
+                  "{count}",
+                  String(baseCount)
+                )
+              : t("{count} instruction files").replace("{count}", String(baseCount))
           }
         >
           {displayCount}
