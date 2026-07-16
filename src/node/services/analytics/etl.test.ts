@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
-import { afterEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { DuckDBInstance, type DuckDBConnection } from "@duckdb/node-api";
 import {
   appendEvents,
@@ -1031,6 +1031,33 @@ describe("readPersistedWorkspaceHeadSignature", () => {
 });
 
 describe("parseWorkspaceFromDisk", () => {
+  test("streams chat history instead of loading complete history files into memory", async () => {
+    const sessionDir = await createTempSessionDir();
+    const archivePath = path.join(sessionDir, "chat-archive.jsonl");
+    const chatPath = path.join(sessionDir, CHAT_FILE_NAME);
+    await fs.writeFile(
+      archivePath,
+      [makeUserLine(), makeAssistantLine({ sequence: 1, inputTokens: 11 })].join("\n") + "\n"
+    );
+    await writeChatJsonl(sessionDir, [
+      makeUserLine(),
+      makeAssistantLine({ sequence: 2, inputTokens: 22 }),
+    ]);
+
+    const readFileSpy = spyOn(fs, "readFile");
+    try {
+      const parsed = await parseWorkspaceFromDisk("ws-streamed-history", sessionDir, {});
+
+      expect(parsed?.events.map((event) => event.row.input_tokens)).toEqual([11, 22]);
+      const completeHistoryReads = readFileSpy.mock.calls.filter(([filePath]) => {
+        return typeof filePath === "string" && (filePath === archivePath || filePath === chatPath);
+      });
+      expect(completeHistoryReads).toEqual([]);
+    } finally {
+      readFileSpy.mockRestore();
+    }
+  });
+
   test("reads chat.jsonl and metadata.json", async () => {
     const sessionDir = await createTempSessionDir();
     await writeMetadataJson(sessionDir, {

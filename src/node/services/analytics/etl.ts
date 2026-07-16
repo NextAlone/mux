@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import type { Dirent } from "node:fs";
+import { createReadStream } from "node:fs";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
+import { createInterface } from "node:readline";
 import type { LanguageModelV2Usage } from "@ai-sdk/provider";
 import { DuckDBAppender, DuckDBDateValue, type DuckDBConnection } from "@duckdb/node-api";
 import { EventRowSchema, type EventRow } from "@/common/orpc/schemas/analytics";
@@ -77,23 +79,42 @@ export async function statSessionChatHistory(
   return mtimeMs === null ? null : { mtimeMs, changeSignal };
 }
 
-/**
- * Read full workspace history: sealed archive (older) followed by chat.jsonl.
- * Either file may be missing (uncompacted or archive-only sessions).
- */
-async function readSessionChatHistoryContents(sessionDir: string): Promise<string> {
-  let contents = "";
+interface SessionChatHistoryLine {
+  line: string;
+  lineNumber: number;
+}
+
+/** Stream sealed history first, then active history, without retaining either file. */
+async function* readSessionChatHistoryLines(
+  sessionDir: string
+): AsyncGenerator<SessionChatHistoryLine> {
+  let lineNumber = 0;
+
   for (const fileName of [CHAT_ARCHIVE_FILE_NAME, CHAT_FILE_NAME]) {
+    const input = createReadStream(path.join(sessionDir, fileName), { encoding: "utf-8" });
+    const lines = createInterface({ input, crlfDelay: Infinity });
+
     try {
-      contents += await fs.readFile(path.join(sessionDir, fileName), "utf-8");
+      // Histories can grow to tens of megabytes in long-running workspaces. Parsing
+      // one JSONL record at a time bounds the analytics worker's heap instead of
+      // retaining full-file strings, their concatenation, and a split line array.
+      for await (const line of lines) {
+        if (line.trim().length === 0) {
+          continue;
+        }
+
+        lineNumber += 1;
+        yield { line, lineNumber };
+      }
     } catch (error) {
       if (!(isRecord(error) && error.code === "ENOENT")) {
         throw error;
       }
+    } finally {
+      lines.close();
+      input.destroy();
     }
   }
-
-  return contents;
 }
 const METADATA_FILE_NAME = "metadata.json";
 const SUBAGENT_TRANSCRIPTS_DIR_NAME = "subagent-transcripts";
@@ -1138,15 +1159,11 @@ export async function ingestWorkspace(
     return;
   }
 
-  const chatContents = await readSessionChatHistoryContents(sessionDir);
-  const lines = chatContents.split("\n").filter((line) => line.trim().length > 0);
-
   let responseIndex = 0;
   const parsedEvents: IngestEvent[] = [];
 
-  for (let i = 0; i < lines.length; i++) {
-    const lineNumber = i + 1;
-    const message = parsePersistedMessage(lines[i], workspaceId, lineNumber);
+  for await (const { line, lineNumber } of readSessionChatHistoryLines(sessionDir)) {
+    const message = parsePersistedMessage(line, workspaceId, lineNumber);
     if (!message) {
       continue;
     }
@@ -1670,15 +1687,10 @@ export async function parseWorkspaceFromDisk(
   const persistedMeta = await readWorkspaceMetaFromDisk(sessionDir);
   const workspaceMeta = mergeWorkspaceMeta(persistedMeta, suppliedMeta);
 
-  const chatContents = await readSessionChatHistoryContents(sessionDir);
-  const lines = chatContents.split("\n").filter((line) => line.trim().length > 0);
-
   let responseIndex = 0;
   const events: IngestEvent[] = [];
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    assert(line != null, "parseWorkspaceFromDisk: line should not be null after filter");
-    const message = parsePersistedMessage(line, workspaceId, i + 1);
+  for await (const { line, lineNumber } of readSessionChatHistoryLines(sessionDir)) {
+    const message = parsePersistedMessage(line, workspaceId, lineNumber);
     if (!message) {
       continue;
     }
@@ -1687,7 +1699,7 @@ export async function parseWorkspaceFromDisk(
       workspaceId,
       workspaceMeta,
       message,
-      lineNumber: i + 1,
+      lineNumber,
       responseIndex,
     });
     if (extractedEvents.length === 0) {
