@@ -5,6 +5,7 @@ import { isOpSecretValue, type Secret } from "@/common/types/secrets";
 import { useAPI } from "@/browser/contexts/API";
 import { useProjectContext } from "@/browser/contexts/ProjectContext";
 import { useSettings } from "@/browser/contexts/SettingsContext";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 import { Button } from "@/browser/components/Button/Button";
 import { Input } from "@/browser/components/Input/Input";
 import { Switch } from "@/browser/components/Switch/Switch";
@@ -130,8 +131,21 @@ function isProjectSecretsTarget(
   return project !== undefined && project.parentProjectPath == null;
 }
 
+function localizeSecretsError(error: string, t: (text: string) => string): string {
+  for (const prefix of [
+    "Secrets loaded, but failed to load injected globals:",
+    "Secrets saved, but failed to refresh injected globals:",
+  ]) {
+    if (error.startsWith(`${prefix} `)) {
+      return `${t(prefix)} ${error.slice(prefix.length + 1)}`;
+    }
+  }
+  return t(error);
+}
+
 export const SecretsSection: React.FC = () => {
   const { api } = useAPI();
+  const { t } = useLanguage();
   const { userProjects } = useProjectContext();
   const { secretsProjectPath, setSecretsProjectPath } = useSettings();
   const projectList = getTopLevelProjectEntries(userProjects).map(([projectPath]) => projectPath);
@@ -172,7 +186,7 @@ export const SecretsSection: React.FC = () => {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const scopeLabel = scope === "global" ? "Global" : "Project";
+  const scopeLabel = t(scope === "global" ? "Global" : "Project");
   const showSourceColumn = scope === "project" || opAvailable;
   const secretGridColumns =
     scope === "global"
@@ -621,10 +635,11 @@ export const SecretsSection: React.FC = () => {
     <div className="space-y-6">
       <div className="flex items-center justify-between gap-4">
         <div className="flex-1">
-          <div className="text-foreground text-sm">1Password Account</div>
+          <div className="text-foreground text-sm">{t("1Password Account")}</div>
           <div className="text-muted text-xs">
-            Your 1Password account name (for example &apos;my-team.1password.com&apos;). Required
-            for 1Password integration.
+            {t(
+              "Your 1Password account name (for example 'my-team.1password.com'). Required for 1Password integration."
+            )}
           </div>
         </div>
         <Input
@@ -643,17 +658,17 @@ export const SecretsSection: React.FC = () => {
       <div className="flex items-start justify-between gap-4">
         <div>
           <p className="text-muted text-xs">
-            Secrets are stored in <code className="text-accent">~/.mux/secrets.json</code> (kept out
-            of source control).
+            {t("Secrets are stored in")} <code className="text-accent">~/.mux/secrets.json</code>{" "}
+            {t("(kept out of source control).")}
           </p>
           <p className="text-muted mt-1 text-xs">
-            Scope: <span className="text-foreground">{scopeLabel}</span>
+            {t("Scope:")} <span className="text-foreground">{scopeLabel}</span>
           </p>
           <p className="text-muted mt-1 text-xs">
-            Toggle Inject on a global secret to automatically inject it into every project.
+            {t("Toggle Inject on a global secret to automatically inject it into every project.")}
           </p>
           <p className="text-muted mt-1 text-xs">
-            Project secrets control injection. Use Type: Global to reference a global value.
+            {t("Project secrets control injection. Use Type: Global to reference a global value.")}
           </p>
         </div>
 
@@ -671,10 +686,10 @@ export const SecretsSection: React.FC = () => {
           disabled={saving}
         >
           <ToggleGroupItem value="global" size="sm" className="h-7 px-3 text-[13px]">
-            Global
+            {t("Global")}
           </ToggleGroupItem>
           <ToggleGroupItem value="project" size="sm" className="h-7 px-3 text-[13px]">
-            Project
+            {t("Project")}
           </ToggleGroupItem>
         </ToggleGroup>
       </div>
@@ -682,15 +697,15 @@ export const SecretsSection: React.FC = () => {
       {scope === "project" && (
         <div className="flex items-center justify-between">
           <div>
-            <div className="text-foreground text-sm">Project</div>
-            <div className="text-muted text-xs">Select a project to configure</div>
+            <div className="text-foreground text-sm">{t("Project")}</div>
+            <div className="text-muted text-xs">{t("Select a project to configure")}</div>
           </div>
           <Select value={selectedProject} onValueChange={setSelectedProject}>
             <SelectTrigger
               className="border-border-medium bg-background-secondary hover:bg-hover h-9 w-auto min-w-[160px] cursor-pointer rounded-md border px-3 text-sm transition-colors"
-              aria-label="Project"
+              aria-label={t("Project")}
             >
-              <SelectValue placeholder="Select project" />
+              <SelectValue placeholder={t("Select project")} />
             </SelectTrigger>
             <SelectContent>
               {projectList.map((path) => (
@@ -706,15 +721,15 @@ export const SecretsSection: React.FC = () => {
       {scope === "project" && currentProjectPath && (
         <div className="space-y-2">
           <div>
-            <div className="text-foreground text-sm">Injected from Global</div>
+            <div className="text-foreground text-sm">{t("Injected from Global")}</div>
             <div className="text-muted text-xs">
-              Read-only. Project secrets override injected globals when keys match.
+              {t("Read-only. Project secrets override injected globals when keys match.")}
             </div>
           </div>
 
           {sortedInjectedGlobalSecretKeys.length === 0 ? (
             <div className="text-muted border-border-medium rounded-md border border-dashed px-3 py-2 text-xs">
-              No global secrets are currently injected into this project.
+              {t("No global secrets are currently injected into this project.")}
             </div>
           ) : (
             <div className="border-border-medium bg-background-secondary rounded-md border px-3 py-2">
@@ -735,32 +750,32 @@ export const SecretsSection: React.FC = () => {
 
       {error && (
         <div className="bg-destructive/10 text-destructive flex items-center gap-2 rounded-md px-3 py-2 text-sm">
-          {error}
+          {localizeSecretsError(error, t)}
         </div>
       )}
 
       {loading ? (
         <div className="text-muted flex items-center gap-2 py-4 text-sm">
           <Loader2 className="h-4 w-4 animate-spin" />
-          Loading secrets…
+          {t("Loading secrets…")}
         </div>
       ) : scope === "project" && !currentProjectPath ? (
         <div className="text-muted py-2 text-sm">
-          No projects configured. Add a project first to manage project secrets.
+          {t("No projects configured. Add a project first to manage project secrets.")}
         </div>
       ) : secrets.length === 0 ? (
         <div className="text-muted border-border-medium rounded-md border border-dashed px-3 py-3 text-center text-xs">
-          No secrets configured
+          {t("No secrets configured")}
         </div>
       ) : (
         <div
           className={`[&>label]:text-muted grid ${secretGridColumns} items-end gap-1 [&>label]:mb-0.5 [&>label]:text-[11px]`}
         >
-          <label>Key</label>
-          {showSourceColumn && <label>Source</label>}
-          <label>Value</label>
+          <label>{t("Key")}</label>
+          {showSourceColumn && <label>{t("Source")}</label>}
+          <label>{t("Value")}</label>
           <div />
-          {scope === "global" && <label className="text-center">Inject</label>}
+          {scope === "global" && <label className="text-center">{t("Inject")}</label>}
           <div />
 
           {secrets.map((secret, index) => {
@@ -787,7 +802,7 @@ export const SecretsSection: React.FC = () => {
                   value={secret.key}
                   onChange={(e) => updateSecretKey(index, e.target.value)}
                   placeholder="SECRET_NAME"
-                  aria-label="Secret key"
+                  aria-label={t("Secret key")}
                   disabled={saving}
                   spellCheck={false}
                   className="bg-modal-bg border-border-medium focus:border-accent placeholder:text-dim text-foreground w-full rounded border px-2.5 py-1.5 font-mono text-[13px] focus:outline-none disabled:opacity-50"
@@ -821,15 +836,15 @@ export const SecretsSection: React.FC = () => {
                   >
                     <SelectTrigger
                       className="border-border-medium bg-modal-bg hover:bg-hover h-[34px] w-[100px] px-2.5 text-[13px]"
-                      aria-label="Secret source"
+                      aria-label={t("Secret source")}
                     >
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="literal">Value</SelectItem>
+                      <SelectItem value="literal">{t("Value")}</SelectItem>
                       {scope === "project" && (
                         <SelectItem value="global" disabled={availableKeys.length === 0}>
-                          Global
+                          {t("Global")}
                         </SelectItem>
                       )}
                       {opAvailable && <SelectItem value="op">1Password</SelectItem>}
@@ -855,9 +870,9 @@ export const SecretsSection: React.FC = () => {
                   >
                     <SelectTrigger
                       className="border-border-medium bg-modal-bg hover:bg-hover h-[34px] w-full px-2.5 font-mono text-[13px]"
-                      aria-label="Global secret key"
+                      aria-label={t("Global secret key")}
                     >
-                      <SelectValue placeholder="Select global secret" />
+                      <SelectValue placeholder={t("Select global secret")} />
                     </SelectTrigger>
                     <SelectContent>
                       {availableKeys.map((key) => (
@@ -878,8 +893,8 @@ export const SecretsSection: React.FC = () => {
                           : ""
                     }
                     onChange={(e) => updateSecretValue(index, e.target.value)}
-                    placeholder="secret value"
-                    aria-label="Secret value"
+                    placeholder={t("secret value")}
+                    aria-label={t("Secret value")}
                     disabled={saving}
                     spellCheck={false}
                     className="bg-modal-bg border-border-medium focus:border-accent placeholder:text-dim text-foreground w-full rounded border px-2.5 py-1.5 font-mono text-[13px] focus:outline-none disabled:opacity-50"
@@ -894,7 +909,7 @@ export const SecretsSection: React.FC = () => {
                     onClick={() => toggleVisibility(index)}
                     disabled={saving}
                     className="text-muted hover:text-foreground flex cursor-pointer items-center justify-center self-center rounded-sm border-none bg-transparent px-1 py-0.5 text-base transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-50"
-                    aria-label={visibleSecrets.has(index) ? "Hide secret" : "Show secret"}
+                    aria-label={t(visibleSecrets.has(index) ? "Hide secret" : "Show secret")}
                   >
                     <ToggleVisibilityIcon visible={visibleSecrets.has(index)} />
                   </button>
@@ -907,8 +922,7 @@ export const SecretsSection: React.FC = () => {
                       checked={!!secret.injectAll}
                       onCheckedChange={(checked) => updateSecretInjectAll(index, checked)}
                       disabled={saving}
-                      aria-label="Inject into all projects"
-                      title="Inject into all projects"
+                      aria-label={t("Inject into all projects")}
                     />
                   </div>
                 )}
@@ -918,7 +932,7 @@ export const SecretsSection: React.FC = () => {
                   onClick={() => removeSecret(index)}
                   disabled={saving}
                   className="text-danger-light border-danger-light hover:bg-danger-light/10 cursor-pointer rounded border bg-transparent px-2.5 py-1.5 text-[13px] transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-50"
-                  aria-label="Remove secret"
+                  aria-label={t("Remove secret")}
                 >
                   <Trash2 className="h-4 w-4" />
                 </button>
@@ -953,7 +967,7 @@ export const SecretsSection: React.FC = () => {
         disabled={saving || (scope === "project" && !currentProjectPath)}
         className="text-muted border-border-medium hover:bg-hover hover:border-border-darker hover:text-foreground w-full cursor-pointer rounded border border-dashed bg-transparent px-3 py-2 text-[13px] transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-50"
       >
-        + Add Secret
+        {t("+ Add Secret")}
       </button>
 
       <div className="flex items-center justify-end gap-2">
@@ -963,14 +977,14 @@ export const SecretsSection: React.FC = () => {
           onClick={handleReset}
           disabled={!isDirty || saving || loading}
         >
-          Reset
+          {t("Reset")}
         </Button>
         <Button
           type="button"
           onClick={() => void handleSave()}
           disabled={!isDirty || saving || loading}
         >
-          {saving ? "Saving..." : "Save"}
+          {t(saving ? "Saving..." : "Save")}
         </Button>
       </div>
     </div>

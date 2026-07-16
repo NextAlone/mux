@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { usePolicy } from "@/browser/contexts/PolicyContext";
 import { useAPI } from "@/browser/contexts/API";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 import {
   Trash2,
   Play,
@@ -41,6 +42,18 @@ import { ToolSelector } from "@/browser/components/ToolSelector/ToolSelector";
 import { KebabMenu, type KebabMenuItem } from "@/browser/components/KebabMenu/KebabMenu";
 import { getErrorMessage } from "@/common/utils/errors";
 
+function localizeRelativeTime(value: string, t: (text: string) => string): string {
+  const match =
+    /^(\d+) (minute|minutes|hour|hours|day|days|week|weeks|month|months|year|years) ago$/.exec(
+      value
+    );
+  if (match?.[1] && match[2]) {
+    // i18n-ignore: bounded translated relative-time keys
+    return t(`{count} ${match[2]} ago`).replace("{count}", match[1]);
+  }
+  return t(value);
+}
+
 /** Component for managing tool allowlist for a single MCP server */
 const ToolAllowlistSection: React.FC<{
   serverName: string;
@@ -49,6 +62,7 @@ const ToolAllowlistSection: React.FC<{
   testedAt: number;
 }> = ({ serverName, availableTools, currentAllowlist, testedAt }) => {
   const { api } = useAPI();
+  const { t } = useLanguage();
   const [expanded, setExpanded] = useState(false);
   const [saving, setSaving] = useState(false);
   // Always use an array internally - undefined from props means all tools allowed
@@ -150,9 +164,11 @@ const ToolAllowlistSection: React.FC<{
       >
         {expanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
         <span>
-          Tools: {localAllowlist.length}/{availableTools.length}
+          {t("Tools:")} {localAllowlist.length}/{availableTools.length}
         </span>
-        <span className="text-muted/60 ml-1">({formatRelativeTime(testedAt)})</span>
+        <span className="text-muted/60 ml-1">
+          ({localizeRelativeTime(formatRelativeTime(testedAt), t)})
+        </span>
         {saving && <Loader2 className="ml-1 h-3 w-3 animate-spin" />}
       </button>
 
@@ -421,6 +437,7 @@ const MCPOAuthRequiredCallout: React.FC<{
   onLoginSuccess?: () => void | Promise<void>;
 }> = ({ serverName, pendingServer, disabledReason, onLoginSuccess }) => {
   const { api } = useAPI();
+  const { t } = useLanguage();
   const isDesktop = !!window.api;
 
   const { loginStatus, loginError, loginInProgress, startLogin, cancelLogin } = useMCPOAuthLogin({
@@ -440,13 +457,13 @@ const MCPOAuthRequiredCallout: React.FC<{
   const disabledTitle =
     disabledReason ??
     (!api
-      ? "Mux API not connected"
+      ? t("Mux API not connected")
       : !mcpOauthApi
-        ? "OAuth is not available in this environment."
+        ? t("OAuth is not available in this environment.")
         : !loginFlowMode
           ? isDesktop
-            ? "OAuth login is not available in this environment."
-            : "OAuth login is only available in the desktop app."
+            ? t("OAuth login is not available in this environment.")
+            : t("OAuth login is only available in the desktop app.")
           : undefined);
 
   const loginDisabled = Boolean(disabledReason) || !api || !loginFlowMode || loginInProgress;
@@ -458,15 +475,15 @@ const MCPOAuthRequiredCallout: React.FC<{
         void startLogin();
       }}
       disabled={loginDisabled}
-      aria-label="Login via OAuth"
+      aria-label={t("Login via OAuth")}
     >
       {loginInProgress ? (
         <>
           <Loader2 className="h-3.5 w-3.5 animate-spin" />
-          Waiting for login...
+          {t("Waiting for login...")}
         </>
       ) : (
-        "Login via OAuth"
+        t("Login via OAuth")
       )}
     </Button>
   );
@@ -475,27 +492,30 @@ const MCPOAuthRequiredCallout: React.FC<{
     <div className="bg-warning/10 border-warning/30 text-warning rounded-md border px-3 py-2 text-xs">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="font-medium">This server requires OAuth.</p>
-          {disabledReason && <p className="text-muted mt-0.5">{disabledReason}</p>}
+          <p className="font-medium">{t("This server requires OAuth.")}</p>
+          {disabledReason && <p className="text-muted mt-0.5">{t(disabledReason)}</p>}
 
           {loginStatus === "waiting" && (
             <>
               <p className="text-muted mt-0.5">
-                Finish the login flow in your browser, then return here.
+                {t("Finish the login flow in your browser, then return here.")}
               </p>
               {!isDesktop && (
                 <p className="text-muted mt-0.5">
-                  If a new tab didn&apos;t open, your browser may have blocked the popup. Allow
-                  popups and try again.
+                  {t(
+                    "If a new tab didn't open, your browser may have blocked the popup. Allow popups and try again."
+                  )}
                 </p>
               )}
             </>
           )}
 
-          {loginStatus === "success" && <p className="text-muted mt-0.5">Logged in.</p>}
+          {loginStatus === "success" && <p className="text-muted mt-0.5">{t("Logged in.")}</p>}
 
           {loginStatus === "error" && loginError && (
-            <p className="text-destructive mt-0.5">OAuth error: {loginError}</p>
+            <p className="text-destructive mt-0.5">
+              {t("OAuth error:")} {t(loginError)}
+            </p>
           )}
         </div>
 
@@ -505,7 +525,7 @@ const MCPOAuthRequiredCallout: React.FC<{
               <TooltipTrigger asChild>
                 <span className="inline-flex">{loginButton}</span>
               </TooltipTrigger>
-              <TooltipContent side="top">{disabledTitle}</TooltipContent>
+              <TooltipContent side="top">{t(disabledTitle)}</TooltipContent>
             </Tooltip>
           ) : (
             loginButton
@@ -513,7 +533,7 @@ const MCPOAuthRequiredCallout: React.FC<{
 
           {loginStatus === "waiting" && (
             <Button variant="secondary" size="sm" onClick={cancelLogin}>
-              Cancel
+              {t("Cancel")}
             </Button>
           )}
         </div>
@@ -529,6 +549,7 @@ const RemoteMCPOAuthSection: React.FC<{
   oauthRefreshNonce?: number;
 }> = ({ serverName, transport, url, oauthRefreshNonce }) => {
   const { api } = useAPI();
+  const { t } = useLanguage();
   const isDesktop = !!window.api;
 
   const [authStatus, setAuthStatus] = useState<MCPOAuthAuthStatus | null>(null);
@@ -580,30 +601,32 @@ const RemoteMCPOAuthSection: React.FC<{
   const isLoggedIn = (authStatus?.isLoggedIn ?? false) || loginStatus === "success";
 
   const oauthDebugErrors = [
-    authStatusError ? { label: "Status", message: authStatusError } : null,
-    loginStatus === "error" && loginError ? { label: "Login", message: loginError } : null,
-    logoutError ? { label: "Logout", message: logoutError } : null,
+    authStatusError ? { label: t("Status"), message: authStatusError } : null,
+    loginStatus === "error" && loginError ? { label: t("Login"), message: loginError } : null,
+    logoutError ? { label: t("Logout"), message: logoutError } : null,
   ].filter((entry): entry is { label: string; message: string } => entry !== null);
 
-  const authStatusText = !oauthAvailable
-    ? "Not available"
-    : authStatusLoading
-      ? "Checking..."
-      : loginInProgress
-        ? "Waiting..."
-        : oauthDebugErrors.length > 0
-          ? "Error"
-          : isLoggedIn
-            ? "Logged in"
-            : "Not logged in";
+  const authStatusText = t(
+    !oauthAvailable
+      ? "Not available"
+      : authStatusLoading
+        ? "Checking..."
+        : loginInProgress
+          ? "Waiting..."
+          : oauthDebugErrors.length > 0
+            ? "Error"
+            : isLoggedIn
+              ? "Logged in"
+              : "Not logged in"
+  );
 
   const updatedAtText =
     oauthAvailable && isLoggedIn && authStatus?.updatedAtMs
-      ? ` (${formatRelativeTime(authStatus.updatedAtMs)})`
+      ? ` (${localizeRelativeTime(formatRelativeTime(authStatus.updatedAtMs), t)})`
       : "";
 
-  const loginButtonLabel = loginStatus === "error" ? "Retry" : "Login";
-  const reloginMenuLabel = loginStatus === "error" ? "Retry login" : "Re-login";
+  const loginButtonLabel = t(loginStatus === "error" ? "Retry" : "Login");
+  const reloginMenuLabel = t(loginStatus === "error" ? "Retry login" : "Re-login");
 
   const logout = useCallback(async () => {
     const mcpOauthApi = getMCPOAuthAPI(api);
@@ -635,7 +658,7 @@ const RemoteMCPOAuthSection: React.FC<{
   return (
     <div className="mt-1 flex items-center justify-between gap-2">
       <div className="flex min-w-0 items-center gap-2 text-xs">
-        <span className="text-foreground font-medium">OAuth</span>
+        <span className="text-foreground font-medium">{t("OAuth")}</span>
         <span className="text-muted truncate">
           {authStatusText}
           {updatedAtText}
@@ -644,12 +667,12 @@ const RemoteMCPOAuthSection: React.FC<{
         {oauthDebugErrors.length > 0 && (
           <details className="group inline-block">
             <summary className="text-muted hover:text-foreground cursor-pointer list-none text-[11px] underline-offset-2 group-open:underline">
-              Details
+              {t("Details")}
             </summary>
             <div className="border-border-medium bg-background-secondary mt-1 space-y-1 rounded-md border px-2 py-1 text-xs">
               {oauthDebugErrors.map((entry) => (
                 <div key={entry.label} className="text-destructive break-words">
-                  <span className="font-medium">{entry.label}:</span> {entry.message}
+                  <span className="font-medium">{entry.label}:</span> {t(entry.message)}
                 </div>
               ))}
             </div>
@@ -663,11 +686,11 @@ const RemoteMCPOAuthSection: React.FC<{
             <>
               <Button variant="outline" size="sm" className="h-7 px-2" disabled>
                 <Loader2 className="h-3 w-3 animate-spin" />
-                {isLoggedIn ? "Re-login" : "Login"}
+                {t(isLoggedIn ? "Re-login" : "Login")}
               </Button>
 
               <Button variant="ghost" size="sm" className="h-7 px-2" onClick={cancelLogin}>
-                Cancel
+                {t("Cancel")}
               </Button>
             </>
           ) : isLoggedIn ? (
@@ -685,7 +708,7 @@ const RemoteMCPOAuthSection: React.FC<{
                       disabled: logoutInProgress,
                     },
                     {
-                      label: logoutInProgress ? "Logging out..." : "Logout",
+                      label: t(logoutInProgress ? "Logging out..." : "Logout"),
                       onClick: () => {
                         void logout();
                       },
@@ -717,6 +740,7 @@ const RemoteMCPOAuthSection: React.FC<{
 
 export const MCPSettingsSection: React.FC = () => {
   const { api } = useAPI();
+  const { t } = useLanguage();
   const policyState = usePolicy();
   const mcpAllowUserDefined =
     policyState.status.state === "enforced" ? policyState.policy?.mcp.allowUserDefined : undefined;
@@ -1125,25 +1149,26 @@ export const MCPSettingsSection: React.FC = () => {
       {/* Intro */}
       <div>
         <p className="text-muted mb-4 text-xs">
-          Configure global MCP servers. Global config lives in{" "}
-          <code className="text-accent">~/.mux/mcp.jsonc</code>, with optional repo overrides in{" "}
-          <code className="text-accent">./.mux/mcp.jsonc</code> and workspace overrides in{" "}
+          {t("Configure global MCP servers. Global config lives in")}{" "}
+          <code className="text-accent">~/.mux/mcp.jsonc</code>{" "}
+          {t(", with optional repo overrides in")}{" "}
+          <code className="text-accent">./.mux/mcp.jsonc</code> {t("and workspace overrides in")}{" "}
           <code className="text-accent">.mux/mcp.local.jsonc</code>.
         </p>
       </div>
 
       {/* MCP Servers */}
       <div>
-        <h3 className="text-foreground mb-4 text-sm font-medium">MCP Servers</h3>
+        <h3 className="text-foreground mb-4 text-sm font-medium">{t("MCP Servers")}</h3>
 
         {mcpDisabledByPolicy ? (
-          <p className="text-muted py-2 text-sm">MCP servers are disabled by policy.</p>
+          <p className="text-muted py-2 text-sm">{t("MCP servers are disabled by policy.")}</p>
         ) : (
           <>
             {error && (
               <div className="bg-destructive/10 text-destructive mb-3 flex items-center gap-2 rounded-md px-3 py-2 text-sm">
                 <XCircle className="h-4 w-4 shrink-0" />
-                {error}
+                {t(error)}
               </div>
             )}
 
@@ -1152,10 +1177,10 @@ export const MCPSettingsSection: React.FC = () => {
               {loading ? (
                 <div className="text-muted flex items-center gap-2 py-4 text-sm">
                   <Loader2 className="h-4 w-4 animate-spin" />
-                  Loading servers…
+                  {t("Loading servers…")}
                 </div>
               ) : Object.keys(servers).length === 0 ? (
-                <p className="text-muted py-2 text-sm">No MCP servers configured yet.</p>
+                <p className="text-muted py-2 text-sm">{t("No MCP servers configured yet.")}</p>
               ) : (
                 Object.entries(servers).map(([name, entry]) => {
                   const isTesting = testingServer === name;
@@ -1177,12 +1202,12 @@ export const MCPSettingsSection: React.FC = () => {
                                 onCheckedChange={(checked) =>
                                   void handleToggleEnabled(name, checked)
                                 }
-                                aria-label={`Toggle ${name} enabled`}
+                                aria-label={t("Toggle {name} enabled").replace("{name}", name)}
                               />
                             </div>
                           </TooltipTrigger>
                           <TooltipContent side="top">
-                            {isEnabled ? "Disable server" : "Enable server"}
+                            {t(isEnabled ? "Disable server" : "Enable server")}
                           </TooltipContent>
                         </Tooltip>
                         <div className={cn("min-w-0", !isEnabled && "opacity-50")}>
@@ -1192,19 +1217,24 @@ export const MCPSettingsSection: React.FC = () => {
                               <Tooltip>
                                 <TooltipTrigger asChild>
                                   <span className="rounded bg-green-500/10 px-1.5 py-0.5 text-xs text-green-500">
-                                    {cached.result.tools.length} tools
+                                    {cached.result.tools.length} {t("tools")}
                                   </span>
                                 </TooltipTrigger>
                                 <TooltipContent side="top">
-                                  Tested {formatRelativeTime(cached.testedAt)}
+                                  {t("Tested")}{" "}
+                                  {localizeRelativeTime(formatRelativeTime(cached.testedAt), t)}
                                 </TooltipContent>
                               </Tooltip>
                             )}
-                            {!isEnabled && <span className="text-muted text-xs">disabled</span>}
+                            {!isEnabled && (
+                              <span className="text-muted text-xs">{t("disabled")}</span>
+                            )}
                           </div>
                           {isEditing ? (
                             <div className="mt-2 space-y-2">
-                              <p className="text-muted text-xs">transport: {editing.transport}</p>
+                              <p className="text-muted text-xs">
+                                {t("transport:")} {editing.transport}
+                              </p>
                               <input
                                 type="text"
                                 value={editing.value}
@@ -1220,7 +1250,7 @@ export const MCPSettingsSection: React.FC = () => {
                               {editing.transport !== "stdio" && (
                                 <div>
                                   <div className="text-muted mb-1 text-[11px]">
-                                    HTTP headers (optional)
+                                    {t("HTTP headers (optional)")}
                                   </div>
                                   <MCPHeadersEditor
                                     rows={editing.headersRows}
@@ -1258,7 +1288,7 @@ export const MCPSettingsSection: React.FC = () => {
                                         editHeadersValidation.errors.length > 0
                                       }
                                       className="h-7 w-7 text-green-500 hover:text-green-400"
-                                      aria-label="Save"
+                                      aria-label={t("Save")}
                                     >
                                       {savingEdit ? (
                                         <Loader2 className="h-4 w-4 animate-spin" />
@@ -1268,7 +1298,7 @@ export const MCPSettingsSection: React.FC = () => {
                                     </Button>
                                   </span>
                                 </TooltipTrigger>
-                                <TooltipContent side="top">Save (Enter)</TooltipContent>
+                                <TooltipContent side="top">{t("Save (Enter)")}</TooltipContent>
                               </Tooltip>
                               <Tooltip>
                                 <TooltipTrigger asChild>
@@ -1279,13 +1309,13 @@ export const MCPSettingsSection: React.FC = () => {
                                       onClick={handleCancelEdit}
                                       disabled={savingEdit}
                                       className="text-muted hover:text-foreground h-7 w-7"
-                                      aria-label="Cancel"
+                                      aria-label={t("Cancel")}
                                     >
                                       <X className="h-4 w-4" />
                                     </Button>
                                   </span>
                                 </TooltipTrigger>
-                                <TooltipContent side="top">Cancel (Esc)</TooltipContent>
+                                <TooltipContent side="top">{t("Cancel (Esc)")}</TooltipContent>
                               </Tooltip>
                             </>
                           ) : (
@@ -1299,7 +1329,7 @@ export const MCPSettingsSection: React.FC = () => {
                                       onClick={() => void handleTest(name)}
                                       disabled={isTesting}
                                       className="text-muted hover:text-accent h-7 w-7"
-                                      aria-label="Test connection"
+                                      aria-label={t("Test connection")}
                                     >
                                       {isTesting ? (
                                         <Loader2 className="h-4 w-4 animate-spin" />
@@ -1309,7 +1339,7 @@ export const MCPSettingsSection: React.FC = () => {
                                     </Button>
                                   </span>
                                 </TooltipTrigger>
-                                <TooltipContent side="top">Test connection</TooltipContent>
+                                <TooltipContent side="top">{t("Test connection")}</TooltipContent>
                               </Tooltip>
                               <Tooltip>
                                 <TooltipTrigger asChild>
@@ -1319,13 +1349,13 @@ export const MCPSettingsSection: React.FC = () => {
                                       size="icon"
                                       onClick={() => handleStartEdit(name, entry)}
                                       className="text-muted hover:text-accent h-7 w-7"
-                                      aria-label="Edit server"
+                                      aria-label={t("Edit server")}
                                     >
                                       <Pencil className="h-4 w-4" />
                                     </Button>
                                   </span>
                                 </TooltipTrigger>
-                                <TooltipContent side="top">Edit server</TooltipContent>
+                                <TooltipContent side="top">{t("Edit server")}</TooltipContent>
                               </Tooltip>
                               <Tooltip>
                                 <TooltipTrigger asChild>
@@ -1336,13 +1366,13 @@ export const MCPSettingsSection: React.FC = () => {
                                       onClick={() => void handleRemove(name)}
                                       disabled={loading}
                                       className="text-muted hover:text-error h-7 w-7"
-                                      aria-label="Remove server"
+                                      aria-label={t("Remove server")}
                                     >
                                       <Trash2 className="h-4 w-4" />
                                     </Button>
                                   </span>
                                 </TooltipTrigger>
-                                <TooltipContent side="top">Remove server</TooltipContent>
+                                <TooltipContent side="top">{t("Remove server")}</TooltipContent>
                               </Tooltip>
                             </>
                           )}
@@ -1367,7 +1397,7 @@ export const MCPSettingsSection: React.FC = () => {
                         <div className="border-border-medium border-t px-3 py-2 text-xs">
                           <div className="text-destructive flex items-start gap-1.5">
                             <XCircle className="mt-0.5 h-3 w-3 shrink-0" />
-                            <span>{cached.result.error}</span>
+                            <span>{t(cached.result.error)}</span>
                           </div>
 
                           {cached.result.oauthChallenge && (
@@ -1408,12 +1438,12 @@ export const MCPSettingsSection: React.FC = () => {
             <details className="group mt-3">
               <summary className="text-accent hover:text-accent/80 flex cursor-pointer list-none items-center gap-1 text-sm font-medium">
                 <ChevronRight className="h-4 w-4 transition-transform group-open:rotate-90" />
-                Add server
+                {t("Add server")}
               </summary>
               <div className="border-border-medium bg-background-secondary mt-2 space-y-3 rounded-md border p-3">
                 <div>
                   <label htmlFor="server-name" className="text-muted mb-1 block text-xs">
-                    Name
+                    {t("Name")}
                   </label>
                   <input
                     id="server-name"
@@ -1426,7 +1456,7 @@ export const MCPSettingsSection: React.FC = () => {
                 </div>
 
                 <div>
-                  <label className="text-muted mb-1 block text-xs">Transport</label>
+                  <label className="text-muted mb-1 block text-xs">{t("Transport")}</label>
                   <Select
                     value={newServer.transport}
                     onValueChange={(value) =>
@@ -1443,13 +1473,13 @@ export const MCPSettingsSection: React.FC = () => {
                     </SelectTrigger>
                     <SelectContent>
                       {mcpAllowUserDefined?.stdio !== false && (
-                        <SelectItem value="stdio">Stdio</SelectItem>
+                        <SelectItem value="stdio">{t("Stdio")}</SelectItem>
                       )}
                       {mcpAllowUserDefined?.remote !== false && (
                         <>
-                          <SelectItem value="http">HTTP (Streamable)</SelectItem>
-                          <SelectItem value="sse">SSE (Legacy)</SelectItem>
-                          <SelectItem value="auto">Auto (HTTP → SSE)</SelectItem>
+                          <SelectItem value="http">{t("HTTP (Streamable)")}</SelectItem>
+                          <SelectItem value="sse">{t("SSE (Legacy)")}</SelectItem>
+                          <SelectItem value="auto">{t("Auto (HTTP → SSE)")}</SelectItem>
                         </>
                       )}
                     </SelectContent>
@@ -1458,7 +1488,7 @@ export const MCPSettingsSection: React.FC = () => {
 
                 <div>
                   <label htmlFor="server-value" className="text-muted mb-1 block text-xs">
-                    {newServer.transport === "stdio" ? "Command" : "URL"}
+                    {t(newServer.transport === "stdio" ? "Command" : "URL")}
                   </label>
                   <input
                     id="server-value"
@@ -1477,7 +1507,9 @@ export const MCPSettingsSection: React.FC = () => {
 
                 {newServer.transport !== "stdio" && (
                   <div>
-                    <label className="text-muted mb-1 block text-xs">HTTP headers (optional)</label>
+                    <label className="text-muted mb-1 block text-xs">
+                      {t("HTTP headers (optional)")}
+                    </label>
                     <MCPHeadersEditor
                       rows={newServer.headersRows}
                       onChange={(rows) =>
@@ -1507,7 +1539,7 @@ export const MCPSettingsSection: React.FC = () => {
                         <CheckCircle className="mt-0.5 h-4 w-4 shrink-0" />
                         <div>
                           <span className="font-medium">
-                            Connected — {newTestResult.result.tools.length} tools
+                            {t("Connected")} — {newTestResult.result.tools.length} {t("tools")}
                           </span>
                           {newTestResult.result.tools.length > 0 && (
                             <p className="mt-0.5 text-xs opacity-80">
@@ -1519,7 +1551,7 @@ export const MCPSettingsSection: React.FC = () => {
                     ) : (
                       <>
                         <XCircle className="mt-0.5 h-4 w-4 shrink-0" />
-                        <span>{newTestResult.result.error}</span>
+                        <span>{t(newTestResult.result.error)}</span>
                       </>
                     )}
                   </div>
@@ -1588,7 +1620,7 @@ export const MCPSettingsSection: React.FC = () => {
                     ) : (
                       <Play className="h-3.5 w-3.5" />
                     )}
-                    {testingNew ? "Testing…" : "Test"}
+                    {t(testingNew ? "Testing…" : "Test")}
                   </Button>
                   <Button
                     size="sm"
@@ -1600,7 +1632,7 @@ export const MCPSettingsSection: React.FC = () => {
                     ) : (
                       <Plus className="h-3.5 w-3.5" />
                     )}
-                    {addingServer ? "Adding…" : "Add"}
+                    {t(addingServer ? "Adding…" : "Add")}
                   </Button>
                 </div>
               </div>

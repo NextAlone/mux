@@ -14,6 +14,7 @@ import {
   DialogTitle,
 } from "@/browser/components/Dialog/Dialog";
 import { useAPI } from "@/browser/contexts/API";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 import { usePolicy } from "@/browser/contexts/PolicyContext";
 import { JsonHighlight } from "@/browser/features/Tools/Shared/HighlightedCode";
 import { getStoredAuthToken } from "@/browser/components/AuthTokenModal/AuthTokenModal";
@@ -30,6 +31,7 @@ type EnrollStatus = "idle" | "starting" | "waiting" | "success" | "error";
 
 export function GovernorSection() {
   const { api } = useAPI();
+  const { t } = useLanguage();
   const isDesktop = !!window.api;
 
   const policyState = usePolicy();
@@ -360,25 +362,25 @@ export function GovernorSection() {
   if (loadingConfig) {
     return (
       <div className="space-y-4">
-        <h2 className="text-lg font-semibold">Mux Governor</h2>
-        <p className="text-muted-foreground text-sm">Loading...</p>
+        <h2 className="text-lg font-semibold">{t("Mux Governor")}</h2>
+        <p className="text-muted-foreground text-sm">{t("Loading...")}</p>
       </div>
     );
   }
 
   return (
     <div className="space-y-4">
-      <h2 className="text-lg font-semibold">Mux Governor</h2>
+      <h2 className="text-lg font-semibold">{t("Mux Governor")}</h2>
 
       {enrolled ? (
         // Enrolled state
         <div className="space-y-4">
           <p className="text-muted-foreground text-sm">
-            You are enrolled in Mux Governor for enterprise policy delivery.
+            {t("You are enrolled in Mux Governor for enterprise policy delivery.")}
           </p>
           <div className="flex items-center gap-2 text-sm">
             <ShieldCheck className="h-4 w-4 text-green-500" />
-            <span className="font-medium">Governor URL:</span>
+            <span className="font-medium">{t("Governor URL:")}</span>
             <code className="rounded bg-zinc-700/50 px-2 py-0.5">{governorUrl}</code>
           </div>
 
@@ -389,37 +391,39 @@ export function GovernorSection() {
               onClick={() => void handleRefreshPolicy()}
               disabled={refreshingPolicy}
             >
-              {refreshingPolicy ? "Refreshing..." : "Refresh policy"}
+              {t(refreshingPolicy ? "Refreshing..." : "Refresh policy")}
             </Button>
             <Button variant="destructive" size="sm" onClick={() => void handleUnenroll()}>
-              Unenroll from Mux Governor
+              {t("Unenroll from Mux Governor")}
             </Button>
           </div>
 
           {refreshPolicyError && (
             <div className="text-destructive flex items-start gap-2 text-sm">
               <X className="mt-0.5 h-4 w-4" />
-              <span>{refreshPolicyError}</span>
+              <span>{t(refreshPolicyError)}</span>
             </div>
           )}
 
           {/* Current policy display */}
           <div className="mt-4 space-y-2">
             <div className="flex items-center gap-2 text-sm">
-              <span className="font-medium">Policy source:</span>
-              <code className="rounded bg-zinc-700/50 px-2 py-0.5">{policyState.source}</code>
+              <span className="font-medium">{t("Policy source:")}</span>
+              <code className="rounded bg-zinc-700/50 px-2 py-0.5">{t(policyState.source)}</code>
             </div>
             <div className="flex items-center gap-2 text-sm">
-              <span className="font-medium">Policy status:</span>
-              <code className="rounded bg-zinc-700/50 px-2 py-0.5">{policyState.status.state}</code>
+              <span className="font-medium">{t("Policy status:")}</span>
+              <code className="rounded bg-zinc-700/50 px-2 py-0.5">
+                {t(policyState.status.state)}
+              </code>
               {policyState.status.state === "blocked" && policyState.status.reason && (
-                <span className="text-destructive text-xs">({policyState.status.reason})</span>
+                <span className="text-destructive text-xs">({t(policyState.status.reason)})</span>
               )}
             </div>
 
             {policyState.policy && (
               <div className="space-y-1">
-                <span className="text-sm font-medium">Effective policy:</span>
+                <span className="text-sm font-medium">{t("Effective policy:")}</span>
                 <JsonHighlight value={policyState.policy} />
               </div>
             )}
@@ -429,24 +433,25 @@ export function GovernorSection() {
         // Not enrolled - show enroll button
         <div className="space-y-4">
           <p className="text-muted-foreground text-sm">
-            Mux Governor enables enterprise policy delivery for centralized agent control. Enroll to
-            connect to your organization&apos;s Governor server.
+            {t(
+              "Mux Governor enables enterprise policy delivery for centralized agent control. Enroll to connect to your organization's Governor server."
+            )}
           </p>
           <Button onClick={handleOpenUrlDialog}>
             <ExternalLink className="mr-2 h-4 w-4" />
-            Enroll in Mux Governor
+            {t("Enroll in Mux Governor")}
           </Button>
         </div>
       ) : enrollStatus === "starting" ? (
         // Starting OAuth
         <div className="space-y-4">
-          <p className="text-muted-foreground text-sm">Starting enrollment...</p>
+          <p className="text-muted-foreground text-sm">{t("Starting enrollment...")}</p>
         </div>
       ) : enrollStatus === "waiting" ? (
         // Waiting for OAuth callback
         <div className="space-y-4">
           <p className="text-muted-foreground text-sm">
-            Complete the sign-in in your browser, then return here.
+            {t("Complete the sign-in in your browser, then return here.")}
           </p>
           <Button
             variant="secondary"
@@ -460,7 +465,7 @@ export function GovernorSection() {
               setDesktopFlowId(null);
             }}
           >
-            Cancel
+            {t("Cancel")}
           </Button>
         </div>
       ) : (
@@ -468,9 +473,9 @@ export function GovernorSection() {
         <div className="space-y-4">
           <div className="text-destructive flex items-start gap-2 text-sm">
             <X className="mt-0.5 h-4 w-4" />
-            <span>{enrollError ?? "Enrollment failed"}</span>
+            <span>{t(enrollError ?? "Enrollment failed")}</span>
           </div>
-          <Button onClick={handleOpenUrlDialog}>Try Again</Button>
+          <Button onClick={handleOpenUrlDialog}>{t("Try Again")}</Button>
         </div>
       )}
 
@@ -478,11 +483,11 @@ export function GovernorSection() {
       <Dialog open={showUrlDialog} onOpenChange={setShowUrlDialog}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Enter Governor URL</DialogTitle>
+            <DialogTitle>{t("Enter Governor URL")}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 pt-4">
             <p className="text-muted-foreground text-sm">
-              Enter the URL of your organization&apos;s Mux Governor server.
+              {t("Enter the URL of your organization's Mux Governor server.")}
             </p>
             <Input
               placeholder="https://governor.corp.com"
@@ -494,22 +499,22 @@ export function GovernorSection() {
                 }
               }}
             />
-            {urlError && <p className="text-destructive text-sm">{urlError}</p>}
+            {urlError && <p className="text-destructive text-sm">{t(urlError)}</p>}
             {urlWarning && (
               <div className="flex items-start gap-2 rounded-md border border-yellow-500/50 bg-yellow-500/10 p-3 text-sm text-yellow-600 dark:text-yellow-400">
                 <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-                <span>{urlWarning}</span>
+                <span>{t(urlWarning)}</span>
               </div>
             )}
             <div className="flex justify-end gap-2">
               <Button variant="secondary" onClick={() => setShowUrlDialog(false)}>
-                Cancel
+                {t("Cancel")}
               </Button>
               <Button
                 onClick={() => void handleStartEnroll()}
                 disabled={!urlInput.trim() || !!urlError}
               >
-                Continue
+                {t("Continue")}
               </Button>
             </div>
           </div>

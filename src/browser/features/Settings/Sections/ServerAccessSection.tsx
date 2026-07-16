@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/browser/components/Button/Button";
 import { useAPI } from "@/browser/contexts/API";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 import type { ServerAuthSession } from "@/common/orpc/types";
 import { getErrorMessage } from "@/common/utils/errors";
 
@@ -8,10 +9,10 @@ function formatTimestamp(timestampMs: number): string {
   return new Date(timestampMs).toLocaleString();
 }
 
-function formatRelativeTime(timestampMs: number): string {
+function formatRelativeTime(timestampMs: number, t: (text: string) => string): string {
   const deltaMs = Date.now() - timestampMs;
   if (!Number.isFinite(deltaMs) || deltaMs < 0) {
-    return "just now";
+    return t("just now");
   }
 
   const minuteMs = 60_000;
@@ -19,22 +20,23 @@ function formatRelativeTime(timestampMs: number): string {
   const dayMs = 24 * hourMs;
 
   if (deltaMs < minuteMs) {
-    return "just now";
+    return t("just now");
   }
 
   if (deltaMs < hourMs) {
-    return `${Math.floor(deltaMs / minuteMs)}m ago`;
+    return t("{count}m ago").replace("{count}", String(Math.floor(deltaMs / minuteMs)));
   }
 
   if (deltaMs < dayMs) {
-    return `${Math.floor(deltaMs / hourMs)}h ago`;
+    return t("{count}h ago").replace("{count}", String(Math.floor(deltaMs / hourMs)));
   }
 
-  return `${Math.floor(deltaMs / dayMs)}d ago`;
+  return t("{count}d ago").replace("{count}", String(Math.floor(deltaMs / dayMs)));
 }
 
 export function ServerAccessSection() {
   const { api, retry } = useAPI();
+  const { t } = useLanguage();
   const [sessions, setSessions] = useState<ServerAuthSession[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -126,9 +128,9 @@ export function ServerAccessSection() {
   return (
     <div className="space-y-4">
       <div>
-        <h3 className="text-foreground text-sm font-medium">Server access sessions</h3>
+        <h3 className="text-foreground text-sm font-medium">{t("Server access sessions")}</h3>
         <p className="text-muted mt-1 text-xs">
-          Manage browser sessions for this server. Revoke devices you no longer trust.
+          {t("Manage browser sessions for this server. Revoke devices you no longer trust.")}
         </p>
       </div>
 
@@ -139,7 +141,7 @@ export function ServerAccessSection() {
           onClick={() => void refreshSessions()}
           disabled={loading}
         >
-          Refresh
+          {t("Refresh")}
         </Button>
         <Button
           variant="destructive"
@@ -149,16 +151,16 @@ export function ServerAccessSection() {
           }}
           disabled={loading || revokingOthers || !canRevokeOtherSessions}
         >
-          {revokingOthers ? "Revoking..." : "Revoke other sessions"}
+          {t(revokingOthers ? "Revoking..." : "Revoke other sessions")}
         </Button>
       </div>
 
-      {error ? <div className="text-destructive text-xs">{error}</div> : null}
+      {error ? <div className="text-destructive text-xs">{t(error)}</div> : null}
 
       {loading ? (
-        <div className="text-muted text-xs">Loading sessions...</div>
+        <div className="text-muted text-xs">{t("Loading sessions...")}</div>
       ) : sessions.length === 0 ? (
-        <div className="text-muted text-xs">No active sessions found.</div>
+        <div className="text-muted text-xs">{t("No active sessions found.")}</div>
       ) : (
         <div className="border-border-light divide-border-light divide-y rounded-md border">
           {sessions.map((session) => {
@@ -169,11 +171,11 @@ export function ServerAccessSection() {
                 <div className="min-w-0 flex-1">
                   <div className="text-foreground truncate text-sm font-medium">
                     {session.label}
-                    {session.isCurrent ? " (Current)" : ""}
+                    {session.isCurrent ? ` ${t("(Current)")}` : ""}
                   </div>
                   <div className="text-muted text-xs">
-                    Last active {formatRelativeTime(session.lastUsedAtMs)} · Created{" "}
-                    {formatTimestamp(session.createdAtMs)}
+                    {t("Last active")} {formatRelativeTime(session.lastUsedAtMs, t)} ·{" "}
+                    {t("Created")} {formatTimestamp(session.createdAtMs)}
                   </div>
                 </div>
 
@@ -185,7 +187,9 @@ export function ServerAccessSection() {
                   }}
                   disabled={loading || revokingThisSession}
                 >
-                  {revokingThisSession ? "Revoking..." : session.isCurrent ? "Log out" : "Revoke"}
+                  {t(
+                    revokingThisSession ? "Revoking..." : session.isCurrent ? "Log out" : "Revoke"
+                  )}
                 </Button>
               </div>
             );
@@ -195,7 +199,7 @@ export function ServerAccessSection() {
 
       {currentSession ? (
         <p className="text-muted text-xs">
-          Current session last active {formatRelativeTime(currentSession.lastUsedAtMs)}.
+          {t("Current session last active")} {formatRelativeTime(currentSession.lastUsedAtMs, t)}.
         </p>
       ) : null}
     </div>

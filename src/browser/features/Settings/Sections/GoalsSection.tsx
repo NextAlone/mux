@@ -2,6 +2,7 @@ import { Target } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Input } from "@/browser/components/Input/Input";
 import { useAPI } from "@/browser/contexts/API";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 import { DEFAULT_GOAL_DEFAULTS, normalizeGoalDefaults, type GoalDefaults } from "@/constants/goals";
 
 function formatBudgetDollars(cents: number): string {
@@ -37,6 +38,7 @@ interface GoalDefaultsControlsProps {
 
 export function GoalDefaultsControls(props: GoalDefaultsControlsProps) {
   const { api } = useAPI();
+  const { t } = useLanguage();
   const loadConfig = props.loadConfig;
   const onPersist = props.onPersist;
   const [goalDefaults, setGoalDefaults] = useState<GoalDefaults>(() => ({
@@ -102,16 +104,18 @@ export function GoalDefaultsControls(props: GoalDefaultsControlsProps) {
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-4">
         <label htmlFor="goal-default-budget" className="min-w-0 flex-1">
-          <div className="text-foreground text-sm font-medium">Default goal budget</div>
+          <div className="text-foreground text-sm font-medium">{t("Default goal budget")}</div>
           <div className="text-muted mt-0.5 text-xs">
-            Applied to new goals when no budget flag is provided. Use $0.00 for no dollar limit.
+            {t(
+              "Applied to new goals when no budget flag is provided. Use $0.00 for no dollar limit."
+            )}
           </div>
         </label>
         <div className="flex items-center gap-1">
           <span className="text-muted text-sm">$</span>
           <Input
             id="goal-default-budget"
-            aria-label="Default goal budget in dollars"
+            aria-label={t("Default goal budget in dollars")}
             type="text"
             inputMode="decimal"
             value={budgetDraft}
@@ -124,14 +128,14 @@ export function GoalDefaultsControls(props: GoalDefaultsControlsProps) {
 
       <div className="flex items-center justify-between gap-4">
         <label htmlFor="goal-default-turn-cap" className="min-w-0 flex-1">
-          <div className="text-foreground text-sm font-medium">Default turn cap</div>
+          <div className="text-foreground text-sm font-medium">{t("Default turn cap")}</div>
           <div className="text-muted mt-0.5 text-xs">
-            Leave empty to disable the turn cap for new goals.
+            {t("Leave empty to disable the turn cap for new goals.")}
           </div>
         </label>
         <Input
           id="goal-default-turn-cap"
-          aria-label="Default goal turn cap"
+          aria-label={t("Default goal turn cap")}
           type="number"
           inputMode="numeric"
           min={1}
@@ -146,15 +150,16 @@ export function GoalDefaultsControls(props: GoalDefaultsControlsProps) {
       <label className="flex items-start justify-between gap-4">
         <span className="min-w-0 flex-1">
           <span className="text-foreground block text-sm font-medium">
-            Always require explicit budget
+            {t("Always require explicit budget")}
           </span>
           <span className="text-muted mt-0.5 block text-xs">
-            When enabled, omitted budgets use the default budget instead of creating unbudgeted
-            goals.
+            {t(
+              "When enabled, omitted budgets use the default budget instead of creating unbudgeted goals."
+            )}
           </span>
         </span>
         <input
-          aria-label="Always require explicit budget"
+          aria-label={t("Always require explicit budget")}
           type="checkbox"
           checked={goalDefaults.alwaysRequireExplicitBudget}
           onChange={(event) =>
@@ -171,18 +176,22 @@ export function GoalDefaultsControls(props: GoalDefaultsControlsProps) {
 }
 
 export function GoalsSection() {
+  const { t } = useLanguage();
+
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-foreground mb-2 text-lg font-semibold">Goals</h2>
+        <h2 className="text-foreground mb-2 text-lg font-semibold">{t("Goals")}</h2>
         <p className="text-muted text-sm">
-          Workspace goals let you pin an objective to a workspace and track progress across turns.
+          {t(
+            "Workspace goals let you pin an objective to a workspace and track progress across turns."
+          )}
         </p>
       </div>
       <div className="border-border-light bg-surface-secondary rounded-lg border p-4">
         <div className="mb-4 flex items-center gap-2 text-sm font-medium">
           <Target className="h-4 w-4" aria-hidden="true" />
-          Goal defaults
+          {t("Goal defaults")}
         </div>
         <GoalDefaultsControls />
       </div>

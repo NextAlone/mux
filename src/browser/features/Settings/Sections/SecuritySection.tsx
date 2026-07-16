@@ -3,6 +3,7 @@ import { ShieldCheck, ShieldOff } from "lucide-react";
 import { Button } from "@/browser/components/Button/Button";
 import { useProjectContext } from "@/browser/contexts/ProjectContext";
 import { useAPI } from "@/browser/contexts/API";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 /**
  * Security settings section — manages per-project trust state.
@@ -11,6 +12,7 @@ import { useAPI } from "@/browser/contexts/API";
  */
 export function SecuritySection() {
   const { api } = useAPI();
+  const { t } = useLanguage();
   const { userProjects, refreshProjects } = useProjectContext();
   const [pendingPath, setPendingPath] = useState<string | null>(null);
   const pendingRef = useRef(false);
@@ -35,14 +37,15 @@ export function SecuritySection() {
   return (
     <div className="flex flex-col gap-6">
       <div>
-        <h3 className="text-foreground mb-1 text-sm font-medium">Project Trust</h3>
+        <h3 className="text-foreground mb-1 text-sm font-medium">{t("Project Trust")}</h3>
         <p className="text-muted text-xs">
-          Trusted projects can run hooks and scripts from the repository. Untrusted projects have
-          all hook and script execution disabled for security.
+          {t(
+            "Trusted projects can run hooks and scripts from the repository. Untrusted projects have all hook and script execution disabled for security."
+          )}
         </p>
       </div>
       {projectEntries.length === 0 ? (
-        <p className="text-muted text-sm">No projects added yet.</p>
+        <p className="text-muted text-sm">{t("No projects added yet.")}</p>
       ) : (
         <div className="flex flex-col gap-2">
           {projectEntries.map(([path, config]) => {
@@ -66,12 +69,12 @@ export function SecuritySection() {
                   size="sm"
                   variant={trusted ? "outline" : "default"}
                   disabled={pendingPath != null}
-                  aria-label={`${trusted ? "Revoke trust for" : "Trust"} ${name}`}
+                  aria-label={`${t(trusted ? "Revoke trust for" : "Trust")} ${name}`}
                   onClick={() => {
                     void handleToggleTrust(path, trusted);
                   }}
                 >
-                  {pendingPath === path ? "Saving…" : trusted ? "Revoke trust" : "Trust"}
+                  {t(pendingPath === path ? "Saving…" : trusted ? "Revoke trust" : "Trust")}
                 </Button>
               </div>
             );

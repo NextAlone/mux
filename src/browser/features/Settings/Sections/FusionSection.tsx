@@ -3,6 +3,7 @@ import { Loader2, Plus, Trash2 } from "lucide-react";
 
 import { Button } from "@/browser/components/Button/Button";
 import { useAPI } from "@/browser/contexts/API";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 import { SearchableModelSelect } from "@/browser/features/Settings/Components/SearchableModelSelect";
 import { useModelsFromSettings } from "@/browser/hooks/useModelsFromSettings";
 import {
@@ -26,6 +27,7 @@ function ThinkingSelect(props: {
   onChange: (value: ThinkingLevel | undefined) => void;
   ariaLabel: string;
 }) {
+  const { t } = useLanguage();
   const allowedLevels = getThinkingPolicyForModel(props.modelString);
   const value = props.value && allowedLevels.includes(props.value) ? props.value : DEFAULT_THINKING;
   return (
@@ -42,10 +44,10 @@ function ThinkingSelect(props: {
         <SelectValue />
       </SelectTrigger>
       <SelectContent>
-        <SelectItem value={DEFAULT_THINKING}>Inherit agent reasoning</SelectItem>
+        <SelectItem value={DEFAULT_THINKING}>{t("Inherit agent reasoning")}</SelectItem>
         {allowedLevels.map((level) => (
           <SelectItem key={level} value={level}>
-            {getThinkingOptionLabel(level, props.modelString)}
+            {t(getThinkingOptionLabel(level, props.modelString))}
           </SelectItem>
         ))}
       </SelectContent>
@@ -55,6 +57,7 @@ function ThinkingSelect(props: {
 
 export function FusionSection() {
   const { api } = useAPI();
+  const { t } = useLanguage();
   const { models } = useModelsFromSettings();
   const [panel, setPanel] = useState<FusionModelConfig[]>(EMPTY_PANEL);
   const [judge, setJudge] = useState<FusionModelConfig>({ modelString: "" });
@@ -149,7 +152,7 @@ export function FusionSection() {
     return (
       <div className="flex items-center justify-center gap-2 py-12">
         <Loader2 className="text-muted h-5 w-5 animate-spin" />
-        <span className="text-muted text-sm">Loading Fusion settings...</span>
+        <span className="text-muted text-sm">{t("Loading Fusion settings...")}</span>
       </div>
     );
   }
@@ -157,18 +160,19 @@ export function FusionSection() {
   return (
     <div className="space-y-6">
       <div>
-        <h3 className="text-foreground text-sm font-medium">Fusion defaults</h3>
+        <h3 className="text-foreground text-sm font-medium">{t("Fusion defaults")}</h3>
         <p className="text-muted mt-1 text-xs">
-          Every Fusion run starts from this panel and judge. Phrases such as “use Mimo and Gemini to
-          review” override only that run.
+          {t(
+            "Every Fusion run starts from this panel and judge. Phrases such as “use Mimo and Gemini to review” override only that run."
+          )}
         </p>
       </div>
 
       <div className="space-y-3">
         <div>
-          <div className="text-foreground text-sm">Panel models</div>
+          <div className="text-foreground text-sm">{t("Panel models")}</div>
           <div className="text-muted text-xs">
-            Two to eight models run independently in parallel.
+            {t("Two to eight models run independently in parallel.")}
           </div>
         </div>
         {panel.map((entry, index) => (
@@ -181,7 +185,10 @@ export function FusionSection() {
                 value={entry.modelString}
                 onChange={(value) => updatePanelModel(index, value)}
                 models={models}
-                emptyOption={{ value: "", label: `Select panel model ${index + 1}` }}
+                emptyOption={{
+                  value: "",
+                  label: t("Select panel model {number}").replace("{number}", String(index + 1)),
+                }}
                 compact
               />
               <ThinkingSelect
@@ -200,7 +207,10 @@ export function FusionSection() {
                   );
                   setMessage(null);
                 }}
-                ariaLabel={`Panel model ${index + 1} reasoning`}
+                ariaLabel={t("Panel model {number} reasoning").replace(
+                  "{number}",
+                  String(index + 1)
+                )}
               />
             </div>
             <Button
@@ -209,8 +219,8 @@ export function FusionSection() {
               size="icon"
               disabled={panel.length <= 2}
               onClick={() => removePanelModel(index)}
-              aria-label={`Remove panel model ${index + 1}`}
-              tooltip="Remove model"
+              aria-label={t("Remove panel model {number}").replace("{number}", String(index + 1))}
+              tooltip={t("Remove model")}
             >
               <Trash2 />
             </Button>
@@ -227,15 +237,15 @@ export function FusionSection() {
           }}
         >
           <Plus />
-          Add panel model
+          {t("Add panel model")}
         </Button>
       </div>
 
       <div className="space-y-2">
         <div>
-          <div className="text-foreground text-sm">Judge model</div>
+          <div className="text-foreground text-sm">{t("Judge model")}</div>
           <div className="text-muted text-xs">
-            Synthesizes agreement, disagreement, blind spots, and the final recommendation.
+            {t("Synthesizes agreement, disagreement, blind spots, and the final recommendation.")}
           </div>
         </div>
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
@@ -246,7 +256,7 @@ export function FusionSection() {
               setMessage(null);
             }}
             models={models}
-            emptyOption={{ value: "", label: "Select judge model" }}
+            emptyOption={{ value: "", label: t("Select judge model") }}
             compact
           />
           <ThinkingSelect
@@ -259,19 +269,27 @@ export function FusionSection() {
               }));
               setMessage(null);
             }}
-            ariaLabel="Judge model reasoning"
+            ariaLabel={t("Judge model reasoning")}
           />
         </div>
       </div>
 
       {hasDuplicates ? (
-        <div className="text-error text-xs">Panel models must be distinct.</div>
+        <div className="text-error text-xs">{t("Panel models must be distinct.")}</div>
       ) : null}
-      {message ? <div className="text-muted text-xs">{message}</div> : null}
+      {message ? (
+        <div className="text-muted text-xs">
+          {message.startsWith("Failed to load Fusion settings: ")
+            ? `${t("Failed to load Fusion settings:")} ${message.slice("Failed to load Fusion settings: ".length)}`
+            : message.startsWith("Failed to save Fusion settings: ")
+              ? `${t("Failed to save Fusion settings:")} ${message.slice("Failed to save Fusion settings: ".length)}`
+              : t(message)}
+        </div>
+      ) : null}
 
       <div className="flex justify-end">
         <Button type="button" disabled={!canSave} onClick={() => void save()}>
-          {saving ? "Saving..." : "Save Fusion defaults"}
+          {t(saving ? "Saving..." : "Save Fusion defaults")}
         </Button>
       </div>
     </div>

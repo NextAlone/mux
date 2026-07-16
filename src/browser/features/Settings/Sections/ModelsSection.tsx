@@ -13,6 +13,7 @@ import {
   SelectValue,
 } from "@/browser/components/SelectPrimitive/SelectPrimitive";
 import { useAPI } from "@/browser/contexts/API";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 import { useSettings } from "@/browser/contexts/SettingsContext";
 import { useModelsFromSettings } from "@/browser/hooks/useModelsFromSettings";
 import { useRouting } from "@/browser/hooks/useRouting";
@@ -46,17 +47,30 @@ const headerCellBase = "py-1.5 pr-2 text-xs font-medium text-muted";
 
 // Table header component to avoid duplication
 function ModelsTableHeader() {
+  const { t } = useLanguage();
+
   return (
     <thead>
       <tr className="border-border-medium bg-background-secondary/50 border-b">
-        <th className={`${headerCellBase} pl-2 text-left md:pl-3`}>Model</th>
-        <th className={`${headerCellBase} w-16 text-right md:w-20`}>Context</th>
-        <th className={`${headerCellBase} w-32 text-left md:w-40`}>Route</th>
-        <th className={`${headerCellBase} w-28 text-left md:w-32`}>Min Thinking</th>
-        <th className={`${headerCellBase} w-28 text-right md:w-32 md:pr-3`}>Actions</th>
+        <th className={`${headerCellBase} pl-2 text-left md:pl-3`}>{t("Model")}</th>
+        <th className={`${headerCellBase} w-16 text-right md:w-20`}>{t("Context")}</th>
+        <th className={`${headerCellBase} w-32 text-left md:w-40`}>{t("Route")}</th>
+        <th className={`${headerCellBase} w-28 text-left md:w-32`}>{t("Min Thinking")}</th>
+        <th className={`${headerCellBase} w-28 text-right md:w-32 md:pr-3`}>{t("Actions")}</th>
       </tr>
     </thead>
   );
+}
+
+function localizeModelsError(error: string, t: (text: string) => string): string {
+  const duplicateMatch = /^Model "(.+)" already exists for this provider$/.exec(error);
+  if (duplicateMatch?.[1]) {
+    return t('Model "{model}" already exists for this provider').replace(
+      "{model}",
+      duplicateMatch[1]
+    );
+  }
+  return t(error);
 }
 
 interface EditingState {
@@ -127,6 +141,7 @@ export function ModelsSection() {
     policyState.status.state === "enforced" ? (policyState.policy ?? null) : null;
 
   const { api } = useAPI();
+  const { t } = useLanguage();
   const { open: openSettings } = useSettings();
   const { config, loading, updateModelsOptimistically } = useProvidersConfig();
   const [lastProvider, setLastProvider] = usePersistedState(LAST_CUSTOM_MODEL_PROVIDER_KEY, "");
@@ -353,7 +368,7 @@ export function ModelsSection() {
     return (
       <div className="flex items-center justify-center gap-2 py-12">
         <Loader2 className="text-muted h-5 w-5 animate-spin" />
-        <span className="text-muted text-sm">Loading settings...</span>
+        <span className="text-muted text-sm">{t("Loading settings...")}</span>
       </div>
     );
   }
@@ -413,16 +428,18 @@ export function ModelsSection() {
       {policyState.status.state === "enforced" && (
         <div className="border-border-medium bg-background-secondary/50 text-muted flex items-center gap-2 rounded-md border px-3 py-2 text-xs">
           <ShieldCheck className="h-4 w-4" aria-hidden />
-          <span>Your settings are controlled by a policy.</span>
+          <span>{t("Your settings are controlled by a policy.")}</span>
         </div>
       )}
 
       <div className="border-border-medium bg-background-secondary/40 rounded-md border p-3">
         <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
           <div className="min-w-0">
-            <div className="text-foreground text-sm font-medium">Title generation model</div>
+            <div className="text-foreground text-sm font-medium">{t("Title generation model")}</div>
             <div className="text-muted text-xs">
-              Used for generated workspace names and titles before falling back to fast defaults.
+              {t(
+                "Used for generated workspace names and titles before falling back to fast defaults."
+              )}
             </div>
           </div>
           <div className="w-full md:w-80">
@@ -430,7 +447,7 @@ export function ModelsSection() {
               value={titleGenerationModel}
               onChange={setTitleGenerationModel}
               models={titleGenerationModelOptions}
-              emptyOption={{ value: "", label: "Auto (fast defaults)" }}
+              emptyOption={{ value: "", label: t("Auto (fast defaults)") }}
             />
           </div>
         </div>
@@ -438,14 +455,16 @@ export function ModelsSection() {
 
       {/* Custom Models */}
       <div className="space-y-3">
-        <div className="text-muted text-xs font-medium tracking-wide uppercase">Custom Models</div>
+        <div className="text-muted text-xs font-medium tracking-wide uppercase">
+          {t("Custom Models")}
+        </div>
 
         {/* Add new model form - styled to match table */}
         <div className="border-border-medium overflow-hidden rounded-md border">
           <div className="border-border-medium bg-background-secondary/50 flex flex-wrap items-center gap-1.5 border-b px-2 py-1.5 md:px-3">
             <Select value={lastProvider} onValueChange={setLastProvider}>
               <SelectTrigger className="bg-background border-border-medium focus:border-accent h-7 w-auto shrink-0 rounded border px-2 text-xs">
-                <SelectValue placeholder="Provider" />
+                <SelectValue placeholder={t("Provider")} />
               </SelectTrigger>
               <SelectContent>
                 {allowedProviders.map((provider) => (
@@ -476,11 +495,13 @@ export function ModelsSection() {
               className="h-7 shrink-0 gap-1 px-2 text-xs"
             >
               <Plus className="h-3.5 w-3.5" />
-              Add
+              {t("Add")}
             </Button>
           </div>
           {error && !editing && (
-            <div className="text-error px-2 py-1.5 text-xs md:px-3">{error}</div>
+            <div className="text-error px-2 py-1.5 text-xs md:px-3">
+              {localizeModelsError(error, t)}
+            </div>
           )}
         </div>
 
@@ -511,7 +532,9 @@ export function ModelsSection() {
                       editAutofocus={isModelEditing ? editing.focus : undefined}
                       customContextWindowTokens={model.contextWindowTokens}
                       allModels={knownModelIds}
-                      editError={isModelEditing ? error : undefined}
+                      editError={
+                        isModelEditing && error ? localizeModelsError(error, t) : undefined
+                      }
                       saving={false}
                       hasActiveEdit={editing !== null}
                       resolvedRoute={routing.resolveRoute(model.fullId)}
@@ -581,7 +604,7 @@ export function ModelsSection() {
       {/* Built-in Models */}
       <div className="space-y-3">
         <div className="text-muted text-xs font-medium tracking-wide uppercase">
-          Built-in Models
+          {t("Built-in Models")}
         </div>
         <div className="border-border-medium overflow-hidden rounded-md border">
           <table className="w-full">
@@ -632,8 +655,10 @@ export function ModelsSection() {
           <Info className="text-accent mt-0.5 h-4 w-4 shrink-0" aria-hidden />
           <div className="space-y-1">
             <p>
-              Agent-specific model defaults and thinking levels (Compact and others) are configured
-              in <span className="text-foreground font-medium">Settings → Agents</span>.
+              {t(
+                "Agent-specific model defaults and thinking levels (Compact and others) are configured in"
+              )}{" "}
+              <span className="text-foreground font-medium">{t("Settings → Agents")}</span>.
             </p>
             <Button
               type="button"
@@ -642,7 +667,7 @@ export function ModelsSection() {
               onClick={() => openSettings("tasks")}
               className="text-accent h-auto px-0 py-0 text-xs"
             >
-              Open Agents settings
+              {t("Open Agents settings")}
               <ArrowRight className="h-3.5 w-3.5" />
             </Button>
           </div>
@@ -652,33 +677,34 @@ export function ModelsSection() {
       {/* Oneshot Tips */}
       <div className="space-y-2">
         <div className="text-muted text-xs font-medium tracking-wide uppercase">
-          Quick Shortcuts
+          {t("Quick Shortcuts")}
         </div>
         <div className="border-border-medium bg-background-secondary/50 rounded-md border px-3 py-2.5 text-xs leading-relaxed">
           <p className="text-foreground mb-1.5 font-medium">
-            Use model aliases as slash commands for one-shot overrides:
+            {t("Use model aliases as slash commands for one-shot overrides:")}
           </p>
           <div className="text-muted space-y-0.5 font-mono">
             <div>
-              <span className="text-accent">/sonnet</span> explain this code
-              <span className="text-muted/60 ml-2">— send one message with Sonnet</span>
+              <span className="text-accent">/sonnet</span> {t("explain this code")}
+              <span className="text-muted/60 ml-2">— {t("send one message with Sonnet")}</span>
             </div>
             <div>
-              <span className="text-accent">/opus+high</span> deep review
-              <span className="text-muted/60 ml-2">— Opus with high thinking</span>
+              <span className="text-accent">/opus+high</span> {t("deep review")}
+              <span className="text-muted/60 ml-2">— {t("Opus with high thinking")}</span>
             </div>
             <div>
-              <span className="text-accent">/haiku+0</span> quick answer
-              <span className="text-muted/60 ml-2">— Haiku with thinking off</span>
+              <span className="text-accent">/haiku+0</span> {t("quick answer")}
+              <span className="text-muted/60 ml-2">— {t("Haiku with thinking off")}</span>
             </div>
             <div>
-              <span className="text-accent">/+2</span> analyze this
-              <span className="text-muted/60 ml-2">— current model, thinking level 2</span>
+              <span className="text-accent">/+2</span> {t("analyze this")}
+              <span className="text-muted/60 ml-2">— {t("current model, thinking level 2")}</span>
             </div>
           </div>
           <p className="text-muted mt-1.5">
-            Numeric levels are relative to each model (0=lowest allowed, 1=next, etc.). Named
-            levels: off, low, med, high, max.
+            {t(
+              "Numeric levels are relative to each model (0=lowest allowed, 1=next, etc.). Named levels: off, low, med, high, max."
+            )}
           </p>
         </div>
       </div>
