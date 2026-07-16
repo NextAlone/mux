@@ -29,12 +29,34 @@ const USER_VISIBLE_ATTRIBUTES = new Set([
   "warning",
 ]);
 
+const USER_VISIBLE_OBJECT_PROPERTIES = new Set([
+  "buttonLabel",
+  "cancelLabel",
+  "confirmLabel",
+  "description",
+  "detail",
+  "dismissLabel",
+  "emptyLabel",
+  "emptyMessage",
+  "helperText",
+  "label",
+  "message",
+  "placeholder",
+  "statusText",
+  "subtitle",
+  "title",
+  "tooltip",
+  "tooltipLabel",
+  "warning",
+]);
+
 const EXCLUDED_FILE_PARTS = [
   ".test.",
   ".stories.",
   ".ui.test.",
   "/assets/",
   "/i18n/translations/",
+  "/stories/",
   "/testUtils.",
 ];
 
@@ -54,7 +76,7 @@ function listSourceFiles(directory: string): string[] {
   return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
     const entryPath = path.join(directory, entry.name);
     if (entry.isDirectory()) return listSourceFiles(entryPath);
-    if (!entry.name.endsWith(".tsx")) return [];
+    if (!entry.name.endsWith(".ts") && !entry.name.endsWith(".tsx")) return [];
     const normalizedPath = entryPath.replaceAll(path.sep, "/");
     return EXCLUDED_FILE_PARTS.some((part) => normalizedPath.includes(part)) ? [] : [entryPath];
   });
@@ -125,7 +147,7 @@ function auditFile(file: string): {
     source,
     ts.ScriptTarget.Latest,
     true,
-    ts.ScriptKind.TSX
+    file.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS
   );
   const findings: Finding[] = [];
   const missingTranslations: MissingTranslation[] = [];
@@ -190,6 +212,25 @@ function auditFile(file: string): {
         const strings: ts.StringLiteralLike[] = [];
         collectRenderableStrings(keyNode, strings);
         for (const stringNode of strings) addFinding(stringNode, stringNode.text);
+      }
+    } else if (ts.isPropertyAssignment(node)) {
+      const propertyName =
+        ts.isIdentifier(node.name) || ts.isStringLiteral(node.name) ? node.name.text : "";
+      if (
+        USER_VISIBLE_OBJECT_PROPERTIES.has(propertyName) &&
+        ts.isStringLiteralLike(node.initializer) &&
+        containsEnglishWords(node.initializer.text) &&
+        !node.initializer.text.startsWith("var(") &&
+        !Object.prototype.hasOwnProperty.call(ZH_CN, node.initializer.text) &&
+        !isIgnored(sourceFile, node)
+      ) {
+        missingTranslations.push({
+          file: path.relative(path.resolve(import.meta.dir, ".."), file),
+          line:
+            sourceFile.getLineAndCharacterOfPosition(node.initializer.getStart(sourceFile)).line +
+            1,
+          key: node.initializer.text,
+        });
       }
     }
 
