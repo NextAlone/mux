@@ -2,6 +2,9 @@ import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import ts from "typescript";
 import { ZH_CN } from "../src/browser/i18n/translations/zh-CN";
+import { FEATURES_ZH_CN } from "../src/browser/i18n/translations/zh-CN/features";
+import { SETTINGS_ZH_CN } from "../src/browser/i18n/translations/zh-CN/settings";
+import { SHELL_ZH_CN } from "../src/browser/i18n/translations/zh-CN/shell";
 
 const SOURCE_ROOT = path.resolve(import.meta.dir, "../src/browser");
 const USER_VISIBLE_ATTRIBUTES = new Set([
@@ -70,6 +73,11 @@ interface MissingTranslation {
   file: string;
   line: number;
   key: string;
+}
+
+interface TranslationConflict {
+  key: string;
+  values: Array<{ area: string; value: string }>;
 }
 
 function listSourceFiles(directory: string): string[] {
@@ -244,6 +252,26 @@ function auditFile(file: string): {
 const auditResults = listSourceFiles(SOURCE_ROOT).map(auditFile);
 const findings = auditResults.flatMap((result) => result.findings);
 const missingTranslations = auditResults.flatMap((result) => result.missingTranslations);
+const translationAreas = [
+  ["shell", SHELL_ZH_CN],
+  ["features", FEATURES_ZH_CN],
+  ["settings", SETTINGS_ZH_CN],
+] as const;
+const translationKeys = new Set(
+  translationAreas.flatMap(([, translations]) => Object.keys(translations))
+);
+const translationConflicts: TranslationConflict[] = [];
+
+for (const key of translationKeys) {
+  const values = translationAreas.flatMap(([area, translations]) =>
+    Object.prototype.hasOwnProperty.call(translations, key)
+      ? [{ area, value: translations[key] }]
+      : []
+  );
+  if (new Set(values.map(({ value }) => value)).size > 1) {
+    translationConflicts.push({ key, values });
+  }
+}
 
 if (findings.length > 0) {
   console.error("User-visible English bypasses the translation layer:");
@@ -261,6 +289,18 @@ if (missingTranslations.length > 0) {
   console.error(`\n${missingTranslations.length} missing dictionary entrie(s) found.`);
 }
 
-if (findings.length > 0 || missingTranslations.length > 0) process.exit(1);
+if (translationConflicts.length > 0) {
+  console.error("Translation areas define conflicting values for the same source text:");
+  for (const conflict of translationConflicts) {
+    console.error(
+      `${conflict.key}: ${conflict.values.map(({ area, value }) => `${area}=${value}`).join(", ")}`
+    );
+  }
+  console.error(`\n${translationConflicts.length} conflicting translation key(s) found.`);
+}
+
+if (findings.length > 0 || missingTranslations.length > 0 || translationConflicts.length > 0) {
+  process.exit(1);
+}
 
 console.log("All audited JSX UI text uses the translation layer.");
