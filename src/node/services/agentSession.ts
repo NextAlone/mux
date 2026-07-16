@@ -142,6 +142,7 @@ import type { MemorySessionContext } from "@/node/services/memoryService";
 import { materializeFileAtMentions } from "@/node/services/fileAtMentions";
 import { getErrorMessage } from "@/common/utils/errors";
 import { CompactionMonitor, type CompactionStatusEvent } from "./compactionMonitor";
+import { formatReviewForModel } from "@/common/types/review";
 
 /**
  * Tracked file state for detecting external edits.
@@ -179,6 +180,11 @@ interface AutoRetryResumeRequest {
   options: SendMessageOptions;
   agentInitiated?: boolean;
   goalKind?: GoalSyntheticMessageKind;
+}
+
+interface PendingTurnRestoreCandidate {
+  messageId: string;
+  hasBlockingOutput: boolean;
 }
 
 function stripGoalInterventionPolicy(options: SendMessageOptions): SendMessageOptions {
@@ -455,6 +461,12 @@ export class AgentSession {
 
   /** True once we see any model/tool output for the current stream (retry guard). */
   private activeStreamHadAnyDelta = false;
+
+  /**
+   * The latest user-authored turn that Esc may put back into the composer. Thinking alone does
+   * not block this undo; visible assistant text or actual tool execution does.
+   */
+  private pendingTurnRestoreCandidate?: PendingTurnRestoreCandidate;
 
   /**
    * Backend-owned terminal lifecycle for the most recent turn.
@@ -759,6 +771,12 @@ export class AgentSession {
 
     this.activeStreamHadAnyDelta = true;
     this.emitStreamLifecycleIfChanged();
+  }
+
+  private markPendingTurnRestoreBlocked(): void {
+    if (this.pendingTurnRestoreCandidate) {
+      this.pendingTurnRestoreCandidate.hasBlockingOutput = true;
+    }
   }
 
   private setTerminalStreamLifecycle(
@@ -2816,6 +2834,13 @@ export class AgentSession {
         // the orphan via the truncation logic that removes preceding snapshots.
         return Err(createUnknownSendMessageError(appendResult.error));
       }
+
+      if (isManualUserMessage) {
+        this.pendingTurnRestoreCandidate = {
+          messageId: userMessage.id,
+          hasBlockingOutput: false,
+        };
+      }
     }
 
     await this.workspaceGoalService?.syncGoalModeWithChatTail(this.workspaceId);
@@ -3500,6 +3525,7 @@ export class AgentSession {
   async interruptStream(options?: {
     soft?: boolean;
     abandonPartial?: boolean;
+    restorePendingTurn?: boolean | null;
   }): Promise<Result<void>> {
     this.assertNotDisposed("interruptStream");
 
@@ -3510,10 +3536,19 @@ export class AgentSession {
       this.queuedToolEndAbortInFlight = false;
     }
 
+    const restoreCandidate =
+      options?.restorePendingTurn === true &&
+      options.soft !== true &&
+      this.messageQueue.isEmpty() &&
+      (this.turnPhase === TurnPhase.PREPARING || this.turnPhase === TurnPhase.STREAMING)
+        ? this.pendingTurnRestoreCandidate
+        : undefined;
+    const abandonPartial = options?.abandonPartial === true || restoreCandidate !== undefined;
+
     // For hard interrupts, delete partial BEFORE stopping to prevent abort handler
     // from committing it. For soft interrupts, defer to stream-abort handler since
     // the stream continues running and would recreate the partial.
-    if (options?.abandonPartial && !options?.soft) {
+    if (abandonPartial && !options?.soft) {
       const deleteResult = await this.historyService.deletePartial(this.workspaceId);
       if (!deleteResult.success) {
         return Err(deleteResult.error);
@@ -3521,13 +3556,104 @@ export class AgentSession {
     }
 
     const stopResult = await this.aiService.stopStream(this.workspaceId, {
-      ...options,
+      soft: options?.soft,
+      abandonPartial,
       abortReason: "user",
     });
     if (!stopResult.success) {
       return Err(stopResult.error);
     }
 
+    if (restoreCandidate && !restoreCandidate.hasBlockingOutput) {
+      const restoreResult = await this.restorePendingTurnToInput(restoreCandidate.messageId);
+      if (!restoreResult.success) {
+        return restoreResult;
+      }
+    }
+
+    return Ok(undefined);
+  }
+
+  private async restorePendingTurnToInput(messageId: string): Promise<Result<void>> {
+    const historyResult = await this.historyService.getHistoryFromLatestBoundary(this.workspaceId);
+    if (!historyResult.success) {
+      return Err(historyResult.error);
+    }
+
+    const userMessage = historyResult.data.find(
+      (message) => message.id === messageId && message.role === "user"
+    );
+    if (!userMessage) {
+      return Ok(undefined);
+    }
+
+    const truncateTargetId = await this.getEditTruncateTargetId(messageId);
+    const truncateTargetIndex = historyResult.data.findIndex(
+      (message) => message.id === truncateTargetId
+    );
+    const deletedSequences =
+      truncateTargetIndex === -1
+        ? []
+        : historyResult.data
+            .slice(truncateTargetIndex)
+            .map((message) => message.metadata?.historySequence)
+            .filter((sequence): sequence is number => sequence !== undefined);
+
+    const truncateResult = await this.historyService.truncateAfterMessage(
+      this.workspaceId,
+      truncateTargetId
+    );
+    if (!truncateResult.success) {
+      return Err(truncateResult.error);
+    }
+
+    const muxMetadata = userMessage.metadata?.muxMetadata;
+    const rawCommand =
+      muxMetadata && "rawCommand" in muxMetadata ? muxMetadata.rawCommand : undefined;
+    const reviews = muxMetadata?.reviews;
+    let text =
+      rawCommand ??
+      userMessage.parts
+        .filter(
+          (part): part is Extract<MuxMessage["parts"][number], { type: "text" }> =>
+            part.type === "text"
+        )
+        .map((part) => part.text)
+        .join("");
+
+    if (!rawCommand && reviews?.length) {
+      const renderedReviews = reviews.map(formatReviewForModel).join("\n\n");
+      if (text.startsWith(renderedReviews)) {
+        text = text.slice(renderedReviews.length).replace(/^\n{1,2}/u, "");
+      }
+    }
+
+    const fileParts = userMessage.parts
+      .filter((part): part is MuxFilePart => part.type === "file")
+      .map((part) => ({
+        url: typeof part.url === "string" ? part.url : "",
+        mediaType: part.mediaType,
+        filename: part.filename,
+      }));
+
+    if (deletedSequences.length > 0) {
+      this.emitChatEvent({
+        type: "delete",
+        historySequences: deletedSequences,
+      });
+    }
+    this.emitChatEvent({
+      type: "restore-to-input",
+      workspaceId: this.workspaceId,
+      text,
+      fileParts: fileParts.length > 0 ? fileParts : undefined,
+      reviews,
+    });
+
+    if (this.pendingTurnRestoreCandidate?.messageId === messageId) {
+      this.pendingTurnRestoreCandidate = undefined;
+    }
+    await this.workspaceGoalService?.syncGoalModeWithChatTail(this.workspaceId);
     return Ok(undefined);
   }
 
@@ -4531,6 +4657,7 @@ export class AgentSession {
     this.activeStreamStartedAtMs = undefined;
     this.activeStreamHadPostCompactionInjection = false;
     this.activeStreamHadAnyDelta = false;
+    this.pendingTurnRestoreCandidate = undefined;
     this.ackPendingPostCompactionStateOnStreamEnd = false;
   }
 
@@ -4621,18 +4748,24 @@ export class AgentSession {
     });
     forward("stream-delta", (payload) => {
       this.markActiveStreamHadAnyOutput();
+      if (payload.type === "stream-delta" && payload.delta.length > 0) {
+        this.markPendingTurnRestoreBlocked();
+      }
       this.emitChatEvent(payload);
     });
     forward("tool-call-start", (payload) => {
       this.markActiveStreamHadAnyOutput();
+      this.markPendingTurnRestoreBlocked();
       this.emitChatEvent(payload);
     });
     forward("bash-output", (payload) => {
       this.markActiveStreamHadAnyOutput();
+      this.markPendingTurnRestoreBlocked();
       this.emitChatEvent(payload);
     });
     forward("advisor-output", (payload) => {
       this.markActiveStreamHadAnyOutput();
+      this.markPendingTurnRestoreBlocked();
       this.emitChatEvent(payload);
     });
     forward("advisor-reasoning-output", (payload) => {
@@ -4640,9 +4773,11 @@ export class AgentSession {
       this.emitChatEvent(payload);
     });
     forward("task-created", (payload) => {
+      this.markPendingTurnRestoreBlocked();
       this.emitChatEvent(payload);
     });
     forward("workflow-run-attached", (payload) => {
+      this.markPendingTurnRestoreBlocked();
       this.emitChatEvent(payload);
     });
     forward("advisor-phase", (payload) => {
@@ -4657,6 +4792,7 @@ export class AgentSession {
     });
     forward("tool-call-end", (payload) => {
       this.markActiveStreamHadAnyOutput();
+      this.markPendingTurnRestoreBlocked();
       this.emitChatEvent(payload);
 
       // Post-compaction context state depends on plan writes + tracked file diffs.

@@ -8506,7 +8506,12 @@ export class WorkspaceService extends EventEmitter {
 
   async interruptStream(
     workspaceId: string,
-    options?: { soft?: boolean; abandonPartial?: boolean; sendQueuedImmediately?: boolean }
+    options?: {
+      soft?: boolean;
+      abandonPartial?: boolean;
+      sendQueuedImmediately?: boolean;
+      restorePendingTurn?: boolean | null;
+    }
   ): Promise<Result<void>> {
     try {
       this.taskService?.resetAutoResumeCount(workspaceId);

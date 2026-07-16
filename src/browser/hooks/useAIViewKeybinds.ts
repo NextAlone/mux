@@ -119,7 +119,10 @@ export function useAIViewKeybinds({
         if (canInterrupt || showRetryBarrier) {
           e.preventDefault();
           void api?.workspace.setAutoRetryEnabled?.({ workspaceId, enabled: false });
-          void api?.workspace.interruptStream({ workspaceId });
+          void api?.workspace.interruptStream({
+            workspaceId,
+            options: { restorePendingTurn: true },
+          });
           return;
         }
       }

@@ -124,7 +124,10 @@ describe("useAIViewKeybinds", () => {
       })
     );
 
-    expect(interruptStream.mock.calls.length).toBe(1);
+    expect(interruptStream).toHaveBeenCalledWith({
+      workspaceId: "ws",
+      options: { restorePendingTurn: true },
+    });
   });
 
   test("Escape does not interrupt when the event target is an <input>", () => {
