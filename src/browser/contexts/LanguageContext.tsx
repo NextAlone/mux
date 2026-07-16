@@ -7,6 +7,7 @@ import {
 } from "react";
 import { usePersistedState } from "@/browser/hooks/usePersistedState";
 import { UI_LANGUAGE_KEY } from "@/common/constants/storage";
+import { ZH_CN } from "@/browser/i18n/translations/zh-CN";
 
 export type Language = "en" | "zh-CN";
 
@@ -14,82 +15,6 @@ export const LANGUAGE_OPTIONS: Array<{ value: Language; label: string }> = [
   { value: "en", label: "English" },
   { value: "zh-CN", label: "简体中文" },
 ];
-
-const ZH_CN: Record<string, string> = {
-  Settings: "设置",
-  General: "通用",
-  Agents: "智能体",
-  Providers: "提供商",
-  Models: "模型",
-  Fusion: "融合",
-  Secrets: "密钥",
-  Security: "安全",
-  "Server Access": "服务器访问",
-  Layouts: "布局",
-  Runtimes: "运行环境",
-  Experiments: "实验功能",
-  Keybinds: "快捷键",
-  Memory: "记忆",
-  Governor: "调度器",
-  Back: "返回",
-  "Open sidebar": "打开侧边栏",
-  "Open sidebar menu": "打开侧边栏菜单",
-  "Back to previous page": "返回上一页",
-  "Close settings": "关闭设置",
-  "Setup is paused while you configure providers.": "配置提供商期间，初始设置已暂停。",
-  "Return to setup": "返回初始设置",
-  Appearance: "外观",
-  Language: "语言",
-  "Choose the language used by the Mux interface": "选择 Mux 界面使用的语言",
-  Theme: "主题",
-  "Choose your preferred theme": "选择偏好的主题",
-  Auto: "跟随系统",
-  Light: "浅色",
-  Dark: "深色",
-  "Flexoki Light": "Flexoki 浅色",
-  "Flexoki Dark": "Flexoki 深色",
-  "Launch behavior": "启动行为",
-  "What to show when Mux starts": "Mux 启动时显示的内容",
-  "Recent project": "最近项目",
-  "New chat on recent project": "在最近项目中新建对话",
-  "Last visited workspace": "上次访问的工作区",
-  "Full-width chat transcript": "全宽聊天记录",
-  "Let messages use the full chat pane instead of the default readable column.":
-    "让消息使用完整聊天窗格，而不是默认的易读宽度。",
-  "Group sidebar workspaces by age": "按时间分组侧边栏工作区",
-  'Collect older workspaces under collapsible "Older than X days" sections. When off, all workspaces are listed together.':
-    "将较旧的工作区收纳到可折叠的“早于 X 天”分组中；关闭后统一显示。",
-  "Transcript density": "聊天记录密度",
-  "Control how much detail the transcript shows. Hyper collapses completed work into expandable summaries.":
-    "控制聊天记录展示的详细程度；紧凑模式会将已完成工作折叠为可展开摘要。",
-  Normal: "标准",
-  Hyper: "紧凑",
-  "Collapsed bash summaries": "折叠的 Bash 摘要",
-  "Choose whether collapsed bash tools show the raw command, the model's intent, or both.":
-    "选择折叠的 Bash 工具显示原始命令、模型意图，或同时显示两者。",
-  Command: "命令",
-  "Intent and command": "意图和命令",
-  Intent: "意图",
-  "Terminal Font": "终端字体",
-  "Set this to a monospace font you like.": "设置为你喜欢的等宽字体。",
-  Preview: "预览",
-  "Terminal Font Size": "终端字号",
-  "Font size for the integrated terminal": "集成终端的字体大小",
-  "Workspace insights": "工作区洞察",
-  "API Debug Logs": "API 调试日志",
-  "Record the full input and output of every AI API call": "记录每次 AI API 调用的完整输入和输出",
-  Editor: "编辑器",
-  "Editor to open files in": "用于打开文件的编辑器",
-  Custom: "自定义",
-  "Custom Command": "自定义命令",
-  "Command to run (path will be appended)": "要运行的命令（将自动追加文件路径）",
-  Projects: "项目",
-  "Default project directory": "默认项目目录",
-  "Parent folder for new projects and cloned repositories": "新项目和克隆仓库的父目录",
-  "Workspace path": "工作区路径",
-  "Location for new local JJ workspace checkouts": "新建本地 JJ 工作区检出的存放位置",
-  "Custom workspace directory": "自定义工作区目录",
-};
 
 interface LanguageContextValue {
   language: Language;
