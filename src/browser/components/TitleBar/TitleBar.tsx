@@ -43,6 +43,7 @@ import {
   normalizeToCanonical,
 } from "@/common/utils/ai/models";
 import { WORKSPACE_DEFAULTS } from "@/constants/workspaceDefaults";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 // Update check interval
 const UPDATE_CHECK_INTERVAL_MS = 4 * 60 * 60 * 1000; // 4 hours
@@ -75,6 +76,7 @@ interface TitleBarProps {
 }
 
 export function TitleBar(props: TitleBarProps) {
+  const { t } = useLanguage();
   const { api } = useAPI();
   const { open: openAboutDialog } = useAboutDialog();
   const policyState = usePolicy();
@@ -208,7 +210,7 @@ export function TitleBar(props: TitleBarProps) {
           <TooltipTrigger asChild>
             <button
               type="button"
-              aria-label="Open about dialog"
+              aria-label={t("Open about dialog")}
               className={cn(
                 // Keep the version row shrinkable so long git-describe values ellipsize
                 // instead of overlapping the gateway/settings controls.
@@ -232,7 +234,7 @@ export function TitleBar(props: TitleBarProps) {
               )}
             </button>
           </TooltipTrigger>
-          <TooltipContent align="start">Click for more details</TooltipContent>
+          <TooltipContent align="start">{t("Click for more details")}</TooltipContent>
         </Tooltip>
       </div>
       <div className={cn("flex shrink-0 items-center gap-1.5", isDesktop && "titlebar-no-drag")}>
@@ -265,13 +267,13 @@ export function TitleBar(props: TitleBarProps) {
                 <>
                   <div className="mt-1.5 space-y-0.5 text-[11px]">
                     <div className="flex items-center justify-between gap-4">
-                      <span className="text-muted">Balance</span>
+                      <span className="text-muted">{t("Balance")}</span>
                       <span className="text-foreground font-mono">
                         {formatMuxGatewayBalance(muxGatewayAccountStatus?.remaining_microdollars)}
                       </span>
                     </div>
                     <div className="flex items-center justify-between gap-4">
-                      <span className="text-muted">Concurrent requests</span>
+                      <span className="text-muted">{t("Concurrent requests")}</span>
                       <span className="text-foreground font-mono">
                         {muxGatewayAccountStatus?.ai_gateway_concurrent_requests_per_user ?? "—"}
                       </span>
@@ -285,13 +287,14 @@ export function TitleBar(props: TitleBarProps) {
                 </>
               ) : (
                 <div className="text-muted mt-1.5 text-[11px]">
-                  Requests for this model route via {activeRoute.displayName}.
+                  {t("Requests for this model route via")}
+                  {activeRoute.displayName}.
                 </div>
               )}
               <div className="text-muted border-separator-light mt-2 border-t pt-1.5 text-[10px]">
                 {isMuxGatewayRoute
-                  ? "Click to open gateway settings"
-                  : "Click to open provider settings"}
+                  ? t("Click to open gateway settings")
+                  : t("Click to open provider settings")}
               </div>
             </TooltipContent>
           </Tooltip>
@@ -301,13 +304,15 @@ export function TitleBar(props: TitleBarProps) {
             <TooltipTrigger asChild>
               <div
                 role="img"
-                aria-label="Settings controlled by policy"
+                aria-label={t("Settings controlled by policy")}
                 className="border-border-light text-muted-foreground hover:border-border-medium/80 hover:bg-toggle-bg/70 flex h-5 w-5 items-center justify-center rounded border"
               >
                 <ShieldCheck className="h-3.5 w-3.5" aria-hidden />
               </div>
             </TooltipTrigger>
-            <TooltipContent align="end">Your settings are controlled by a policy.</TooltipContent>
+            <TooltipContent align="end">
+              {t("Your settings are controlled by a policy.")}
+            </TooltipContent>
           </Tooltip>
         )}
         <Tooltip>
@@ -323,7 +328,7 @@ export function TitleBar(props: TitleBarProps) {
                 navigateToAnalytics();
               }}
               className="border-border-light text-muted-foreground hover:border-border-medium/80 hover:bg-toggle-bg/70 h-5 w-5 border"
-              aria-label={isAnalyticsOpen ? "Close analytics" : "Open analytics"}
+              aria-label={isAnalyticsOpen ? t("Close analytics") : t("Open analytics")}
               data-testid="analytics-button"
             >
               {isAnalyticsOpen ? (
@@ -335,8 +340,8 @@ export function TitleBar(props: TitleBarProps) {
           </TooltipTrigger>
           <TooltipContent>
             {isAnalyticsOpen
-              ? "Close analytics"
-              : `Open analytics (${formatKeybind(KEYBINDS.OPEN_ANALYTICS)})`}
+              ? t("Close analytics")
+              : `${t("Open analytics")} (${formatKeybind(KEYBINDS.OPEN_ANALYTICS)})`}
           </TooltipContent>
         </Tooltip>
         <SettingsButton

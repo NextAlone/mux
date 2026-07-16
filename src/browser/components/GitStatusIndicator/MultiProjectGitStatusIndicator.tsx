@@ -10,7 +10,7 @@ import { stopKeyboardPropagation } from "@/browser/utils/events";
 import { cn } from "@/common/lib/utils";
 import assert from "@/common/utils/assert";
 import { Tooltip, TooltipContent, TooltipTrigger } from "../Tooltip/Tooltip";
-import { formatRepoCount } from "./gitStatusFormatters";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 interface MultiProjectGitStatusIndicatorProps {
   workspaceId: string;
@@ -25,32 +25,32 @@ interface ChipPresentation {
   className: string;
 }
 
-function formatCategoryCount(count: number, noun: string): string {
-  return `${count} ${noun}`;
+type Translate = (text: string) => string;
+
+function formatCategoryCount(count: number, noun: string, t: Translate): string {
+  return `${count} ${t(noun)}`;
 }
 
-function buildTooltip(summary: MultiProjectGitSummary | null): string {
+function buildTooltip(summary: MultiProjectGitSummary | null, t: Translate): string {
   if (summary === null) {
-    return "Repository status is loading for this workspace's repos.";
+    return t("Repository status is loading for this workspace's repos.");
   }
 
   const parts: string[] = [];
   if (summary.divergedProjectCount > 0) {
-    parts.push(`${summary.divergedProjectCount} of ${summary.totalProjectCount} repos diverged`);
+    parts.push(
+      `${summary.divergedProjectCount} ${t("of")} ${summary.totalProjectCount} ${t("repos diverged")}`
+    );
   }
   if (summary.dirtyProjectCount > 0) {
-    parts.push(
-      `${summary.dirtyProjectCount} ${summary.dirtyProjectCount === 1 ? "has" : "have"} working-copy changes`
-    );
+    parts.push(`${summary.dirtyProjectCount} ${t("repos with working-copy changes")}`);
   }
   if (summary.unknownProjectCount > 0) {
-    parts.push(
-      `${summary.unknownProjectCount} ${summary.unknownProjectCount === 1 ? "repo is" : "repos are"} unavailable`
-    );
+    parts.push(`${summary.unknownProjectCount} ${t("repos unavailable")}`);
   }
 
   if (parts.length === 0) {
-    return `All ${formatRepoCount(summary.totalProjectCount)} are clean.`;
+    return `${t("All")} ${summary.totalProjectCount} ${t("repos are clean.")}`;
   }
 
   return parts.join("; ");
@@ -58,12 +58,13 @@ function buildTooltip(summary: MultiProjectGitSummary | null): string {
 
 function getChipPresentation(
   summary: MultiProjectGitSummary | null,
-  isWorking: boolean
+  isWorking: boolean,
+  t: Translate
 ): ChipPresentation {
   if (summary === null) {
     return {
       icon: <CircleDot aria-hidden="true" className="h-3 w-3" />,
-      primaryLabel: "repos…",
+      primaryLabel: t("repos…"),
       secondaryLabels: [],
       className:
         "border-border-light/40 text-muted-light hover:border-foreground/40 hover:text-foreground",
@@ -73,13 +74,13 @@ function getChipPresentation(
   if (summary.unknownProjectCount > 0) {
     return {
       icon: <AlertTriangle aria-hidden="true" className="h-3 w-3" />,
-      primaryLabel: formatCategoryCount(summary.unknownProjectCount, "unknown"),
+      primaryLabel: formatCategoryCount(summary.unknownProjectCount, "unknown", t),
       secondaryLabels: [
         summary.divergedProjectCount > 0
-          ? formatCategoryCount(summary.divergedProjectCount, "diverged")
+          ? formatCategoryCount(summary.divergedProjectCount, "diverged", t)
           : null,
         summary.dirtyProjectCount > 0
-          ? formatCategoryCount(summary.dirtyProjectCount, "dirty")
+          ? formatCategoryCount(summary.dirtyProjectCount, "dirty", t)
           : null,
       ].flatMap((value) => (value ? [value] : [])),
       className: "border-warning/30 text-warning hover:bg-warning/10 hover:text-warning",
@@ -89,10 +90,10 @@ function getChipPresentation(
   if (summary.divergedProjectCount > 0) {
     return {
       icon: <GitCompareArrows aria-hidden="true" className="h-3 w-3" />,
-      primaryLabel: formatCategoryCount(summary.divergedProjectCount, "diverged"),
+      primaryLabel: formatCategoryCount(summary.divergedProjectCount, "diverged", t),
       secondaryLabels:
         summary.dirtyProjectCount > 0
-          ? [formatCategoryCount(summary.dirtyProjectCount, "dirty")]
+          ? [formatCategoryCount(summary.dirtyProjectCount, "dirty", t)]
           : [],
       className: "border-accent/30 text-accent hover:bg-accent/10 hover:text-accent",
     };
@@ -101,7 +102,7 @@ function getChipPresentation(
   if (summary.dirtyProjectCount > 0) {
     return {
       icon: <CircleDot aria-hidden="true" className="h-3 w-3" />,
-      primaryLabel: formatCategoryCount(summary.dirtyProjectCount, "dirty"),
+      primaryLabel: formatCategoryCount(summary.dirtyProjectCount, "dirty", t),
       secondaryLabels: [],
       className: "border-warning/30 text-git-dirty hover:bg-warning/10 hover:text-git-dirty",
     };
@@ -109,7 +110,7 @@ function getChipPresentation(
 
   return {
     icon: <Check aria-hidden="true" className="h-3 w-3" />,
-    primaryLabel: formatRepoCount(summary.totalProjectCount),
+    primaryLabel: `${summary.totalProjectCount} ${t(summary.totalProjectCount === 1 ? "repo" : "repos")}`,
     secondaryLabels: [],
     className: isWorking
       ? "border-accent/30 text-accent hover:bg-accent/10 hover:text-accent"
@@ -122,6 +123,7 @@ export const MultiProjectGitStatusIndicator: React.FC<MultiProjectGitStatusIndic
   tooltipPosition = "right",
   isWorking = false,
 }) => {
+  const { t } = useLanguage();
   const [isOpen, setIsOpen] = useState(false);
   const trimmedWorkspaceId = workspaceId.trim();
   assert(
@@ -131,8 +133,8 @@ export const MultiProjectGitStatusIndicator: React.FC<MultiProjectGitStatusIndic
 
   const summary = useMultiProjectGitSummary(trimmedWorkspaceId);
   const isRefreshing = useGitStatusRefreshing(trimmedWorkspaceId);
-  const tooltip = buildTooltip(summary);
-  const presentation = getChipPresentation(summary, isWorking);
+  const tooltip = buildTooltip(summary, t);
+  const presentation = getChipPresentation(summary, isWorking, t);
 
   return (
     <>
@@ -145,7 +147,7 @@ export const MultiProjectGitStatusIndicator: React.FC<MultiProjectGitStatusIndic
               presentation.className,
               isRefreshing && "animate-pulse"
             )}
-            aria-label="Open multi-project repository status details"
+            aria-label={t("Open multi-project repository status details")}
             onKeyDown={stopKeyboardPropagation}
             onClick={(event) => {
               event.stopPropagation();

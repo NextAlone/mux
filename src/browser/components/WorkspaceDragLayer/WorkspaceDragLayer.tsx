@@ -8,12 +8,14 @@ import {
 import { RuntimeBadge } from "../RuntimeBadge/RuntimeBadge";
 import { cn } from "@/common/lib/utils";
 import type { RuntimeConfig } from "@/common/types/runtime";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 /**
  * Custom drag layer for workspace drag-drop.
  * Renders a clean preview of the workspace being dragged.
  */
 export const WorkspaceDragLayer: React.FC = () => {
+  const { t } = useLanguage();
   const dragState = useDragLayer<{
     isDragging: boolean;
     item: unknown;
@@ -38,7 +40,7 @@ export const WorkspaceDragLayer: React.FC = () => {
     runtimeConfig?: RuntimeConfig;
   };
 
-  const displayTitle = workspaceItem.displayTitle ?? "Workspace";
+  const displayTitle = workspaceItem.displayTitle ?? t("Workspace");
 
   return (
     <div className="pointer-events-none fixed inset-0 z-[9999]">

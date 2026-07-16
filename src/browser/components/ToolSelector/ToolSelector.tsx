@@ -1,6 +1,7 @@
 import React from "react";
 import { Checkbox } from "@/browser/components/Checkbox/Checkbox";
 import { Button } from "@/browser/components/Button/Button";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 interface ToolSelectorProps {
   /** All available tools for this server */
@@ -29,13 +30,14 @@ export const ToolSelector: React.FC<ToolSelectorProps> = ({
   onSelectNone,
   disabled = false,
 }) => {
+  const { t } = useLanguage();
   const allAllowed = allowedTools.length === availableTools.length;
   const noneAllowed = allowedTools.length === 0;
 
   return (
     <div>
       <div className="mb-2 flex items-center justify-between">
-        <span className="text-muted-foreground text-xs">Select tools to expose:</span>
+        <span className="text-muted-foreground text-xs">{t("Select tools to expose:")}</span>
         <div className="flex gap-1">
           <Button
             variant="ghost"
@@ -44,7 +46,7 @@ export const ToolSelector: React.FC<ToolSelectorProps> = ({
             onClick={onSelectAll}
             disabled={disabled || allAllowed}
           >
-            All
+            {t("All")}
           </Button>
           <Button
             variant="ghost"
@@ -53,7 +55,7 @@ export const ToolSelector: React.FC<ToolSelectorProps> = ({
             onClick={onSelectNone}
             disabled={disabled || noneAllowed}
           >
-            None
+            {t("None")}
           </Button>
         </div>
       </div>

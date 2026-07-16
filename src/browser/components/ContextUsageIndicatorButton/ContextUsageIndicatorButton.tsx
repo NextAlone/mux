@@ -11,6 +11,7 @@ import { formatTokens, type TokenMeterData } from "@/common/utils/tokens/tokenMe
 import { cn } from "@/common/lib/utils";
 import { Toggle1MContext } from "../Toggle1MContext/Toggle1MContext";
 import { Tooltip, TooltipContent, TooltipTrigger } from "../Tooltip/Tooltip";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 const CONTEXT_RING_SIZE = 16;
 const CONTEXT_RING_RADIUS = 6.25;
@@ -133,6 +134,7 @@ const AutoCompactSettings: React.FC<{
   remoteConfig?: RemoteCompactionConfig;
   model?: string;
 }> = ({ data, usageConfig, idleConfig, remoteConfig, model }) => {
+  const { t } = useLanguage();
   const [idleInputValue, setIdleInputValue] = React.useState(idleConfig?.hours?.toString() ?? "24");
 
   // Sync idle input when external hours change
@@ -168,7 +170,7 @@ const AutoCompactSettings: React.FC<{
       {/* Context Usage header with instruction */}
       <div>
         <div className="flex items-baseline justify-between">
-          <span className="text-foreground font-medium">Context Usage</span>
+          <span className="text-foreground font-medium">{t("Context Usage")}</span>
           <span className="text-muted text-xs">
             {totalDisplay}
             {maxDisplay}
@@ -177,7 +179,7 @@ const AutoCompactSettings: React.FC<{
         </div>
         {showUsageSlider && (
           <div className="text-muted mt-1 text-[10px]">
-            Drag blue slider to adjust usage-based auto-compaction
+            {t("Drag blue slider to adjust usage-based auto-compaction")}
           </div>
         )}
       </div>
@@ -200,7 +202,9 @@ const AutoCompactSettings: React.FC<{
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-1">
               <Hourglass className="text-muted h-2.5 w-2.5" />
-              <span className="text-foreground text-[11px] font-medium">Idle compaction</span>
+              <span className="text-foreground text-[11px] font-medium">
+                {t("Idle compaction")}
+              </span>
             </div>
             <div className="flex items-center gap-1.5">
               <input
@@ -216,7 +220,7 @@ const AutoCompactSettings: React.FC<{
                 )}
               />
               <span className={cn("text-[10px]", isIdleEnabled ? "text-muted" : "text-muted/50")}>
-                hrs
+                {t("hrs")}
               </span>
               <Switch
                 checked={isIdleEnabled}
@@ -226,7 +230,7 @@ const AutoCompactSettings: React.FC<{
             </div>
           </div>
           <div className="text-muted mt-0.5 text-[10px]">
-            Auto-compact after workspace inactivity
+            {t("Auto-compact after workspace inactivity")}
           </div>
         </div>
       )}
@@ -237,7 +241,9 @@ const AutoCompactSettings: React.FC<{
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-1">
               <Cloud className="text-muted h-2.5 w-2.5" />
-              <span className="text-foreground text-[11px] font-medium">OpenAI remote compact</span>
+              <span className="text-foreground text-[11px] font-medium">
+                {t("OpenAI remote compact")}
+              </span>
             </div>
             <Switch
               checked={remoteConfig.enabled}
@@ -246,7 +252,7 @@ const AutoCompactSettings: React.FC<{
             />
           </div>
           <div className="text-muted mt-0.5 text-[10px]">
-            Use OpenAI Responses compact for OpenAI compaction models
+            {t("Use OpenAI Responses compact for OpenAI compaction models")}
           </div>
         </div>
       )}
@@ -254,14 +260,15 @@ const AutoCompactSettings: React.FC<{
       {/* Warning for unknown model limits */}
       {!data.maxTokens && (
         <div className="text-subtle text-[10px] italic">
-          Unknown model limits - showing relative usage only
+          {t("Unknown model limits - showing relative usage only")}
         </div>
       )}
 
       {/* Persistence note */}
       <div className="text-muted border-separator-light border-t pt-2 text-[10px]">
-        Usage threshold saved per model{idleConfig && "; idle timer saved per project"}
-        {remoteConfig && "; remote compact saved globally"}
+        {t("Usage threshold saved per model")}
+        {idleConfig && t("; idle timer saved per project")}
+        {remoteConfig && t("; remote compact saved globally")}
       </div>
     </div>
   );
@@ -274,6 +281,7 @@ export const ContextUsageIndicatorButton: React.FC<ContextUsageIndicatorButtonPr
   remoteCompaction,
   model,
 }) => {
+  const { t } = useLanguage();
   const idleHours = idleCompaction?.hours;
   const isIdleCompactionEnabled = idleHours !== null && idleHours !== undefined;
 
@@ -282,32 +290,32 @@ export const ContextUsageIndicatorButton: React.FC<ContextUsageIndicatorButtonPr
   if (data.totalTokens === 0 && !idleCompaction) return null;
 
   const ariaLabel = data.maxTokens
-    ? `Context usage: ${formatTokens(data.totalTokens)} / ${formatTokens(data.maxTokens)} (${data.totalPercentage.toFixed(
+    ? `${t("Context usage:")} ${formatTokens(data.totalTokens)} / ${formatTokens(data.maxTokens)} (${data.totalPercentage.toFixed(
         1
       )}%)`
-    : `Context usage: ${formatTokens(data.totalTokens)} (unknown limit)`;
+    : `${t("Context usage:")} ${formatTokens(data.totalTokens)} (${t("unknown limit")})`;
 
   const compactLabel = data.maxTokens
     ? `${Math.round(data.totalPercentage)}%`
     : formatTokens(data.totalTokens);
 
   const hoverUsageSummary = data.maxTokens
-    ? `Context ${formatTokens(data.totalTokens)} / ${formatTokens(data.maxTokens)} (${data.totalPercentage.toFixed(1)}%)`
-    : `Context ${formatTokens(data.totalTokens)} (unknown limit)`;
+    ? `${t("Context")} ${formatTokens(data.totalTokens)} / ${formatTokens(data.maxTokens)} (${data.totalPercentage.toFixed(1)}%)`
+    : `${t("Context")} ${formatTokens(data.totalTokens)} (${t("unknown limit")})`;
   const hoverAutoSummary = autoCompaction
     ? autoCompaction.threshold < 100
-      ? `Auto ${autoCompaction.threshold}%`
-      : "Auto off"
+      ? `${t("Auto")} ${autoCompaction.threshold}%`
+      : t("Auto off")
     : null;
   const hoverIdleSummary = idleCompaction
     ? isIdleCompactionEnabled
-      ? `Idle ${idleHours}h`
-      : "Idle off"
+      ? `${t("Idle")} ${idleHours}h`
+      : t("Idle off")
     : null;
   const hoverRemoteSummary = remoteCompaction
     ? remoteCompaction.enabled
-      ? "Remote compact on"
-      : "Remote compact off"
+      ? t("Remote compact on")
+      : t("Remote compact off")
     : null;
   const hoverSummary = [hoverUsageSummary, hoverAutoSummary, hoverIdleSummary, hoverRemoteSummary]
     .filter((part): part is string => part !== null)
@@ -356,20 +364,21 @@ export const ContextUsageIndicatorButton: React.FC<ContextUsageIndicatorButtonPr
       */}
       <DialogContent maxWidth="380px" className="gap-3 p-3">
         <DialogHeader className="space-y-0">
-          <DialogTitle className="text-sm">Compaction Settings</DialogTitle>
+          <DialogTitle className="text-sm">{t("Compaction Settings")}</DialogTitle>
         </DialogHeader>
         {/* Keep manual /compact discoverability in the settings modal so the inline auto-compact hint stays minimal. */}
         <div className="text-muted text-[10px]">
           <div>
-            Run <span className="font-mono">/compact</span> to compact manually
+            {t("Run")}
+            <span className="font-mono">/compact</span> {t("to compact manually")}
           </div>
           <div className="mt-1">
-            • <span className="font-mono">-m model</span>
+            • <span className="font-mono">{t("-m model")}</span>
           </div>
           <div>
-            • <span className="font-mono">-t max output tokens</span>
+            • <span className="font-mono">{t("-t max output tokens")}</span>
           </div>
-          <div>• Add a followup message on the next line</div>
+          <div>{t("• Add a followup message on the next line")}</div>
         </div>
         <AutoCompactSettings
           data={data}

@@ -4,6 +4,7 @@ import App from "../../App";
 import { AuthTokenModal } from "../AuthTokenModal/AuthTokenModal";
 import { ThemeProvider } from "../../contexts/ThemeContext";
 import { LanguageProvider } from "../../contexts/LanguageContext";
+import { useLanguage } from "../../contexts/LanguageContext";
 import { LoadingScreen } from "../LoadingScreen/LoadingScreen";
 import { StartupConnectionError } from "../StartupConnectionError/StartupConnectionError";
 import { useReducedMotion } from "../../hooks/useReducedMotion";
@@ -29,6 +30,7 @@ import { TerminalRouterProvider } from "../../terminal/TerminalRouterContext";
 const USER_PREFERENCES_BOOTSTRAP_TIMEOUT_MS = 2000;
 
 function UserPreferencesStartupGate(props: { children: ReactNode }) {
+  const { t } = useLanguage();
   const apiState = useAPI();
   const [ready, setReady] = useState(false);
   const bootstrappedRef = useRef(false);
@@ -103,8 +105,8 @@ function UserPreferencesStartupGate(props: { children: ReactNode }) {
     <LoadingScreen
       statusText={
         apiState.status === "reconnecting"
-          ? `Reconnecting to backend (attempt ${apiState.attempt})...`
-          : "Loading preferences"
+          ? `${t("Reconnecting to backend")} (${t("attempt")} ${apiState.attempt})...`
+          : t("Loading preferences")
       }
     />
   );
@@ -156,6 +158,7 @@ export function AppLoader(props: AppLoaderProps) {
  * Syncs stores and shows loading screen until ready.
  */
 function AppLoaderInner() {
+  const { t } = useLanguage();
   const policyState = usePolicy();
   const workspaceContext = useWorkspaceContext();
   const projectContext = useProjectContext();
@@ -259,8 +262,8 @@ function AppLoaderInner() {
             <LoadingScreen
               statusText={
                 apiState.status === "reconnecting"
-                  ? `Reconnecting to backend (attempt ${apiState.attempt})...`
-                  : "Loading Mux"
+                  ? `${t("Reconnecting to backend")} (${t("attempt")} ${apiState.attempt})...`
+                  : t("Loading Mux")
               }
             />
           )}

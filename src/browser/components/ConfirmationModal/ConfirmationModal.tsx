@@ -13,6 +13,7 @@ import {
 import { Button } from "@/browser/components/Button/Button";
 import { stopKeyboardPropagation } from "@/browser/utils/events";
 import { isEditableElement, KEYBINDS, matchesKeybind } from "@/browser/utils/ui/keybinds";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 interface ConfirmationModalProps {
   isOpen: boolean;
@@ -32,6 +33,7 @@ interface ConfirmationModalProps {
  * Reusable confirmation modal for destructive actions
  */
 export const ConfirmationModal: React.FC<ConfirmationModalProps> = (props) => {
+  const { t } = useLanguage();
   const [isConfirming, setIsConfirming] = useState(false);
 
   // Extract callbacks to satisfy exhaustive-deps rule
@@ -88,14 +90,14 @@ export const ConfirmationModal: React.FC<ConfirmationModalProps> = (props) => {
 
         {props.warning && (
           <WarningBox>
-            <WarningTitle>Warning</WarningTitle>
+            <WarningTitle>{t("Warning")}</WarningTitle>
             <WarningText>{props.warning}</WarningText>
           </WarningBox>
         )}
 
         <DialogFooter className="justify-center">
           <Button variant="secondary" onClick={onCancel} disabled={isConfirming}>
-            {props.cancelLabel ?? "Cancel"}
+            {props.cancelLabel ?? t("Cancel")}
             <span
               aria-hidden="true"
               className="ml-2 inline-flex items-center rounded border border-current/25 px-1.5 py-0.5 font-mono text-[10px] leading-none opacity-60"
@@ -108,7 +110,7 @@ export const ConfirmationModal: React.FC<ConfirmationModalProps> = (props) => {
             onClick={() => void handleConfirm()}
             disabled={isConfirming}
           >
-            {isConfirming ? "Processing..." : (props.confirmLabel ?? "Confirm")}
+            {isConfirming ? t("Processing...") : (props.confirmLabel ?? t("Confirm"))}
             <span
               aria-hidden="true"
               className="ml-2 inline-flex items-center rounded border border-current/25 px-1.5 py-0.5 font-mono text-[10px] leading-none opacity-60"

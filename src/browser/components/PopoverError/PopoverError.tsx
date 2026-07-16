@@ -1,6 +1,7 @@
 import { createPortal } from "react-dom";
 import { AlertTriangle } from "lucide-react";
 import type { PopoverErrorState } from "@/browser/hooks/usePopoverError";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 interface PopoverErrorProps {
   error: PopoverErrorState | null;
@@ -13,6 +14,7 @@ interface PopoverErrorProps {
  * Styled to match the app's toast error design.
  */
 export function PopoverError(props: PopoverErrorProps) {
+  const { t } = useLanguage();
   if (!props.error) return null;
 
   return createPortal(
@@ -33,7 +35,7 @@ export function PopoverError(props: PopoverErrorProps) {
       {props.onDismiss && (
         <button
           onClick={props.onDismiss}
-          aria-label="Dismiss"
+          aria-label={t("Dismiss")}
           className="flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center border-0 bg-transparent p-0 text-base leading-none text-inherit opacity-60 transition-opacity hover:opacity-100"
         >
           ×

@@ -10,6 +10,7 @@ import { TerminalView } from "@/browser/components/TerminalView/TerminalView";
 import { APIProvider, useAPI } from "@/browser/contexts/API";
 import { TerminalRouterProvider } from "@/browser/terminal/TerminalRouterContext";
 import { installWindowOpenLocalhostProxyNormalization } from "@/browser/utils/windowOpenLocalhostProxy";
+import { LanguageProvider, useLanguage } from "@/browser/contexts/LanguageContext";
 import "./styles/globals.css";
 
 function TerminalWindowContent(props: { workspaceId: string; sessionId: string }) {
@@ -29,6 +30,16 @@ function TerminalWindowContent(props: { workspaceId: string; sessionId: string }
   );
 }
 
+function MissingTerminalParams() {
+  const { t } = useLanguage();
+
+  return (
+    <div className="p-5 font-mono text-red-400">
+      {t("Error: Missing workspace ID or session ID")}
+    </div>
+  );
+}
+
 installWindowOpenLocalhostProxyNormalization();
 
 // Get workspace ID from query parameter
@@ -37,11 +48,11 @@ const workspaceId = params.get("workspaceId");
 const sessionId = params.get("sessionId");
 
 if (!workspaceId || !sessionId) {
-  document.body.innerHTML = `
-    <div style="color: #f44; padding: 20px; font-family: monospace;">
-      Error: Missing workspace ID or session ID
-    </div>
-  `;
+  ReactDOM.createRoot(document.getElementById("root")!).render(
+    <LanguageProvider>
+      <MissingTerminalParams />
+    </LanguageProvider>
+  );
 } else {
   document.title = `Terminal — ${workspaceId}`;
 
@@ -50,9 +61,11 @@ if (!workspaceId || !sessionId) {
   // race conditions with WebSocket connections and terminal lifecycle
   ReactDOM.createRoot(document.getElementById("root")!).render(
     <APIProvider>
-      <TerminalRouterProvider>
-        <TerminalWindowContent workspaceId={workspaceId} sessionId={sessionId} />
-      </TerminalRouterProvider>
+      <LanguageProvider>
+        <TerminalRouterProvider>
+          <TerminalWindowContent workspaceId={workspaceId} sessionId={sessionId} />
+        </TerminalRouterProvider>
+      </LanguageProvider>
     </APIProvider>
   );
 }

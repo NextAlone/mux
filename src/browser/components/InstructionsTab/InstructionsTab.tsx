@@ -17,6 +17,7 @@ import {
 } from "@/common/types/instructions";
 import { getErrorMessage } from "@/common/utils/errors";
 import { formatBytes } from "@/common/utils/formatBytes";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 interface InstructionsTabProps {
   workspaceId: string;
@@ -95,16 +96,23 @@ interface HeaderProps {
 }
 
 function Header({ totalTokens, fileCount, loading, onRefresh }: HeaderProps) {
+  const { t } = useLanguage();
   return (
     <div className="border-border flex items-center justify-between gap-2 border-b px-3 py-2">
       <div className="flex items-baseline gap-3 text-xs">
-        <span className="font-medium">Instructions context</span>
+        <span className="font-medium">{t("Instructions context")}</span>
         <span className="text-muted">
-          {fileCount === 0 ? "no files" : fileCount === 1 ? "1 file" : `${fileCount} files`}
+          {fileCount === 0
+            ? t("no files")
+            : fileCount === 1
+              ? t("1 file")
+              : `${fileCount} ${t("files")}`}
           {totalTokens != null && (
             <>
               <span className="mx-1">·</span>
-              <span className="counter-nums">~{formatTokens(totalTokens)} tokens</span>
+              <span className="counter-nums">
+                ~{formatTokens(totalTokens)} {t(" tokens")}
+              </span>
             </>
           )}
         </span>
@@ -116,12 +124,12 @@ function Header({ totalTokens, fileCount, loading, onRefresh }: HeaderProps) {
             className="text-muted hover:text-foreground rounded p-1 transition-colors disabled:opacity-50"
             onClick={onRefresh}
             disabled={loading}
-            aria-label="Refresh instructions"
+            aria-label={t("Refresh instructions")}
           >
             <RefreshCw className={cn("h-3.5 w-3.5", loading && "animate-spin")} />
           </button>
         </TooltipTrigger>
-        <TooltipContent side="bottom">Re-read AGENTS.md files</TooltipContent>
+        <TooltipContent side="bottom">{t("Re-read AGENTS.md files")}</TooltipContent>
       </Tooltip>
     </div>
   );
@@ -175,6 +183,7 @@ interface FileRowProps {
 }
 
 function FileRow({ file, projectName }: FileRowProps) {
+  const { t } = useLanguage();
   const [expanded, setExpanded] = useState(false);
 
   // Show ~3 lines as a preview when collapsed; fall back to a character cap so
@@ -210,7 +219,7 @@ function FileRow({ file, projectName }: FileRowProps) {
             <span className="truncate text-xs font-medium">
               {file.filename}
               {file.isLocal && (
-                <span className="text-muted ml-1 text-[10px] font-normal">(local)</span>
+                <span className="text-muted ml-1 text-[10px] font-normal">{t("(local)")}</span>
               )}
             </span>
             <ScopeBadge scope={file.scope} projectName={projectName} />
@@ -218,11 +227,16 @@ function FileRow({ file, projectName }: FileRowProps) {
                 only sources where scoped Model:/Mode: directives are honored. */}
             {file.muxOnly && (
               <span className="text-muted bg-muted/20 shrink-0 rounded px-1.5 py-0.5 text-[9px] tracking-wider uppercase">
-                mux-only
+                {t("mux-only")}
               </span>
             )}
             <span className="text-muted ml-auto shrink-0 text-[10px] tabular-nums">
-              {file.tokens != null && <>~{formatTokens(file.tokens)}t · </>}
+              {file.tokens != null && (
+                <>
+                  ~{formatTokens(file.tokens)}
+                  {t("t · ")}
+                </>
+              )}
               {formatBytes(file.bytes)}
             </span>
           </div>
@@ -278,30 +292,36 @@ function ScopeBadge({ scope, projectName }: { scope: InstructionScope; projectNa
 }
 
 function EmptyState() {
+  const { t } = useLanguage();
   return (
     <div className="text-muted flex h-full min-h-[120px] flex-col items-center justify-center gap-2 px-4 text-center text-xs">
       <FileText className="h-6 w-6 opacity-50" />
-      <p>No instruction files loaded for this workspace.</p>
+      <p>{t("No instruction files loaded for this workspace.")}</p>
       <p className="text-[10px]">
-        Add an <code className="bg-muted/30 rounded px-1">AGENTS.md</code> at the workspace root or
-        in <code className="bg-muted/30 rounded px-1">~/.mux/</code> to provide context.
+        {t("Add an")}
+        <code className="bg-muted/30 rounded px-1">AGENTS.md</code>{" "}
+        {t("at the workspace root or in")}
+        <code className="bg-muted/30 rounded px-1">~/.mux/</code> {t("to provide context.")}
       </p>
     </div>
   );
 }
 
 function LoadingState() {
+  const { t } = useLanguage();
   return (
     <div className="text-muted flex h-full min-h-[120px] items-center justify-center text-xs">
-      Loading instructions…
+      {t("Loading instructions…")}
     </div>
   );
 }
 
 function ErrorBanner({ message }: { message: string }) {
+  const { t } = useLanguage();
   return (
     <div className="border-destructive/40 bg-destructive/10 text-destructive m-3 rounded border px-3 py-2 text-xs">
-      Failed to load instructions: {message}
+      {t("Failed to load instructions:")}
+      {message}
     </div>
   );
 }

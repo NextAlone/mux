@@ -12,6 +12,7 @@ import { Button } from "@/browser/components/Button/Button";
 import { getBrowserBackendBaseUrl } from "@/browser/utils/backendBaseUrl";
 import { getErrorMessage } from "@/common/utils/errors";
 import { isAbortError } from "@/browser/utils/isAbortError";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 interface AuthTokenModalProps {
   isOpen: boolean;
@@ -66,6 +67,7 @@ async function parseJsonResponse<T>(response: Response): Promise<T | null> {
 }
 
 export function AuthTokenModal(props: AuthTokenModalProps) {
+  const { t } = useLanguage();
   const [token, setToken] = useState("");
   const [githubDeviceFlowEnabled, setGithubDeviceFlowEnabled] = useState(false);
   const [githubOptionsLoading, setGithubOptionsLoading] = useState(true);
@@ -246,10 +248,11 @@ export function AuthTokenModal(props: AuthTokenModalProps) {
     <Dialog open={props.isOpen} onOpenChange={handleOpenChange}>
       <DialogContent showCloseButton={false}>
         <DialogHeader>
-          <DialogTitle>Authentication Required</DialogTitle>
+          <DialogTitle>{t("Authentication Required")}</DialogTitle>
           <DialogDescription>
-            This server requires authentication. Enter the token provided at startup, or sign in
-            with GitHub when enabled.
+            {t(
+              "This server requires authentication. Enter the token provided at startup, or sign in with GitHub when enabled."
+            )}
           </DialogDescription>
         </DialogHeader>
 
@@ -262,21 +265,21 @@ export function AuthTokenModal(props: AuthTokenModalProps) {
             type="password"
             value={token}
             onChange={(e) => setToken(e.target.value)}
-            placeholder="Enter auth token"
+            placeholder={t("Enter auth token")}
             autoFocus
             className="bg-modal-bg border-border-medium focus:border-accent placeholder:text-muted text-foreground rounded border px-3 py-2.5 text-sm focus:outline-none"
           />
 
           <DialogFooter className="pt-0">
             <Button type="submit" disabled={!token.trim()} className="w-full">
-              Connect with token
+              {t("Connect with token")}
             </Button>
           </DialogFooter>
         </form>
 
         {githubOptionsLoading ? null : githubDeviceFlowEnabled ? (
           <div className="border-border-medium space-y-3 border-t pt-3">
-            <div className="text-foreground text-sm font-medium">Or login with GitHub</div>
+            <div className="text-foreground text-sm font-medium">{t("Or login with GitHub")}</div>
 
             <div className="flex items-center gap-2">
               <Button
@@ -288,25 +291,25 @@ export function AuthTokenModal(props: AuthTokenModalProps) {
                 className="w-full"
               >
                 {githubLoginStatus === "waiting"
-                  ? "Waiting for GitHub authorization..."
+                  ? t("Waiting for GitHub authorization...")
                   : githubLoginStatus === "starting"
-                    ? "Starting GitHub login..."
+                    ? t("Starting GitHub login...")
                     : githubLoginStatus === "error"
-                      ? "Retry GitHub login"
-                      : "Login with GitHub"}
+                      ? t("Retry GitHub login")
+                      : t("Login with GitHub")}
               </Button>
             </div>
 
             {githubLoginStatus === "waiting" && githubUserCode ? (
               <div className="bg-background-tertiary space-y-2 rounded-md p-3">
-                <p className="text-muted text-xs">Enter this code on GitHub:</p>
+                <p className="text-muted text-xs">{t("Enter this code on GitHub:")}</p>
                 <div className="flex items-center gap-2">
                   <code className="text-foreground text-lg font-bold tracking-widest">
                     {githubUserCode}
                   </code>
                   <Button
                     size="sm"
-                    aria-label="Copy and open GitHub verification page"
+                    aria-label={t("Copy and open GitHub verification page")}
                     onClick={() => {
                       if (!githubVerificationUri) {
                         return;
@@ -328,18 +331,21 @@ export function AuthTokenModal(props: AuthTokenModalProps) {
                     className="h-8 px-3 text-xs"
                     disabled={!githubVerificationUri}
                   >
-                    Copy & Open GitHub
+                    {t("Copy & Open GitHub")}
                   </Button>
                 </div>
                 <p className="text-muted inline-flex items-center gap-2 text-xs">
                   <Loader2 aria-hidden className="h-3.5 w-3.5 animate-spin" />
-                  Waiting for authorization...
+                  {t("Waiting for authorization...")}
                 </p>
               </div>
             ) : null}
 
             {githubLoginError ? (
-              <p className="text-destructive text-xs">GitHub login failed: {githubLoginError}</p>
+              <p className="text-destructive text-xs">
+                {t("GitHub login failed: ")}
+                {githubLoginError}
+              </p>
             ) : null}
           </div>
         ) : null}

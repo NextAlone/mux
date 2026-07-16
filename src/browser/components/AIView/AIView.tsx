@@ -7,6 +7,7 @@ import { WorkspaceModeAISync } from "@/browser/components/WorkspaceModeAISync/Wo
 import { AgentProvider } from "@/browser/contexts/AgentContext";
 import { BackgroundBashProvider } from "@/browser/contexts/BackgroundBashContext";
 import { WorkspaceShell } from "../WorkspaceShell/WorkspaceShell";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 interface AIViewProps {
   workspaceId: string;
@@ -28,25 +29,28 @@ interface AIViewProps {
  * Incompatible workspace error display.
  * Shown when a workspace was created with a newer version of mux.
  */
-const IncompatibleWorkspaceView: React.FC<{ message: string; className?: string }> = ({
-  message,
-  className,
-}) => (
-  <div className={cn("flex h-full w-full flex-col items-center justify-center p-8", className)}>
-    <div className="max-w-md text-center">
-      <div className="mb-4 flex justify-center">
-        <AlertTriangle aria-hidden="true" className="text-warning h-10 w-10" />
+const IncompatibleWorkspaceView: React.FC<{ message: string; className?: string }> = (props) => {
+  const { t } = useLanguage();
+
+  return (
+    <div
+      className={cn("flex h-full w-full flex-col items-center justify-center p-8", props.className)}
+    >
+      <div className="max-w-md text-center">
+        <div className="mb-4 flex justify-center">
+          <AlertTriangle aria-hidden="true" className="text-warning h-10 w-10" />
+        </div>
+        <h2 className="mb-2 text-xl font-semibold text-[var(--color-text-primary)]">
+          {t("Incompatible Workspace")}
+        </h2>
+        <p className="mb-4 text-[var(--color-text-secondary)]">{props.message}</p>
+        <p className="text-sm text-[var(--color-text-tertiary)]">
+          {t("You can delete this workspace and create a new one, or upgrade mux to use it.")}
+        </p>
       </div>
-      <h2 className="mb-2 text-xl font-semibold text-[var(--color-text-primary)]">
-        Incompatible Workspace
-      </h2>
-      <p className="mb-4 text-[var(--color-text-secondary)]">{message}</p>
-      <p className="text-sm text-[var(--color-text-tertiary)]">
-        You can delete this workspace and create a new one, or upgrade mux to use it.
-      </p>
     </div>
-  </div>
-);
+  );
+};
 
 // Wrapper component that provides the agent and thinking contexts
 export const AIView: React.FC<AIViewProps> = (props) => {

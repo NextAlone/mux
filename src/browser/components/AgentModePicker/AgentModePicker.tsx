@@ -18,6 +18,7 @@ import {
 } from "@/browser/utils/ui/keybinds";
 import { sortAgentsStable } from "@/browser/utils/agents";
 import { stopKeyboardPropagation } from "@/browser/utils/events";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 interface AgentModePickerProps {
   className?: string;
@@ -80,6 +81,7 @@ function resolveAgentOptions(agents: AgentDefinitionDescriptor[]): AgentOption[]
 }
 
 export const AgentModePicker: React.FC<AgentModePickerProps> = (props) => {
+  const { t } = useLanguage();
   const {
     agentId,
     setAgentId,
@@ -328,7 +330,7 @@ export const AgentModePicker: React.FC<AgentModePickerProps> = (props) => {
         <TooltipTrigger asChild>
           <Button
             type="button"
-            aria-label="Select agent"
+            aria-label={t("Select agent")}
             aria-expanded={isPickerVisible}
             disabled={isAgentLocked}
             size="xs"
@@ -361,17 +363,20 @@ export const AgentModePicker: React.FC<AgentModePickerProps> = (props) => {
           </Button>
         </TooltipTrigger>
         <TooltipContent align="start" className="max-w-80 whitespace-normal">
-          Selects an agent definition (system prompt + tool policy).
+          {t("Selects an agent definition (system prompt + tool policy).")}
           <br />
           <br />
-          Open picker: {formatKeybind(KEYBINDS.TOGGLE_AGENT)}
+          {t("Open picker:")}
+          {formatKeybind(KEYBINDS.TOGGLE_AGENT)}
           <br />
-          Cycle agents: {formatKeybind(KEYBINDS.CYCLE_AGENT)}
+          {t("Cycle agents:")}
+          {formatKeybind(KEYBINDS.CYCLE_AGENT)}
           <br />
-          Quick select: {formatNumberedKeybind(0).replace("1", "1-9")} (when open)
+          {t("Quick select:")}
+          {formatNumberedKeybind(0).replace("1", "1-9")} {t("(when open)")}
           <br />
           <br />
-          <DocsLink path="/agents">Learn more about agents</DocsLink>
+          <DocsLink path="/agents">{t("Learn more about agents")}</DocsLink>
         </TooltipContent>
       </Tooltip>
 
@@ -385,9 +390,11 @@ export const AgentModePicker: React.FC<AgentModePickerProps> = (props) => {
           {/* Agent list — scrollable for long lists */}
           <div className="max-h-64 overflow-y-auto py-1">
             {!loaded && options.length === 0 ? (
-              <div className="text-muted-light px-2.5 py-2 text-[11px]">Loading agents…</div>
+              <div className="text-muted-light px-2.5 py-2 text-[11px]">{t("Loading agents…")}</div>
             ) : options.length === 0 ? (
-              <div className="text-muted-light px-2.5 py-2 text-[11px]">No agents available</div>
+              <div className="text-muted-light px-2.5 py-2 text-[11px]">
+                {t("No agents available")}
+              </div>
             ) : (
               options.map((opt, index) => {
                 const isHighlighted = index === highlightedIndex;

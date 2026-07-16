@@ -33,6 +33,7 @@ import {
   normalizeToCanonical,
 } from "@/common/utils/ai/models";
 import { Button } from "../Button/Button";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 interface ModelSelectorProps {
   value: string;
   onChange: (value: string) => void;
@@ -76,6 +77,7 @@ export const ModelSelector = forwardRef<ModelSelectorRef, ModelSelectorProps>(
     },
     ref
   ) => {
+    const { t } = useLanguage();
     useSettings(); // Context must be available for nested components
     const policyState = usePolicy();
     const policyEnforced = policyState.status.state === "enforced";
@@ -323,7 +325,7 @@ export const ModelSelector = forwardRef<ModelSelectorRef, ModelSelectorProps>(
             {routedViaDisplayName ? (
               <>
                 <br />
-                via {routedViaDisplayName}
+                {t("via")} {routedViaDisplayName}
               </>
             ) : null}
             {tooltipExtraContent ? (
@@ -347,7 +349,7 @@ export const ModelSelector = forwardRef<ModelSelectorRef, ModelSelectorProps>(
                 value={inputValue}
                 onChange={handleInputChange}
                 onKeyDown={handleKeyDown}
-                placeholder={inputPlaceholder ?? "Search [provider:model-name]"}
+                placeholder={inputPlaceholder ?? t("Search [provider:model-name]")}
                 className="text-foreground placeholder:text-muted w-full bg-transparent text-xs outline-none"
               />
               {error && <div className="text-danger-soft mt-1 text-[10px]">{error}</div>}
@@ -356,7 +358,9 @@ export const ModelSelector = forwardRef<ModelSelectorRef, ModelSelectorProps>(
             {/* Scrollable list */}
             <div ref={listRef} className="max-h-[280px] overflow-y-auto p-1">
               {filteredModels.length === 0 ? (
-                <div className="text-muted py-2 text-center text-[10px]">No matching models</div>
+                <div className="text-muted py-2 text-center text-[10px]">
+                  {t("No matching models")}
+                </div>
               ) : (
                 filteredModels.map((model, index) => {
                   const modelName = getModelName(model);
@@ -421,8 +425,8 @@ export const ModelSelector = forwardRef<ModelSelectorRef, ModelSelectorProps>(
                               )}
                               aria-label={
                                 hiddenSet.has(model)
-                                  ? "Show model in selector"
-                                  : "Hide model from selector"
+                                  ? t("Show model in selector")
+                                  : t("Hide model from selector")
                               }
                             >
                               <Eye
@@ -438,8 +442,8 @@ export const ModelSelector = forwardRef<ModelSelectorRef, ModelSelectorProps>(
                           </TooltipTrigger>
                           <TooltipContent align="center">
                             {hiddenSet.has(model)
-                              ? "Show model in selector"
-                              : "Hide model from selector"}
+                              ? t("Show model in selector")
+                              : t("Hide model from selector")}
                           </TooltipContent>
                         </Tooltip>
                       )}
@@ -463,8 +467,8 @@ export const ModelSelector = forwardRef<ModelSelectorRef, ModelSelectorProps>(
                                 )}
                                 aria-label={
                                   defaultModel === model
-                                    ? "Current default model"
-                                    : "Set as default model"
+                                    ? t("Current default model")
+                                    : t("Set as default model")
                                 }
                                 disabled={defaultModel === model}
                               >
@@ -476,8 +480,8 @@ export const ModelSelector = forwardRef<ModelSelectorRef, ModelSelectorProps>(
                             </TooltipTrigger>
                             <TooltipContent align="center">
                               {defaultModel === model
-                                ? "Current default model"
-                                : "Set as default model"}
+                                ? t("Current default model")
+                                : t("Set as default model")}
                             </TooltipContent>
                           </Tooltip>
                         )
@@ -506,14 +510,14 @@ export const ModelSelector = forwardRef<ModelSelectorRef, ModelSelectorProps>(
                     }}
                     className="text-muted hover:text-foreground text-[10px] transition-colors"
                   >
-                    {showAllModels ? "Show fewer models" : "Show all models…"}
+                    {showAllModels ? t("Show fewer models") : t("Show all models…")}
                   </button>
                 )}
 
                 {policyEnforced && (
                   <div className="text-muted flex items-center gap-1 text-[10px]">
                     <ShieldCheck className="h-3 w-3" aria-hidden />
-                    <span>Your settings are controlled by a policy.</span>
+                    <span>{t("Your settings are controlled by a policy.")}</span>
                   </div>
                 )}
 
@@ -530,7 +534,7 @@ export const ModelSelector = forwardRef<ModelSelectorRef, ModelSelectorProps>(
                     className="text-muted hover:bg-hover hover:text-foreground flex w-full items-center justify-start gap-1.5 rounded-sm px-2 py-1 text-[11px] transition-colors"
                   >
                     <Settings className="h-3 w-3 shrink-0" />
-                    Model settings
+                    {t("Model settings")}
                   </button>
                 )}
               </div>

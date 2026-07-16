@@ -75,6 +75,7 @@ import {
   buildArchiveConfirmDescription,
   buildArchiveConfirmWarning,
 } from "@/browser/utils/archiveConfirmation";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 const COLLAPSED_LEFT_SIDEBAR_MENU_BAR_STYLE = {
   paddingLeft: `${WORKSPACE_MENU_BAR_LEFT_SIDEBAR_COLLAPSED_PADDING_PX}px`,
@@ -138,6 +139,7 @@ export const WorkspaceMenuBar: React.FC<WorkspaceMenuBarProps> = ({
   onToggleLeftSidebarCollapsed,
   onOpenTerminal,
 }) => {
+  const { t } = useLanguage();
   const { api } = useAPI();
   const { disableWorkspaceAgents } = useAgent();
   const { preflightArchiveWorkspace, archiveWorkspace, setWorkspacePinned } = useWorkspaceActions();
@@ -558,13 +560,16 @@ export const WorkspaceMenuBar: React.FC<WorkspaceMenuBarProps> = ({
                 variant="ghost"
                 size="icon"
                 onClick={onToggleLeftSidebarCollapsed}
-                aria-label="Open sidebar menu"
+                aria-label={t("Open sidebar menu")}
                 className="mobile-menu-btn text-muted hover:text-foreground hidden h-6 w-6 shrink-0"
               >
                 <Menu className="h-3.5 w-3.5" />
               </Button>
             </TooltipTrigger>
-            <TooltipContent>Open sidebar ({formatKeybind(KEYBINDS.TOGGLE_SIDEBAR)})</TooltipContent>
+            <TooltipContent>
+              {t("Open sidebar (")}
+              {formatKeybind(KEYBINDS.TOGGLE_SIDEBAR)})
+            </TooltipContent>
           </Tooltip>
         )}
         <RuntimeBadge
@@ -620,7 +625,7 @@ export const WorkspaceMenuBar: React.FC<WorkspaceMenuBarProps> = ({
                     onCheckedChange={(checked) => setNotifyOnResponse(checked === true)}
                   />
                   <span className="text-foreground">
-                    Notify on all responses{" "}
+                    {t("Notify on all responses")}{" "}
                     <span className="text-muted-foreground">
                       ({formatKeybind(KEYBINDS.TOGGLE_NOTIFICATIONS)})
                     </span>
@@ -632,18 +637,18 @@ export const WorkspaceMenuBar: React.FC<WorkspaceMenuBarProps> = ({
                     onCheckedChange={(checked) => setAutoEnableNotifications(checked === true)}
                   />
                   <span className="text-muted-foreground">
-                    Auto-enable for new workspaces in this project
+                    {t("Auto-enable for new workspaces in this project")}
                   </span>
                 </label>
                 <p className="text-muted-foreground border-separator-light border-t pt-2">
-                  Agents can also notify on specific events.{" "}
+                  {t("Agents can also notify on specific events.")}{" "}
                   <a
                     href="https://mux.coder.com/config/notifications"
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-accent hover:underline"
                   >
-                    Learn more
+                    {t("Learn more")}
                   </a>
                 </p>
               </div>
@@ -662,7 +667,7 @@ export const WorkspaceMenuBar: React.FC<WorkspaceMenuBarProps> = ({
                   onCheckedChange={(checked) => setNotifyOnResponse(checked === true)}
                 />
                 <span className="text-foreground">
-                  Notify on all responses{" "}
+                  {t("Notify on all responses")}{" "}
                   <span className="text-muted-foreground">
                     ({formatKeybind(KEYBINDS.TOGGLE_NOTIFICATIONS)})
                   </span>
@@ -674,18 +679,18 @@ export const WorkspaceMenuBar: React.FC<WorkspaceMenuBarProps> = ({
                   onCheckedChange={(checked) => setAutoEnableNotifications(checked === true)}
                 />
                 <span className="text-muted-foreground">
-                  Auto-enable for new workspaces in this project
+                  {t("Auto-enable for new workspaces in this project")}
                 </span>
               </label>
               <p className="text-muted-foreground border-separator-light border-t pt-2">
-                Agents can also notify on specific events.{" "}
+                {t("Agents can also notify on specific events.")}{" "}
                 <a
                   href="https://mux.coder.com/config/notifications"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-accent hover:underline"
                 >
-                  Learn more
+                  {t("Learn more")}
                 </a>
               </p>
             </div>
@@ -711,7 +716,8 @@ export const WorkspaceMenuBar: React.FC<WorkspaceMenuBarProps> = ({
               </Button>
             </TooltipTrigger>
             <TooltipContent side="bottom" align="center">
-              Open in editor ({formatKeybind(KEYBINDS.OPEN_IN_EDITOR)})
+              {t("Open in editor (")}
+              {formatKeybind(KEYBINDS.OPEN_IN_EDITOR)})
             </TooltipContent>
           </Tooltip>
         </div>
@@ -728,7 +734,8 @@ export const WorkspaceMenuBar: React.FC<WorkspaceMenuBarProps> = ({
             </Button>
           </TooltipTrigger>
           <TooltipContent side="bottom" align="center">
-            New terminal ({formatKeybind(KEYBINDS.OPEN_TERMINAL)})
+            {t("New terminal (")}
+            {formatKeybind(KEYBINDS.OPEN_TERMINAL)})
           </TooltipContent>
         </Tooltip>
         {/* Mirror sidebar share/archive actions in the workspace menu bar for quick access. */}
@@ -741,7 +748,7 @@ export const WorkspaceMenuBar: React.FC<WorkspaceMenuBarProps> = ({
                   variant="ghost"
                   size="icon"
                   className="text-muted hover:text-foreground ml-1 h-6 w-6 shrink-0"
-                  aria-label="Workspace actions"
+                  aria-label={t("Workspace actions")}
                   data-testid="workspace-more-actions"
                 >
                   <Ellipsis className="h-3.5 w-3.5" />
@@ -749,7 +756,7 @@ export const WorkspaceMenuBar: React.FC<WorkspaceMenuBarProps> = ({
               </PopoverTrigger>
             </TooltipTrigger>
             <TooltipContent side="bottom" align="end">
-              More actions
+              {t("More actions")}
             </TooltipContent>
           </Tooltip>
 
@@ -828,10 +835,10 @@ export const WorkspaceMenuBar: React.FC<WorkspaceMenuBarProps> = ({
         isOpen={archiveConfirmOpen}
         title={
           archiveUntrackedPaths
-            ? "Archive workspace with untracked files?"
+            ? t("Archive workspace with untracked files?")
             : workspaceTitle
-              ? `Archive "${workspaceTitle}" while streaming?`
-              : "Archive chat?"
+              ? `${t("Archive")} "${workspaceTitle}" ${t("while streaming?")}`
+              : t("Archive chat?")
         }
         description={buildArchiveConfirmDescription(
           archiveConfirmIsStreaming,

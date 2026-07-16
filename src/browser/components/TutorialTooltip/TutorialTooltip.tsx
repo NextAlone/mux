@@ -1,6 +1,7 @@
 import React, { useState, useRef, useLayoutEffect } from "react";
 import { createPortal } from "react-dom";
 import { cn } from "@/common/lib/utils";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 export interface TutorialStep {
   target: string; // data-tutorial attribute value
@@ -33,6 +34,7 @@ export const TutorialTooltip: React.FC<TutorialTooltipProps> = ({
   onDismiss,
   onDisableTutorial,
 }) => {
+  const { t } = useLanguage();
   const tooltipRef = useRef<HTMLDivElement>(null);
   const [position, setPosition] = useState<TooltipPosition | null>(null);
   const [showDisableOption, setShowDisableOption] = useState(false);
@@ -199,14 +201,14 @@ export const TutorialTooltip: React.FC<TutorialTooltipProps> = ({
                 onClick={onDisableTutorial}
                 className="text-muted hover:text-foreground text-[10px] underline transition-colors"
               >
-                Don&apos;t show tutorials again
+                {t("Don't show tutorials again")}
               </button>
             ) : (
               <button
                 onClick={handleDismissClick}
                 className="text-muted hover:text-foreground text-xs transition-colors"
               >
-                Skip
+                {t("Skip")}
               </button>
             )}
           </div>
@@ -214,7 +216,7 @@ export const TutorialTooltip: React.FC<TutorialTooltipProps> = ({
             onClick={isLastStep ? onDismiss : onNext}
             className="bg-accent rounded px-3 py-1.5 text-xs font-medium text-white transition-colors hover:opacity-90"
           >
-            {isLastStep ? "Done" : "Next"}
+            {isLastStep ? t("Done") : t("Next")}
           </button>
         </div>
       </div>

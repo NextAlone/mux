@@ -141,6 +141,7 @@ import { useExperimentValue } from "@/browser/hooks/useExperiments";
 import { EXPERIMENT_IDS } from "@/common/constants/experiments";
 import { HexColorPicker } from "react-colorful";
 import { resolveSectionColor, SECTION_COLOR_PALETTE } from "@/common/constants/ui";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 interface SectionConfig {
   id: string;
@@ -723,6 +724,7 @@ const ProjectSidebarInner: React.FC<ProjectSidebarProps> = ({
   sortedWorkspacesByProject,
   workspaceRecency,
 }) => {
+  const { t } = useLanguage();
   // Use the narrow actions context — does NOT subscribe to workspaceMetadata
   // changes, preventing the entire sidebar tree from re-rendering on every
   // workspace create/archive/rename.
@@ -1909,7 +1911,7 @@ const ProjectSidebarInner: React.FC<ProjectSidebarProps> = ({
             isDesktopMode() && collapsed && "border-r-0"
           )}
           role="navigation"
-          aria-label="Projects"
+          aria-label={t("Projects")}
         >
           {!collapsed && (
             <>
@@ -1918,18 +1920,18 @@ const ProjectSidebarInner: React.FC<ProjectSidebarProps> = ({
                   <button
                     onClick={handleGoHome}
                     className="shrink-0 cursor-pointer border-none bg-transparent p-0"
-                    aria-label="Home"
+                    aria-label={t("Home")}
                   >
                     <MuxLogo className="h-5 w-[44px]" aria-hidden="true" />
                   </button>
                 </div>
                 <button
                   onClick={() => onAddProject()}
-                  aria-label="Add project"
+                  aria-label={t("Add project")}
                   className="text-secondary hover:bg-hover hover:border-border-light flex h-6 shrink-0 cursor-pointer items-center gap-1 rounded border border-transparent bg-transparent px-1.5 text-xs transition-all duration-200"
                 >
                   <span className="text-base leading-none">+</span>
-                  <span>Add Project</span>
+                  <span>{t("Add Project")}</span>
                 </button>
               </div>
               <ScrollArea
@@ -1942,7 +1944,7 @@ const ProjectSidebarInner: React.FC<ProjectSidebarProps> = ({
                   <div className={PROJECT_ITEM_BASE_CLASS}>
                     <button
                       onClick={() => toggleProject(SCRATCH_SIDEBAR_SECTION_ID)}
-                      aria-label={`${isScratchSectionExpanded ? "Collapse" : "Expand"} scratch chats`}
+                      aria-label={`${isScratchSectionExpanded ? t("Collapse") : t("Expand")} ${t("scratch chats")}`}
                       className={PROJECT_TOGGLE_BUTTON_CLASSES}
                     >
                       <ChevronRight
@@ -1953,7 +1955,9 @@ const ProjectSidebarInner: React.FC<ProjectSidebarProps> = ({
                       />
                     </button>
                     <div className="flex min-w-0 flex-1 items-center pr-1">
-                      <span className="text-foreground truncate text-sm font-medium">Chats</span>
+                      <span className="text-foreground truncate text-sm font-medium">
+                        {t("Chats")}
+                      </span>
                       {(scratchWorkspaces.length > 0 || scratchDrafts.length > 0) && (
                         <span className="text-muted ml-2 text-xs">
                           ({scratchWorkspaces.length + scratchDrafts.length})
@@ -1967,13 +1971,13 @@ const ProjectSidebarInner: React.FC<ProjectSidebarProps> = ({
                             event.stopPropagation();
                             handleAddScratchWorkspace();
                           }}
-                          aria-label="New scratch chat"
+                          aria-label={t("New scratch chat")}
                           className="text-content-secondary hover:bg-hover hover:border-border-light flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center rounded border border-transparent bg-transparent"
                         >
                           <Plus className="h-3.5 w-3.5" />
                         </button>
                       </TooltipTrigger>
-                      <TooltipContent>New scratch chat</TooltipContent>
+                      <TooltipContent>{t("New scratch chat")}</TooltipContent>
                     </Tooltip>
                   </div>
                   {isScratchSectionExpanded && (
@@ -2042,7 +2046,7 @@ const ProjectSidebarInner: React.FC<ProjectSidebarProps> = ({
                           onClick={handleAddScratchWorkspace}
                           className="text-muted hover:bg-hover mx-2 w-[calc(100%-1rem)] rounded px-2 py-2 text-left text-xs"
                         >
-                          Start a scratch chat
+                          {t("Start a scratch chat")}
                         </button>
                       )}
                     </div>
@@ -2054,7 +2058,7 @@ const ProjectSidebarInner: React.FC<ProjectSidebarProps> = ({
                     <div className={PROJECT_ITEM_BASE_CLASS}>
                       <button
                         onClick={() => toggleProject(MULTI_PROJECT_SIDEBAR_SECTION_ID)}
-                        aria-label={`${isMultiProjectSectionExpanded ? "Collapse" : "Expand"} multi-project workspaces`}
+                        aria-label={`${isMultiProjectSectionExpanded ? t("Collapse") : t("Expand")} ${t("multi-project workspaces")}`}
                         className={PROJECT_TOGGLE_BUTTON_CLASSES}
                       >
                         <span className="relative flex h-4 w-4 items-center justify-center">
@@ -2075,7 +2079,7 @@ const ProjectSidebarInner: React.FC<ProjectSidebarProps> = ({
                       </button>
                       <div className="flex min-w-0 flex-1 items-center pr-2">
                         <span className="text-foreground truncate text-sm font-medium">
-                          Multi-Project
+                          {t("Multi-Project")}
                         </span>
                         <span className="text-muted ml-2 text-xs">
                           ({multiProjectWorkspaces.length})
@@ -2126,19 +2130,19 @@ const ProjectSidebarInner: React.FC<ProjectSidebarProps> = ({
 
                 {sortedProjectPaths.length === 0 && multiProjectWorkspaces.length === 0 ? (
                   <div className="px-4 py-8 text-center">
-                    <p className="text-muted mb-4 text-[13px]">No projects</p>
+                    <p className="text-muted mb-4 text-[13px]">{t("No projects")}</p>
                     <div className="flex flex-col gap-2">
                       <button
                         onClick={handleAddScratchWorkspace}
                         className="bg-accent hover:bg-accent-dark cursor-pointer rounded border-none px-4 py-2 text-[13px] text-white transition-colors duration-200"
                       >
-                        Start a scratch chat
+                        {t("Start a scratch chat")}
                       </button>
                       <button
                         onClick={() => onAddProject()}
                         className="border-border-light text-secondary hover:bg-hover cursor-pointer rounded border px-4 py-2 text-[13px] transition-colors duration-200"
                       >
-                        Add Project
+                        {t("Add Project")}
                       </button>
                     </div>
                   </div>
@@ -2199,7 +2203,7 @@ const ProjectSidebarInner: React.FC<ProjectSidebarProps> = ({
                           tabIndex={0}
                           aria-expanded={isExpanded}
                           aria-controls={workspaceListId}
-                          aria-label={`Create workspace in ${projectName}`}
+                          aria-label={`${t("Create workspace in")} ${projectName}`}
                           data-project-path={projectPath}
                         >
                           <button
@@ -2207,7 +2211,7 @@ const ProjectSidebarInner: React.FC<ProjectSidebarProps> = ({
                               event.stopPropagation();
                               toggleProject(projectPath);
                             }}
-                            aria-label={`${isExpanded ? "Collapse" : "Expand"} project ${projectName}`}
+                            aria-label={`${isExpanded ? t("Collapse") : t("Expand")} ${t("project")} ${projectName}`}
                             data-project-path={projectPath}
                             className={PROJECT_TOGGLE_BUTTON_CLASSES}
                           >
@@ -2245,7 +2249,7 @@ const ProjectSidebarInner: React.FC<ProjectSidebarProps> = ({
                                   <input
                                     value={editingProjectDisplayName}
                                     autoFocus
-                                    aria-label={`Edit project name for ${projectName}`}
+                                    aria-label={`${t("Edit project name for")} ${projectName}`}
                                     className="bg-background text-foreground border-border-light h-6 w-full rounded border px-2 text-sm"
                                     onClick={(event) => event.stopPropagation()}
                                     onMouseDown={(event) => event.stopPropagation()}
@@ -2314,7 +2318,7 @@ const ProjectSidebarInner: React.FC<ProjectSidebarProps> = ({
                                   event.stopPropagation();
                                   handleAddWorkspace(projectPath);
                                 }}
-                                aria-label={`New chat in ${projectName}`}
+                                aria-label={`${t("New chat in")} ${projectName}`}
                                 data-project-path={projectPath}
                                 className="text-content-secondary hover:bg-hover hover:border-border-light pointer-events-none flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center rounded border border-transparent bg-transparent text-sm leading-none opacity-0 transition-all duration-200 focus-visible:pointer-events-auto focus-visible:opacity-100"
                               >
@@ -2322,7 +2326,8 @@ const ProjectSidebarInner: React.FC<ProjectSidebarProps> = ({
                               </button>
                             </TooltipTrigger>
                             <TooltipContent>
-                              New chat ({formatKeybind(KEYBINDS.NEW_WORKSPACE)})
+                              {t("New chat (")}
+                              {formatKeybind(KEYBINDS.NEW_WORKSPACE)})
                             </TooltipContent>
                           </Tooltip>
                           <Tooltip>
@@ -2332,7 +2337,7 @@ const ProjectSidebarInner: React.FC<ProjectSidebarProps> = ({
                                   event.stopPropagation();
                                   handleOpenProjectMenu(event, projectPath);
                                 }}
-                                aria-label={`Project options for ${projectName}`}
+                                aria-label={`${t("Project options for")} ${projectName}`}
                                 data-project-path={projectPath}
                                 className={cn(
                                   "text-content-secondary hover:bg-hover hover:border-border-light flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center rounded border border-transparent bg-transparent transition-all duration-200 focus-visible:pointer-events-auto focus-visible:opacity-100",
@@ -2344,7 +2349,7 @@ const ProjectSidebarInner: React.FC<ProjectSidebarProps> = ({
                                 <EllipsisVertical className="h-4 w-4 shrink-0" strokeWidth={1.8} />
                               </button>
                             </TooltipTrigger>
-                            <TooltipContent align="end">Project options</TooltipContent>
+                            <TooltipContent align="end">{t("Project options")}</TooltipContent>
                           </Tooltip>
                         </DraggableProjectItem>
 
@@ -2352,7 +2357,7 @@ const ProjectSidebarInner: React.FC<ProjectSidebarProps> = ({
                           <div
                             id={workspaceListId}
                             role="region"
-                            aria-label={`Workspaces for ${projectName}`}
+                            aria-label={`${t("Workspaces for")} ${projectName}`}
                             className="pt-1"
                           >
                             {(() => {
@@ -2883,8 +2888,8 @@ const ProjectSidebarInner: React.FC<ProjectSidebarProps> = ({
                                         }}
                                         aria-label={
                                           isTierExpanded
-                                            ? `Collapse workspaces older than ${thresholdLabel}`
-                                            : `Expand workspaces older than ${thresholdLabel}`
+                                            ? `${t("Collapse workspaces older than")} ${thresholdLabel}`
+                                            : `${t("Expand workspaces older than")} ${thresholdLabel}`
                                         }
                                         aria-expanded={isTierExpanded}
                                         className="text-muted border-hover hover:text-label [&:hover_.arrow]:text-label flex w-full cursor-pointer items-center gap-1 border-t border-none bg-transparent px-3 py-2 pl-7 text-xs font-medium transition-all duration-150 hover:bg-white/3"
@@ -2900,7 +2905,10 @@ const ProjectSidebarInner: React.FC<ProjectSidebarProps> = ({
                                           <ChevronRight className="h-4 w-4" />
                                         </span>
                                         <div className="flex items-center gap-1.5">
-                                          <span>Older than {thresholdLabel}</span>
+                                          <span>
+                                            {t("Older than ")}
+                                            {thresholdLabel}
+                                          </span>
                                           <span className="text-dim font-normal">
                                             ({displayCount})
                                           </span>
@@ -3067,7 +3075,7 @@ const ProjectSidebarInner: React.FC<ProjectSidebarProps> = ({
                                           )
                                         ) : sectionDrafts.length === 0 ? (
                                           <div className="text-muted px-3 py-2 text-center text-xs italic">
-                                            No chats in this sub-project
+                                            {t("No chats in this sub-project")}
                                           </div>
                                         ) : null}
                                       </div>
@@ -3080,7 +3088,7 @@ const ProjectSidebarInner: React.FC<ProjectSidebarProps> = ({
                                 <>
                                   {projectHasNoAgentsOrDrafts && (
                                     <div className="text-content-disabled py-2 pl-12 text-xs">
-                                      Empty
+                                      {t("Empty")}
                                     </div>
                                   )}
                                   {/* Unsectioned workspaces first - always show drop zone when sections exist */}
@@ -3101,7 +3109,7 @@ const ProjectSidebarInner: React.FC<ProjectSidebarProps> = ({
                                         )
                                       ) : unsectionedDrafts.length === 0 ? (
                                         <div className="text-muted px-3 py-2 text-center text-xs italic">
-                                          No unsectioned chats
+                                          {t("No unsectioned chats")}
                                         </div>
                                       ) : null}
                                     </WorkspaceSectionDropZone>
@@ -3145,7 +3153,7 @@ const ProjectSidebarInner: React.FC<ProjectSidebarProps> = ({
           >
             <PositionedMenuItem
               icon={<Pencil className="h-4 w-4 shrink-0" strokeWidth={1.8} />}
-              label="Edit name"
+              label={t("Edit name")}
               disabled={!hasProjectMenuTarget}
               onClick={() => {
                 handleProjectMenuEditName();
@@ -3153,7 +3161,7 @@ const ProjectSidebarInner: React.FC<ProjectSidebarProps> = ({
             />
             <PositionedMenuItem
               icon={<Plus className="h-4 w-4 shrink-0" strokeWidth={1.8} />}
-              label="Add sub-project"
+              label={t("Add sub-project")}
               disabled={!hasProjectMenuTarget}
               onClick={() => {
                 handleProjectMenuAddSubFolder();
@@ -3161,7 +3169,7 @@ const ProjectSidebarInner: React.FC<ProjectSidebarProps> = ({
             />
             <PositionedMenuItem
               icon={<KeyRound className="h-4 w-4 shrink-0" strokeWidth={1.8} />}
-              label="Manage secrets"
+              label={t("Manage secrets")}
               disabled={!hasProjectMenuTarget}
               onClick={() => {
                 handleProjectMenuManageSecrets();
@@ -3169,7 +3177,7 @@ const ProjectSidebarInner: React.FC<ProjectSidebarProps> = ({
             />
             <PositionedMenuItem
               icon={<Palette className="h-4 w-4 shrink-0" strokeWidth={1.8} />}
-              label="Change color"
+              label={t("Change color")}
               disabled={!hasProjectMenuTarget}
               onClick={() => {
                 handleProjectMenuColorClick();
@@ -3193,7 +3201,7 @@ const ProjectSidebarInner: React.FC<ProjectSidebarProps> = ({
                         projectMenuResolvedColor === color ? "border-white" : "border-transparent"
                       )}
                       style={{ backgroundColor: color }}
-                      aria-label={`Set project color to ${name}`}
+                      aria-label={`${t("Set project color to")} ${t(name)}`}
                     />
                   ))}
                 </div>
@@ -3228,7 +3236,7 @@ const ProjectSidebarInner: React.FC<ProjectSidebarProps> = ({
             <Separator />
             <PositionedMenuItem
               icon={<Trash className="h-4 w-4 shrink-0" strokeWidth={1.8} />}
-              label="Delete..."
+              label={t("Delete...")}
               variant="destructive"
               disabled={!hasProjectMenuTarget}
               onClick={(event) => {
@@ -3241,10 +3249,10 @@ const ProjectSidebarInner: React.FC<ProjectSidebarProps> = ({
             isOpen={archiveConfirmation !== null}
             title={
               archiveConfirmation?.untrackedPaths
-                ? "Archive workspace with untracked files?"
+                ? t("Archive workspace with untracked files?")
                 : archiveConfirmation
-                  ? `Archive "${archiveConfirmation.displayTitle}" while streaming?`
-                  : "Archive chat?"
+                  ? `${t("Archive")} "${archiveConfirmation.displayTitle}" ${t("while streaming?")}`
+                  : t("Archive chat?")
             }
             description={buildArchiveConfirmDescription(
               archiveConfirmation?.isStreaming ?? false,

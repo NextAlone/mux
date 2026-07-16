@@ -11,6 +11,7 @@ import {
   Square,
 } from "lucide-react";
 import React from "react";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 interface WorkspaceActionButtonProps {
   label: string;
@@ -68,11 +69,12 @@ interface WorkspaceActionsMenuContentProps {
  * Keeping these actions centralized prevents menu drift between entry points.
  */
 export const WorkspaceActionsMenuContent: React.FC<WorkspaceActionsMenuContentProps> = (props) => {
+  const { t } = useLanguage();
   return (
     <>
       {props.onEditTitle && (
         <WorkspaceActionButton
-          label="Edit chat title"
+          label={t("Edit chat title")}
           shortcut={formatKeybind(KEYBINDS.EDIT_WORKSPACE_TITLE)}
           shortcutClassName={props.shortcutClassName}
           icon={<Pencil className="h-3 w-3 shrink-0" />}
@@ -85,7 +87,7 @@ export const WorkspaceActionsMenuContent: React.FC<WorkspaceActionsMenuContentPr
       )}
       {props.onConfigureMcp && (
         <WorkspaceActionButton
-          label="Configure MCP servers"
+          label={t("Configure MCP servers")}
           shortcut={formatKeybind(KEYBINDS.CONFIGURE_MCP)}
           shortcutClassName={props.shortcutClassName}
           icon={<Server className="h-3 w-3 shrink-0" />}
@@ -99,7 +101,7 @@ export const WorkspaceActionsMenuContent: React.FC<WorkspaceActionsMenuContentPr
       )}
       {props.onConfigureHeartbeat && (
         <WorkspaceActionButton
-          label="Configure heartbeat"
+          label={t("Configure heartbeat")}
           shortcut={formatKeybind(KEYBINDS.CONFIGURE_HEARTBEAT)}
           shortcutClassName={props.shortcutClassName}
           icon={<HeartPulse className="h-3 w-3 shrink-0" />}
@@ -112,7 +114,7 @@ export const WorkspaceActionsMenuContent: React.FC<WorkspaceActionsMenuContentPr
       )}
       {props.onOpenTouchFullscreenReview && (
         <WorkspaceActionButton
-          label="Mobile full-screen review"
+          label={t("Mobile full-screen review")}
           icon={<Maximize2 className="h-3 w-3 shrink-0" />}
           onClick={(e) => {
             e.stopPropagation();
@@ -123,7 +125,7 @@ export const WorkspaceActionsMenuContent: React.FC<WorkspaceActionsMenuContentPr
       )}
       {props.onEnterImmersiveReview && (
         <WorkspaceActionButton
-          label="Immersive review"
+          label={t("Immersive review")}
           shortcut={formatKeybind(KEYBINDS.TOGGLE_REVIEW_IMMERSIVE)}
           shortcutClassName={props.shortcutClassName}
           icon={<Maximize2 className="h-3 w-3 shrink-0" />}
@@ -136,7 +138,7 @@ export const WorkspaceActionsMenuContent: React.FC<WorkspaceActionsMenuContentPr
       )}
       {props.onStopRuntime && (
         <WorkspaceActionButton
-          label="Stop container"
+          label={t("Stop container")}
           icon={<Square className="h-3 w-3 shrink-0" />}
           onClick={(e) => {
             e.stopPropagation();
@@ -147,7 +149,7 @@ export const WorkspaceActionsMenuContent: React.FC<WorkspaceActionsMenuContentPr
       )}
       {props.onForkChat && (
         <WorkspaceActionButton
-          label="Fork chat"
+          label={t("Fork chat")}
           icon={<GitBranch className="h-3 w-3 shrink-0" />}
           onClick={(e) => {
             e.stopPropagation();
@@ -158,7 +160,7 @@ export const WorkspaceActionsMenuContent: React.FC<WorkspaceActionsMenuContentPr
       )}
       {props.onTogglePinned && (
         <WorkspaceActionButton
-          label={props.isPinned ? "Unpin chat" : "Pin chat"}
+          label={props.isPinned ? t("Unpin chat") : t("Pin chat")}
           shortcut={formatKeybind(KEYBINDS.PIN_WORKSPACE)}
           shortcutClassName={props.shortcutClassName}
           icon={
@@ -177,7 +179,7 @@ export const WorkspaceActionsMenuContent: React.FC<WorkspaceActionsMenuContentPr
       )}
       {props.onArchiveChat && (
         <WorkspaceActionButton
-          label="Archive chat"
+          label={t("Archive chat")}
           shortcut={formatKeybind(KEYBINDS.ARCHIVE_WORKSPACE)}
           shortcutClassName={props.shortcutClassName}
           icon={<ArchiveIcon className="h-3 w-3 shrink-0" />}

@@ -1,4 +1,5 @@
 import { Bot, X } from "lucide-react";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 interface AgentsInitBannerProps {
   onRunInit: () => void | Promise<void>;
@@ -10,6 +11,7 @@ interface AgentsInitBannerProps {
  * Shown on the project creation screen for newly added projects.
  */
 export function AgentsInitBanner(props: AgentsInitBannerProps) {
+  const { t } = useLanguage();
   return (
     <div
       className="bg-bg-dark border-border-medium flex items-center gap-3 rounded-lg border px-4 py-3"
@@ -18,12 +20,12 @@ export function AgentsInitBanner(props: AgentsInitBannerProps) {
       <Bot className="text-muted-foreground h-5 w-5 shrink-0" />
       <div className="flex flex-1 flex-col gap-0.5">
         <span className="text-foreground text-sm font-medium">
-          Initialize this repo for better results
+          {t("Initialize this repo for better results")}
         </span>
         <span className="text-muted-foreground text-xs">
-          Add or improve an{" "}
+          {t("Add or improve an")}{" "}
           <code className="bg-bg-dark-hover rounded px-1 font-mono">AGENTS.md</code>
-          so Mux learns your repo’s commands, conventions, and constraints.
+          {t("so Mux learns your repo’s commands, conventions, and constraints.")}
         </span>
       </div>
 
@@ -34,12 +36,12 @@ export function AgentsInitBanner(props: AgentsInitBannerProps) {
           className="bg-accent hover:bg-accent/80 text-accent-foreground inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors"
           data-testid="agents-init-run"
         >
-          Run /init
+          {t("Run /init")}
         </button>
         <button
           type="button"
           onClick={props.onDismiss}
-          aria-label="Dismiss"
+          aria-label={t("Dismiss")}
           className="text-muted-foreground hover:text-foreground inline-flex items-center rounded p-1 transition-colors"
           data-testid="agents-init-dismiss"
         >

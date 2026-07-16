@@ -85,6 +85,7 @@ import { hasWorkspaceRepository } from "@/browser/utils/workspaceCapabilities";
 import { useAPI } from "@/browser/contexts/API";
 import { RuntimeBadge } from "../RuntimeBadge/RuntimeBadge";
 import { useWorkspaceActionsOptional } from "@/browser/contexts/WorkspaceContext";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 export interface WorkspaceSelection {
   projectPath: string;
@@ -216,39 +217,46 @@ function HeartbeatFallbackIcon() {
   );
 }
 
-function formatSubAgentCount(count: number, label: "active" | "queued"): string {
-  return `${count} sub-agent${count === 1 ? "" : "s"} ${label}`;
+type Translate = (text: string) => string;
+
+function formatSubAgentCount(count: number, label: "active" | "queued", t: Translate): string {
+  return `${count} ${t(count === 1 ? "sub-agent" : "sub-agents")} ${t(label)}`;
 }
 
-function formatDelegatedActivityText(activity: WorkspaceDelegatedActivity): string | null {
+function formatDelegatedActivityText(
+  activity: WorkspaceDelegatedActivity,
+  t: Translate
+): string | null {
   const parts: string[] = [];
   if (activity.activeCount > 0) {
     if (activity.workflowActiveCount > 0) {
-      parts.push("Workflow running");
+      parts.push(t("Workflow running"));
     }
-    parts.push(formatSubAgentCount(activity.activeCount, "active"));
+    parts.push(formatSubAgentCount(activity.activeCount, "active", t));
   } else if (activity.queuedCount > 0) {
     if (activity.workflowQueuedCount > 0) {
-      parts.push("Workflow queued");
+      parts.push(t("Workflow queued"));
     }
-    parts.push(formatSubAgentCount(activity.queuedCount, "queued"));
+    parts.push(formatSubAgentCount(activity.queuedCount, "queued", t));
   }
 
   if (activity.activeCount > 0 && activity.queuedCount > 0) {
-    parts.push(`${activity.queuedCount} queued`);
+    parts.push(`${activity.queuedCount} ${t("queued")}`);
   }
 
   return parts.length > 0 ? parts.join(" · ") : null;
 }
 
-function formatWorkflowRunCount(count: number): string {
+function formatWorkflowRunCount(count: number, t: Translate): string {
   assert(count > 0, "formatWorkflowRunCount requires a positive count");
-  return count === 1 ? "Workflow running" : `${count} workflows running`;
+  return count === 1 ? t("Workflow running") : `${count} ${t("workflows running")}`;
 }
 
-function formatBashMonitorCount(count: number): string {
+function formatBashMonitorCount(count: number, t: Translate): string {
   assert(count > 0, "formatBashMonitorCount requires a positive count");
-  return count === 1 ? "Watching background bash" : `Watching ${count} background bashes`;
+  return count === 1
+    ? t("Watching background bash")
+    : `${t("Watching")} ${count} ${t("background bashes")}`;
 }
 
 function SidebarActivityIndicator(props: { text: string; testId: string }) {
@@ -263,7 +271,8 @@ function SidebarActivityIndicator(props: { text: string; testId: string }) {
 }
 
 function WorkflowActivityIndicator(props: { workspaceId: string; activeWorkflowRunCount: number }) {
-  const statusText = formatWorkflowRunCount(props.activeWorkflowRunCount);
+  const { t } = useLanguage();
+  const statusText = formatWorkflowRunCount(props.activeWorkflowRunCount, t);
 
   return (
     <SidebarActivityIndicator
@@ -277,7 +286,8 @@ function DelegatedActivityIndicator(props: {
   workspaceId: string;
   activity: WorkspaceDelegatedActivity;
 }) {
-  const statusText = formatDelegatedActivityText(props.activity);
+  const { t } = useLanguage();
+  const statusText = formatDelegatedActivityText(props.activity, t);
   if (!statusText) {
     return null;
   }
@@ -294,6 +304,7 @@ function QuickArchiveButton(props: {
   displayTitle: string;
   onArchiveWorkspace: (button: HTMLElement) => void;
 }) {
+  const { t } = useLanguage();
   return (
     <div className={LEADING_SLOT_CONTAINER_CLASSES} style={LEADING_SLOT_CONTAINER_STYLE}>
       <Tooltip>
@@ -306,12 +317,12 @@ function QuickArchiveButton(props: {
               event.stopPropagation();
               props.onArchiveWorkspace(event.currentTarget);
             }}
-            aria-label={`Archive workspace ${props.displayTitle}`}
+            aria-label={`${t("Archive workspace")} ${props.displayTitle}`}
           >
             <ArchiveIcon className="h-3 w-3 shrink-0" />
           </button>
         </TooltipTrigger>
-        <TooltipContent side="right">Archive chat</TooltipContent>
+        <TooltipContent side="right">{t("Archive chat")}</TooltipContent>
       </Tooltip>
     </div>
   );
@@ -337,6 +348,7 @@ function ActionButtonWrapper(props: { children: React.ReactNode; className?: str
 // ─────────────────────────────────────────────────────────────────────────────
 
 function DraftAgentListItemInner(props: DraftAgentListItemProps) {
+  const { t } = useLanguage();
   const { projectPath, isSelected, depth, sectionId, draft } = props;
   const paddingLeft = getSidebarItemPaddingLeft(depth);
   const hasPromptPreview = draft.promptPreview.length > 0;
@@ -377,7 +389,7 @@ function DraftAgentListItemInner(props: DraftAgentListItemProps) {
       role="button"
       tabIndex={0}
       aria-current={isSelected ? "true" : undefined}
-      aria-label={`Open workspace draft ${draft.draftNumber}`}
+      aria-label={`${t("Open workspace draft")} ${draft.draftNumber}`}
       data-project-path={projectPath}
       data-draft-id={draft.draftId}
     >
@@ -428,14 +440,14 @@ function DraftAgentListItemInner(props: DraftAgentListItemProps) {
                 e.stopPropagation();
                 draft.onDelete();
               }}
-              aria-label={`Delete workspace draft ${draft.draftNumber}`}
+              aria-label={`${t("Delete workspace draft")} ${draft.draftNumber}`}
               data-project-path={projectPath}
               data-draft-id={draft.draftId}
             >
               <Trash className="h-3.5 w-3.5 shrink-0" strokeWidth={1.8} />
             </button>
           </TooltipTrigger>
-          <TooltipContent align="start">Delete draft</TooltipContent>
+          <TooltipContent align="start">{t("Delete draft")}</TooltipContent>
         </Tooltip>
 
         {/* Mobile: context menu opened by long-press / right-click */}
@@ -447,7 +459,7 @@ function DraftAgentListItemInner(props: DraftAgentListItemProps) {
         >
           <PositionedMenuItem
             icon={<Trash className="h-4 w-4 shrink-0" strokeWidth={1.8} />}
-            label="Delete draft"
+            label={t("Delete draft")}
             onClick={() => {
               ctxMenu.close();
               draft.onDelete();
@@ -464,6 +476,7 @@ function DraftAgentListItemInner(props: DraftAgentListItemProps) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 function RegularAgentListItemInner(props: AgentListItemProps) {
+  const { t } = useLanguage();
   const {
     metadata,
     projectPath,
@@ -674,7 +687,7 @@ function RegularAgentListItemInner(props: AgentListItemProps) {
   // until those commands exit so the sidebar does not imply the workspace is idle.
   const hasActiveTerminalWork = terminalActiveCount > 0;
   const delegatedStatusText = delegatedActivity
-    ? formatDelegatedActivityText(delegatedActivity)
+    ? formatDelegatedActivityText(delegatedActivity, t)
     : null;
   const hasDelegatedStatusText = delegatedStatusText != null;
   const shouldShowWorkflowStatus =
@@ -948,12 +961,12 @@ function RegularAgentListItemInner(props: AgentListItemProps) {
         aria-keyshortcuts={canToggleCompletedChildren ? "ArrowRight ArrowLeft" : undefined}
         aria-label={
           isRemoving
-            ? `Deleting workspace ${displayTitle}`
+            ? `${t("Deleting workspace")} ${displayTitle}`
             : isInitializing
-              ? `Initializing workspace ${displayTitle}`
+              ? `${t("Initializing workspace")} ${displayTitle}`
               : isArchiving
-                ? `Archiving workspace ${displayTitle}`
-                : `Select workspace ${displayTitle}`
+                ? `${t("Archiving workspace")} ${displayTitle}`
+                : `${t("Select workspace")} ${displayTitle}`
         }
         aria-describedby={secondaryStatusDescriptionId}
         aria-disabled={isDisabled}
@@ -1023,8 +1036,8 @@ function RegularAgentListItemInner(props: AgentListItemProps) {
                   }}
                   aria-label={
                     isRemoving
-                      ? `Deleting workspace ${displayTitle}`
-                      : `Cancel workspace creation ${displayTitle}`
+                      ? `${t("Deleting workspace")} ${displayTitle}`
+                      : `${t("Cancel workspace creation")} ${displayTitle}`
                   }
                   data-workspace-id={workspaceId}
                 >
@@ -1036,7 +1049,7 @@ function RegularAgentListItemInner(props: AgentListItemProps) {
                 </button>
               </TooltipTrigger>
               <TooltipContent align="start">
-                {isRemoving ? "Deleting..." : "Cancel creation"}
+                {isRemoving ? t("Deleting...") : t("Cancel creation")}
               </TooltipContent>
             </Tooltip>
           </ActionButtonWrapper>
@@ -1073,7 +1086,7 @@ function RegularAgentListItemInner(props: AgentListItemProps) {
                       SHOW_INLINE_ACTIONS_ON_WIDE_TOUCH
                     )}
                     onClick={(e) => e.stopPropagation()}
-                    aria-label={`Workspace actions for ${displayTitle}`}
+                    aria-label={`${t("Workspace actions for")} ${displayTitle}`}
                     data-workspace-id={workspaceId}
                   >
                     <EllipsisVertical className="h-4 w-4 shrink-0" strokeWidth={1.8} />
@@ -1132,7 +1145,7 @@ function RegularAgentListItemInner(props: AgentListItemProps) {
                   {!isSelected && !isUnread && (
                     <PositionedMenuItem
                       icon={<EyeOff className="h-4 w-4 shrink-0" strokeWidth={1.8} />}
-                      label="Mark unread"
+                      label={t("Mark unread")}
                       onClick={() => {
                         // Reset the read marker to epoch so existing activity is treated as unseen.
                         updatePersistedState(getWorkspaceLastReadKey(workspaceId), 0);
@@ -1149,7 +1162,9 @@ function RegularAgentListItemInner(props: AgentListItemProps) {
                           <Eye className="h-4 w-4 shrink-0" strokeWidth={1.8} />
                         )
                       }
-                      label={isCompletedChildrenExpanded ? "Hide sub-agents" : "Show sub-agents"}
+                      label={
+                        isCompletedChildrenExpanded ? t("Hide sub-agents") : t("Show sub-agents")
+                      }
                       onClick={() => {
                         toggleCompletedChildren();
                         ctxMenu.close();
@@ -1158,7 +1173,7 @@ function RegularAgentListItemInner(props: AgentListItemProps) {
                   )}
                   <PositionedMenuItem
                     icon={<Sparkles />}
-                    label="Generate new title"
+                    label={t("Generate new title")}
                     shortcut={formatKeybind(KEYBINDS.GENERATE_WORKSPACE_TITLE)}
                     onClick={() => {
                       ctxMenu.close();
@@ -1204,7 +1219,7 @@ function RegularAgentListItemInner(props: AgentListItemProps) {
                 onBlur={() => void handleConfirmEdit()}
                 ref={handleEditInputRef}
                 onClick={(e) => e.stopPropagation()}
-                aria-label={`Edit title for workspace ${displayTitle}`}
+                aria-label={`${t("Edit title for workspace")} ${displayTitle}`}
                 data-workspace-id={workspaceId}
               />
             ) : (
@@ -1232,7 +1247,11 @@ function RegularAgentListItemInner(props: AgentListItemProps) {
             {!isInitializing && !isEditing && (
               <div className="flex min-w-0 items-center gap-1">
                 {isPinned && (
-                  <Pin className="text-muted h-3 w-3 shrink-0" aria-label="Pinned" role="img" />
+                  <Pin
+                    className="text-muted h-3 w-3 shrink-0"
+                    aria-label={t("Pinned")}
+                    role="img"
+                  />
                 )}
                 {shouldShowInlineArchivingStatus ? (
                   <div
@@ -1240,7 +1259,7 @@ function RegularAgentListItemInner(props: AgentListItemProps) {
                     data-testid={`workspace-inline-archiving-status-${workspaceId}`}
                   >
                     <ArchiveIcon className="h-3 w-3 shrink-0" />
-                    <span>Archiving...</span>
+                    <span>{t("Archiving...")}</span>
                   </div>
                 ) : (
                   <>
@@ -1253,8 +1272,9 @@ function RegularAgentListItemInner(props: AgentListItemProps) {
                           </div>
                         </TooltipTrigger>
                         <TooltipContent side="right">
-                          {terminalActiveCount} terminal{terminalActiveCount !== 1 ? "s" : ""}{" "}
-                          running commands
+                          {terminalActiveCount}{" "}
+                          {t(terminalActiveCount === 1 ? "terminal" : "terminals")}{" "}
+                          {t("running commands")}
                         </TooltipContent>
                       </Tooltip>
                     )}
@@ -1284,12 +1304,12 @@ function RegularAgentListItemInner(props: AgentListItemProps) {
               {isRemoving ? (
                 <div className="text-muted flex min-w-0 items-center gap-1.5 text-xs">
                   <Loader2 className="h-3 w-3 shrink-0 animate-spin" />
-                  <span className="min-w-0 truncate">Deleting...</span>
+                  <span className="min-w-0 truncate">{t("Deleting...")}</span>
                 </div>
               ) : awaitingUserQuestion ? (
                 <div className="text-muted flex min-w-0 items-center gap-1.5 text-xs leading-4">
                   <MessageCircleQuestionMark className="h-3 w-3 shrink-0" strokeWidth={1.8} />
-                  <span className="min-w-0 truncate">Mux has a few questions</span>
+                  <span className="min-w-0 truncate">{t("Mux has a few questions")}</span>
                 </div>
               ) : shouldShowDelegatedStatus && delegatedActivity ? (
                 <DelegatedActivityIndicator
@@ -1303,7 +1323,7 @@ function RegularAgentListItemInner(props: AgentListItemProps) {
                 />
               ) : shouldShowBashMonitorStatus ? (
                 <SidebarActivityIndicator
-                  text={formatBashMonitorCount(activeBashMonitorCount)}
+                  text={formatBashMonitorCount(activeBashMonitorCount, t)}
                   testId={`workspace-bash-monitor-activity-${workspaceId}`}
                 />
               ) : (

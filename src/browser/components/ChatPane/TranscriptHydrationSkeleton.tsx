@@ -9,6 +9,7 @@
  * place the real messages will, avoiding a jump when hydration completes.
  */
 import { Skeleton } from "@/browser/components/Skeleton/Skeleton";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 // Decreasing opacity per turn produces the trailing fade characteristic of
 // skeleton loaders without an extra mask layer.
@@ -19,12 +20,13 @@ const TURNS: ReadonlyArray<{ opacity: number; assistantLineWidths: readonly stri
 ];
 
 export function TranscriptHydrationSkeleton() {
+  const { t } = useLanguage();
   return (
     <div
       data-testid="transcript-hydration-placeholder"
       role="status"
       aria-busy="true"
-      aria-label="Loading transcript"
+      aria-label={t("Loading transcript")}
       className="flex flex-col gap-8 py-6 select-none"
     >
       {TURNS.map((turn, turnIndex) => (

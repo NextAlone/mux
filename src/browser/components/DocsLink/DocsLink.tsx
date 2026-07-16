@@ -1,6 +1,7 @@
 import React from "react";
 import { ExternalLink } from "lucide-react";
 import { cn } from "@/common/lib/utils";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 const DOCS_BASE_URL = "https://mux.coder.com";
 
@@ -17,6 +18,8 @@ interface DocsLinkProps {
  * Renders as a small badge with an external link icon.
  */
 export function DocsLink({ path, children = "docs", className }: DocsLinkProps) {
+  const { t } = useLanguage();
+  const translatedChildren = typeof children === "string" ? t(children) : children;
   return (
     <a
       href={`${DOCS_BASE_URL}${path}`}
@@ -27,7 +30,7 @@ export function DocsLink({ path, children = "docs", className }: DocsLinkProps) 
         className
       )}
     >
-      {children}
+      {translatedChildren}
       <ExternalLink className="h-2.5 w-2.5" />
     </a>
   );

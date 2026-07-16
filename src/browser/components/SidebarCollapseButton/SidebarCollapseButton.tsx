@@ -1,5 +1,6 @@
 import React from "react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/browser/components/Tooltip/Tooltip";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 interface SidebarCollapseButtonProps {
   collapsed: boolean;
@@ -20,11 +21,12 @@ export const SidebarCollapseButton: React.FC<SidebarCollapseButtonProps> = ({
   side,
   shortcut,
 }) => {
+  const { t } = useLanguage();
   // Left sidebar: collapsed shows », expanded shows «
   // Right sidebar: collapsed shows «, expanded shows »
   const chevron = side === "left" ? (collapsed ? "»" : "«") : collapsed ? "«" : "»";
 
-  const label = collapsed ? "Expand sidebar" : "Collapse sidebar";
+  const label = collapsed ? t("Expand sidebar") : t("Collapse sidebar");
 
   return (
     <Tooltip>

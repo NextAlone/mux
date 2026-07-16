@@ -2,6 +2,7 @@ import React from "react";
 import type { ContextMenuPosition } from "@/browser/hooks/useContextMenuPosition";
 import { Popover, PopoverAnchor, PopoverContent } from "@/browser/components/Popover/Popover";
 import { cn } from "@/common/lib/utils";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 // ---------------------------------------------------------------------------
 // PositionedMenu — Popover anchored at a fixed {x, y} screen position
@@ -94,6 +95,7 @@ interface PositionedMenuItemProps {
  * positioned menus share a consistent look.
  */
 export function PositionedMenuItem(props: PositionedMenuItemProps) {
+  const { t } = useLanguage();
   const isDestructive = props.variant === "destructive";
 
   return (
@@ -113,7 +115,7 @@ export function PositionedMenuItem(props: PositionedMenuItemProps) {
     >
       <span className="flex items-center gap-2">
         <span className="h-3 w-3 shrink-0 [&_svg]:h-3 [&_svg]:w-3">{props.icon}</span>
-        {props.label}
+        {t(props.label)}
         {props.shortcut && (
           <span className="text-muted ml-auto hidden text-[10px] sm:inline">
             ({props.shortcut})

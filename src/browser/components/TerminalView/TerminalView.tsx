@@ -19,6 +19,7 @@ import {
   TERMINAL_ICON_FALLBACK_FAMILY,
 } from "@/browser/terminal/terminalFontFamily";
 import { TERMINAL_CONTAINER_ATTR } from "@/browser/utils/ui/keybinds";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 function canLoadFontFamily(primary: string, fontSize: number): boolean {
   const family = stripOuterQuotes(primary).trim();
@@ -162,6 +163,7 @@ export function TerminalView({
   autoFocus = true,
   onExit,
 }: TerminalViewProps) {
+  const { t } = useLanguage();
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const autoFocusRef = useRef(autoFocus);
@@ -878,7 +880,8 @@ export function TerminalView({
     >
       {errorMessage && (
         <div className="border-b border-red-900/30 bg-red-900/20 p-2 text-sm text-red-400">
-          Terminal Error: {errorMessage}
+          {t("Terminal Error:")}
+          {errorMessage}
         </div>
       )}
       <div
@@ -911,7 +914,7 @@ export function TerminalView({
             backgroundColor: "var(--color-terminal-bg)",
           }}
         >
-          <span className="text-muted animate-pulse text-sm">Connecting...</span>
+          <span className="text-muted animate-pulse text-sm">{t("Connecting...")}</span>
         </div>
       )}
     </div>

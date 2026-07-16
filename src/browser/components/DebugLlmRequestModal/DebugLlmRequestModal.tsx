@@ -12,6 +12,7 @@ import { Button } from "@/browser/components/Button/Button";
 import { useCopyToClipboard } from "@/browser/hooks/useCopyToClipboard";
 import { copyToClipboard } from "@/browser/utils/clipboard";
 import { getErrorMessage } from "@/common/utils/errors";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 const JsonOutput: React.FC<{ children: React.ReactNode }> = ({ children }) => (
   <div className="bg-code-bg text-text mt-3 w-full max-w-full min-w-0 overflow-x-auto rounded-sm">
@@ -30,6 +31,7 @@ export const DebugLlmRequestModal: React.FC<DebugLlmRequestModalProps> = ({
   open,
   onOpenChange,
 }) => {
+  const { t } = useLanguage();
   const { api } = useAPI();
   const { copied, copyToClipboard: copy } = useCopyToClipboard(copyToClipboard);
 
@@ -89,9 +91,9 @@ export const DebugLlmRequestModal: React.FC<DebugLlmRequestModalProps> = ({
         <DialogHeader className="min-w-0 space-y-3">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="space-y-1">
-              <DialogTitle>Last LLM request</DialogTitle>
+              <DialogTitle>{t("Last LLM request")}</DialogTitle>
               <div className="text-muted text-xs">
-                Captures the exact payload sent to the provider for this workspace.
+                {t("Captures the exact payload sent to the provider for this workspace.")}
               </div>
             </div>
             <div className="flex flex-wrap items-center gap-2">
@@ -101,7 +103,7 @@ export const DebugLlmRequestModal: React.FC<DebugLlmRequestModalProps> = ({
                 onClick={() => void fetchSnapshot()}
                 disabled={!api || loading}
               >
-                {loading ? "Loading..." : "Refresh"}
+                {loading ? t("Loading...") : t("Refresh")}
               </Button>
               <Button
                 variant="secondary"
@@ -109,7 +111,7 @@ export const DebugLlmRequestModal: React.FC<DebugLlmRequestModalProps> = ({
                 onClick={() => void copy(json)}
                 disabled={!snapshot || loading}
               >
-                {copied ? "Copied" : "Copy JSON"}
+                {copied ? t("Copied") : t("Copy JSON")}
               </Button>
               <Button
                 variant="secondary"
@@ -118,7 +120,7 @@ export const DebugLlmRequestModal: React.FC<DebugLlmRequestModalProps> = ({
                 disabled={!snapshot || loading}
               >
                 <Download className="size-3.5" />
-                Download
+                {t("Download")}
               </Button>
             </div>
           </div>
@@ -128,12 +130,12 @@ export const DebugLlmRequestModal: React.FC<DebugLlmRequestModalProps> = ({
           {error && <div className="text-danger-soft text-sm">{error}</div>}
 
           {loading && !snapshot && (
-            <div className="text-muted text-sm">Loading last request...</div>
+            <div className="text-muted text-sm">{t("Loading last request...")}</div>
           )}
 
           {!loading && !error && !snapshot && (
             <div className="text-muted text-sm">
-              No request captured yet. Send a message, then open this modal again.
+              {t("No request captured yet. Send a message, then open this modal again.")}
             </div>
           )}
 
@@ -157,7 +159,10 @@ export const DebugLlmRequestModal: React.FC<DebugLlmRequestModalProps> = ({
                   {snapshot.agentId && (
                     <>
                       <span>•</span>
-                      <span className="text-foreground font-mono">agent={snapshot.agentId}</span>
+                      <span className="text-foreground font-mono">
+                        {t("agent=")}
+                        {snapshot.agentId}
+                      </span>
                     </>
                   )}
                   {snapshot.maxOutputTokens && (
@@ -170,7 +175,10 @@ export const DebugLlmRequestModal: React.FC<DebugLlmRequestModalProps> = ({
                   )}
                 </div>
                 {capturedAtLabel && (
-                  <div className="text-muted mt-2 text-[11px]">Captured {capturedAtLabel}</div>
+                  <div className="text-muted mt-2 text-[11px]">
+                    {t("Captured ")}
+                    {capturedAtLabel}
+                  </div>
                 )}
               </div>
 
@@ -180,7 +188,7 @@ export const DebugLlmRequestModal: React.FC<DebugLlmRequestModalProps> = ({
                   className="border-border-light bg-modal-bg min-w-0 rounded-md border p-3"
                 >
                   <summary className="text-foreground cursor-pointer text-sm font-medium">
-                    System message
+                    {t("System message")}
                   </summary>
                   <pre className="bg-code-bg text-text mt-3 rounded-sm p-3 font-mono text-xs leading-relaxed whitespace-pre-wrap">
                     {snapshot.systemMessage}
@@ -189,27 +197,27 @@ export const DebugLlmRequestModal: React.FC<DebugLlmRequestModalProps> = ({
 
                 <details className="border-border-light bg-modal-bg min-w-0 rounded-md border p-3">
                   <summary className="text-foreground cursor-pointer text-sm font-medium">
-                    Messages
+                    {t("Messages")}
                   </summary>
                   <JsonOutput>{JSON.stringify(snapshot.messages, null, 2)}</JsonOutput>
                 </details>
 
                 <details className="border-border-light bg-modal-bg min-w-0 rounded-md border p-3">
                   <summary className="text-foreground cursor-pointer text-sm font-medium">
-                    Response
+                    {t("Response")}
                   </summary>
                   {snapshot.response ? (
                     <JsonOutput>{JSON.stringify(snapshot.response, null, 2)}</JsonOutput>
                   ) : (
                     <div className="text-muted mt-3 text-xs">
-                      No response captured yet (wait for the stream to finish).
+                      {t("No response captured yet (wait for the stream to finish).")}
                     </div>
                   )}
                 </details>
 
                 <details className="border-border-light bg-modal-bg min-w-0 rounded-md border p-3">
                   <summary className="text-foreground cursor-pointer text-sm font-medium">
-                    Full JSON
+                    {t("Full JSON")}
                   </summary>
                   <JsonOutput>{json}</JsonOutput>
                 </details>

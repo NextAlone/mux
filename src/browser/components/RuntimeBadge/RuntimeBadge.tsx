@@ -12,6 +12,7 @@ import { extractSshHostname } from "@/browser/utils/ui/runtimeBadge";
 import { Tooltip, TooltipTrigger, TooltipContent } from "../Tooltip/Tooltip";
 import { useCopyToClipboard } from "@/browser/hooks/useCopyToClipboard";
 import { RUNTIME_BADGE_UI } from "@/browser/utils/runtimeUi";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 interface RuntimeBadgeProps {
   runtimeConfig?: RuntimeConfig;
@@ -48,6 +49,7 @@ function TooltipRow({
   value: string;
   copyable?: boolean;
 }) {
+  const { t } = useLanguage();
   const { copied, copyToClipboard } = useCopyToClipboard();
 
   return (
@@ -63,7 +65,7 @@ function TooltipRow({
             void copyToClipboard(value);
           }}
           className="text-muted hover:text-foreground shrink-0"
-          aria-label={`Copy ${label.toLowerCase()}`}
+          aria-label={`${t("Copy")} ${label.toLowerCase()}`}
         >
           {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
         </button>
@@ -75,7 +77,8 @@ function TooltipRow({
 type RuntimeType = keyof typeof RUNTIME_BADGE_UI;
 
 function getRuntimeInfo(
-  runtimeConfig?: RuntimeConfig
+  runtimeConfig: RuntimeConfig | undefined,
+  t: (text: string) => string
 ): { type: RuntimeType; label: string; shortLabel: string } | null {
   if (isSSHRuntime(runtimeConfig)) {
     // Coder-backed SSH runtime gets special treatment
@@ -83,28 +86,36 @@ function getRuntimeInfo(
       const coderWorkspaceName = runtimeConfig.coder.workspaceName;
       return {
         type: "coder",
-        label: `Coder Workspace: ${coderWorkspaceName ?? runtimeConfig.host}`,
+        label: `${t("Coder Workspace:")} ${coderWorkspaceName ?? runtimeConfig.host}`,
         shortLabel: "Coder",
       };
     }
     const hostname = extractSshHostname(runtimeConfig);
-    return { type: "ssh", label: `SSH: ${hostname ?? runtimeConfig.host}`, shortLabel: "SSH" };
+    return {
+      type: "ssh",
+      label: `${t("SSH:")} ${hostname ?? runtimeConfig.host}`,
+      shortLabel: "SSH",
+    };
   }
   if (isWorktreeRuntime(runtimeConfig)) {
-    return { type: "worktree", label: "JJ Workspace: isolated checkout", shortLabel: "JJ" };
+    return { type: "worktree", label: t("JJ Workspace: isolated checkout"), shortLabel: "JJ" };
   }
   if (isLocalProjectRuntime(runtimeConfig)) {
-    return { type: "local", label: "Local: project directory", shortLabel: "Local" };
+    return { type: "local", label: t("Local: project directory"), shortLabel: "Local" };
   }
   if (isDockerRuntime(runtimeConfig)) {
-    return { type: "docker", label: `Docker: ${runtimeConfig.image}`, shortLabel: "Docker" };
+    return {
+      type: "docker",
+      label: `${t("Docker:")} ${runtimeConfig.image}`,
+      shortLabel: "Docker",
+    };
   }
   if (isDevcontainerRuntime(runtimeConfig)) {
     return {
       type: "devcontainer",
       label: runtimeConfig.configPath
-        ? `Dev container: ${runtimeConfig.configPath}`
-        : "Dev container",
+        ? `${t("Dev container:")} ${runtimeConfig.configPath}`
+        : t("Dev container"),
       shortLabel: "Dev",
     };
   }
@@ -122,7 +133,8 @@ export function RuntimeBadge({
   labelOverride,
   testId,
 }: RuntimeBadgeProps) {
-  const info = getRuntimeInfo(runtimeConfig);
+  const { t } = useLanguage();
+  const info = getRuntimeInfo(runtimeConfig, t);
   if (!info) return null;
 
   const badgeUi = RUNTIME_BADGE_UI[info.type];
@@ -130,7 +142,9 @@ export function RuntimeBadge({
   const Icon = badgeUi.Icon;
   const normalizedLabelOverride = labelOverride?.trim();
   const displayLabel =
-    normalizedLabelOverride === "" ? info.shortLabel : (normalizedLabelOverride ?? info.shortLabel);
+    normalizedLabelOverride === ""
+      ? t(info.shortLabel)
+      : (normalizedLabelOverride ?? t(info.shortLabel));
 
   return (
     <Tooltip>
@@ -142,7 +156,7 @@ export function RuntimeBadge({
             className
           )}
           data-testid={testId}
-          aria-label={`Runtime: ${displayLabel}`}
+          aria-label={`${t("Runtime:")} ${displayLabel}`}
         >
           <Icon />
           {showLabel && <span className="ml-1 truncate text-[10px] leading-3">{displayLabel}</span>}
@@ -151,8 +165,8 @@ export function RuntimeBadge({
       <TooltipContent side={tooltipSide} align="start" className="max-w-[min(90vw,500px)]">
         <div className="flex flex-col gap-1">
           <div className="text-xs font-medium">{info.label}</div>
-          {workspaceName && <TooltipRow label="Name" value={workspaceName} />}
-          {workspacePath && <TooltipRow label="Path" value={workspacePath} copyable />}
+          {workspaceName && <TooltipRow label={t("Name")} value={workspaceName} />}
+          {workspacePath && <TooltipRow label={t("Path")} value={workspacePath} copyable />}
         </div>
       </TooltipContent>
     </Tooltip>

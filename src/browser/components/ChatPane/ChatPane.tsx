@@ -114,6 +114,7 @@ import {
 } from "@/browser/utils/messages/transcriptRenderProjection";
 import { isBlockedPreStreamTaskStatus } from "@/browser/utils/ui/workspaceFiltering";
 import { recordSyntheticReactRenderSample } from "@/browser/utils/perf/reactProfileCollector";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 // Perf e2e runs load the production bundle where React's onRender profiler callbacks may not
 // fire. This marker records synthetic commit timings for selected subtrees so automated perf
@@ -294,6 +295,7 @@ export const ChatPane: React.FC<ChatPaneProps> = (props) => {
 };
 
 const ChatPaneContent: React.FC<ChatPaneContentProps> = (props) => {
+  const { t } = useLanguage();
   const {
     workspaceId,
     projectPath,
@@ -322,7 +324,7 @@ const ChatPaneContent: React.FC<ChatPaneContentProps> = (props) => {
   const transcriptOnly = meta?.transcriptOnly ?? false;
   const isPreStreamAgentTask =
     Boolean(meta?.parentWorkspaceId) && isBlockedPreStreamTaskStatus(meta?.taskStatus);
-  const preStreamAgentTaskLabel = meta?.taskStatus === "starting" ? "Starting" : "Queued";
+  const preStreamAgentTaskLabel = t(meta?.taskStatus === "starting" ? "Starting" : "Queued");
   const queuedAgentTaskPrompt =
     isPreStreamAgentTask &&
     typeof meta?.taskPrompt === "string" &&
@@ -1408,7 +1410,7 @@ const ChatPaneContent: React.FC<ChatPaneContentProps> = (props) => {
               role="log"
               aria-live={canInterrupt ? "polite" : "off"}
               aria-busy={canInterrupt || isHydratingTranscript}
-              aria-label="Conversation transcript"
+              aria-label={t("Conversation transcript")}
               className={cn(
                 // `plan-toc-aware` opts only the centered max-w transcript into the
                 // sticky plan TOC layout. In `chatTranscriptFullWidth` mode the plan
@@ -1432,19 +1434,19 @@ const ChatPaneContent: React.FC<ChatPaneContentProps> = (props) => {
                 <TranscriptHydrationSkeleton />
               ) : showEmptyTranscriptPlaceholder ? (
                 <div className="text-placeholder flex h-full flex-1 flex-col items-center justify-center text-center [&_h3]:m-0 [&_h3]:mb-2.5 [&_h3]:text-base [&_h3]:font-medium [&_p]:m-0 [&_p]:text-[13px]">
-                  <h3>No Messages Yet</h3>
-                  <p>Send a message below to begin</p>
+                  <h3>{t("No Messages Yet")}</h3>
+                  <p>{t("Send a message below to begin")}</p>
                   {hasRepository && (
                     <p className="text-muted mt-5 flex items-start gap-2 text-xs">
                       <Lightbulb aria-hidden="true" className="mt-0.5 h-3 w-3 shrink-0" />
                       <span>
-                        Tip: Add a{" "}
+                        {t("Tip: Add a")}{" "}
                         <code className="bg-inline-code-dark-bg text-code-string rounded-[3px] px-1.5 py-0.5 font-mono text-[11px]">
                           .mux/init
                         </code>{" "}
-                        hook to your project to run setup commands
+                        {t("hook to your project to run setup commands")}
                         <br />
-                        (e.g., install dependencies, build) when creating new workspaces
+                        {t("(e.g., install dependencies, build) when creating new workspaces")}
                       </span>
                     </p>
                   )}
@@ -1455,7 +1457,7 @@ const ChatPaneContent: React.FC<ChatPaneContentProps> = (props) => {
                     {shouldRenderLoadOlderMessagesButton && (
                       <div className="flex justify-center py-3">
                         <TooltipIfPresent
-                          tooltip={`Load older messages (${loadOlderMessagesShortcutLabel})`}
+                          tooltip={`${t("Load older messages")} (${loadOlderMessagesShortcutLabel})`}
                           side="top"
                         >
                           <button
@@ -1464,7 +1466,7 @@ const ChatPaneContent: React.FC<ChatPaneContentProps> = (props) => {
                             disabled={loadingOlderHistory}
                             className="text-muted hover:text-foreground text-xs underline underline-offset-2 transition-colors disabled:opacity-50"
                           >
-                            {loadingOlderHistory ? "Loading..." : "Load older messages"}
+                            {loadingOlderHistory ? t("Loading...") : t("Load older messages")}
                           </button>
                         </TooltipIfPresent>
                       </div>
@@ -1659,7 +1661,7 @@ const ChatPaneContent: React.FC<ChatPaneContentProps> = (props) => {
                     // height through normal layout instead of a measured offset.
                     className="assistant-chip font-primary text-foreground hover:assistant-chip-hover absolute bottom-full left-1/2 z-20 mb-2 -translate-x-1/2 cursor-pointer rounded-[20px] px-2 py-1 text-xs font-medium shadow-[0_4px_12px_rgba(0,0,0,0.3)] backdrop-blur-[1px] transition-transform duration-200 hover:scale-105 active:scale-95"
                   >
-                    Jump to bottom{" "}
+                    {t("Jump to bottom")}{" "}
                     <span className="mobile-hide-shortcut-hints">
                       ({formatKeybind(KEYBINDS.JUMP_TO_BOTTOM)})
                     </span>
@@ -1776,6 +1778,7 @@ interface ChatInputPaneProps {
 }
 
 const ChatInputPane: React.FC<ChatInputPaneProps> = (props) => {
+  const { t } = useLanguage();
   const { reviews } = props;
 
   // Keep optional banners/warnings on one shared lane so the seam right above the textarea is
@@ -1854,8 +1857,12 @@ const ChatInputPane: React.FC<ChatInputPaneProps> = (props) => {
       node: (
         <div className="border-border-medium bg-background-secondary text-muted rounded-md border px-3 py-2 text-xs">
           {props.preStreamAgentTaskStatus === "starting"
-            ? "This agent task is starting and will become editable after launch accepts the initial prompt."
-            : "This agent task is queued and will start automatically when a parallel slot is available."}
+            ? t(
+                "This agent task is starting and will become editable after launch accepts the initial prompt."
+              )
+            : t(
+                "This agent task is queued and will start automatically when a parallel slot is available."
+              )}
         </div>
       ),
     });
@@ -1887,8 +1894,10 @@ const ChatInputPane: React.FC<ChatInputPaneProps> = (props) => {
         disabledReason={
           props.isPreStreamAgentTask
             ? props.preStreamAgentTaskStatus === "starting"
-              ? "Starting - waiting for launch to accept the initial prompt."
-              : "Queued - waiting for an available parallel task slot. This will start automatically."
+              ? t("Starting - waiting for launch to accept the initial prompt.")
+              : t(
+                  "Queued - waiting for an available parallel task slot. This will start automatically."
+                )
             : undefined
         }
         isTranscriptCaughtUp={props.isTranscriptCaughtUp}

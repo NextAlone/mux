@@ -10,6 +10,7 @@ import {
   useBackgroundProcesses,
 } from "@/browser/stores/BackgroundBashStore";
 import { useBackgroundBashActions } from "@/browser/contexts/BackgroundBashContext";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 /**
  * Truncate script to reasonable display length.
@@ -32,6 +33,7 @@ interface BackgroundProcessesBannerProps {
  * Displays "N running bashes" which expands on click to show details.
  */
 export const BackgroundProcessesBanner: React.FC<BackgroundProcessesBannerProps> = (props) => {
+  const { t } = useLanguage();
   const [viewingProcessId, setViewingProcessId] = useState<string | null>(null);
   const [isExpanded, setIsExpanded] = useState(false);
   const [, setTick] = useState(0);
@@ -108,12 +110,16 @@ export const BackgroundProcessesBanner: React.FC<BackgroundProcessesBannerProps>
                     </div>
                     {proc.monitor && (
                       <div className="text-muted truncate text-[10px]">
-                        watching /{proc.monitor.filter}/ · {proc.monitor.totalMatches} match
+                        {t("watching /")}
+                        {proc.monitor.filter}/ · {proc.monitor.totalMatches} {t("match")}
                         {proc.monitor.totalMatches === 1 ? "" : "es"}
                         {proc.monitor.stopped ? " · stopped" : ""}
                       </div>
                     )}
-                    <div className="text-muted font-mono text-[10px]">pid {proc.pid}</div>
+                    <div className="text-muted font-mono text-[10px]">
+                      {t("pid ")}
+                      {proc.pid}
+                    </div>
                   </div>
                   <div className="flex shrink-0 items-center gap-2">
                     <span className="text-muted text-[10px] tabular-nums">
@@ -133,7 +139,7 @@ export const BackgroundProcessesBanner: React.FC<BackgroundProcessesBannerProps>
                           <FileText size={14} />
                         </button>
                       </TooltipTrigger>
-                      <TooltipContent>View output</TooltipContent>
+                      <TooltipContent>{t("View output")}</TooltipContent>
                     </Tooltip>
                     <Tooltip>
                       <TooltipTrigger asChild>
@@ -153,7 +159,7 @@ export const BackgroundProcessesBanner: React.FC<BackgroundProcessesBannerProps>
                           )}
                         </button>
                       </TooltipTrigger>
-                      <TooltipContent>Terminate process</TooltipContent>
+                      <TooltipContent>{t("Terminate process")}</TooltipContent>
                     </Tooltip>
                   </div>
                 </div>

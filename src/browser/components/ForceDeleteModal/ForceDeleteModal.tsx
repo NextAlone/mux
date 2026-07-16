@@ -16,6 +16,7 @@ import {
 import { Button } from "@/browser/components/Button/Button";
 import { stopKeyboardPropagation } from "@/browser/utils/events";
 import { isEditableElement, KEYBINDS, matchesKeybind } from "@/browser/utils/ui/keybinds";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 interface ForceDeleteModalProps {
   isOpen: boolean;
@@ -32,6 +33,7 @@ export const ForceDeleteModal: React.FC<ForceDeleteModalProps> = ({
   onClose,
   onForceDelete,
 }) => {
+  const { t } = useLanguage();
   const [isDeleting, setIsDeleting] = useState(false);
 
   const handleForceDelete = useCallback(() => {
@@ -87,28 +89,28 @@ export const ForceDeleteModal: React.FC<ForceDeleteModalProps> = ({
         onKeyDown={handleDialogKeyDown}
       >
         <DialogHeader>
-          <DialogTitle>Force Delete Workspace?</DialogTitle>
-          <DialogDescription>The workspace could not be removed normally</DialogDescription>
+          <DialogTitle>{t("Force Delete Workspace?")}</DialogTitle>
+          <DialogDescription>{t("The workspace could not be removed normally")}</DialogDescription>
         </DialogHeader>
         <ErrorSection>
-          <ErrorLabel>Repository Error</ErrorLabel>
+          <ErrorLabel>{t("Repository Error")}</ErrorLabel>
           <ErrorCodeBlock>{error}</ErrorCodeBlock>
         </ErrorSection>
 
         <WarningBox>
-          <WarningTitle>This action cannot be undone</WarningTitle>
+          <WarningTitle>{t("This action cannot be undone")}</WarningTitle>
           <WarningText>
-            Force deleting will permanently remove the workspace and its local checkout, and{" "}
+            {t("Force deleting will permanently remove the workspace and its local checkout, and")}{" "}
             {error.includes("unpushed commits:")
-              ? "discard the unpushed changes shown above"
-              : "may discard working-copy changes or lose data"}
-            . This action cannot be undone.
+              ? t("discard the unpushed changes shown above")
+              : t("may discard working-copy changes or lose data")}
+            {t(". This action cannot be undone.")}
           </WarningText>
         </WarningBox>
 
         <DialogFooter className="justify-center">
           <Button variant="secondary" onClick={onClose} disabled={isDeleting}>
-            Cancel
+            {t("Cancel")}
             <span
               aria-hidden="true"
               className="ml-2 inline-flex items-center rounded border border-current/25 px-1.5 py-0.5 font-mono text-[10px] leading-none opacity-60"
@@ -117,7 +119,7 @@ export const ForceDeleteModal: React.FC<ForceDeleteModalProps> = ({
             </span>
           </Button>
           <Button variant="destructive" onClick={handleForceDelete} disabled={isDeleting}>
-            {isDeleting ? "Deleting..." : "Force Delete"}
+            {isDeleting ? t("Deleting...") : t("Force Delete")}
             <span
               aria-hidden="true"
               className="ml-2 inline-flex items-center rounded border border-current/25 px-1.5 py-0.5 font-mono text-[10px] leading-none opacity-60"

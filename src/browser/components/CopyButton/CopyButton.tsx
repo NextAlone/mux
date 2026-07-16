@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { CopyIcon } from "@/browser/components/icons/CopyIcon/CopyIcon";
 import { copyToClipboard } from "@/browser/utils/clipboard";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 interface CopyButtonProps {
   /**
@@ -25,6 +26,7 @@ export const CopyButton: React.FC<CopyButtonProps> = ({
   className = "",
   feedbackDuration = 2000,
 }) => {
+  const { t } = useLanguage();
   const [copied, setCopied] = useState(false);
 
   const handleCopy = () => {
@@ -43,9 +45,13 @@ export const CopyButton: React.FC<CopyButtonProps> = ({
     <button
       className={`copy-button ${className}`}
       onClick={handleCopy}
-      aria-label="Copy to clipboard"
+      aria-label={t("Copy to clipboard")}
     >
-      {copied ? <span className="copy-feedback">Copied!</span> : <CopyIcon className="copy-icon" />}
+      {copied ? (
+        <span className="copy-feedback">{t("Copied!")}</span>
+      ) : (
+        <CopyIcon className="copy-icon" />
+      )}
     </button>
   );
 };

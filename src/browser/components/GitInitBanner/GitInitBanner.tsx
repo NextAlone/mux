@@ -1,6 +1,7 @@
 import { useCallback, useState } from "react";
 import { Check, GitBranch, Loader2 } from "lucide-react";
 import { useAPI } from "@/browser/contexts/API";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 interface GitInitBannerProps {
   projectPath: string;
@@ -12,6 +13,7 @@ interface GitInitBannerProps {
  * Shown on the creation screen when the project is not a jj repository.
  */
 export function GitInitBanner(props: GitInitBannerProps) {
+  const { t } = useLanguage();
   const { api } = useAPI();
   const [isLoading, setIsLoading] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
@@ -50,10 +52,10 @@ export function GitInitBanner(props: GitInitBannerProps) {
         <Check className="h-5 w-5 shrink-0 text-green-500" />
         <div className="flex flex-1 flex-col gap-0.5">
           <span className="text-sm font-medium text-green-500" data-testid="git-init-success">
-            JJ repository initialized
+            {t("JJ repository initialized")}
           </span>
           <span className="text-muted-foreground text-xs">
-            You can now use JJ Workspace and remote runtimes for isolated workspaces
+            {t("You can now use JJ Workspace and remote runtimes for isolated workspaces")}
           </span>
         </div>
       </div>
@@ -68,11 +70,12 @@ export function GitInitBanner(props: GitInitBannerProps) {
       <GitBranch className="text-muted-foreground h-5 w-5 shrink-0" />
       <div className="flex flex-1 flex-col gap-0.5">
         <span className="text-foreground text-sm font-medium">
-          This directory is not a jj repository
+          {t("This directory is not a jj repository")}
         </span>
         <span className="text-muted-foreground text-xs">
-          Run <code className="bg-bg-dark-hover rounded px-1 font-mono">jj git init</code> to enable
-          JJ Workspace and remote runtimes
+          {t("Run")}
+          <code className="bg-bg-dark-hover rounded px-1 font-mono">jj git init</code>{" "}
+          {t("to enable JJ Workspace and remote runtimes")}
         </span>
         {error && (
           <span className="text-xs text-red-500" data-testid="git-init-error">
@@ -90,10 +93,10 @@ export function GitInitBanner(props: GitInitBannerProps) {
         {isLoading ? (
           <>
             <Loader2 className="h-4 w-4 animate-spin" />
-            Running...
+            {t("Running...")}
           </>
         ) : (
-          "Initialize jj"
+          t("Initialize jj")
         )}
       </button>
     </div>

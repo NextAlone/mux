@@ -31,6 +31,7 @@ import {
   type HeartbeatWhenBusy,
 } from "@/constants/heartbeat";
 import { SEND_DISPATCH_MODES } from "@/browser/features/ChatInput/sendDispatchModes";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 // Shared styling for the modal's <select> controls (trigger, when-busy, context) so the
 // three dropdowns stay visually identical.
@@ -132,6 +133,7 @@ function getDraftMessageForSave(value: string): string {
 }
 
 export function WorkspaceHeartbeatModal(props: WorkspaceHeartbeatModalProps) {
+  const { t } = useLanguage();
   const { settings, isLoading, isSaving, error, save, globalDefaultPrompt } = useWorkspaceHeartbeat(
     {
       workspaceId: props.open ? props.workspaceId : null,
@@ -273,7 +275,7 @@ export function WorkspaceHeartbeatModal(props: WorkspaceHeartbeatModalProps) {
         <DialogHeader className="border-border border-b px-6 py-5 pr-12">
           <DialogTitle className="flex items-center gap-2">
             <HeartPulse className="h-5 w-5" />
-            Configure heartbeat
+            {t("Configure heartbeat")}
           </DialogTitle>
         </DialogHeader>
 
@@ -285,10 +287,10 @@ export function WorkspaceHeartbeatModal(props: WorkspaceHeartbeatModalProps) {
           <>
             <div className="min-h-0 space-y-4 overflow-y-auto px-6 py-5">
               <p className="text-muted max-w-3xl text-sm">
-                Schedule future background follow-ups for this workspace. Valid range:{" "}
-                {HEARTBEAT_MIN_INTERVAL_MINUTES}–{HEARTBEAT_MAX_INTERVAL_MINUTES} minutes. New
-                workspaces default to {HEARTBEAT_DEFAULT_INTERVAL_MINUTES} minutes unless you change
-                them.
+                {t("Schedule future background follow-ups for this workspace. Valid range:")}{" "}
+                {HEARTBEAT_MIN_INTERVAL_MINUTES}–{HEARTBEAT_MAX_INTERVAL_MINUTES}{" "}
+                {t("minutes. New workspaces default to")}
+                {HEARTBEAT_DEFAULT_INTERVAL_MINUTES} {t("minutes unless you change them.")}
               </p>
 
               {/* Keep custom heartbeat instructions visible even when disabled so prompts can be edited before scheduling resumes. */}
@@ -296,9 +298,13 @@ export function WorkspaceHeartbeatModal(props: WorkspaceHeartbeatModalProps) {
                 <div className="border-border rounded-lg border p-4">
                   <div className="flex items-center justify-between gap-4">
                     <div className="min-w-0 flex-1">
-                      <div className="text-foreground text-sm font-medium">Enable heartbeats</div>
+                      <div className="text-foreground text-sm font-medium">
+                        {t("Enable heartbeats")}
+                      </div>
                       <div className="text-muted mt-1 text-xs">
-                        Keep this workspace eligible for future background heartbeat follow-ups.
+                        {t(
+                          "Keep this workspace eligible for future background heartbeat follow-ups."
+                        )}
                       </div>
                     </div>
                     <Switch
@@ -308,14 +314,16 @@ export function WorkspaceHeartbeatModal(props: WorkspaceHeartbeatModalProps) {
                         setDraftDirty(true);
                       }}
                       disabled={isSaving}
-                      aria-label="Enable workspace heartbeats"
+                      aria-label={t("Enable workspace heartbeats")}
                     />
                   </div>
 
                   <div className="mt-4 flex items-center justify-between gap-4">
                     <label htmlFor="workspace-heartbeat-interval" className="min-w-0 flex-1">
-                      <div className="text-foreground text-sm font-medium">Interval</div>
-                      <div className="text-muted mt-1 text-xs">Heartbeat cadence in minutes.</div>
+                      <div className="text-foreground text-sm font-medium">{t("Interval")}</div>
+                      <div className="text-muted mt-1 text-xs">
+                        {t("Heartbeat cadence in minutes.")}
+                      </div>
                     </label>
                     <div className="flex items-center gap-2">
                       <Input
@@ -333,17 +341,17 @@ export function WorkspaceHeartbeatModal(props: WorkspaceHeartbeatModalProps) {
                         onBlur={handleIntervalBlur}
                         disabled={isSaving}
                         className="border-border-medium bg-background-secondary h-9 w-24 text-right"
-                        aria-label="Heartbeat interval in minutes"
+                        aria-label={t("Heartbeat interval in minutes")}
                       />
-                      <span className="text-muted text-sm">min</span>
+                      <span className="text-muted text-sm">{t("min")}</span>
                     </div>
                   </div>
 
                   <div className="mt-4 space-y-2">
                     <label htmlFor="workspace-heartbeat-trigger" className="block">
-                      <div className="text-foreground text-sm font-medium">Trigger</div>
+                      <div className="text-foreground text-sm font-medium">{t("Trigger")}</div>
                       <div className="text-muted mt-1 text-xs">
-                        Choose how the heartbeat countdown is anchored.
+                        {t("Choose how the heartbeat countdown is anchored.")}
                       </div>
                     </label>
                     <select
@@ -359,30 +367,30 @@ export function WorkspaceHeartbeatModal(props: WorkspaceHeartbeatModalProps) {
                       }}
                       disabled={isSaving}
                       className={HEARTBEAT_SELECT_CLASS_NAME}
-                      aria-label="Heartbeat trigger"
+                      aria-label={t("Heartbeat trigger")}
                     >
                       {HEARTBEAT_TRIGGER_OPTIONS.map((option) => (
                         <option key={option.value} value={option.value}>
-                          {option.label}
+                          {t(option.label)}
                         </option>
                       ))}
                     </select>
                     <p className="text-muted text-xs">
-                      {
+                      {t(
                         (
                           HEARTBEAT_TRIGGER_OPTIONS.find(
                             (option) => option.value === draftTrigger
                           ) ?? HEARTBEAT_TRIGGER_OPTIONS[0]
                         ).helperText
-                      }
+                      )}
                     </p>
                   </div>
 
                   <div className="mt-4 space-y-2">
                     <label htmlFor="workspace-heartbeat-when-busy" className="block">
-                      <div className="text-foreground text-sm font-medium">When busy</div>
+                      <div className="text-foreground text-sm font-medium">{t("When busy")}</div>
                       <div className="text-muted mt-1 text-xs">
-                        What happens when a heartbeat fires while the workspace is busy.
+                        {t("What happens when a heartbeat fires while the workspace is busy.")}
                       </div>
                     </label>
                     <select
@@ -399,29 +407,29 @@ export function WorkspaceHeartbeatModal(props: WorkspaceHeartbeatModalProps) {
                       }}
                       disabled={isSaving}
                       className={HEARTBEAT_SELECT_CLASS_NAME}
-                      aria-label="Heartbeat when busy"
+                      aria-label={t("Heartbeat when busy")}
                     >
                       {/* The default option's label follows the draft trigger (skip for idle,
                           send-after-turn for interval) via the shared read-time resolver. */}
-                      <option value="">{`Default (${getWhenBusyLabel(effectiveDefaultWhenBusy)})`}</option>
-                      <option value="skip">{getWhenBusyLabel("skip")}</option>
-                      <option value="tool-end">{getWhenBusyLabel("tool-end")}</option>
-                      <option value="turn-end">{getWhenBusyLabel("turn-end")}</option>
+                      <option value="">{`${t("Default")} (${t(getWhenBusyLabel(effectiveDefaultWhenBusy))})`}</option>
+                      <option value="skip">{t(getWhenBusyLabel("skip"))}</option>
+                      <option value="tool-end">{t(getWhenBusyLabel("tool-end"))}</option>
+                      <option value="turn-end">{t(getWhenBusyLabel("turn-end"))}</option>
                     </select>
                     <p className="text-muted text-xs">
-                      {
+                      {t(
                         HEARTBEAT_WHEN_BUSY_HELPER_TEXTS[
                           draftWhenBusy === "" ? effectiveDefaultWhenBusy : draftWhenBusy
                         ]
-                      }
+                      )}
                     </p>
                   </div>
 
                   <div className="mt-4 space-y-2">
                     <label htmlFor="workspace-heartbeat-context-mode" className="block">
-                      <div className="text-foreground text-sm font-medium">Context</div>
+                      <div className="text-foreground text-sm font-medium">{t("Context")}</div>
                       <div className="text-muted mt-1 text-xs">
-                        Choose whether heartbeats reuse, compact, or reset request context.
+                        {t("Choose whether heartbeats reuse, compact, or reset request context.")}
                       </div>
                     </label>
                     <select
@@ -437,25 +445,25 @@ export function WorkspaceHeartbeatModal(props: WorkspaceHeartbeatModalProps) {
                       }}
                       disabled={isSaving}
                       className={HEARTBEAT_SELECT_CLASS_NAME}
-                      aria-label="Heartbeat context mode"
+                      aria-label={t("Heartbeat context mode")}
                     >
                       {HEARTBEAT_CONTEXT_MODE_OPTIONS.map((option) => (
                         <option key={option.value} value={option.value}>
-                          {option.label}
+                          {t(option.label)}
                         </option>
                       ))}
                     </select>
                     <p className="text-muted text-xs">
-                      {getHeartbeatContextModeHelperText(draftContextMode)}
+                      {t(getHeartbeatContextModeHelperText(draftContextMode))}
                     </p>
                   </div>
                 </div>
 
                 <div className="border-border rounded-lg border p-4">
                   <label htmlFor="workspace-heartbeat-message" className="block">
-                    <div className="text-foreground text-sm font-medium">Message</div>
+                    <div className="text-foreground text-sm font-medium">{t("Message")}</div>
                     <div className="text-muted mt-1 text-xs">
-                      Leave empty to use the default heartbeat message.
+                      {t("Leave empty to use the default heartbeat message.")}
                     </div>
                   </label>
                   <textarea
@@ -470,7 +478,7 @@ export function WorkspaceHeartbeatModal(props: WorkspaceHeartbeatModalProps) {
                     disabled={isSaving}
                     className="border-border-medium bg-background-secondary text-foreground focus:border-accent focus:ring-accent mt-3 min-h-[240px] w-full resize-y rounded-md border p-3 text-sm leading-relaxed focus:ring-1 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 lg:min-h-[320px]"
                     placeholder={globalDefaultPrompt ?? HEARTBEAT_DEFAULT_MESSAGE_BODY}
-                    aria-label="Heartbeat message"
+                    aria-label={t("Heartbeat message")}
                   />
                 </div>
               </div>
@@ -486,11 +494,11 @@ export function WorkspaceHeartbeatModal(props: WorkspaceHeartbeatModalProps) {
 
             <div className="border-border flex justify-end gap-2 border-t px-6 py-4">
               <Button variant="ghost" onClick={() => props.onOpenChange(false)} disabled={isSaving}>
-                Cancel
+                {t("Cancel")}
               </Button>
               <Button onClick={() => void handleSave()} disabled={hasBlockingError}>
                 {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                Save
+                {t("Save")}
               </Button>
             </div>
           </>

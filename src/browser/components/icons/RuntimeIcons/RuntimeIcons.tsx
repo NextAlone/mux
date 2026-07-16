@@ -1,3 +1,4 @@
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 interface IconProps {
   size?: number;
   className?: string;
@@ -5,6 +6,7 @@ interface IconProps {
 
 /** Server rack icon for SSH runtime */
 export function SSHIcon({ size = 10, className }: IconProps) {
+  const { t } = useLanguage();
   return (
     <svg
       width={size}
@@ -15,7 +17,7 @@ export function SSHIcon({ size = 10, className }: IconProps) {
       strokeWidth="1.5"
       strokeLinecap="round"
       strokeLinejoin="round"
-      aria-label="SSH Runtime"
+      aria-label={t("SSH Runtime")}
       className={className}
     >
       <rect x="2" y="2" width="12" height="5" rx="1" />
@@ -28,6 +30,7 @@ export function SSHIcon({ size = 10, className }: IconProps) {
 
 /** Branching checkout icon for JJ Workspace runtime. */
 export function WorktreeIcon({ size = 10, className }: IconProps) {
+  const { t } = useLanguage();
   return (
     <svg
       width={size}
@@ -38,7 +41,7 @@ export function WorktreeIcon({ size = 10, className }: IconProps) {
       strokeWidth="1.5"
       strokeLinecap="round"
       strokeLinejoin="round"
-      aria-label="JJ Workspace Runtime"
+      aria-label={t("JJ Workspace Runtime")}
       className={className}
     >
       {/* Branching workspace glyph: vertical line with a side path. */}
@@ -55,6 +58,7 @@ export function WorktreeIcon({ size = 10, className }: IconProps) {
 
 /** Folder icon for local project-dir runtime */
 export function LocalIcon({ size = 10, className }: IconProps) {
+  const { t } = useLanguage();
   return (
     <svg
       width={size}
@@ -65,7 +69,7 @@ export function LocalIcon({ size = 10, className }: IconProps) {
       strokeWidth="1.5"
       strokeLinecap="round"
       strokeLinejoin="round"
-      aria-label="Local Runtime"
+      aria-label={t("Local Runtime")}
       className={className}
     >
       {/* Folder icon */}
@@ -76,13 +80,14 @@ export function LocalIcon({ size = 10, className }: IconProps) {
 
 /** Coder logo icon for Coder-backed SSH runtime */
 export function CoderIcon({ size = 10, className }: IconProps) {
+  const { t } = useLanguage();
   return (
     <svg
       width={size}
       height={size}
       viewBox="0 0 425.93 200"
       fill="currentColor"
-      aria-label="Coder Runtime"
+      aria-label={t("Coder Runtime")}
       className={className}
     >
       {/* Coder shorthand logo: stylized "C" with cursor block */}
@@ -94,6 +99,7 @@ export function CoderIcon({ size = 10, className }: IconProps) {
 
 /** Container icon for Docker runtime */
 export function DockerIcon({ size = 10, className }: IconProps) {
+  const { t } = useLanguage();
   return (
     <svg
       width={size}
@@ -104,7 +110,7 @@ export function DockerIcon({ size = 10, className }: IconProps) {
       strokeWidth="1.5"
       strokeLinecap="round"
       strokeLinejoin="round"
-      aria-label="Docker Runtime"
+      aria-label={t("Docker Runtime")}
       className={className}
     >
       {/* Shipping container / cube icon */}
@@ -118,6 +124,7 @@ export function DockerIcon({ size = 10, className }: IconProps) {
 
 /** Dev container icon for devcontainer runtime */
 export function DevcontainerIcon({ size = 10, className }: IconProps) {
+  const { t } = useLanguage();
   return (
     <svg
       width={size}
@@ -128,7 +135,7 @@ export function DevcontainerIcon({ size = 10, className }: IconProps) {
       strokeWidth="1.5"
       strokeLinecap="round"
       strokeLinejoin="round"
-      aria-label="Dev container runtime"
+      aria-label={t("Dev container runtime")}
       className={className}
     >
       {/* Container frame with code brackets */}

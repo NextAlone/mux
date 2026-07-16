@@ -4,6 +4,7 @@ import * as VisuallyHiddenPrimitive from "@radix-ui/react-visually-hidden";
 import { X } from "lucide-react";
 
 import { cn } from "@/common/lib/utils";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 /**
  * VisuallyHidden component for accessibility - hides content visually but keeps it available to screen readers.
@@ -18,6 +19,17 @@ const DialogTrigger = DialogPrimitive.Trigger;
 const DialogPortal = DialogPrimitive.Portal;
 
 const DialogClose = DialogPrimitive.Close;
+
+function DialogCloseButton() {
+  const { t } = useLanguage();
+
+  return (
+    <DialogPrimitive.Close className="text-muted hover:text-foreground absolute top-4 right-4 rounded-sm transition-colors focus:outline-none disabled:pointer-events-none">
+      <X className="h-4 w-4" />
+      <span className="sr-only">{t("Close")}</span>
+    </DialogPrimitive.Close>
+  );
+}
 
 const DialogOverlay = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Overlay>,
@@ -78,12 +90,7 @@ const DialogContent = React.forwardRef<
         {...props}
       >
         {children}
-        {showCloseButton && (
-          <DialogPrimitive.Close className="text-muted hover:text-foreground absolute top-4 right-4 rounded-sm transition-colors focus:outline-none disabled:pointer-events-none">
-            <X className="h-4 w-4" />
-            <span className="sr-only">Close</span>
-          </DialogPrimitive.Close>
-        )}
+        {showCloseButton && <DialogCloseButton />}
       </DialogPrimitive.Content>
     </DialogPortal>
   )

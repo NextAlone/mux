@@ -5,6 +5,7 @@ import { useWorkspaceStoreRaw } from "@/browser/stores/WorkspaceStore";
 import { cn } from "@/common/lib/utils";
 import { isLocalProjectRuntime } from "@/common/types/runtime";
 import type { RuntimeConfig } from "@/common/types/runtime";
+import { useLanguage } from "@/browser/contexts/LanguageContext";
 
 interface ConcurrentLocalWarningProps {
   workspaceId: string;
@@ -73,11 +74,12 @@ interface ConcurrentLocalWarningViewProps {
 }
 
 export const ConcurrentLocalWarningView: React.FC<ConcurrentLocalWarningViewProps> = (props) => {
+  const { t } = useLanguage();
   return (
     <div className={cn("text-center text-xs text-yellow-600/80", props.className)}>
       <AlertTriangle aria-hidden="true" className="mr-1 inline-block h-3 w-3 align-[-2px]" />
-      <span className="text-yellow-500">{props.streamingWorkspaceName}</span> is also running in
-      this project directory — agents may interfere
+      <span className="text-yellow-500">{props.streamingWorkspaceName}</span>{" "}
+      {t("is also running in this project directory — agents may interfere")}
     </div>
   );
 };
