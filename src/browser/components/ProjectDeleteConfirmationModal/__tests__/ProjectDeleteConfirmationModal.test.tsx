@@ -5,6 +5,8 @@ import { cleanup, fireEvent, render } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ComponentProps, KeyboardEvent, ReactNode } from "react";
 import { installDom } from "../../../../../tests/ui/dom";
+import { LanguageProvider, type Language } from "@/browser/contexts/LanguageContext";
+import { UI_LANGUAGE_KEY } from "@/common/constants/storage";
 
 void mock.module("@/browser/components/Dialog/Dialog", () => ({
   Dialog: (props: {
@@ -49,8 +51,13 @@ const DEFAULT_PROPS: ModalProps = {
   onCancel: () => undefined,
 };
 
-function renderModal(overrides: Partial<ModalProps> = {}) {
-  return render(<ProjectDeleteConfirmationModal {...DEFAULT_PROPS} {...overrides} />);
+function renderModal(overrides: Partial<ModalProps> = {}, language: Language = "en") {
+  localStorage.setItem(UI_LANGUAGE_KEY, JSON.stringify(language));
+  return render(
+    <LanguageProvider>
+      <ProjectDeleteConfirmationModal {...DEFAULT_PROPS} {...overrides} />
+    </LanguageProvider>
+  );
 }
 
 async function typeProjectName(input: HTMLInputElement, value: string) {
@@ -64,6 +71,7 @@ let cleanupDom: (() => void) | null = null;
 describe("ProjectDeleteConfirmationModal", () => {
   beforeEach(() => {
     cleanupDom = installDom();
+    localStorage.clear();
   });
 
   afterEach(() => {
@@ -78,6 +86,13 @@ describe("ProjectDeleteConfirmationModal", () => {
     expect(getByText(/5 workspaces/)).not.toBeNull();
     expect(getByText(/\(3 active, 2 archived\)/)).not.toBeNull();
     expect(getByText(/chat transcripts and managed checkouts will be lost/)).not.toBeNull();
+  });
+
+  it("places Chinese workspace counts and breakdown labels naturally", () => {
+    const { getByText } = renderModal({ activeCount: 3, archivedCount: 2 }, "zh-CN");
+
+    expect(getByText(/这将永久删除 5 个工作区/)).not.toBeNull();
+    expect(getByText(/3 个活跃，2 个已归档/)).not.toBeNull();
   });
 
   it("shows data loss warning", () => {

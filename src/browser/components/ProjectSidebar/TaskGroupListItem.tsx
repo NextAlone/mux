@@ -49,19 +49,23 @@ export function TaskGroupListItem(props: TaskGroupListItemProps) {
   const showProgressFraction = props.kind !== "workflow";
   const statusParts: string[] = [];
   if (props.runningCount > 0) {
-    statusParts.push(`${props.runningCount} ${t("running")}`);
+    statusParts.push(t("{count} running").replace("{count}", String(props.runningCount)));
   }
   if (props.queuedCount > 0) {
-    statusParts.push(`${props.queuedCount} ${t("queued")}`);
+    statusParts.push(t("{count} queued").replace("{count}", String(props.queuedCount)));
   }
   if (props.completedCount > 0) {
-    statusParts.push(`${props.completedCount} ${t("completed")}`);
+    statusParts.push(t("{count} completed").replace("{count}", String(props.completedCount)));
   }
   if (props.interruptedCount > 0) {
-    statusParts.push(`${props.interruptedCount} ${t("interrupted")}`);
+    statusParts.push(t("{count} interrupted").replace("{count}", String(props.interruptedCount)));
   }
   if (props.visibleCount !== props.totalCount) {
-    statusParts.push(`${props.visibleCount}/${props.totalCount} ${t("visible")}`);
+    statusParts.push(
+      t("{visible}/{total} visible")
+        .replace("{visible}", String(props.visibleCount))
+        .replace("{total}", String(props.totalCount))
+    );
   }
   const groupHeader =
     props.kind === "workflow"
@@ -69,12 +73,18 @@ export function TaskGroupListItem(props: TaskGroupListItemProps) {
       : props.kind === "variants"
         ? `${t("Variants")} · ${props.title}`
         : `${t("Best of")} ${props.totalCount} · ${props.title}`;
-  const itemLabel =
+  const itemCountMessage =
     props.kind === "workflow"
-      ? t("tasks")
+      ? props.totalCount === 1
+        ? t("{count} task")
+        : t("{count} tasks")
       : props.kind === "variants"
-        ? t("variants")
-        : t("candidates");
+        ? props.totalCount === 1
+          ? t("{count} variant")
+          : t("{count} variants")
+        : props.totalCount === 1
+          ? t("{count} candidate")
+          : t("{count} candidates");
 
   return (
     <div
@@ -157,9 +167,7 @@ export function TaskGroupListItem(props: TaskGroupListItemProps) {
           {statusParts.length > 0 ? (
             statusParts.map((part) => <span key={part}>{part}</span>)
           ) : (
-            <span>
-              {props.totalCount} {itemLabel}
-            </span>
+            <span>{itemCountMessage.replace("{count}", String(props.totalCount))}</span>
           )}
         </div>
       </div>

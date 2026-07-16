@@ -33,6 +33,18 @@ const SCOPE_CONFIG: Array<{ scope: AgentSkillScope; label: string }> = [
   { scope: "built-in", label: "Built-in" },
 ];
 
+function getScopeSkillsLabel(scope: AgentSkillScope, t: (text: string) => string): string {
+  // Scope and noun form one heading so Chinese does not inherit English spacing.
+  switch (scope) {
+    case "project":
+      return t("Project skills");
+    case "global":
+      return t("Global skills");
+    case "built-in":
+      return t("Built-in skills");
+  }
+}
+
 interface SkillsPopoverContentProps {
   loadedSkills: LoadedSkill[];
   availableSkills: AgentSkillDescriptor[];
@@ -62,14 +74,14 @@ const SkillsPopoverContent: React.FC<SkillsPopoverContentProps> = (props) => {
     // Scroll container lives inside PopoverContent (whose overflow-visible
     // powers the hover-bridge pseudo-element and must not be overridden).
     <div className="flex max-h-[min(400px,60vh)] flex-col gap-2 overflow-y-auto">
-      {SCOPE_CONFIG.map(({ scope, label }) => {
+      {SCOPE_CONFIG.map(({ scope }) => {
         const skills = skillsByScope.get(scope);
         if (!skills || skills.length === 0) return null;
 
         return (
           <div key={scope} className="flex flex-col gap-1">
             <div className="text-muted-foreground text-[10px] font-medium tracking-wider uppercase">
-              {t(label)} {t("skills")}
+              {getScopeSkillsLabel(scope, t)}
             </div>
             {skills.map((skill) => {
               const isLoaded = loadedSkillNames.has(skill.name);

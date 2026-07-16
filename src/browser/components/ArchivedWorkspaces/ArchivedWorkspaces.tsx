@@ -173,45 +173,58 @@ const BulkProgressModal: React.FC<{
   const { t } = useLanguage();
   const percentage = Math.round((operation.completed / operation.total) * 100);
   const isComplete = operation.completed === operation.total;
+  // Translate the complete count-bearing sentence so languages can place
+  // numbers and measure words naturally instead of stitching fragments together.
   const actionLabels: Record<
     BulkOperationState["type"],
-    { inProgressTitle: string; actionPast: string; itemLabel: string }
+    { inProgressTitle: string; completionMessage: string }
   > = {
     restore: {
-      inProgressTitle: "Restoring Workspaces",
-      actionPast: "restored",
-      itemLabel: "workspace",
+      inProgressTitle: t("Restoring Workspaces"),
+      completionMessage:
+        operation.completed === 1
+          ? t("Successfully restored {count} workspace")
+          : t("Successfully restored {count} workspaces"),
     },
     delete: {
-      inProgressTitle: "Deleting Workspaces",
-      actionPast: "deleted",
-      itemLabel: "workspace",
+      inProgressTitle: t("Deleting Workspaces"),
+      completionMessage:
+        operation.completed === 1
+          ? t("Successfully deleted {count} workspace")
+          : t("Successfully deleted {count} workspaces"),
     },
     deleteWorktree: {
-      inProgressTitle: "Deleting Managed Checkouts",
-      actionPast: "deleted",
-      itemLabel: "managed checkout",
+      inProgressTitle: t("Deleting Managed Checkouts"),
+      completionMessage:
+        operation.completed === 1
+          ? t("Successfully deleted {count} managed checkout")
+          : t("Successfully deleted {count} managed checkouts"),
     },
   };
   const labels = actionLabels[operation.type];
+  const completionMessage = labels.completionMessage.replace(
+    "{count}",
+    String(operation.completed)
+  );
+  const progressMessage = t("{completed} of {total} complete")
+    .replace("{completed}", String(operation.completed))
+    .replace("{total}", String(operation.total));
+  const failureMessage = t("{count} failed").replace("{count}", String(operation.errors.length));
 
   return (
     <Dialog open onOpenChange={(open) => !open && isComplete && onClose()}>
       <DialogContent maxWidth="400px" showCloseButton={isComplete}>
         <DialogHeader>
-          <DialogTitle>{isComplete ? t("Complete") : t(labels.inProgressTitle)}</DialogTitle>
+          <DialogTitle>{isComplete ? t("Complete") : labels.inProgressTitle}</DialogTitle>
           <DialogDescription>
             {isComplete ? (
               <>
-                {t("Successfully")}
-                {t(labels.actionPast)} {operation.completed}{" "}
-                {t(operation.completed === 1 ? labels.itemLabel : `${labels.itemLabel}s`)}
-                {operation.errors.length > 0 && ` (${operation.errors.length} ${t("failed")})`}
+                {completionMessage}
+                {operation.errors.length > 0 && ` (${failureMessage})`}
               </>
             ) : (
               <>
-                {operation.completed} {t(" of ")}
-                {operation.total} {t("complete")}
+                {progressMessage}
                 {operation.current && <> — {operation.current}</>}
               </>
             )}
