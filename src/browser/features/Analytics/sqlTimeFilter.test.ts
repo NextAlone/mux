@@ -12,14 +12,14 @@ describe("buildTimeFilterPredicate", () => {
 
   test("builds a from-only predicate", () => {
     expect(buildTimeFilterPredicate(new Date(Date.UTC(2026, 5, 5)), null)).toBe(
-      "(date >= DATE '2026-06-05')"
+      "(timestamp >= 1780617600000)"
     );
   });
 
   test("builds a bounded predicate when both boundaries are set", () => {
     expect(
       buildTimeFilterPredicate(new Date(Date.UTC(2026, 5, 1)), new Date(Date.UTC(2026, 5, 11)))
-    ).toBe("(date >= DATE '2026-06-01' AND date <= DATE '2026-06-11')");
+    ).toBe("(timestamp >= 1780272000000 AND timestamp <= 1781136000000)");
   });
 
   test("throws on invalid date boundaries", () => {

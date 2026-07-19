@@ -6050,6 +6050,19 @@ export const router = (authToken?: string) => {
         }),
     },
     analytics: {
+      getDashboard: t
+        .input(schemas.analytics.getDashboard.input)
+        .output(schemas.analytics.getDashboard.output)
+        .handler(async ({ context, input }) => {
+          return context.analyticsService.getDashboard({
+            projectPath: input.projectPath ?? null,
+            granularity: input.granularity,
+            timingMetric: input.timingMetric,
+            from: input.from ?? null,
+            to: input.to ?? null,
+            codexAccountKey: context.codexOauthService.getAnalyticsAccountKey(),
+          });
+        }),
       getSummary: t
         .input(schemas.analytics.getSummary.input)
         .output(schemas.analytics.getSummary.output)

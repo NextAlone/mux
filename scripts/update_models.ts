@@ -1,13 +1,30 @@
 #!/usr/bin/env bun
 
 /**
- * Downloads the latest model prices and context window data from LiteLLM
- * and saves the subset Mux consumes to src/common/utils/tokens/models.json.
+ * Downloads model prices from a pinned LiteLLM commit. Pass
+ * `--revision <40-char sha>` only when intentionally advancing the snapshot.
  */
 
-const LITELLM_URL =
-  "https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json";
 const OUTPUT_PATH = "src/common/utils/tokens/models.json";
+const SOURCE_PATH = "src/common/utils/tokens/models-source.json";
+
+interface PricingSource {
+  provider: "LiteLLM";
+  repository: string;
+  revision: string;
+  path: string;
+}
+
+async function resolvePricingSource(): Promise<PricingSource> {
+  const source = (await Bun.file(SOURCE_PATH).json()) as PricingSource;
+  const revisionFlagIndex = process.argv.indexOf("--revision");
+  const revision =
+    revisionFlagIndex < 0 ? source.revision : process.argv[revisionFlagIndex + 1]?.trim();
+  if (!revision || !/^[0-9a-f]{40}$/i.test(revision)) {
+    throw new Error("LiteLLM revision must be a full 40-character commit SHA");
+  }
+  return { ...source, revision };
+}
 
 const RETAINED_FIELDS = [
   "max_input_tokens",
@@ -58,9 +75,11 @@ function pruneModelData(data: unknown): Record<string, Record<string, unknown>> 
 }
 
 async function updateModels() {
-  console.log(`Fetching model data from ${LITELLM_URL}...`);
+  const source = await resolvePricingSource();
+  const url = `${source.repository.replace("github.com", "raw.githubusercontent.com")}/${source.revision}/${source.path}`;
+  console.log(`Fetching model data from ${source.repository}@${source.revision}...`);
 
-  const response = await fetch(LITELLM_URL);
+  const response = await fetch(url);
 
   if (!response.ok) {
     throw new Error(`Failed to fetch model data: ${response.status} ${response.statusText}`);
@@ -70,8 +89,9 @@ async function updateModels() {
 
   console.log(`Writing model data to ${OUTPUT_PATH}...`);
   await Bun.write(OUTPUT_PATH, `${JSON.stringify(data, null, 2)}\n`);
+  await Bun.write(SOURCE_PATH, `${JSON.stringify(source, null, 2)}\n`);
 
-  console.log("✓ Model data updated successfully");
+  console.log("Model data updated successfully");
 }
 
 updateModels().catch((error) => {

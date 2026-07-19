@@ -1,0 +1,6 @@
+{
+  "provider": "LiteLLM",
+  "repository": "https://github.com/BerriAI/litellm",
+  "revision": "d9661222492a098555f40cb8b50014054bea5ab8",
+  "path": "model_prices_and_context_window.json"
+}

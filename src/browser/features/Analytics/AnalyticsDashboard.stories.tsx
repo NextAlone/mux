@@ -5,6 +5,7 @@ import { ProjectProvider } from "@/browser/contexts/ProjectContext";
 import { RouterProvider } from "@/browser/contexts/RouterContext";
 import type {
   AgentCostItem,
+  AnalyticsDashboardData,
   DelegationSummary,
   ProviderCacheHitRatioItem,
   SpendByModelItem,
@@ -27,6 +28,7 @@ const meta = {
   ...lightweightMeta,
   title: "Analytics/AnalyticsDashboard",
   component: AnalyticsDashboard,
+  tags: ["analytics-dashboard"],
 } satisfies Meta<typeof AnalyticsDashboard>;
 
 export default meta;
@@ -49,6 +51,13 @@ function daysAgo(n: number): string {
 }
 
 interface StoryAnalyticsNamespace {
+  getDashboard: (input: {
+    projectPath?: string | null;
+    granularity: "hour" | "day" | "week";
+    timingMetric: TimingMetric;
+    from?: Date | null;
+    to?: Date | null;
+  }) => Promise<AnalyticsDashboardData>;
   getSummary: (input: { projectPath?: string | null }) => Promise<Summary>;
   getSpendOverTime: (input: {
     projectPath?: string | null;
@@ -108,6 +117,13 @@ const SUMMARY_BY_PROJECT = new Map<AnalyticsProjectPath | null, Summary>([
       cacheHitRatio: 0.43,
       totalTokens: 8_420_000,
       totalResponses: 1_286,
+      pricedTokens: 5_700_000,
+      includedTokens: 2_700_000,
+      unknownCostTokens: 20_000,
+      oauthTokens: 2_700_000,
+      oauthRequests: 430,
+      firstEventAt: Date.UTC(2026, 5, 1),
+      lastEventAt: Date.UTC(2026, 6, 19),
     },
   ],
   [
@@ -119,6 +135,13 @@ const SUMMARY_BY_PROJECT = new Map<AnalyticsProjectPath | null, Summary>([
       cacheHitRatio: 0.47,
       totalTokens: 4_120_000,
       totalResponses: 602,
+      pricedTokens: 2_900_000,
+      includedTokens: 1_210_000,
+      unknownCostTokens: 10_000,
+      oauthTokens: 1_210_000,
+      oauthRequests: 190,
+      firstEventAt: Date.UTC(2026, 5, 1),
+      lastEventAt: Date.UTC(2026, 6, 19),
     },
   ],
   [
@@ -130,6 +153,13 @@ const SUMMARY_BY_PROJECT = new Map<AnalyticsProjectPath | null, Summary>([
       cacheHitRatio: 0.41,
       totalTokens: 2_780_000,
       totalResponses: 421,
+      pricedTokens: 1_800_000,
+      includedTokens: 975_000,
+      unknownCostTokens: 5_000,
+      oauthTokens: 975_000,
+      oauthRequests: 151,
+      firstEventAt: Date.UTC(2026, 5, 3),
+      lastEventAt: Date.UTC(2026, 6, 19),
     },
   ],
   [
@@ -141,6 +171,13 @@ const SUMMARY_BY_PROJECT = new Map<AnalyticsProjectPath | null, Summary>([
       cacheHitRatio: 0.35,
       totalTokens: 1_520_000,
       totalResponses: 263,
+      pricedTokens: 1_000_000,
+      includedTokens: 515_000,
+      unknownCostTokens: 5_000,
+      oauthTokens: 515_000,
+      oauthRequests: 89,
+      firstEventAt: Date.UTC(2026, 5, 8),
+      lastEventAt: Date.UTC(2026, 6, 18),
     },
   ],
 ]);
@@ -838,6 +875,51 @@ function setupAnalyticsMockClient(): APIClient {
   });
 
   const analytics: StoryAnalyticsNamespace = {
+    getDashboard: (input) => {
+      const projectPath = normalizeProjectPath(input.projectPath ?? null);
+      const summary = SUMMARY_BY_PROJECT.get(projectPath);
+      const delegationSummary = DELEGATION_SUMMARY_BY_PROJECT.get(projectPath);
+      assert(summary != null, `Missing analytics summary fixture for ${projectPath ?? "all"}`);
+      assert(
+        delegationSummary != null,
+        `Missing delegation summary fixture for ${projectPath ?? "all"}`
+      );
+      return Promise.resolve({
+        summary,
+        spendOverTime: getSpendOverTimeRows({
+          projectPath,
+          from: input.from ?? null,
+          to: input.to ?? null,
+        }),
+        spendByProject: SPEND_BY_PROJECT,
+        spendByModel: getSpendByModelRows(projectPath),
+        tokensByModel: TOKENS_BY_MODEL,
+        timingDistribution: getTimingDistribution(input.timingMetric, projectPath),
+        agentCosts: getAgentCostBreakdown(projectPath),
+        providerCacheHitRatios: getProviderCacheHitRatios(projectPath),
+        delegationSummary,
+        codexQuota: {
+          source: "headers",
+          updatedAt: NOW,
+          remainingPercent: 42,
+          windows: {
+            fiveHour: {
+              label: "5h",
+              usedPercent: 38,
+              remainingPercent: 62,
+              resetAt: NOW + 90 * 60 * 1000,
+            },
+            weekly: {
+              label: "1w",
+              usedPercent: 58,
+              remainingPercent: 42,
+              resetAt: NOW + 3 * 24 * 60 * 60 * 1000,
+            },
+          },
+        },
+        refreshedAt: NOW,
+      });
+    },
     getSummary: (input) => {
       const projectPath = normalizeProjectPath(input.projectPath ?? null);
       const summary = SUMMARY_BY_PROJECT.get(projectPath);
@@ -988,5 +1070,36 @@ export const StatsDashboard: Story = {
         throw new Error("Expected agent-cost chart to render populated data");
       }
     });
+  },
+};
+
+export const MobileDashboard: Story = {
+  globals: {
+    viewport: { value: "mobile1", isRotated: false },
+  },
+  parameters: {
+    chromatic: {
+      cropToViewport: true,
+      modes: {
+        "dark-mobile": { theme: "dark", viewport: 375 },
+        "light-mobile": { theme: "light", viewport: 375 },
+      },
+    },
+  },
+  render: () => (
+    <div className="h-[812px] w-[375px] overflow-hidden">
+      <AnalyticsDashboardStory />
+    </div>
+  ),
+  play: async ({ canvasElement }: { canvasElement: HTMLElement }) => {
+    const canvas = within(canvasElement);
+    await canvas.findByText("OAuth Usage");
+    await canvas.findByText("Codex OAuth quota");
+    const fixedViewport = canvasElement.querySelector<HTMLElement>('[class~="w-[375px]"]');
+    assert(fixedViewport != null, "Mobile analytics story requires a fixed 375px viewport");
+    assert(
+      fixedViewport.scrollWidth <= fixedViewport.clientWidth,
+      "Analytics dashboard must not overflow horizontally at 375px"
+    );
   },
 };

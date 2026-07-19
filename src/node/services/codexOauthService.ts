@@ -105,6 +105,9 @@ export class CodexOauthService {
   private readonly refreshMutex = new AsyncMutex();
   private usageSnapshot: CodexUsageSnapshot | null = null;
   private readonly usageListeners = new Set<(snapshot: CodexUsageSnapshot | null) => void>();
+  private readonly usageObservationListeners = new Set<
+    (observation: { accountKey: string; snapshot: CodexUsageSnapshot }) => void
+  >();
 
   // In-memory cache so getValidAuth() skips disk reads when tokens are valid.
   // Invalidated on every write (exchange, refresh, disconnect).
@@ -134,12 +137,35 @@ export class CodexOauthService {
     };
   }
 
+  onUsageSnapshotObserved(
+    listener: (observation: { accountKey: string; snapshot: CodexUsageSnapshot }) => void
+  ): () => void {
+    this.usageObservationListeners.add(listener);
+    return () => {
+      this.usageObservationListeners.delete(listener);
+    };
+  }
+
+  getAnalyticsAccountKey(): string | null {
+    const accountId = this.readStoredAuth()?.accountId;
+    return accountId ? sha256Base64Url(`openai-codex:${accountId}`) : null;
+  }
+
   recordUsageHeaders(headers: Headers): void {
     const snapshot = parseCodexUsageSnapshotFromHeaders(headers);
     if (!snapshot) {
       return;
     }
     this.setUsageSnapshot(snapshot);
+    const accountKey = this.getAnalyticsAccountKey();
+    if (!accountKey) {
+      log.warn("[Codex OAuth] Usage headers omitted from analytics: account id unavailable");
+      return;
+    }
+    // Only the one-way account key crosses into analytics storage.
+    for (const listener of this.usageObservationListeners) {
+      listener({ accountKey, snapshot });
+    }
   }
 
   private setUsageSnapshot(snapshot: CodexUsageSnapshot | null): void {
@@ -390,6 +416,8 @@ export class CodexOauthService {
     }
 
     this.deviceFlows.clear();
+    this.usageListeners.clear();
+    this.usageObservationListeners.clear();
   }
 
   private readStoredAuth(): CodexOauthAuth | null {

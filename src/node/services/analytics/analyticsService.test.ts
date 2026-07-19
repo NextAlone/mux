@@ -1,6 +1,10 @@
 import { describe, expect, test } from "bun:test";
+import * as fs from "node:fs/promises";
+import * as os from "node:os";
+import * as path from "node:path";
 import type { ProviderCacheHitModelRow } from "@/common/orpc/schemas/analytics";
-import { aggregateProviderCacheHitRows } from "./analyticsService";
+import { Config } from "@/node/config";
+import { aggregateProviderCacheHitRows, AnalyticsService } from "./analyticsService";
 
 describe("aggregateProviderCacheHitRows", () => {
   test("rolls model rows up to providers using weighted token ratios", () => {
@@ -87,5 +91,61 @@ describe("aggregateProviderCacheHitRows", () => {
         responseCount: 2,
       },
     ]);
+  });
+});
+
+describe("AnalyticsService quota persistence", () => {
+  test("coalesces equivalent OAuth quota observations through the real worker", async () => {
+    const rootDir = await fs.mkdtemp(path.join(os.tmpdir(), "mux-analytics-quota-test-"));
+    const service = new AnalyticsService(new Config(rootDir));
+    const accountKey = "hashed-account-key";
+
+    try {
+      service.recordCodexQuotaSnapshot(accountKey, {
+        source: "headers",
+        updatedAt: 1_000_000,
+        remainingPercent: 75,
+        windows: {
+          fiveHour: {
+            label: "5h",
+            usedPercent: 25,
+            remainingPercent: 75,
+            resetAt: 2_000_000,
+          },
+          weekly: null,
+        },
+      });
+      service.recordCodexQuotaSnapshot(accountKey, {
+        source: "headers",
+        updatedAt: 1_005_000,
+        remainingPercent: 75,
+        windows: {
+          fiveHour: {
+            label: "5h",
+            usedPercent: 25,
+            remainingPercent: 75,
+            resetAt: 2_005_000,
+          },
+          weekly: null,
+        },
+      });
+
+      const dashboard = await service.getDashboard({
+        projectPath: null,
+        granularity: "day",
+        timingMetric: "duration",
+        codexAccountKey: accountKey,
+      });
+      const rawCount = await service.executeRawQuery(
+        "SELECT COUNT(*) AS snapshot_count FROM provider_quota_snapshots"
+      );
+
+      expect(dashboard.codexQuota?.updatedAt).toBe(1_005_000);
+      expect(dashboard.codexQuota?.windows.fiveHour?.remainingPercent).toBe(75);
+      expect(rawCount.rows).toEqual([{ snapshot_count: 1 }]);
+    } finally {
+      await service.dispose();
+      await fs.rm(rootDir, { recursive: true, force: true });
+    }
   });
 });

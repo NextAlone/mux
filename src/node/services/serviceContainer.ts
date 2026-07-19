@@ -141,6 +141,7 @@ export class ServiceContainer {
   public readonly idleDispatcher: IdleDispatcher;
   public readonly heartbeatService: HeartbeatService;
   public readonly agentStatusService: AgentStatusService;
+  private readonly disposeCodexUsageAnalyticsListener: () => void;
 
   constructor(config: Config) {
     this.config = config;
@@ -292,6 +293,11 @@ export class ServiceContainer {
       config,
       this.providerService,
       this.windowService
+    );
+    this.disposeCodexUsageAnalyticsListener = this.codexOauthService.onUsageSnapshotObserved(
+      ({ accountKey, snapshot }) => {
+        this.analyticsService.recordCodexQuotaSnapshot(accountKey, snapshot);
+      }
     );
     this.aiService.setCodexOauthService(this.codexOauthService);
     this.copilotOauthService = new CopilotOauthService(this.providerService, this.windowService);
@@ -643,6 +649,7 @@ export class ServiceContainer {
     await this.browserBridgeServer.stop();
     this.browserSessionStateHub.dispose();
     this.browserBridgeTokenManager.dispose();
+    this.disposeCodexUsageAnalyticsListener();
     await this.analyticsService.dispose();
     await this.telemetryService.shutdown();
   }
@@ -679,6 +686,7 @@ export class ServiceContainer {
     await this.browserBridgeServer.stop();
     this.browserSessionStateHub.dispose();
     this.browserBridgeTokenManager.dispose();
+    this.disposeCodexUsageAnalyticsListener();
     await this.analyticsService.dispose();
     this.policyService.dispose();
     this.mcpServerManager.dispose();

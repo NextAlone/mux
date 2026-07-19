@@ -1,4 +1,9 @@
 import { z } from "zod";
+import {
+  ANALYTICS_BILLING_ROUTES,
+  ANALYTICS_COST_STATUSES,
+  PROVIDER_QUOTA_WINDOW_KINDS,
+} from "@/common/analytics/types";
 
 // ── Reusable row schemas (used by both oRPC output AND worker query validation) ──
 
@@ -10,6 +15,13 @@ export const SummaryRowSchema = z.object({
   cache_hit_ratio: z.number(),
   total_tokens: z.number(),
   total_responses: z.number(),
+  priced_tokens: z.number(),
+  included_tokens: z.number(),
+  unknown_cost_tokens: z.number(),
+  oauth_tokens: z.number(),
+  oauth_requests: z.number(),
+  first_event_at: z.number().nullable(),
+  last_event_at: z.number().nullable(),
 });
 export type SummaryRow = z.infer<typeof SummaryRowSchema>;
 
@@ -162,12 +174,26 @@ export const EventRowSchema = z.object({
   output_tps: z.number().nullable(),
   response_index: z.number().nullable(),
   is_sub_agent: z.boolean().default(false),
+  cost_status: z.enum(ANALYTICS_COST_STATUSES),
+  billing_route: z.enum(ANALYTICS_BILLING_ROUTES),
 });
 export type EventRow = z.infer<typeof EventRowSchema>;
 
+export const ProviderQuotaSnapshotRowSchema = z.object({
+  provider: z.string(),
+  account_key: z.string(),
+  window_kind: z.enum(PROVIDER_QUOTA_WINDOW_KINDS),
+  observed_at: z.number(),
+  used_percent: z.number(),
+  remaining_percent: z.number(),
+  reset_at: z.number().nullable(),
+  source: z.string(),
+});
+export type ProviderQuotaSnapshotRow = z.infer<typeof ProviderQuotaSnapshotRowSchema>;
+
 // ── oRPC procedure schemas (camelCase for API contract) ──
 
-export const analytics = {
+const analyticsProcedures = {
   getSummary: {
     input: z.object({
       projectPath: z.string().nullish(),
@@ -181,6 +207,13 @@ export const analytics = {
       cacheHitRatio: z.number(),
       totalTokens: z.number(),
       totalResponses: z.number(),
+      pricedTokens: z.number(),
+      includedTokens: z.number(),
+      unknownCostTokens: z.number(),
+      oauthTokens: z.number(),
+      oauthRequests: z.number(),
+      firstEventAt: z.number().nullable(),
+      lastEventAt: z.number().nullable(),
     }),
   },
   getSpendOverTime: {
@@ -339,5 +372,55 @@ export const analytics = {
   rebuildDatabase: {
     input: z.object({}),
     output: z.object({ success: z.boolean(), workspacesIngested: z.number() }),
+  },
+};
+
+export const analytics = {
+  ...analyticsProcedures,
+  getDashboard: {
+    input: z.object({
+      projectPath: z.string().nullish(),
+      granularity: z.enum(["hour", "day", "week"]),
+      timingMetric: z.enum(["ttft", "duration", "tps"]),
+      from: z.coerce.date().nullish(),
+      to: z.coerce.date().nullish(),
+    }),
+    output: z.object({
+      summary: analyticsProcedures.getSummary.output,
+      spendOverTime: analyticsProcedures.getSpendOverTime.output,
+      spendByProject: analyticsProcedures.getSpendByProject.output,
+      spendByModel: analyticsProcedures.getSpendByModel.output,
+      tokensByModel: analyticsProcedures.getTokensByModel.output,
+      timingDistribution: analyticsProcedures.getTimingDistribution.output,
+      agentCosts: analyticsProcedures.getAgentCostBreakdown.output,
+      providerCacheHitRatios: analyticsProcedures.getCacheHitRatioByProvider.output,
+      delegationSummary: analyticsProcedures.getDelegationSummary.output,
+      codexQuota: z
+        .object({
+          source: z.literal("headers"),
+          updatedAt: z.number(),
+          remainingPercent: z.number(),
+          windows: z.object({
+            fiveHour: z
+              .object({
+                label: z.literal("5h"),
+                usedPercent: z.number(),
+                remainingPercent: z.number(),
+                resetAt: z.number().nullable(),
+              })
+              .nullable(),
+            weekly: z
+              .object({
+                label: z.literal("1w"),
+                usedPercent: z.number(),
+                remainingPercent: z.number(),
+                resetAt: z.number().nullable(),
+              })
+              .nullable(),
+          }),
+        })
+        .nullable(),
+      refreshedAt: z.number(),
+    }),
   },
 };

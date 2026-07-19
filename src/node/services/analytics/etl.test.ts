@@ -28,10 +28,9 @@ import { createDisplayUsage } from "@/common/utils/tokens/displayUsage";
 
 const SUBAGENT_TRANSCRIPTS_DIR_NAME = "subagent-transcripts";
 
-const CREATE_EVENTS_TABLE_WITHOUT_TOOL_NAME_SQL = CREATE_EVENTS_TABLE_SQL.replace(
-  "\n  tool_name TEXT,",
-  ""
-)
+const CREATE_LEGACY_EVENTS_TABLE_SQL = CREATE_EVENTS_TABLE_SQL.replace("\n  tool_name TEXT,", "")
+  .replace("\n  cost_status VARCHAR NOT NULL DEFAULT 'unknown',", "")
+  .replace("\n  billing_route VARCHAR NOT NULL DEFAULT 'unknown'", "")
   .replace("\n  tool_name TEXT", "")
   .replace(",\n)", "\n)");
 
@@ -78,6 +77,7 @@ function makeAssistantLine(
     durationMs?: number;
     ttftMs?: number;
     providerMetadata?: Record<string, unknown>;
+    billingRoute?: "codex-oauth" | "openai-api-key" | "mux-gateway" | "provider-direct" | "unknown";
     toolModelUsages?: unknown[];
   } = {}
 ): string {
@@ -96,6 +96,7 @@ function makeAssistantLine(
       ...(opts.durationMs != null ? { duration: opts.durationMs } : {}),
       ...(opts.ttftMs != null ? { ttftMs: opts.ttftMs } : {}),
       ...(opts.providerMetadata != null ? { providerMetadata: opts.providerMetadata } : {}),
+      ...(opts.billingRoute != null ? { billingRoute: opts.billingRoute } : {}),
       ...(opts.toolModelUsages != null ? { toolModelUsages: opts.toolModelUsages } : {}),
     },
   });
@@ -410,11 +411,41 @@ describe("appendEvents", () => {
     expect(Number(rows[0].total_cost_usd)).toBeGreaterThan(0);
   });
 
+  test("distinguishes subscription-included usage from unknown model pricing", async () => {
+    const sessionDir = await createTempSessionDir();
+    await writeChatJsonl(sessionDir, [
+      makeAssistantLine({
+        sequence: 1,
+        model: "openai:gpt-5.6-sol",
+        billingRoute: "codex-oauth",
+        providerMetadata: { mux: { costsIncluded: true } },
+      }),
+      makeAssistantLine({
+        sequence: 2,
+        model: "custom:unpriced-model",
+        billingRoute: "provider-direct",
+      }),
+    ]);
+
+    const parsed = await parseWorkspaceFromDisk("ws-cost-status", sessionDir, {});
+    expect(parsed).not.toBeNull();
+    assert(parsed, "cost status test expected workspace events");
+
+    expect(parsed.events.map((event) => event.row)).toMatchObject([
+      { cost_status: "included", billing_route: "codex-oauth", total_cost_usd: 0 },
+      { cost_status: "unknown", billing_route: "provider-direct", total_cost_usd: 0 },
+    ]);
+  });
+
   test("keeps tool_name aligned across fresh and migrated events tables", async () => {
     const freshConn = await createTestConn();
     const migratedConn = await createTestConn({
-      createEventsTableSql: CREATE_EVENTS_TABLE_WITHOUT_TOOL_NAME_SQL,
-      postCreateEventsSql: ["ALTER TABLE events ADD COLUMN IF NOT EXISTS tool_name TEXT"],
+      createEventsTableSql: CREATE_LEGACY_EVENTS_TABLE_SQL,
+      postCreateEventsSql: [
+        "ALTER TABLE events ADD COLUMN IF NOT EXISTS tool_name TEXT",
+        "ALTER TABLE events ADD COLUMN IF NOT EXISTS cost_status VARCHAR DEFAULT 'unknown'",
+        "ALTER TABLE events ADD COLUMN IF NOT EXISTS billing_route VARCHAR DEFAULT 'unknown'",
+      ],
     });
     const sessionDir = await createTempSessionDir();
     const workspaceId = "ws-tool-column-order";

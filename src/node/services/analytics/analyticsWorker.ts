@@ -8,19 +8,24 @@ import {
   clearWorkspaceAnalyticsState,
   getCurrentPricingFingerprint,
   ingestWorkspace,
+  readStoredAnalyticsSchemaVersion,
   readStoredPricingFingerprint,
   rebuildAll,
   statSessionChatHistory,
+  storeAnalyticsSchemaVersion,
   storePricingFingerprint,
+  CURRENT_ANALYTICS_SCHEMA_VERSION,
 } from "./etl";
 import {
   CREATE_DELEGATION_ROLLUPS_TABLE_SQL,
   CREATE_EVENTS_TABLE_SQL,
   CREATE_INGEST_META_TABLE_SQL,
+  CREATE_PROVIDER_QUOTA_SNAPSHOTS_TABLE_SQL,
   CREATE_WATERMARK_TABLE_SQL,
 } from "./schemaSql";
 import { discoverAllWorkspaces } from "./workspaceDiscovery";
 import { executeNamedQuery, executeRawQuery, type RawQueryResult } from "./queries";
+import { shouldCoalesceQuotaObservation } from "./quotaSnapshot";
 
 interface WorkerTaskRequest {
   messageId: number;
@@ -93,8 +98,23 @@ interface RawQueryData {
   sql: string;
 }
 
+interface RecordProviderQuotaSnapshotData {
+  provider: string;
+  accountKey: string;
+  observedAt: number;
+  windows: Array<{
+    windowKind: "five-hour" | "weekly";
+    usedPercent: number;
+    remainingPercent: number;
+    resetAt: number | null;
+  }>;
+  source: string;
+}
+
 const EVENTS_COLUMN_MIGRATIONS_SQL = [
   "ALTER TABLE events ADD COLUMN IF NOT EXISTS tool_name TEXT",
+  "ALTER TABLE events ADD COLUMN IF NOT EXISTS cost_status VARCHAR DEFAULT 'unknown'",
+  "ALTER TABLE events ADD COLUMN IF NOT EXISTS billing_route VARCHAR DEFAULT 'unknown'",
 ] as const;
 
 const DELEGATION_ROLLUPS_COLUMN_MIGRATIONS_SQL = [
@@ -103,6 +123,10 @@ const DELEGATION_ROLLUPS_COLUMN_MIGRATIONS_SQL = [
   "ALTER TABLE delegation_rollups ADD COLUMN IF NOT EXISTS reasoning_tokens INTEGER DEFAULT 0",
   "ALTER TABLE delegation_rollups ADD COLUMN IF NOT EXISTS cached_tokens INTEGER DEFAULT 0",
   "ALTER TABLE delegation_rollups ADD COLUMN IF NOT EXISTS cache_create_tokens INTEGER DEFAULT 0",
+] as const;
+
+const PROVIDER_QUOTA_COLUMN_MIGRATIONS_SQL = [
+  "ALTER TABLE provider_quota_snapshots ADD COLUMN IF NOT EXISTS last_observed_at BIGINT",
 ] as const;
 
 let instance: DuckDBInstance | null = null;
@@ -141,10 +165,14 @@ async function handleInit(data: InitData): Promise<void> {
   await activeConn.run(CREATE_WATERMARK_TABLE_SQL);
   await activeConn.run(CREATE_DELEGATION_ROLLUPS_TABLE_SQL);
   await activeConn.run(CREATE_INGEST_META_TABLE_SQL);
+  await activeConn.run(CREATE_PROVIDER_QUOTA_SNAPSHOTS_TABLE_SQL);
   for (const migrationSql of EVENTS_COLUMN_MIGRATIONS_SQL) {
     await activeConn.run(migrationSql);
   }
   for (const migrationSql of DELEGATION_ROLLUPS_COLUMN_MIGRATIONS_SQL) {
+    await activeConn.run(migrationSql);
+  }
+  for (const migrationSql of PROVIDER_QUOTA_COLUMN_MIGRATIONS_SQL) {
     await activeConn.run(migrationSql);
   }
 }
@@ -169,7 +197,100 @@ async function handleRebuildAll(data: RebuildAllData): Promise<{ workspacesInges
   // A completed rebuild priced everything with the current tables; refresh the
   // fingerprint so the next sync check does not schedule a redundant rebuild.
   await storePricingFingerprint(getConn());
+  await storeAnalyticsSchemaVersion(getConn());
   return result;
+}
+
+async function handleRecordProviderQuotaSnapshot(
+  data: RecordProviderQuotaSnapshotData
+): Promise<{ inserted: number }> {
+  assert(data.provider.trim().length > 0, "quota snapshot requires provider");
+  assert(data.accountKey.trim().length > 0, "quota snapshot requires accountKey");
+  assert(Number.isSafeInteger(data.observedAt) && data.observedAt > 0, "invalid observedAt");
+  assert(data.source.trim().length > 0, "quota snapshot requires source");
+
+  let inserted = 0;
+  for (const window of data.windows) {
+    assert(
+      window.windowKind === "five-hour" || window.windowKind === "weekly",
+      "invalid quota windowKind"
+    );
+    assert(
+      Number.isFinite(window.usedPercent) && Number.isFinite(window.remainingPercent),
+      "invalid quota percentages"
+    );
+    assert(
+      window.usedPercent >= 0 &&
+        window.usedPercent <= 100 &&
+        window.remainingPercent >= 0 &&
+        window.remainingPercent <= 100,
+      "quota percentages must be between 0 and 100"
+    );
+
+    const latestResult = await getConn().run(
+      `SELECT observed_at, used_percent, remaining_percent, reset_at
+       FROM provider_quota_snapshots
+       WHERE provider = ? AND account_key = ? AND window_kind = ?
+       ORDER BY observed_at DESC
+       LIMIT 1`,
+      [data.provider, data.accountKey, window.windowKind]
+    );
+    const latest = (await latestResult.getRowObjectsJS())[0];
+    const latestResetAt = latest?.reset_at == null ? null : Number(latest.reset_at);
+    const latestObservedAt = parseNonNegativeInteger(latest?.observed_at);
+    if (
+      latest != null &&
+      shouldCoalesceQuotaObservation(
+        {
+          usedPercent: Number(latest.used_percent),
+          remainingPercent: Number(latest.remaining_percent),
+          resetAt: latestResetAt,
+        },
+        window
+      )
+    ) {
+      assert(latestObservedAt != null, "latest quota snapshot has invalid observed_at");
+      await getConn().run(
+        `UPDATE provider_quota_snapshots
+         SET last_observed_at = GREATEST(COALESCE(last_observed_at, observed_at), ?),
+             reset_at = CASE
+               WHEN ? >= COALESCE(last_observed_at, observed_at) THEN ?
+               ELSE reset_at
+             END
+         WHERE provider = ? AND account_key = ? AND window_kind = ? AND observed_at = ?`,
+        [
+          BigInt(data.observedAt),
+          BigInt(data.observedAt),
+          window.resetAt == null ? null : BigInt(window.resetAt),
+          data.provider,
+          data.accountKey,
+          window.windowKind,
+          BigInt(latestObservedAt),
+        ]
+      );
+      continue;
+    }
+
+    await getConn().run(
+      `INSERT OR IGNORE INTO provider_quota_snapshots
+       (provider, account_key, window_kind, observed_at, last_observed_at, used_percent, remaining_percent, reset_at, source)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        data.provider,
+        data.accountKey,
+        window.windowKind,
+        BigInt(data.observedAt),
+        BigInt(data.observedAt),
+        window.usedPercent,
+        window.remainingPercent,
+        window.resetAt == null ? null : BigInt(window.resetAt),
+        data.source,
+      ]
+    );
+    inserted += 1;
+  }
+
+  return { inserted };
 }
 
 async function handleClearWorkspace(data: ClearWorkspaceData): Promise<void> {
@@ -349,6 +470,8 @@ async function handleSyncCheck(data: SyncCheckData): Promise<SyncCheckResult> {
   // then-unknown models — must be repriced via a full rebuild.
   const storedPricingFingerprint = await readStoredPricingFingerprint(getConn());
   const pricingFingerprintChanged = storedPricingFingerprint !== getCurrentPricingFingerprint();
+  const storedSchemaVersion = await readStoredAnalyticsSchemaVersion(getConn());
+  const schemaVersionChanged = storedSchemaVersion !== CURRENT_ANALYTICS_SCHEMA_VERSION;
 
   const plan = decideSyncPlan({
     eventCount,
@@ -357,6 +480,7 @@ async function handleSyncCheck(data: SyncCheckData): Promise<SyncCheckResult> {
     watermarkWorkspaceIds,
     hasAnyWatermarkAtOrAboveZero,
     pricingFingerprintChanged,
+    schemaVersionChanged,
     changedSignalWorkspaceIds,
   });
 
@@ -366,6 +490,9 @@ async function handleSyncCheck(data: SyncCheckData): Promise<SyncCheckResult> {
   // crashed repricing rebuild re-triggers on the next sync check.
   if (pricingFingerprintChanged && plan.action !== "full_rebuild") {
     await storePricingFingerprint(getConn());
+  }
+  if (schemaVersionChanged && plan.action !== "full_rebuild") {
+    await storeAnalyticsSchemaVersion(getConn());
   }
 
   if (plan.action === "noop") {
@@ -390,11 +517,14 @@ async function handleSyncCheck(data: SyncCheckData): Promise<SyncCheckResult> {
     if (pricingFingerprintChanged) {
       await storePricingFingerprint(getConn());
     }
+    if (schemaVersionChanged) {
+      await storeAnalyticsSchemaVersion(getConn());
+    }
     await checkpointIfNeeded(plan.action, workspacesIngested, 0);
 
     const elapsedMs = Math.round(performance.now() - syncStartMs);
     process.stderr.write(
-      `[analytics-worker] syncCheck: plan=full_rebuild, workspacesIngested=${workspacesIngested}, workspacesOnDisk=${knownWorkspaceIds.size}, repricedForPricingChange=${pricingFingerprintChanged} (${elapsedMs}ms)\n`
+      `[analytics-worker] syncCheck: plan=full_rebuild, workspacesIngested=${workspacesIngested}, workspacesOnDisk=${knownWorkspaceIds.size}, repricedForPricingChange=${pricingFingerprintChanged}, rebuiltForSchemaChange=${schemaVersionChanged} (${elapsedMs}ms)\n`
     );
 
     return {
@@ -550,6 +680,8 @@ async function dispatchTask(taskName: string, data: unknown): Promise<unknown> {
       return handleRawQuery(data as RawQueryData);
     case "syncCheck":
       return handleSyncCheck(data as SyncCheckData);
+    case "recordProviderQuotaSnapshot":
+      return handleRecordProviderQuotaSnapshot(data as RecordProviderQuotaSnapshotData);
     default:
       throw new Error(`Unknown analytics worker task: ${taskName}`);
   }

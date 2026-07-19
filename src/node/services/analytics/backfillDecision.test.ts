@@ -9,6 +9,7 @@ function makeInput(overrides: Partial<SyncPlanInput> = {}): SyncPlanInput {
     watermarkWorkspaceIds: new Set(),
     hasAnyWatermarkAtOrAboveZero: false,
     pricingFingerprintChanged: false,
+    schemaVersionChanged: false,
     changedSignalWorkspaceIds: new Set(),
     ...overrides,
   };
@@ -268,6 +269,24 @@ describe("decideSyncPlan", () => {
         )
       ).toEqual({
         action: "noop",
+        workspaceIdsToIngest: [],
+        workspaceIdsToPurge: [],
+      });
+    });
+
+    test("rebuilds existing events when the analytics schema version changes", () => {
+      expect(
+        decideSyncPlan(
+          makeInput({
+            eventCount: 1,
+            watermarkCount: 1,
+            knownWorkspaceIds: new Set(["ws-1"]),
+            watermarkWorkspaceIds: new Set(["ws-1"]),
+            schemaVersionChanged: true,
+          })
+        )
+      ).toEqual({
+        action: "full_rebuild",
         workspaceIdsToIngest: [],
         workspaceIdsToPurge: [],
       });

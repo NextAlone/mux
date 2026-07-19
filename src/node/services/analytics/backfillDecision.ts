@@ -22,6 +22,8 @@ export interface SyncPlanInput {
    * (typically $0 unknown-model) costs and need a full rebuild to reprice.
    */
   pricingFingerprintChanged: boolean;
+  /** Existing event rows were produced by an older analytics schema contract. */
+  schemaVersionChanged: boolean;
   /**
    * Watermarked workspaces whose on-disk change signal (chat files +
    * headless-usage sidecar) no longer matches the stored watermark — writes
@@ -56,7 +58,7 @@ export function decideSyncPlan(input: SyncPlanInput): SyncPlan {
   // Pricing tables changed and priced rows exist → reprice via full rebuild.
   // Skipped when the events table is empty: nothing is stale, and the caller
   // persists the new fingerprint after every sync check.
-  if (input.pricingFingerprintChanged && input.eventCount > 0) {
+  if ((input.pricingFingerprintChanged || input.schemaVersionChanged) && input.eventCount > 0) {
     return REBUILD;
   }
 

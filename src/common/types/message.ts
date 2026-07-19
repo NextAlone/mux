@@ -15,6 +15,7 @@ import type { AgentSkillScope } from "./agentSkill";
 import type { ThinkingLevel } from "./thinking";
 import type { OpenAIResponsesRemoteCompactionState } from "@/common/utils/compaction/remotePolicy";
 import { type ReviewNoteData, formatReviewForModel } from "./review";
+import type { AnalyticsBillingRoute } from "@/common/analytics/types";
 
 export type { ModelMessage };
 
@@ -561,6 +562,8 @@ export interface PersistedToolModelUsage {
   metadataModel?: string;
   usage: LanguageModelV2Usage;
   providerMetadata?: Record<string, unknown>;
+  /** Billing/auth lane used for this model call. */
+  billingRoute?: AnalyticsBillingRoute;
 }
 
 /**
@@ -591,6 +594,8 @@ export interface MuxMetadata {
   /** @deprecated Legacy gateway flag; prefer routeProvider for source attribution. */
   routedThroughGateway?: boolean;
   routeProvider?: string;
+  /** Billing/auth lane selected for this request; used for analytics attribution. */
+  billingRoute?: AnalyticsBillingRoute;
   /**
    * True when usage costs are included in a subscription (e.g., ChatGPT subscription routing).
    * Token counts are still tracked, but the UI should display costs as $0.

@@ -19,6 +19,7 @@ export type ProviderCacheHitRatioItem = z.infer<
   typeof analytics.getCacheHitRatioByProvider.output
 >[number];
 export type DelegationSummary = z.infer<typeof analytics.getDelegationSummary.output>;
+export type AnalyticsDashboardData = z.infer<typeof analytics.getDashboard.output>;
 
 export interface AsyncState<T> {
   data: T | null;
@@ -35,6 +36,7 @@ type TimingDistributionInput = z.input<typeof analytics.getTimingDistribution.in
 type AgentCostBreakdownInput = z.input<typeof analytics.getAgentCostBreakdown.input>;
 type ProviderCacheHitRatioInput = z.input<typeof analytics.getCacheHitRatioByProvider.input>;
 type DelegationSummaryInput = z.input<typeof analytics.getDelegationSummary.input>;
+type AnalyticsDashboardInput = z.input<typeof analytics.getDashboard.input>;
 
 interface DateFilterParams {
   from?: Date | null;
@@ -53,6 +55,7 @@ interface AnalyticsNamespace {
     input: ProviderCacheHitRatioInput
   ) => Promise<ProviderCacheHitRatioItem[]>;
   getDelegationSummary: (input: DelegationSummaryInput) => Promise<DelegationSummary>;
+  getDashboard?: (input: AnalyticsDashboardInput) => Promise<AnalyticsDashboardData>;
   executeRawQuery?: (input: {
     sql: string;
   }) => Promise<z.infer<typeof analytics.executeRawQuery.output>>;
@@ -171,6 +174,51 @@ export function useAnalyticsSummary(
       analyticsApi.getSummary({ projectPath: projectPath ?? null, from: fromDate, to: toDate })
     );
   }, [api, projectPath, fromMs, toMs]);
+
+  return state;
+}
+
+export function useAnalyticsDashboard(params: {
+  projectPath?: string | null;
+  granularity: "hour" | "day" | "week";
+  timingMetric: "ttft" | "duration" | "tps";
+  from?: Date | null;
+  to?: Date | null;
+  refreshKey?: number;
+}): AsyncState<AnalyticsDashboardData> {
+  const fromMs = params.from?.getTime() ?? null;
+  const toMs = params.to?.getTime() ?? null;
+  const { api } = useAPI();
+  const [state, setState] = useState<AsyncState<AnalyticsDashboardData>>({
+    data: null,
+    loading: true,
+    error: null,
+  });
+
+  useEffect(() => {
+    const fromDate = fromMs == null ? null : new Date(fromMs);
+    const toDate = toMs == null ? null : new Date(toMs);
+    return runAnalyticsEffect(api, setState, (analyticsApi) => {
+      if (analyticsApi.getDashboard == null) {
+        return Promise.reject(new Error(ANALYTICS_UNAVAILABLE_MESSAGE));
+      }
+      return analyticsApi.getDashboard({
+        projectPath: params.projectPath ?? null,
+        granularity: params.granularity,
+        timingMetric: params.timingMetric,
+        from: fromDate,
+        to: toDate,
+      });
+    });
+  }, [
+    api,
+    params.projectPath,
+    params.granularity,
+    params.timingMetric,
+    params.refreshKey,
+    fromMs,
+    toMs,
+  ]);
 
   return state;
 }

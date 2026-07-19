@@ -161,6 +161,35 @@ describe("CodexOauthService", () => {
     });
   });
 
+  describe("usage analytics", () => {
+    it("emits quota observations with a stable hashed account key", () => {
+      deps.providersConfig = {
+        openai: { codexOauth: validAuth({ accountId: "acct-sensitive" }) },
+      };
+      const observations: Array<{
+        accountKey: string;
+        remainingPercent: number;
+      }> = [];
+      service.onUsageSnapshotObserved(({ accountKey, snapshot }) => {
+        observations.push({ accountKey, remainingPercent: snapshot.remainingPercent });
+      });
+
+      service.recordUsageHeaders(
+        new Headers({
+          "x-codex-primary-used-percent": "25",
+          "x-codex-primary-window-minutes": "300",
+          "x-codex-secondary-used-percent": "40",
+          "x-codex-secondary-window-minutes": "10080",
+        })
+      );
+
+      expect(observations).toHaveLength(1);
+      expect(observations[0]?.remainingPercent).toBe(60);
+      expect(observations[0]?.accountKey).toBe(service.getAnalyticsAccountKey() ?? "");
+      expect(observations[0]?.accountKey ?? "").not.toContain("acct-sensitive");
+    });
+  });
+
   // -------------------------------------------------------------------------
   // Token refresh coalescing (AsyncMutex)
   // -------------------------------------------------------------------------

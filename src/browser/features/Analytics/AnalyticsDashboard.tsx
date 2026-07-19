@@ -1,23 +1,13 @@
 import { useEffect, useState } from "react";
-import { ArrowLeft, Menu } from "lucide-react";
+import { ArrowLeft, Menu, RefreshCw } from "lucide-react";
 import { useProjectContext } from "@/browser/contexts/ProjectContext";
 import { useRouter } from "@/browser/contexts/RouterContext";
-import {
-  useAnalyticsAgentCostBreakdown,
-  useAnalyticsDelegationSummary,
-  useAnalyticsProviderCacheHitRatio,
-  useAnalyticsSpendByModel,
-  useAnalyticsSpendByProject,
-  useAnalyticsSpendOverTime,
-  useAnalyticsSummary,
-  useAnalyticsTimingDistribution,
-  useAnalyticsTokensByModel,
-  useSavedQueries,
-} from "@/browser/hooks/useAnalytics";
+import { useAnalyticsDashboard, useSavedQueries } from "@/browser/hooks/useAnalytics";
 import { DESKTOP_TITLEBAR_HEIGHT_CLASS, isDesktopMode } from "@/browser/hooks/useDesktopTitlebar";
 import { usePersistedState } from "@/browser/hooks/usePersistedState";
 import { isEditableElement, KEYBINDS, matchesKeybind } from "@/browser/utils/ui/keybinds";
 import { Button } from "@/browser/components/Button/Button";
+import { TooltipIfPresent } from "@/browser/components/Tooltip/Tooltip";
 import { cn } from "@/common/lib/utils";
 import { AgentCostChart } from "./AgentCostChart";
 import { DelegationChart } from "./DelegationChart";
@@ -59,12 +49,12 @@ function normalizeTimingMetric(value: unknown): TimingMetric {
     : "duration";
 }
 
-/** Build a UTC-aligned date boundary N days before today. Using UTC avoids
- *  the backend's `toISOString().slice(0,10)` conversion silently shifting the
- *  day in positive-offset timezones. */
-function utcDaysAgo(days: number): Date {
+/** Build a local-midnight boundary so Today and range filters match the user's timezone. */
+function localDaysAgo(days: number): Date {
   const now = new Date();
-  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - days));
+  now.setHours(0, 0, 0, 0);
+  now.setDate(now.getDate() - days);
+  return now;
 }
 
 function computeDateRange(timeRange: TimeRange): {
@@ -74,16 +64,16 @@ function computeDateRange(timeRange: TimeRange): {
 } {
   switch (timeRange) {
     case "7d":
-      return { from: utcDaysAgo(6), to: null, granularity: "day" };
+      return { from: localDaysAgo(6), to: null, granularity: "day" };
     case "30d":
-      return { from: utcDaysAgo(29), to: null, granularity: "day" };
+      return { from: localDaysAgo(29), to: null, granularity: "day" };
     case "90d":
-      return { from: utcDaysAgo(89), to: null, granularity: "week" };
+      return { from: localDaysAgo(89), to: null, granularity: "week" };
     case "all":
       return { from: null, to: null, granularity: "week" };
     default:
       // Self-heal: unknown persisted value → safe default.
-      return { from: utcDaysAgo(29), to: null, granularity: "day" };
+      return { from: localDaysAgo(29), to: null, granularity: "day" };
   }
 }
 
@@ -93,6 +83,7 @@ export function AnalyticsDashboard(props: AnalyticsDashboardProps) {
   const { userProjects } = useProjectContext();
 
   const [projectPath, setProjectPath] = useState<string | null>(null);
+  const [refreshKey, setRefreshKey] = useState(0);
   const [rawTimeRange, setTimeRange] = usePersistedState<TimeRange>(
     ANALYTICS_TIME_RANGE_STORAGE_KEY,
     "30d"
@@ -113,43 +104,13 @@ export function AnalyticsDashboard(props: AnalyticsDashboardProps) {
   // date-range selection.
   const timeFilterSql = buildTimeFilterPredicate(dateRange.from, dateRange.to);
 
-  const summary = useAnalyticsSummary(projectPath, {
-    from: dateRange.from,
-    to: dateRange.to,
-  });
-  const spendOverTime = useAnalyticsSpendOverTime({
+  const dashboard = useAnalyticsDashboard({
     projectPath,
     granularity: dateRange.granularity,
+    timingMetric,
     from: dateRange.from,
     to: dateRange.to,
-  });
-  const spendByProject = useAnalyticsSpendByProject({
-    from: dateRange.from,
-    to: dateRange.to,
-  });
-  const spendByModel = useAnalyticsSpendByModel(projectPath, {
-    from: dateRange.from,
-    to: dateRange.to,
-  });
-  const tokensByModel = useAnalyticsTokensByModel(projectPath, {
-    from: dateRange.from,
-    to: dateRange.to,
-  });
-  const timingDistribution = useAnalyticsTimingDistribution(timingMetric, projectPath, {
-    from: dateRange.from,
-    to: dateRange.to,
-  });
-  const providerCacheHitRatios = useAnalyticsProviderCacheHitRatio(projectPath, {
-    from: dateRange.from,
-    to: dateRange.to,
-  });
-  const agentCosts = useAnalyticsAgentCostBreakdown(projectPath, {
-    from: dateRange.from,
-    to: dateRange.to,
-  });
-  const delegationSummary = useAnalyticsDelegationSummary(projectPath, {
-    from: dateRange.from,
-    to: dateRange.to,
+    refreshKey,
   });
 
   const {
@@ -282,45 +243,74 @@ export function AnalyticsDashboard(props: AnalyticsDashboardProps) {
               </Button>
             ))}
           </div>
+          <TooltipIfPresent tooltip={t("Refresh analytics")}>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-6 w-6 shrink-0"
+              onClick={() => setRefreshKey((current) => current + 1)}
+              disabled={dashboard.loading}
+              aria-label={t("Refresh analytics")}
+            >
+              <RefreshCw className={cn("h-3.5 w-3.5", dashboard.loading && "animate-spin")} />
+            </Button>
+          </TooltipIfPresent>
         </div>
       </div>
 
       <div className="flex-1 overflow-y-auto p-4">
         <div className="mx-auto flex w-full max-w-6xl flex-col gap-4">
-          <SummaryCards data={summary.data} loading={summary.loading} error={summary.error} />
+          <SummaryCards
+            data={dashboard.data?.summary ?? null}
+            codexQuota={dashboard.data?.codexQuota ?? null}
+            refreshedAt={dashboard.data?.refreshedAt ?? null}
+            loading={dashboard.loading}
+            error={dashboard.error}
+          />
           <SpendChart
-            data={spendOverTime.data}
-            loading={spendOverTime.loading}
-            error={spendOverTime.error}
+            data={dashboard.data?.spendOverTime ?? null}
+            loading={dashboard.loading}
+            error={dashboard.error}
             granularity={dateRange.granularity}
           />
-          <ModelBreakdown spendByProject={spendByProject} spendByModel={spendByModel} />
+          <ModelBreakdown
+            spendByProject={{
+              data: dashboard.data?.spendByProject ?? null,
+              loading: dashboard.loading,
+              error: dashboard.error,
+            }}
+            spendByModel={{
+              data: dashboard.data?.spendByModel ?? null,
+              loading: dashboard.loading,
+              error: dashboard.error,
+            }}
+          />
           <TokensByModelChart
-            data={tokensByModel.data}
-            loading={tokensByModel.loading}
-            error={tokensByModel.error}
+            data={dashboard.data?.tokensByModel ?? null}
+            loading={dashboard.loading}
+            error={dashboard.error}
           />
           <TimingChart
-            data={timingDistribution.data}
-            loading={timingDistribution.loading}
-            error={timingDistribution.error}
+            data={dashboard.data?.timingDistribution ?? null}
+            loading={dashboard.loading}
+            error={dashboard.error}
             metric={timingMetric}
             onMetricChange={setTimingMetric}
           />
           <ProviderCacheHitChart
-            data={providerCacheHitRatios.data}
-            loading={providerCacheHitRatios.loading}
-            error={providerCacheHitRatios.error}
+            data={dashboard.data?.providerCacheHitRatios ?? null}
+            loading={dashboard.loading}
+            error={dashboard.error}
           />
           <AgentCostChart
-            data={agentCosts.data}
-            loading={agentCosts.loading}
-            error={agentCosts.error}
+            data={dashboard.data?.agentCosts ?? null}
+            loading={dashboard.loading}
+            error={dashboard.error}
           />
           <DelegationChart
-            data={delegationSummary.data}
-            loading={delegationSummary.loading}
-            error={delegationSummary.error}
+            data={dashboard.data?.delegationSummary ?? null}
+            loading={dashboard.loading}
+            error={dashboard.error}
           />
           {savedQueries.length > 0 && (
             <div className="flex flex-col gap-4">

@@ -80,7 +80,7 @@ include fmt.mk
 .PHONY: docs-server check-docs-links
 .PHONY: storybook storybook-run storybook-build test-storybook chromatic
 .PHONY: benchmark-terminal
-.PHONY: ensure-deps rebuild-native mux
+.PHONY: ensure-deps rebuild-native mux update-models
 .PHONY: check-eager-imports check-bundle-size check-startup check-node-dist-aliases check-ui-i18n
 
 # Build tools
@@ -126,6 +126,9 @@ node_modules/.installed: package.json bun.lock
 
 # Legacy target for backwards compatibility
 ensure-deps: node_modules/.installed
+
+update-models: ## Refresh the pinned LiteLLM pricing snapshot (MODEL_PRICING_ARGS="--revision <sha>" to advance)
+	@bun run scripts/update_models.ts $(MODEL_PRICING_ARGS)
 
 # Rebuild native modules for Electron
 rebuild-native: node_modules/.installed ## Rebuild native modules (node-pty, DuckDB) for Electron

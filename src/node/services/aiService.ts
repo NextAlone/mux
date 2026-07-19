@@ -155,6 +155,7 @@ import type {
   StreamEndEvent,
 } from "@/common/types/stream";
 import type { ToolPolicy } from "@/common/utils/tools/toolPolicy";
+import type { AnalyticsBillingRoute } from "@/common/analytics/types";
 import {
   computeActiveToolNames,
   prepareToolSearch,
@@ -583,6 +584,20 @@ function markProviderMetadataCostsIncluded(
       costsIncluded: true,
     },
   };
+}
+
+function resolveAnalyticsBillingRoute(
+  openAIRoute: OpenAIResponsesCompactionRoute | undefined,
+  routedThroughGateway: boolean,
+  routeProvider: string | undefined
+): AnalyticsBillingRoute {
+  if (openAIRoute != null) {
+    return openAIRoute;
+  }
+  if (routedThroughGateway || routeProvider === "mux-gateway") {
+    return "mux-gateway";
+  }
+  return routeProvider != null ? "provider-direct" : "unknown";
 }
 
 const WORKFLOW_CONTINUATION_RETRY_DELAY_MS = 1_000;
@@ -1463,6 +1478,11 @@ export class AIService extends EventEmitter {
         routeProvider,
         openAIResponsesCompactionRoute,
       } = modelResult.data;
+      const billingRoute = resolveAnalyticsBillingRoute(
+        openAIResponsesCompactionRoute,
+        routedThroughGateway,
+        routeProvider
+      );
       const codeModeOnlyEnabled =
         codexGpt56CompatExperimentEnabled &&
         openAIResponsesCompactionRoute === "codex-oauth" &&
@@ -2488,6 +2508,9 @@ export class AIService extends EventEmitter {
               model: eventModel,
               metadataModel,
               usage: event.usage,
+              billingRoute: toolModelCostsIncludedByModelString.get(eventModel)
+                ? "codex-oauth"
+                : "unknown",
               ...(providerMetadata != null ? { providerMetadata } : {}),
             });
             void (async () => {
@@ -2759,6 +2782,7 @@ export class AIService extends EventEmitter {
         timestamp: Date.now(),
         model: canonicalModelString,
         routedThroughGateway,
+        billingRoute,
         systemMessageTokens,
         agentId: effectiveAgentId,
       });
@@ -3467,6 +3491,11 @@ export class AIService extends EventEmitter {
                     initialMetadataPatch: {
                       routedThroughGateway: next.routedThroughGateway,
                       ...(next.routeProvider != null ? { routeProvider: next.routeProvider } : {}),
+                      billingRoute: resolveAnalyticsBillingRoute(
+                        next.openAIResponsesCompactionRoute,
+                        next.routedThroughGateway,
+                        next.routeProvider
+                      ),
                       // Explicit undefined clears a stale costsIncluded when falling
                       // back from a subscription-routed model to an API model.
                       costsIncluded: modelCostsIncluded(next.model) ? true : undefined,
@@ -3506,6 +3535,7 @@ export class AIService extends EventEmitter {
           // Preserve the resolved route source so stream events and persisted messages
           // keep non-gateway attribution even when the model ID itself is gateway-agnostic.
           ...(routeProvider != null ? { routeProvider } : {}),
+          billingRoute,
           ...(muxMetadata !== undefined ? { muxMetadata } : {}),
           ...(acpPromptId != null ? { acpPromptId } : {}),
           ...(modelCostsIncluded(modelResult.data.model) ? { costsIncluded: true } : {}),

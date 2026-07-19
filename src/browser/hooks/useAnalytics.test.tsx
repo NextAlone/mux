@@ -20,6 +20,7 @@ import type { AnalyticsService } from "@/node/services/analytics/analyticsServic
 import type * as UseAnalyticsModule from "./useAnalytics";
 
 let APIProvider!: typeof APIModule.APIProvider;
+let useAnalyticsDashboard!: typeof UseAnalyticsModule.useAnalyticsDashboard;
 let useAnalyticsProviderCacheHitRatio!: typeof UseAnalyticsModule.useAnalyticsProviderCacheHitRatio;
 let useAnalyticsRawQuery!: typeof UseAnalyticsModule.useAnalyticsRawQuery;
 let useAnalyticsSpendByModel!: typeof UseAnalyticsModule.useAnalyticsSpendByModel;
@@ -53,12 +54,14 @@ async function importIsolatedAnalyticsModules() {
     isolatedApiPath
   ));
   ({
+    useAnalyticsDashboard,
     useAnalyticsProviderCacheHitRatio,
     useAnalyticsRawQuery,
     useAnalyticsSpendByModel,
     useAnalyticsSummary,
     useSavedQueries,
   } = requireTestModule<{
+    useAnalyticsDashboard: typeof UseAnalyticsModule.useAnalyticsDashboard;
     useAnalyticsProviderCacheHitRatio: typeof UseAnalyticsModule.useAnalyticsProviderCacheHitRatio;
     useAnalyticsRawQuery: typeof UseAnalyticsModule.useAnalyticsRawQuery;
     useAnalyticsSpendByModel: typeof UseAnalyticsModule.useAnalyticsSpendByModel;
@@ -89,6 +92,13 @@ async function ensureBuiltInSkillContentStub() {
 
 const ANALYTICS_UNAVAILABLE_MESSAGE = "Analytics backend is not available in this build.";
 type Summary = UseAnalyticsModule.Summary;
+interface DashboardInput {
+  projectPath?: string | null;
+  granularity: "hour" | "day" | "week";
+  timingMetric: "ttft" | "duration" | "tps";
+  from?: Date | null;
+  to?: Date | null;
+}
 
 const summaryFixture: Summary = {
   totalSpendUsd: 42.25,
@@ -97,6 +107,34 @@ const summaryFixture: Summary = {
   cacheHitRatio: 0.18,
   totalTokens: 4200,
   totalResponses: 84,
+  pricedTokens: 2400,
+  includedTokens: 1700,
+  unknownCostTokens: 100,
+  oauthTokens: 1700,
+  oauthRequests: 21,
+  firstEventAt: Date.UTC(2026, 6, 1),
+  lastEventAt: Date.UTC(2026, 6, 19),
+};
+
+const dashboardFixture: UseAnalyticsModule.AnalyticsDashboardData = {
+  summary: summaryFixture,
+  spendOverTime: [],
+  spendByProject: [],
+  spendByModel: [],
+  tokensByModel: [],
+  timingDistribution: { p50: 0, p90: 0, p99: 0, histogram: [] },
+  agentCosts: [],
+  providerCacheHitRatios: [],
+  delegationSummary: {
+    totalChildren: 0,
+    totalTokensConsumed: 0,
+    totalReportTokens: 0,
+    compressionRatio: 0,
+    totalCostDelegated: 0,
+    byAgentType: [],
+  },
+  codexQuota: null,
+  refreshedAt: Date.UTC(2026, 6, 19),
 };
 
 const savedQueriesFixture: SavedQuery[] = [
@@ -167,6 +205,7 @@ function createHttpClient(baseUrl: string): RouterClient<AppRouter> {
 
 function createFakeAnalyticsApiClient(
   overrides: {
+    getDashboard?: (input: DashboardInput) => Promise<UseAnalyticsModule.AnalyticsDashboardData>;
     getSavedQueries?: () => Promise<{ queries: SavedQuery[] }>;
     updateSavedQuery?: (input: {
       id: string;
@@ -333,6 +372,33 @@ describe("useAnalytics hooks", () => {
     expect(result.current.error).not.toBe(ANALYTICS_UNAVAILABLE_MESSAGE);
     expect(result.current.error).toBeNull();
     expect(result.current.data).toEqual(summaryFixture);
+  });
+
+  test("loads the complete dashboard with one bulk analytics request", async () => {
+    const from = new Date("2026-07-01T00:00:00.000Z");
+    const getDashboardMock = mock((_input: DashboardInput) => Promise.resolve(dashboardFixture));
+    currentApiClient = createFakeAnalyticsApiClient({ getDashboard: getDashboardMock });
+
+    const { result } = renderAnalyticsHook(() =>
+      useAnalyticsDashboard({
+        projectPath: "/tmp/project",
+        granularity: "day",
+        timingMetric: "duration",
+        from,
+      })
+    );
+
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    expect(getDashboardMock).toHaveBeenCalledTimes(1);
+    expect(getDashboardMock).toHaveBeenCalledWith({
+      projectPath: "/tmp/project",
+      granularity: "day",
+      timingMetric: "duration",
+      from,
+      to: null,
+    });
+    expect(result.current.data).toEqual(dashboardFixture);
   });
 
   test("forwards from/to filters to summary endpoint", async () => {

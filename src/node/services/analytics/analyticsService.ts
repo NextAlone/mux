@@ -4,8 +4,8 @@ import * as path from "node:path";
 import * as crypto from "node:crypto";
 import { Worker } from "node:worker_threads";
 import writeFileAtomic from "write-file-atomic";
-import { toUtcDateString } from "@/node/services/analytics/dateUtils";
 import type {
+  analytics,
   AgentCostRow,
   DelegationAgentBreakdownRow,
   DelegationSummaryTotalsRow,
@@ -18,14 +18,18 @@ import type {
   TimingPercentilesRow,
   TokensByModelRow,
 } from "@/common/orpc/schemas/analytics";
+import type { z } from "zod";
 import type { SavedQuery } from "@/common/types/savedQueries";
+import type { CodexUsageSnapshot } from "@/common/orpc/types";
 import { getModelProvider } from "@/common/utils/ai/models";
 import { ensurePrivateDir } from "@/node/utils/fs";
 import type { Config } from "@/node/config";
 import { getErrorMessage } from "@/common/utils/errors";
 import { PlatformPaths } from "@/common/utils/paths";
 import { log } from "@/node/services/log";
-import type { RawQueryResult } from "./queries";
+import type { DashboardQueryResult, RawQueryResult } from "./queries";
+
+type AnalyticsDashboard = z.infer<typeof analytics.getDashboard.output>;
 
 interface WorkerRequest {
   messageId: number;
@@ -53,6 +57,7 @@ interface WorkerErrorResponse {
 type WorkerResponse = WorkerSuccessResponse | WorkerErrorResponse;
 
 type AnalyticsQueryName =
+  | "getDashboard"
   | "getSummary"
   | "getSpendOverTime"
   | "getSpendByProject"
@@ -109,13 +114,40 @@ function toOptionalNonEmptyString(value: string | undefined): string | undefined
   return trimmed.length > 0 ? trimmed : undefined;
 }
 
-function toDateFilterString(value: Date | null | undefined): string | null {
+function toTimestampFilter(value: Date | null | undefined): number | null {
   if (value == null) {
     return null;
   }
 
   assert(Number.isFinite(value.getTime()), "Analytics date filter must be a valid Date");
-  return toUtcDateString(value);
+  return value.getTime();
+}
+
+function getTodayBounds(now = new Date()): { start: number; end: number } {
+  assert(Number.isFinite(now.getTime()), "Analytics today boundary requires a valid Date");
+  const start = new Date(now);
+  start.setHours(0, 0, 0, 0);
+  return { start: start.getTime(), end: now.getTime() };
+}
+
+function calendarDayCount(fromMs: number, toMs: number): number {
+  const from = new Date(fromMs);
+  const to = new Date(toMs);
+  const fromDay = Date.UTC(from.getFullYear(), from.getMonth(), from.getDate());
+  const toDay = Date.UTC(to.getFullYear(), to.getMonth(), to.getDate());
+  return Math.max(1, Math.floor((toDay - fromDay) / 86_400_000) + 1);
+}
+
+function averageDailySpend(
+  totalSpendUsd: number,
+  firstEventAt: number | null,
+  lastEventAt: number | null,
+  from?: Date | null,
+  to?: Date | null
+): number {
+  const start = from?.getTime() ?? firstEventAt;
+  const end = to?.getTime() ?? (from != null ? Date.now() : lastEventAt);
+  return start == null || end == null ? 0 : totalSpendUsd / calendarDayCount(start, end);
 }
 
 interface ProviderCacheHitTotals {
@@ -612,20 +644,179 @@ export class AnalyticsService {
     cacheHitRatio: number;
     totalTokens: number;
     totalResponses: number;
+    pricedTokens: number;
+    includedTokens: number;
+    unknownCostTokens: number;
+    oauthTokens: number;
+    oauthRequests: number;
+    firstEventAt: number | null;
+    lastEventAt: number | null;
   }> {
+    const today = getTodayBounds();
     const row = await this.executeQuery<SummaryRow>("getSummary", {
       projectPath,
-      from: toDateFilterString(from),
-      to: toDateFilterString(to),
+      from: toTimestampFilter(from),
+      to: toTimestampFilter(to),
+      todayStart: today.start,
+      todayEnd: today.end,
     });
 
     return {
       totalSpendUsd: row.total_spend_usd,
       todaySpendUsd: row.today_spend_usd,
-      avgDailySpendUsd: row.avg_daily_spend_usd,
+      avgDailySpendUsd: averageDailySpend(
+        row.total_spend_usd,
+        row.first_event_at,
+        row.last_event_at,
+        from,
+        to
+      ),
       cacheHitRatio: row.cache_hit_ratio,
       totalTokens: row.total_tokens,
       totalResponses: row.total_responses,
+      pricedTokens: row.priced_tokens,
+      includedTokens: row.included_tokens,
+      unknownCostTokens: row.unknown_cost_tokens,
+      oauthTokens: row.oauth_tokens,
+      oauthRequests: row.oauth_requests,
+      firstEventAt: row.first_event_at,
+      lastEventAt: row.last_event_at,
+    };
+  }
+
+  async getDashboard(params: {
+    projectPath: string | null;
+    granularity: "hour" | "day" | "week";
+    timingMetric: "ttft" | "duration" | "tps";
+    from?: Date | null;
+    to?: Date | null;
+    codexAccountKey: string | null;
+  }): Promise<AnalyticsDashboard> {
+    const today = getTodayBounds();
+    const result = await this.executeQuery<DashboardQueryResult>("getDashboard", {
+      projectPath: params.projectPath,
+      granularity: params.granularity,
+      timingMetric: params.timingMetric,
+      from: toTimestampFilter(params.from),
+      to: toTimestampFilter(params.to),
+      todayStart: today.start,
+      todayEnd: today.end,
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
+      codexAccountKey: params.codexAccountKey,
+    });
+
+    const fiveHourRow = result.codexQuotaRows.find(
+      (candidate) => candidate.window_kind === "five-hour"
+    );
+    const weeklyRow = result.codexQuotaRows.find((candidate) => candidate.window_kind === "weekly");
+    const fiveHour = fiveHourRow
+      ? {
+          label: "5h" as const,
+          usedPercent: fiveHourRow.used_percent,
+          remainingPercent: fiveHourRow.remaining_percent,
+          resetAt: fiveHourRow.reset_at,
+        }
+      : null;
+    const weekly = weeklyRow
+      ? {
+          label: "1w" as const,
+          usedPercent: weeklyRow.used_percent,
+          remainingPercent: weeklyRow.remaining_percent,
+          resetAt: weeklyRow.reset_at,
+        }
+      : null;
+    const quotaRows = result.codexQuotaRows;
+    const codexQuota =
+      quotaRows.length === 0
+        ? null
+        : {
+            source: "headers" as const,
+            updatedAt: Math.max(...quotaRows.map((row) => row.observed_at)),
+            remainingPercent: Math.min(...quotaRows.map((row) => row.remaining_percent)),
+            windows: { fiveHour, weekly },
+          };
+
+    return {
+      summary: {
+        totalSpendUsd: result.summary.total_spend_usd,
+        todaySpendUsd: result.summary.today_spend_usd,
+        avgDailySpendUsd: averageDailySpend(
+          result.summary.total_spend_usd,
+          result.summary.first_event_at,
+          result.summary.last_event_at,
+          params.from,
+          params.to
+        ),
+        cacheHitRatio: result.summary.cache_hit_ratio,
+        totalTokens: result.summary.total_tokens,
+        totalResponses: result.summary.total_responses,
+        pricedTokens: result.summary.priced_tokens,
+        includedTokens: result.summary.included_tokens,
+        unknownCostTokens: result.summary.unknown_cost_tokens,
+        oauthTokens: result.summary.oauth_tokens,
+        oauthRequests: result.summary.oauth_requests,
+        firstEventAt: result.summary.first_event_at,
+        lastEventAt: result.summary.last_event_at,
+      },
+      spendOverTime: result.spendOverTime.map((row) => ({
+        bucket: row.bucket,
+        model: row.model,
+        costUsd: row.cost_usd,
+      })),
+      spendByProject: result.spendByProject.map((row) => ({
+        projectName: row.project_name,
+        projectPath: row.project_path,
+        costUsd: row.cost_usd,
+        tokenCount: row.token_count,
+      })),
+      spendByModel: result.spendByModel.map((row) => ({
+        model: row.model,
+        costUsd: row.cost_usd,
+        tokenCount: row.token_count,
+        responseCount: row.response_count,
+      })),
+      tokensByModel: result.tokensByModel.map((row) => ({
+        model: row.model,
+        inputTokens: row.input_tokens,
+        cachedTokens: row.cached_tokens,
+        cacheCreateTokens: row.cache_create_tokens,
+        outputTokens: row.output_tokens,
+        reasoningTokens: row.reasoning_tokens,
+        totalTokens: row.total_tokens,
+        requestCount: row.request_count,
+      })),
+      timingDistribution: {
+        p50: result.timingDistribution.percentiles.p50,
+        p90: result.timingDistribution.percentiles.p90,
+        p99: result.timingDistribution.percentiles.p99,
+        histogram: result.timingDistribution.histogram,
+      },
+      agentCosts: result.agentCosts.map((row) => ({
+        agentId: row.agent_id,
+        costUsd: row.cost_usd,
+        tokenCount: row.token_count,
+        responseCount: row.response_count,
+      })),
+      providerCacheHitRatios: aggregateProviderCacheHitRows(result.providerCacheHitModels),
+      delegationSummary: {
+        totalChildren: result.delegationSummary.totals.total_children,
+        totalTokensConsumed: result.delegationSummary.totals.total_tokens_consumed,
+        totalReportTokens: result.delegationSummary.totals.total_report_tokens,
+        compressionRatio: result.delegationSummary.totals.compression_ratio,
+        totalCostDelegated: result.delegationSummary.totals.total_cost_delegated,
+        byAgentType: result.delegationSummary.breakdown.map((row) => ({
+          agentType: row.agent_type,
+          count: row.delegation_count,
+          totalTokens: row.total_tokens,
+          inputTokens: row.input_tokens,
+          outputTokens: row.output_tokens,
+          reasoningTokens: row.reasoning_tokens,
+          cachedTokens: row.cached_tokens,
+          cacheCreateTokens: row.cache_create_tokens,
+        })),
+      },
+      codexQuota,
+      refreshedAt: result.refreshedAt,
     };
   }
 
@@ -638,8 +829,9 @@ export class AnalyticsService {
     const rows = await this.executeQuery<SpendOverTimeRow[]>("getSpendOverTime", {
       granularity: params.granularity,
       projectPath: params.projectPath ?? null,
-      from: toDateFilterString(params.from),
-      to: toDateFilterString(params.to),
+      from: toTimestampFilter(params.from),
+      to: toTimestampFilter(params.to),
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
     });
 
     return rows.map((row) => ({
@@ -656,8 +848,8 @@ export class AnalyticsService {
     Array<{ projectName: string; projectPath: string; costUsd: number; tokenCount: number }>
   > {
     const rows = await this.executeQuery<SpendByProjectRow[]>("getSpendByProject", {
-      from: toDateFilterString(from),
-      to: toDateFilterString(to),
+      from: toTimestampFilter(from),
+      to: toTimestampFilter(to),
     });
 
     return rows.map((row) => ({
@@ -675,8 +867,8 @@ export class AnalyticsService {
   ): Promise<Array<{ model: string; costUsd: number; tokenCount: number; responseCount: number }>> {
     const rows = await this.executeQuery<SpendByModelRow[]>("getSpendByModel", {
       projectPath,
-      from: toDateFilterString(from),
-      to: toDateFilterString(to),
+      from: toTimestampFilter(from),
+      to: toTimestampFilter(to),
     });
 
     return rows.map((row) => ({
@@ -705,8 +897,8 @@ export class AnalyticsService {
   > {
     const rows = await this.executeQuery<TokensByModelRow[]>("getTokensByModel", {
       projectPath,
-      from: toDateFilterString(from),
-      to: toDateFilterString(to),
+      from: toTimestampFilter(from),
+      to: toTimestampFilter(to),
     });
 
     return rows.map((row) => ({
@@ -735,8 +927,8 @@ export class AnalyticsService {
     const row = await this.executeQuery<TimingDistributionRow>("getTimingDistribution", {
       metric,
       projectPath,
-      from: toDateFilterString(from),
-      to: toDateFilterString(to),
+      from: toTimestampFilter(from),
+      to: toTimestampFilter(to),
     });
 
     return {
@@ -759,8 +951,8 @@ export class AnalyticsService {
   > {
     const rows = await this.executeQuery<AgentCostRow[]>("getAgentCostBreakdown", {
       projectPath,
-      from: toDateFilterString(from),
-      to: toDateFilterString(to),
+      from: toTimestampFilter(from),
+      to: toTimestampFilter(to),
     });
 
     return rows.map((row) => ({
@@ -778,8 +970,8 @@ export class AnalyticsService {
   ): Promise<Array<{ provider: string; cacheHitRatio: number; responseCount: number }>> {
     const rows = await this.executeQuery<ProviderCacheHitModelRow[]>("getCacheHitRatioByProvider", {
       projectPath,
-      from: toDateFilterString(from),
-      to: toDateFilterString(to),
+      from: toTimestampFilter(from),
+      to: toTimestampFilter(to),
     });
 
     return aggregateProviderCacheHitRows(rows);
@@ -808,8 +1000,8 @@ export class AnalyticsService {
   }> {
     const result = await this.executeQuery<DelegationSummaryQueryResult>("getDelegationSummary", {
       projectPath,
-      from: toDateFilterString(from),
-      to: toDateFilterString(to),
+      from: toTimestampFilter(from),
+      to: toTimestampFilter(to),
     });
 
     return {
@@ -956,6 +1148,53 @@ export class AnalyticsService {
     properties: Record<string, string | number | boolean | null>
   ): void {
     log.debug("[AnalyticsService] goal lifecycle event", { event, properties });
+  }
+
+  recordCodexQuotaSnapshot(accountKey: string, snapshot: CodexUsageSnapshot): void {
+    if (accountKey.trim().length === 0) {
+      log.warn("[AnalyticsService] Skipping Codex quota snapshot without account key");
+      return;
+    }
+
+    const windows = [
+      snapshot.windows.fiveHour == null
+        ? null
+        : {
+            windowKind: "five-hour" as const,
+            usedPercent: snapshot.windows.fiveHour.usedPercent,
+            remainingPercent: snapshot.windows.fiveHour.remainingPercent,
+            resetAt: snapshot.windows.fiveHour.resetAt,
+          },
+      snapshot.windows.weekly == null
+        ? null
+        : {
+            windowKind: "weekly" as const,
+            usedPercent: snapshot.windows.weekly.usedPercent,
+            remainingPercent: snapshot.windows.weekly.remainingPercent,
+            resetAt: snapshot.windows.weekly.resetAt,
+          },
+    ].filter((window) => window != null);
+
+    if (windows.length === 0) {
+      return;
+    }
+
+    this.ensureWorker()
+      .then(() =>
+        this.dispatch("recordProviderQuotaSnapshot", {
+          provider: "openai-codex",
+          accountKey,
+          observedAt: snapshot.updatedAt,
+          windows,
+          source: snapshot.source,
+        })
+      )
+      .catch((error) => {
+        // Quota telemetry must never fail or delay the provider response that produced it.
+        log.warn("[AnalyticsService] Failed to persist Codex quota snapshot", {
+          error: getErrorMessage(error),
+        });
+      });
   }
 
   ingestWorkspace(

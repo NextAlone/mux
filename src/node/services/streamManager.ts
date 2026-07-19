@@ -2603,6 +2603,7 @@ export class StreamManager extends EventEmitter {
       model: refusedModel,
       metadataModel: streamInfo.metadataModel,
       usage,
+      billingRoute: streamInfo.initialMetadata?.billingRoute ?? "unknown",
       ...(providerMetadata ? { providerMetadata } : {}),
     });
 

@@ -7,6 +7,7 @@ import {
   DelegationSummaryTotalsRowSchema,
   HistogramBucketSchema,
   ProviderCacheHitModelRowSchema,
+  ProviderQuotaSnapshotRowSchema,
   SpendByModelRowSchema,
   SpendByProjectRowSchema,
   SpendOverTimeRowSchema,
@@ -18,6 +19,7 @@ import {
   type DelegationSummaryTotalsRow,
   type HistogramBucket,
   type ProviderCacheHitModelRow,
+  type ProviderQuotaSnapshotRow,
   type SpendByModelRow,
   type SpendByProjectRow,
   type SpendOverTimeRow,
@@ -25,7 +27,6 @@ import {
   type TimingPercentilesRow,
   type TokensByModelRow,
 } from "@/common/orpc/schemas/analytics";
-import { toUtcDateString } from "@/node/services/analytics/dateUtils";
 
 const MAX_SAFE_BIGINT = BigInt(Number.MAX_SAFE_INTEGER);
 const MIN_SAFE_BIGINT = BigInt(Number.MIN_SAFE_INTEGER);
@@ -43,6 +44,20 @@ interface TimingDistributionResult {
 interface DelegationSummaryResult {
   totals: DelegationSummaryTotalsRow;
   breakdown: DelegationAgentBreakdownRow[];
+}
+
+export interface DashboardQueryResult {
+  summary: SummaryRow;
+  spendOverTime: SpendOverTimeRow[];
+  spendByProject: SpendByProjectRow[];
+  spendByModel: SpendByModelRow[];
+  tokensByModel: TokensByModelRow[];
+  timingDistribution: TimingDistributionResult;
+  agentCosts: AgentCostRow[];
+  providerCacheHitModels: ProviderCacheHitModelRow[];
+  delegationSummary: DelegationSummaryResult;
+  codexQuotaRows: ProviderQuotaSnapshotRow[];
+  refreshedAt: number;
 }
 
 function normalizeDuckDbValue(value: unknown): unknown {
@@ -103,29 +118,36 @@ function parseOptionalString(value: unknown): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
-function parseDateFilter(value: unknown): string | null {
+function parseTimestampFilter(value: unknown): bigint | null {
   if (value === null || value === undefined) {
     return null;
   }
 
   if (value instanceof Date) {
     assert(Number.isFinite(value.getTime()), "Invalid Date provided for analytics filter");
-    return toUtcDateString(value);
+    return BigInt(value.getTime());
   }
 
-  if (typeof value === "string") {
-    const trimmed = value.trim();
-    if (!trimmed) {
-      return null;
-    }
-
-    // Accept either full ISO timestamps or YYYY-MM-DD and normalize to YYYY-MM-DD.
-    const parsed = new Date(trimmed);
-    assert(Number.isFinite(parsed.getTime()), `Invalid date filter value: ${trimmed}`);
-    return toUtcDateString(parsed);
+  if (typeof value === "bigint") {
+    return value;
   }
 
-  throw new Error("Unsupported analytics date filter type");
+  if (typeof value === "number") {
+    assert(Number.isSafeInteger(value), `Invalid timestamp filter value: ${value}`);
+    return BigInt(value);
+  }
+
+  if (typeof value === "string" && value.trim().length > 0) {
+    const parsed = new Date(value);
+    assert(Number.isFinite(parsed.getTime()), `Invalid date filter value: ${value}`);
+    return BigInt(parsed.getTime());
+  }
+
+  throw new Error("Unsupported analytics timestamp filter type");
+}
+
+function parseTimezone(value: unknown): string {
+  return typeof value === "string" && value.trim().length > 0 ? value : "UTC";
 }
 
 function parseGranularity(value: unknown): Granularity {
@@ -144,29 +166,22 @@ function parseTimingMetric(value: unknown): TimingMetric {
   return value;
 }
 
-function getTodayUtcDateString(now: Date = new Date()): string {
-  assert(Number.isFinite(now.getTime()), "Invalid Date while computing analytics summary date");
-  return toUtcDateString(now);
-}
-
 async function querySummary(
   conn: DuckDBConnection,
   params: {
     projectPath: string | null;
-    from: string | null;
-    to: string | null;
+    from: bigint | null;
+    to: bigint | null;
+    todayStart: bigint;
+    todayEnd: bigint;
   }
 ): Promise<SummaryRow> {
-  // events.date is derived from message timestamps via UTC date buckets, so
-  // summary "today" must use a UTC date key instead of DuckDB local CURRENT_DATE.
-  const todayUtcDate = getTodayUtcDateString();
-
   return typedQueryOne(
     conn,
     `
     SELECT
       COALESCE(SUM(total_cost_usd), 0) AS total_spend_usd,
-      COALESCE(SUM(CASE WHEN date = CAST(? AS DATE) THEN total_cost_usd ELSE 0 END), 0) AS today_spend_usd,
+      COALESCE(SUM(CASE WHEN timestamp >= ? AND timestamp <= ? THEN total_cost_usd ELSE 0 END), 0) AS today_spend_usd,
       COALESCE(
         COALESCE(SUM(total_cost_usd), 0) / NULLIF(COUNT(DISTINCT date), 0),
         0
@@ -180,13 +195,37 @@ async function querySummary(
         0
       ) AS total_tokens,
       COALESCE(COUNT(*) FILTER (WHERE ${NON_TOOL_EVENTS_PREDICATE}), 0) AS total_responses
+      ,COALESCE(
+        SUM(input_tokens + output_tokens + reasoning_tokens + cached_tokens + cache_create_tokens)
+          FILTER (WHERE cost_status = 'priced'),
+        0
+      ) AS priced_tokens
+      ,COALESCE(
+        SUM(input_tokens + output_tokens + reasoning_tokens + cached_tokens + cache_create_tokens)
+          FILTER (WHERE cost_status = 'included'),
+        0
+      ) AS included_tokens
+      ,COALESCE(
+        SUM(input_tokens + output_tokens + reasoning_tokens + cached_tokens + cache_create_tokens)
+          FILTER (WHERE cost_status = 'unknown'),
+        0
+      ) AS unknown_cost_tokens
+      ,COALESCE(
+        SUM(input_tokens + output_tokens + reasoning_tokens + cached_tokens + cache_create_tokens)
+          FILTER (WHERE billing_route = 'codex-oauth'),
+        0
+      ) AS oauth_tokens
+      ,COALESCE(COUNT(*) FILTER (WHERE billing_route = 'codex-oauth'), 0) AS oauth_requests
+      ,MIN(timestamp) AS first_event_at
+      ,MAX(timestamp) AS last_event_at
     FROM events
     WHERE (? IS NULL OR project_path = ?)
-      AND (? IS NULL OR date >= CAST(? AS DATE))
-      AND (? IS NULL OR date <= CAST(? AS DATE))
+      AND (? IS NULL OR timestamp >= ?)
+      AND (? IS NULL OR timestamp <= ?)
     `,
     [
-      todayUtcDate,
+      params.todayStart,
+      params.todayEnd,
       params.projectPath,
       params.projectPath,
       params.from,
@@ -203,19 +242,21 @@ async function querySpendOverTime(
   params: {
     granularity: Granularity;
     projectPath: string | null;
-    from: string | null;
-    to: string | null;
+    from: bigint | null;
+    to: bigint | null;
+    timezone: string;
   }
 ): Promise<SpendOverTimeRow[]> {
   const bucketExpression: Record<Granularity, string> = {
-    hour: "DATE_TRUNC('hour', to_timestamp(timestamp / 1000.0))",
-    day: "DATE_TRUNC('day', date)",
-    week: "DATE_TRUNC('week', date)",
+    hour: "DATE_TRUNC('hour', timezone(?, to_timestamp(timestamp / 1000.0)))",
+    // Keep day/week buckets date-only after applying the local timezone. The
+    // renderer intentionally treats date-only values differently from hourly
+    // timestamps so daily labels do not acquire a misleading midnight time.
+    day: "CAST(DATE_TRUNC('day', timezone(?, to_timestamp(timestamp / 1000.0))) AS DATE)",
+    week: "CAST(DATE_TRUNC('week', timezone(?, to_timestamp(timestamp / 1000.0))) AS DATE)",
   };
 
   const bucketExpr = bucketExpression[params.granularity];
-  const bucketNullFilter =
-    params.granularity === "hour" ? "AND timestamp IS NOT NULL" : "AND date IS NOT NULL";
 
   return typedQuery(
     conn,
@@ -227,20 +268,28 @@ async function querySpendOverTime(
     FROM events
     WHERE
       (? IS NULL OR project_path = ?)
-      AND (? IS NULL OR date >= CAST(? AS DATE))
-      AND (? IS NULL OR date <= CAST(? AS DATE))
-      ${bucketNullFilter}
+      AND (? IS NULL OR timestamp >= ?)
+      AND (? IS NULL OR timestamp <= ?)
+      AND timestamp IS NOT NULL
     GROUP BY 1, 2
     ORDER BY 1 ASC, 2 ASC
     `,
-    [params.projectPath, params.projectPath, params.from, params.from, params.to, params.to],
+    [
+      params.timezone,
+      params.projectPath,
+      params.projectPath,
+      params.from,
+      params.from,
+      params.to,
+      params.to,
+    ],
     SpendOverTimeRowSchema
   );
 }
 
 async function querySpendByProject(
   conn: DuckDBConnection,
-  params: { from: string | null; to: string | null }
+  params: { from: bigint | null; to: bigint | null }
 ): Promise<SpendByProjectRow[]> {
   return typedQuery(
     conn,
@@ -254,8 +303,8 @@ async function querySpendByProject(
         0
       ) AS token_count
     FROM events
-    WHERE (? IS NULL OR date >= CAST(? AS DATE))
-      AND (? IS NULL OR date <= CAST(? AS DATE))
+    WHERE (? IS NULL OR timestamp >= ?)
+      AND (? IS NULL OR timestamp <= ?)
     GROUP BY 1, 2
     ORDER BY cost_usd DESC
     `,
@@ -267,8 +316,8 @@ async function querySpendByProject(
 async function querySpendByModel(
   conn: DuckDBConnection,
   projectPath: string | null,
-  from: string | null,
-  to: string | null
+  from: bigint | null,
+  to: bigint | null
 ): Promise<SpendByModelRow[]> {
   return typedQuery(
     conn,
@@ -283,8 +332,8 @@ async function querySpendByModel(
       COALESCE(COUNT(*) FILTER (WHERE ${NON_TOOL_EVENTS_PREDICATE}), 0) AS response_count
     FROM events
     WHERE (? IS NULL OR project_path = ?)
-      AND (? IS NULL OR date >= CAST(? AS DATE))
-      AND (? IS NULL OR date <= CAST(? AS DATE))
+      AND (? IS NULL OR timestamp >= ?)
+      AND (? IS NULL OR timestamp <= ?)
     GROUP BY 1
     ORDER BY cost_usd DESC
     `,
@@ -296,8 +345,8 @@ async function querySpendByModel(
 async function queryTokensByModel(
   conn: DuckDBConnection,
   projectPath: string | null,
-  from: string | null,
-  to: string | null
+  from: bigint | null,
+  to: bigint | null
 ): Promise<TokensByModelRow[]> {
   return typedQuery(
     conn,
@@ -316,8 +365,8 @@ async function queryTokensByModel(
       COALESCE(COUNT(*) FILTER (WHERE ${NON_TOOL_EVENTS_PREDICATE}), 0) AS request_count
     FROM events
     WHERE (? IS NULL OR project_path = ?)
-      AND (? IS NULL OR date >= CAST(? AS DATE))
-      AND (? IS NULL OR date <= CAST(? AS DATE))
+      AND (? IS NULL OR timestamp >= ?)
+      AND (? IS NULL OR timestamp <= ?)
     GROUP BY 1
     ORDER BY total_tokens DESC
     LIMIT 10
@@ -331,8 +380,8 @@ async function queryTimingDistribution(
   conn: DuckDBConnection,
   metric: TimingMetric,
   projectPath: string | null,
-  from: string | null,
-  to: string | null
+  from: bigint | null,
+  to: bigint | null
 ): Promise<TimingDistributionResult> {
   const columnByMetric: Record<TimingMetric, string> = {
     ttft: "ttft_ms",
@@ -353,8 +402,8 @@ async function queryTimingDistribution(
     WHERE ${column} IS NOT NULL
       AND ${NON_TOOL_EVENTS_PREDICATE}
       AND (? IS NULL OR project_path = ?)
-      AND (? IS NULL OR date >= CAST(? AS DATE))
-      AND (? IS NULL OR date <= CAST(? AS DATE))
+      AND (? IS NULL OR timestamp >= ?)
+      AND (? IS NULL OR timestamp <= ?)
     `,
     [projectPath, projectPath, from, from, to, to],
     TimingPercentilesRowSchema
@@ -379,8 +428,8 @@ async function queryTimingDistribution(
       WHERE ${column} IS NOT NULL
         AND ${NON_TOOL_EVENTS_PREDICATE}
         AND (? IS NULL OR project_path = ?)
-        AND (? IS NULL OR date >= CAST(? AS DATE))
-        AND (? IS NULL OR date <= CAST(? AS DATE))
+        AND (? IS NULL OR timestamp >= ?)
+        AND (? IS NULL OR timestamp <= ?)
     ),
     stats AS (
       SELECT
@@ -415,8 +464,8 @@ async function queryTimingDistribution(
       WHERE events.${column} IS NOT NULL
         AND ${NON_TOOL_EVENTS_PREDICATE}
         AND (? IS NULL OR events.project_path = ?)
-        AND (? IS NULL OR events.date >= CAST(? AS DATE))
-        AND (? IS NULL OR events.date <= CAST(? AS DATE))
+        AND (? IS NULL OR events.timestamp >= ?)
+        AND (? IS NULL OR events.timestamp <= ?)
     )
     SELECT
       COALESCE(
@@ -450,8 +499,8 @@ async function queryTimingDistribution(
 async function queryAgentCostBreakdown(
   conn: DuckDBConnection,
   projectPath: string | null,
-  from: string | null,
-  to: string | null
+  from: bigint | null,
+  to: bigint | null
 ): Promise<AgentCostRow[]> {
   return typedQuery(
     conn,
@@ -466,8 +515,8 @@ async function queryAgentCostBreakdown(
       COALESCE(COUNT(*) FILTER (WHERE ${NON_TOOL_EVENTS_PREDICATE}), 0) AS response_count
     FROM events
     WHERE (? IS NULL OR project_path = ?)
-      AND (? IS NULL OR date >= CAST(? AS DATE))
-      AND (? IS NULL OR date <= CAST(? AS DATE))
+      AND (? IS NULL OR timestamp >= ?)
+      AND (? IS NULL OR timestamp <= ?)
     GROUP BY 1
     ORDER BY cost_usd DESC
     `,
@@ -479,8 +528,8 @@ async function queryAgentCostBreakdown(
 async function queryCacheHitRatioByProvider(
   conn: DuckDBConnection,
   projectPath: string | null,
-  from: string | null,
-  to: string | null
+  from: bigint | null,
+  to: bigint | null
 ): Promise<ProviderCacheHitModelRow[]> {
   return typedQuery(
     conn,
@@ -492,8 +541,8 @@ async function queryCacheHitRatioByProvider(
       COALESCE(COUNT(*) FILTER (WHERE ${NON_TOOL_EVENTS_PREDICATE}), 0) AS response_count
     FROM events
     WHERE (? IS NULL OR project_path = ?)
-      AND (? IS NULL OR date >= CAST(? AS DATE))
-      AND (? IS NULL OR date <= CAST(? AS DATE))
+      AND (? IS NULL OR timestamp >= ?)
+      AND (? IS NULL OR timestamp <= ?)
     GROUP BY 1
     ORDER BY response_count DESC
     `,
@@ -504,7 +553,7 @@ async function queryCacheHitRatioByProvider(
 
 async function queryDelegationSummary(
   conn: DuckDBConnection,
-  params: { projectPath: string | null; from: string | null; to: string | null }
+  params: { projectPath: string | null; from: bigint | null; to: bigint | null }
 ): Promise<DelegationSummaryResult> {
   const filterParams: DuckDBValue[] = [
     params.projectPath,
@@ -517,8 +566,8 @@ async function queryDelegationSummary(
 
   const whereClause = `
     WHERE (? IS NULL OR project_path = ?)
-      AND (? IS NULL OR date >= CAST(? AS DATE))
-      AND (? IS NULL OR date <= CAST(? AS DATE))
+      AND (? IS NULL OR rolled_up_at_ms >= ?)
+      AND (? IS NULL OR rolled_up_at_ms <= ?)
   `;
 
   const totals = await typedQueryOne(
@@ -568,17 +617,111 @@ async function queryDelegationSummary(
   return { totals, breakdown };
 }
 
+async function queryLatestProviderQuota(
+  conn: DuckDBConnection,
+  provider: string,
+  accountKey: string | null
+): Promise<ProviderQuotaSnapshotRow[]> {
+  if (accountKey == null) {
+    return [];
+  }
+
+  return typedQuery(
+    conn,
+    `
+    SELECT provider, account_key, window_kind,
+           COALESCE(last_observed_at, observed_at) AS observed_at,
+           used_percent, remaining_percent, reset_at, source
+    FROM provider_quota_snapshots
+    WHERE provider = ? AND account_key = ?
+    QUALIFY ROW_NUMBER() OVER (PARTITION BY window_kind ORDER BY observed_at DESC) = 1
+    ORDER BY window_kind
+    `,
+    [provider, accountKey],
+    ProviderQuotaSnapshotRowSchema
+  );
+}
+
+async function queryDashboard(
+  conn: DuckDBConnection,
+  params: Record<string, unknown>
+): Promise<DashboardQueryResult> {
+  const projectPath = parseOptionalString(params.projectPath);
+  const from = parseTimestampFilter(params.from);
+  const to = parseTimestampFilter(params.to);
+  const granularity = parseGranularity(params.granularity);
+  const timingMetric = parseTimingMetric(params.timingMetric);
+  const accountKey = parseOptionalString(params.codexAccountKey);
+  const timezone = parseTimezone(params.timezone);
+  const now = new Date();
+  const localDayStart = new Date(now);
+  localDayStart.setHours(0, 0, 0, 0);
+  const todayStart = parseTimestampFilter(params.todayStart) ?? BigInt(localDayStart.getTime());
+  const todayEnd = parseTimestampFilter(params.todayEnd) ?? BigInt(now.getTime());
+
+  // One worker task keeps the renderer→backend boundary bulk-oriented while
+  // preserving the existing query implementations and validation.
+  const summary = await querySummary(conn, { projectPath, from, to, todayStart, todayEnd });
+  const spendOverTime = await querySpendOverTime(conn, {
+    granularity,
+    projectPath,
+    from,
+    to,
+    timezone,
+  });
+  const spendByProject = await querySpendByProject(conn, { from, to });
+  const spendByModel = await querySpendByModel(conn, projectPath, from, to);
+  const tokensByModel = await queryTokensByModel(conn, projectPath, from, to);
+  const timingDistribution = await queryTimingDistribution(
+    conn,
+    timingMetric,
+    projectPath,
+    from,
+    to
+  );
+  const agentCosts = await queryAgentCostBreakdown(conn, projectPath, from, to);
+  const providerCacheHitModels = await queryCacheHitRatioByProvider(conn, projectPath, from, to);
+  const delegationSummary = await queryDelegationSummary(conn, {
+    projectPath,
+    from,
+    to,
+  });
+  const codexQuotaRows = await queryLatestProviderQuota(conn, "openai-codex", accountKey);
+
+  return {
+    summary,
+    spendOverTime,
+    spendByProject,
+    spendByModel,
+    tokensByModel,
+    timingDistribution,
+    agentCosts,
+    providerCacheHitModels,
+    delegationSummary,
+    codexQuotaRows,
+    refreshedAt: Date.now(),
+  };
+}
+
 export async function executeNamedQuery(
   conn: DuckDBConnection,
   queryName: string,
   params: Record<string, unknown>
 ): Promise<unknown> {
   switch (queryName) {
+    case "getDashboard":
+      return queryDashboard(conn, params);
+
     case "getSummary": {
+      const now = new Date();
+      const localDayStart = new Date(now);
+      localDayStart.setHours(0, 0, 0, 0);
       return querySummary(conn, {
         projectPath: parseOptionalString(params.projectPath),
-        from: parseDateFilter(params.from),
-        to: parseDateFilter(params.to),
+        from: parseTimestampFilter(params.from),
+        to: parseTimestampFilter(params.to),
+        todayStart: parseTimestampFilter(params.todayStart) ?? BigInt(localDayStart.getTime()),
+        todayEnd: parseTimestampFilter(params.todayEnd) ?? BigInt(now.getTime()),
       });
     }
 
@@ -586,15 +729,16 @@ export async function executeNamedQuery(
       return querySpendOverTime(conn, {
         granularity: parseGranularity(params.granularity),
         projectPath: parseOptionalString(params.projectPath),
-        from: parseDateFilter(params.from),
-        to: parseDateFilter(params.to),
+        from: parseTimestampFilter(params.from),
+        to: parseTimestampFilter(params.to),
+        timezone: parseTimezone(params.timezone),
       });
     }
 
     case "getSpendByProject": {
       return querySpendByProject(conn, {
-        from: parseDateFilter(params.from),
-        to: parseDateFilter(params.to),
+        from: parseTimestampFilter(params.from),
+        to: parseTimestampFilter(params.to),
       });
     }
 
@@ -602,8 +746,8 @@ export async function executeNamedQuery(
       return querySpendByModel(
         conn,
         parseOptionalString(params.projectPath),
-        parseDateFilter(params.from),
-        parseDateFilter(params.to)
+        parseTimestampFilter(params.from),
+        parseTimestampFilter(params.to)
       );
     }
 
@@ -611,8 +755,8 @@ export async function executeNamedQuery(
       return queryTokensByModel(
         conn,
         parseOptionalString(params.projectPath),
-        parseDateFilter(params.from),
-        parseDateFilter(params.to)
+        parseTimestampFilter(params.from),
+        parseTimestampFilter(params.to)
       );
     }
 
@@ -621,8 +765,8 @@ export async function executeNamedQuery(
         conn,
         parseTimingMetric(params.metric),
         parseOptionalString(params.projectPath),
-        parseDateFilter(params.from),
-        parseDateFilter(params.to)
+        parseTimestampFilter(params.from),
+        parseTimestampFilter(params.to)
       );
     }
 
@@ -630,8 +774,8 @@ export async function executeNamedQuery(
       return queryAgentCostBreakdown(
         conn,
         parseOptionalString(params.projectPath),
-        parseDateFilter(params.from),
-        parseDateFilter(params.to)
+        parseTimestampFilter(params.from),
+        parseTimestampFilter(params.to)
       );
     }
 
@@ -639,16 +783,16 @@ export async function executeNamedQuery(
       return queryCacheHitRatioByProvider(
         conn,
         parseOptionalString(params.projectPath),
-        parseDateFilter(params.from),
-        parseDateFilter(params.to)
+        parseTimestampFilter(params.from),
+        parseTimestampFilter(params.to)
       );
     }
 
     case "getDelegationSummary": {
       return queryDelegationSummary(conn, {
         projectPath: parseOptionalString(params.projectPath),
-        from: parseDateFilter(params.from),
-        to: parseDateFilter(params.to),
+        from: parseTimestampFilter(params.from),
+        to: parseTimestampFilter(params.to),
       });
     }
 

@@ -27,7 +27,9 @@ CREATE TABLE IF NOT EXISTS events (
   output_tps DOUBLE,
   response_index INTEGER,
   is_sub_agent BOOLEAN DEFAULT false,
-  tool_name TEXT
+  tool_name TEXT,
+  cost_status VARCHAR NOT NULL DEFAULT 'unknown',
+  billing_route VARCHAR NOT NULL DEFAULT 'unknown'
 )
 `;
 
@@ -73,5 +75,21 @@ CREATE TABLE IF NOT EXISTS delegation_rollups (
   rolled_up_at_ms BIGINT,
   date DATE,
   PRIMARY KEY (parent_workspace_id, child_workspace_id)
+)
+`;
+
+/** Account-level quota observations are intentionally separate from workspace events. */
+export const CREATE_PROVIDER_QUOTA_SNAPSHOTS_TABLE_SQL = `
+CREATE TABLE IF NOT EXISTS provider_quota_snapshots (
+  provider VARCHAR NOT NULL,
+  account_key VARCHAR NOT NULL,
+  window_kind VARCHAR NOT NULL,
+  observed_at BIGINT NOT NULL,
+  last_observed_at BIGINT NOT NULL,
+  used_percent DOUBLE NOT NULL,
+  remaining_percent DOUBLE NOT NULL,
+  reset_at BIGINT,
+  source VARCHAR NOT NULL,
+  PRIMARY KEY (provider, account_key, window_kind, observed_at)
 )
 `;

@@ -8,9 +8,15 @@ import { createInterface } from "node:readline";
 import type { LanguageModelV2Usage } from "@ai-sdk/provider";
 import { DuckDBAppender, DuckDBDateValue, type DuckDBConnection } from "@duckdb/node-api";
 import { EventRowSchema, type EventRow } from "@/common/orpc/schemas/analytics";
+import {
+  ANALYTICS_BILLING_ROUTES,
+  type AnalyticsBillingRoute,
+  type AnalyticsCostStatus,
+} from "@/common/analytics/types";
 import { getErrorMessage } from "@/common/utils/errors";
 import { createDisplayUsage } from "@/common/utils/tokens/displayUsage";
 import modelsData from "@/common/utils/tokens/models.json";
+import modelsSource from "@/common/utils/tokens/models-source.json";
 import { modelsExtra } from "@/common/utils/tokens/models-extra";
 import { log } from "@/node/services/log";
 import { toUtcDateString } from "@/node/services/analytics/dateUtils";
@@ -139,6 +145,8 @@ INSERT INTO events (
   date,
   model,
   tool_name,
+  cost_status,
+  billing_route,
   thinking_level,
   input_tokens,
   output_tokens,
@@ -158,7 +166,7 @@ INSERT INTO events (
   response_index,
   is_sub_agent
 ) VALUES (
-  ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+  ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
   ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
   ?, ?, ?, ?, ?, ?
 )
@@ -199,6 +207,8 @@ async function insertEventRow(
     date,
     row.model,
     row.tool_name,
+    row.cost_status,
+    row.billing_route,
     row.thinking_level,
     row.input_tokens,
     row.output_tokens,
@@ -311,6 +321,8 @@ export async function appendEvents(conn: DuckDBConnection, events: IngestEvent[]
       appendIntegerOrNull(appender, row.response_index);
       appender.appendBoolean(row.is_sub_agent);
       appendVarcharOrNull(appender, row.tool_name);
+      appendVarcharOrNull(appender, row.cost_status);
+      appendVarcharOrNull(appender, row.billing_route);
       appender.endRow();
     }
 
@@ -365,6 +377,7 @@ function buildIngestEventRow(params: {
   metadataModel?: string;
   usage: LanguageModelV2Usage;
   providerMetadata?: Record<string, unknown>;
+  billingRoute?: AnalyticsBillingRoute;
   toolName: string | null;
   timestamp: number | null;
   durationMs: number | null;
@@ -384,6 +397,20 @@ function buildIngestEventRow(params: {
 
   const cachedCostUsd =
     (displayUsage.cached.cost_usd ?? 0) + (displayUsage.cacheCreate.cost_usd ?? 0);
+  const componentCosts = [
+    displayUsage.input.cost_usd,
+    displayUsage.output.cost_usd,
+    displayUsage.reasoning.cost_usd,
+    displayUsage.cached.cost_usd,
+    displayUsage.cacheCreate.cost_usd,
+  ];
+  const costStatus: AnalyticsCostStatus = displayUsage.costsIncluded
+    ? "included"
+    : componentCosts.some((cost) => cost == null)
+      ? "unknown"
+      : "priced";
+  const billingRoute =
+    params.billingRoute ?? (displayUsage.costsIncluded ? "codex-oauth" : "unknown");
   return {
     parsed: EventRowSchema.safeParse({
       workspace_id: params.inheritedContext.workspaceId,
@@ -417,9 +444,18 @@ function buildIngestEventRow(params: {
       output_tps: params.outputTps,
       response_index: params.inheritedContext.responseIndex,
       is_sub_agent: params.inheritedContext.isSubAgent,
+      cost_status: costStatus,
+      billing_route: billingRoute,
     }),
     date: dateBucketFromTimestamp(params.timestamp),
   };
+}
+
+function parseBillingRoute(value: unknown): AnalyticsBillingRoute | undefined {
+  return typeof value === "string" &&
+    ANALYTICS_BILLING_ROUTES.includes(value as AnalyticsBillingRoute)
+    ? (value as AnalyticsBillingRoute)
+    : undefined;
 }
 
 interface DelegationRollupRaw {
@@ -744,6 +780,7 @@ function extractIngestEvents(params: {
       metadataModel: toOptionalString(metadata.metadataModel),
       usage,
       providerMetadata: isRecord(metadata.providerMetadata) ? metadata.providerMetadata : undefined,
+      billingRoute: parseBillingRoute(metadata.billingRoute),
       toolName: null,
       timestamp,
       durationMs,
@@ -795,6 +832,7 @@ function extractIngestEvents(params: {
       providerMetadata: isRecord(rawToolModelUsage.providerMetadata)
         ? rawToolModelUsage.providerMetadata
         : undefined,
+      billingRoute: parseBillingRoute(rawToolModelUsage.billingRoute),
       toolName,
       timestamp: toFiniteNumber(rawToolModelUsage.timestamp) ?? timestamp,
       durationMs: null,
@@ -1334,6 +1372,7 @@ async function ingestHeadlessUsage(
       metadataModel: toOptionalString(record.metadataModel),
       usage,
       providerMetadata: isRecord(record.providerMetadata) ? record.providerMetadata : undefined,
+      billingRoute: parseBillingRoute(record.billingRoute),
       toolName: `headless:${source}`,
       timestamp: toFiniteNumber(record.timestamp) ?? null,
       durationMs: null,
@@ -1761,6 +1800,8 @@ function collectAllEvents(parsed: ParsedWorkspaceData[]): CollectedEvents {
 }
 
 const PRICING_FINGERPRINT_META_KEY = "pricing_fingerprint";
+const ANALYTICS_SCHEMA_VERSION_META_KEY = "analytics_schema_version";
+export const CURRENT_ANALYTICS_SCHEMA_VERSION = "2";
 
 let cachedPricingFingerprint: string | undefined;
 
@@ -1777,6 +1818,7 @@ export function getCurrentPricingFingerprint(): string {
   cachedPricingFingerprint ??= createHash("sha256")
     .update(JSON.stringify(modelsExtra))
     .update(JSON.stringify(modelsData))
+    .update(JSON.stringify(modelsSource))
     .digest("hex");
   return cachedPricingFingerprint;
 }
@@ -1794,6 +1836,24 @@ export async function storePricingFingerprint(conn: DuckDBConnection): Promise<v
   await conn.run("INSERT OR REPLACE INTO ingest_meta (key, value) VALUES (?, ?)", [
     PRICING_FINGERPRINT_META_KEY,
     getCurrentPricingFingerprint(),
+  ]);
+}
+
+export async function readStoredAnalyticsSchemaVersion(
+  conn: DuckDBConnection
+): Promise<string | null> {
+  const result = await conn.run("SELECT value FROM ingest_meta WHERE key = ?", [
+    ANALYTICS_SCHEMA_VERSION_META_KEY,
+  ]);
+  const rows = await result.getRowObjectsJS();
+  const value = rows[0]?.value;
+  return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+export async function storeAnalyticsSchemaVersion(conn: DuckDBConnection): Promise<void> {
+  await conn.run("INSERT OR REPLACE INTO ingest_meta (key, value) VALUES (?, ?)", [
+    ANALYTICS_SCHEMA_VERSION_META_KEY,
+    CURRENT_ANALYTICS_SCHEMA_VERSION,
   ]);
 }
 

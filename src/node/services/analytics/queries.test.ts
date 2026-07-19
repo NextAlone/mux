@@ -4,13 +4,18 @@ import { DuckDBInstance, type DuckDBConnection } from "@duckdb/node-api";
 import { z } from "zod";
 import {
   HistogramBucketSchema,
+  SpendOverTimeRowSchema,
   SpendByModelRowSchema,
   SummaryRowSchema,
   TimingPercentilesRowSchema,
   TokensByModelRowSchema,
 } from "@/common/orpc/schemas/analytics";
-import { executeNamedQuery } from "./queries";
-import { CREATE_EVENTS_TABLE_SQL } from "./schemaSql";
+import { executeNamedQuery, type DashboardQueryResult } from "./queries";
+import {
+  CREATE_DELEGATION_ROLLUPS_TABLE_SQL,
+  CREATE_EVENTS_TABLE_SQL,
+  CREATE_PROVIDER_QUOTA_SNAPSHOTS_TABLE_SQL,
+} from "./schemaSql";
 
 const duckDbHandlesToClose: Array<{ instance: DuckDBInstance; conn: DuckDBConnection }> = [];
 
@@ -26,6 +31,8 @@ interface EventSeed {
   cachedTokens?: number;
   cacheCreateTokens?: number;
   totalCostUsd: number;
+  costStatus?: "priced" | "included" | "unknown";
+  billingRoute?: "codex-oauth" | "openai-api-key" | "mux-gateway" | "provider-direct" | "unknown";
   durationMs?: number | null;
   ttftMs?: number | null;
   outputTps?: number | null;
@@ -38,6 +45,8 @@ async function createTestConn(): Promise<DuckDBConnection> {
 
   await conn.run(CREATE_EVENTS_TABLE_SQL);
   await conn.run("ALTER TABLE events ADD COLUMN IF NOT EXISTS tool_name VARCHAR");
+  await conn.run(CREATE_DELEGATION_ROLLUPS_TABLE_SQL);
+  await conn.run(CREATE_PROVIDER_QUOTA_SNAPSHOTS_TABLE_SQL);
 
   return conn;
 }
@@ -56,17 +65,19 @@ async function insertEvent(conn: DuckDBConnection, seed: EventSeed): Promise<voi
       cached_tokens,
       cache_create_tokens,
       total_cost_usd,
+      cost_status,
+      billing_route,
       duration_ms,
       ttft_ms,
       output_tps,
       is_sub_agent
     ) VALUES (
-      ?, CAST(? AS DATE), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+      ?, CAST(? AS DATE), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
     )`,
     [
       seed.workspaceId,
       seed.date,
-      seed.timestamp,
+      BigInt(seed.timestamp),
       seed.model,
       seed.toolName ?? null,
       seed.inputTokens,
@@ -75,6 +86,8 @@ async function insertEvent(conn: DuckDBConnection, seed: EventSeed): Promise<voi
       seed.cachedTokens ?? 0,
       seed.cacheCreateTokens ?? 0,
       seed.totalCostUsd,
+      seed.costStatus ?? "priced",
+      seed.billingRoute ?? "provider-direct",
       seed.durationMs ?? null,
       seed.ttftMs ?? null,
       seed.outputTps ?? null,
@@ -211,5 +224,105 @@ describe("analytics queries", () => {
     }, 0);
     assert(Number.isInteger(histogramCount), "histogramCount should remain integral");
     expect(histogramCount).toBe(2);
+  });
+
+  test("filters by exact local-day timestamps and reports OAuth included usage separately", async () => {
+    const conn = await createTestConn();
+    const localMidnightShanghai = Date.UTC(2026, 6, 1, 16);
+
+    await insertEvent(conn, {
+      workspaceId: "ws-before-local-day",
+      date: "2026-07-01",
+      timestamp: localMidnightShanghai - 1,
+      model: "openai:gpt-5.6-sol",
+      inputTokens: 100,
+      outputTokens: 20,
+      totalCostUsd: 1,
+    });
+    await insertEvent(conn, {
+      workspaceId: "ws-oauth-local-day",
+      date: "2026-07-01",
+      timestamp: localMidnightShanghai + 1,
+      model: "openai:gpt-5.6-sol",
+      inputTokens: 200,
+      outputTokens: 50,
+      totalCostUsd: 0,
+      costStatus: "included",
+      billingRoute: "codex-oauth",
+    });
+    await conn.run(
+      `INSERT INTO delegation_rollups
+       (parent_workspace_id, child_workspace_id, rolled_up_at_ms, date)
+       VALUES ('parent', 'before-local-day', ?, CAST('2026-07-01' AS DATE)),
+              ('parent', 'inside-local-day', ?, CAST('2026-07-01' AS DATE))`,
+      [BigInt(localMidnightShanghai - 1), BigInt(localMidnightShanghai + 1)]
+    );
+
+    const summary = SummaryRowSchema.parse(
+      await executeNamedQuery(conn, "getSummary", {
+        from: localMidnightShanghai,
+        todayStart: localMidnightShanghai,
+        todayEnd: localMidnightShanghai + 86_399_999,
+      })
+    );
+    expect(summary.total_tokens).toBe(250);
+    expect(summary.today_spend_usd).toBe(0);
+    expect(summary.included_tokens).toBe(250);
+    expect(summary.oauth_tokens).toBe(250);
+    expect(summary.oauth_requests).toBe(1);
+
+    const trend = z.array(SpendOverTimeRowSchema).parse(
+      await executeNamedQuery(conn, "getSpendOverTime", {
+        granularity: "day",
+        from: localMidnightShanghai,
+        timezone: "Asia/Shanghai",
+      })
+    );
+    expect(trend).toHaveLength(1);
+    expect(trend[0]?.bucket).toBe("2026-07-02");
+
+    const delegation = (await executeNamedQuery(conn, "getDelegationSummary", {
+      from: localMidnightShanghai,
+    })) as { totals: { total_children: number } };
+    expect(delegation.totals.total_children).toBe(1);
+  });
+
+  test("returns dashboard usage and the latest account-scoped quota in one named query", async () => {
+    const conn = await createTestConn();
+    await insertEvent(conn, {
+      workspaceId: "ws-dashboard",
+      date: "2026-07-19",
+      timestamp: Date.UTC(2026, 6, 19, 2),
+      model: "openai:gpt-5.6-sol",
+      inputTokens: 300,
+      outputTokens: 100,
+      totalCostUsd: 0,
+      costStatus: "included",
+      billingRoute: "codex-oauth",
+      durationMs: 500,
+      ttftMs: 50,
+      outputTps: 200,
+    });
+    await conn.run(
+      `INSERT INTO provider_quota_snapshots
+       (provider, account_key, window_kind, observed_at, last_observed_at,
+        used_percent, remaining_percent, reset_at, source)
+       VALUES ('openai-codex', 'account-a', 'five-hour', ?, ?, 20, 80, NULL, 'headers')`,
+      [BigInt(1000), BigInt(2000)]
+    );
+
+    const result = (await executeNamedQuery(conn, "getDashboard", {
+      projectPath: null,
+      granularity: "day",
+      timingMetric: "duration",
+      codexAccountKey: "account-a",
+      timezone: "Asia/Shanghai",
+    })) as DashboardQueryResult;
+
+    expect(result.summary.oauth_tokens).toBe(400);
+    expect(result.spendOverTime).toHaveLength(1);
+    expect(result.codexQuotaRows).toMatchObject([
+      { window_kind: "five-hour", observed_at: 2000, remaining_percent: 80 },
+    ]);
   });
 });
