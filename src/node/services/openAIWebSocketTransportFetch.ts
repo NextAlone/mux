@@ -336,8 +336,8 @@ export function createCodexOAuthWebSocketTransportFetch(
             }
           };
           const onError = (error: Error): void => {
-            disableWebSocket();
             cleanup();
+            disableWebSocket();
             controller.error(error);
           };
           const onClose = (): void => {
@@ -356,31 +356,41 @@ export function createCodexOAuthWebSocketTransportFetch(
           const onMessage = (data: RawData): void => {
             resetIdleTimeout();
             const text = decodeWebSocketData(data);
-            controller.enqueue(encoder.encode(`data: ${text}\n\n`));
+            let event: unknown;
             try {
-              const event = JSON.parse(text) as unknown;
-              if (!isJsonRecord(event)) return;
-              if (event.type === "response.completed") {
-                const response = event.response;
-                if (isJsonRecord(response) && typeof response.id === "string") {
-                  continuation = {
-                    request: requestWithoutStream,
-                    responseId: response.id,
-                    output: Array.isArray(response.output) ? response.output : [],
-                  };
-                }
-                completed = true;
-                controller.enqueue(encoder.encode("data: [DONE]\n\n"));
-                cleanup();
-                controller.close();
-              } else if (event.type === "error") {
-                completed = true;
-                controller.enqueue(encoder.encode("data: [DONE]\n\n"));
-                cleanup();
-                controller.close();
-              }
+              event = JSON.parse(text) as unknown;
             } catch {
-              // Preserve malformed provider frames for the SDK to diagnose.
+              // Validate at the transport boundary: forwarding a truncated frame such as "{"
+              // makes the SDK surface a misleading API JSON error and leaves this bad socket
+              // enabled. Failing it as a truncated stream lets retry use the HTTP fallback.
+              onError(
+                new Error(
+                  "Codex Responses WebSocket stream closed unexpectedly before the response completed: received malformed JSON frame"
+                )
+              );
+              return;
+            }
+
+            controller.enqueue(encoder.encode(`data: ${text}\n\n`));
+            if (!isJsonRecord(event)) return;
+            if (event.type === "response.completed") {
+              const response = event.response;
+              if (isJsonRecord(response) && typeof response.id === "string") {
+                continuation = {
+                  request: requestWithoutStream,
+                  responseId: response.id,
+                  output: Array.isArray(response.output) ? response.output : [],
+                };
+              }
+              completed = true;
+              controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+              cleanup();
+              controller.close();
+            } else if (event.type === "error") {
+              completed = true;
+              controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+              cleanup();
+              controller.close();
             }
           };
 

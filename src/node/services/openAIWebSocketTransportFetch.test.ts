@@ -573,6 +573,51 @@ describe("Codex OAuth Responses WebSocket", () => {
     }
   });
 
+  test("rejects malformed Codex WebSocket frames before forwarding them to the SDK", async () => {
+    const server = new WebSocketServer({ port: 0 });
+    await new Promise<void>((resolve) => server.once("listening", resolve));
+    const address = server.address() as AddressInfo;
+    server.on("connection", (connection) => {
+      connection.once("message", () => connection.send("{"));
+    });
+    const baseCalls: string[] = [];
+    const transport = createCodexOAuthWebSocketTransportFetch({
+      enabled: true,
+      baseFetch: createTestFetch((input) => {
+        baseCalls.push(getFetchInputUrl(input));
+        return Promise.resolve(new Response("base"));
+      }),
+      webSocketUrl: `ws://127.0.0.1:${address.port}/backend-api/codex/responses`,
+    });
+
+    try {
+      const request = {
+        method: "POST",
+        body: JSON.stringify({ model: "gpt-5.6-sol", stream: true, input: [] }),
+      };
+      const response = await transport.fetch(
+        "https://chatgpt.com/backend-api/codex/responses",
+        request
+      );
+
+      await expect(response.text()).rejects.toThrow(
+        "stream closed unexpectedly before the response completed: received malformed JSON frame"
+      );
+
+      const fallbackResponse = await transport.fetch(
+        "https://chatgpt.com/backend-api/codex/responses",
+        request
+      );
+      expect(await fallbackResponse.text()).toBe("base");
+      expect(baseCalls).toEqual(["https://chatgpt.com/backend-api/codex/responses"]);
+    } finally {
+      transport.close();
+      await new Promise<void>((resolve, reject) => {
+        server.close((error) => (error ? reject(error) : resolve()));
+      });
+    }
+  });
+
   test("does not fall back to HTTP when WebSocket setup is aborted", () => {
     let baseCalls = 0;
     const transport = createCodexOAuthWebSocketTransportFetch({
