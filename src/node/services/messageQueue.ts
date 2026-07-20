@@ -71,6 +71,10 @@ type QueueDispatchMode = NonNullable<SendMessageOptions["queueDispatchMode"]>;
 interface QueuedMessageInternalOptions {
   synthetic?: boolean;
   agentInitiated?: boolean;
+  /** Keep this queued add isolated so its dedupe key can be removed without affecting siblings. */
+  sealed?: boolean;
+  /** Dedupe-keyed maintenance sends are removable by prefix without changing global queue rules. */
+  removableDedupeKey?: boolean;
   onAccepted?: () => Promise<void> | void;
   onAcceptedPreStreamFailure?: (error: SendMessageError) => Promise<void> | void;
   onCanceled?: (reason: string) => Promise<void> | void;
@@ -255,6 +259,8 @@ export class MessageQueue {
     // internal callbacks correlate to exactly one dispatch, and agent-skill metadata
     // must not leak onto batched follow-ups.
     const incomingIsSealed =
+      internal?.sealed === true ||
+      internal?.removableDedupeKey === true ||
       isAgentSkillMetadata(options?.muxMetadata) ||
       isWorkspaceTurnMetadata(options?.muxMetadata) ||
       incomingHasAcceptedCallbacks;
@@ -464,6 +470,55 @@ export class MessageQueue {
         ? { onAcceptedPreStreamFailure: entry.onAcceptedPreStreamFailure }
         : {}),
     };
+  }
+
+  /** Remove queued entries carrying a dedupe key with the given prefix. */
+  removeByDedupeKeyPrefix(prefix: string): {
+    removedCount: number;
+    callbacks: QueueClearCallbacks[];
+  } {
+    if (prefix.length === 0) {
+      return { removedCount: 0, callbacks: [] };
+    }
+    let removedCount = 0;
+    const removedCallbacks: QueueClearCallbacks[] = [];
+    this.entries = this.entries.flatMap((entry) => {
+      const matchingKeys = [...entry.dedupeKeys].filter((dedupeKey) =>
+        dedupeKey.startsWith(prefix)
+      );
+      if (matchingKeys.length === 0) {
+        return [entry];
+      }
+      removedCount += matchingKeys.length;
+      // Dedupe-keyed progress sends are agent-initiated and therefore isolated from user entries,
+      // but multiple progress sends can still batch together. Remove only the matched messages and
+      // preserve unrelated keys/messages that share the same entry.
+      const matchingKeySet = new Set(matchingKeys);
+      const keptMessages = entry.messages.filter((_message, index) => {
+        const key = [...entry.dedupeKeys][index];
+        return key == null || !matchingKeySet.has(key);
+      });
+      if (keptMessages.length > 0) {
+        entry.messages = keptMessages;
+        for (const key of matchingKeys) {
+          entry.dedupeKeys.delete(key);
+        }
+        entry.addCount -= matchingKeys.length;
+        entry.syntheticCount = Math.min(entry.syntheticCount, entry.addCount);
+        entry.agentInitiatedCount = Math.min(entry.agentInitiatedCount, entry.addCount);
+        return [entry];
+      }
+      if (entry.onCanceled != null || entry.onAcceptedPreStreamFailure != null) {
+        removedCallbacks.push({
+          ...(entry.onCanceled != null ? { onCanceled: entry.onCanceled } : {}),
+          ...(entry.onAcceptedPreStreamFailure != null
+            ? { onAcceptedPreStreamFailure: entry.onAcceptedPreStreamFailure }
+            : {}),
+        });
+      }
+      return [];
+    });
+    return { removedCount, callbacks: removedCallbacks };
   }
 
   /**

@@ -5185,6 +5185,8 @@ export class AgentSession {
       agentInitiated?: boolean;
       /** Coalescing: drop the message when an entry with the same key is already queued. */
       dedupeKey?: string;
+      /** Isolate this keyed message so it can be selectively superseded later. */
+      removableDedupeKey?: boolean;
       onAccepted?: () => Promise<void> | void;
       onAcceptedPreStreamFailure?: (error: SendMessageError) => Promise<void> | void;
       onCanceled?: (reason: string) => Promise<void> | void;
@@ -5240,6 +5242,24 @@ export class AgentSession {
         error: getErrorMessage(error),
       });
     });
+  }
+
+  removeQueuedMessagesByDedupeKeyPrefix(prefix: string, cancelReason: string): number {
+    this.assertNotDisposed("removeQueuedMessagesByDedupeKeyPrefix");
+    assert(prefix.length > 0, "removeQueuedMessagesByDedupeKeyPrefix requires prefix");
+    const removal = this.messageQueue.removeByDedupeKeyPrefix(prefix);
+    if (removal.removedCount === 0) {
+      return 0;
+    }
+    this.emitQueuedMessageChanged();
+    this.backgroundProcessManager.setMessageQueued(
+      this.workspaceId,
+      !this.messageQueue.isEmpty() && this.messageQueue.getQueueDispatchMode() === "tool-end"
+    );
+    for (const callbacks of removal.callbacks) {
+      this.notifyQueuedMessageCleared(callbacks, cancelReason);
+    }
+    return removal.removedCount;
   }
 
   hasQueuedWorkspaceTurn(handleId: string): boolean {

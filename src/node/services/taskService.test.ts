@@ -378,6 +378,7 @@ function createWorkspaceServiceMocks(
     resumeStream: ReturnType<typeof mock>;
     clearQueue: ReturnType<typeof mock>;
     removeQueuedWorkspaceTurn: ReturnType<typeof mock>;
+    removeQueuedMessagesByDedupeKeyPrefix: ReturnType<typeof mock>;
     hasQueuedWorkspaceTurn: ReturnType<typeof mock>;
     hasQueuedMessages: ReturnType<typeof mock>;
     isBusyForMessage: ReturnType<typeof mock>;
@@ -404,6 +405,7 @@ function createWorkspaceServiceMocks(
   resumeStream: ReturnType<typeof mock>;
   clearQueue: ReturnType<typeof mock>;
   removeQueuedWorkspaceTurn: ReturnType<typeof mock>;
+  removeQueuedMessagesByDedupeKeyPrefix: ReturnType<typeof mock>;
   hasQueuedWorkspaceTurn: ReturnType<typeof mock>;
   hasQueuedMessages: ReturnType<typeof mock>;
   isBusyForMessage: ReturnType<typeof mock>;
@@ -432,6 +434,7 @@ function createWorkspaceServiceMocks(
   const clearQueue = overrides?.clearQueue ?? mock((): Result<void> => Ok(undefined));
   const removeQueuedWorkspaceTurn =
     overrides?.removeQueuedWorkspaceTurn ?? mock((): Result<boolean> => Ok(true));
+  const removeQueuedMessagesByDedupeKeyPrefix = mock((): Result<number> => Ok(0));
   const hasQueuedWorkspaceTurn = overrides?.hasQueuedWorkspaceTurn ?? mock(() => false);
   const hasQueuedMessages = overrides?.hasQueuedMessages ?? mock(() => false);
   const isBusyForMessage = overrides?.isBusyForMessage ?? mock(() => false);
@@ -476,6 +479,7 @@ function createWorkspaceServiceMocks(
       resumeStream,
       clearQueue,
       removeQueuedWorkspaceTurn,
+      removeQueuedMessagesByDedupeKeyPrefix,
       isBusyForMessage,
       hasQueuedWorkspaceTurn,
       hasQueuedMessages,
@@ -500,6 +504,7 @@ function createWorkspaceServiceMocks(
     resumeStream,
     clearQueue,
     removeQueuedWorkspaceTurn,
+    removeQueuedMessagesByDedupeKeyPrefix,
     hasQueuedWorkspaceTurn,
     hasQueuedMessages,
     isBusyForMessage,
@@ -7651,7 +7656,7 @@ describe("TaskService", () => {
       type: "stream-end",
       workspaceId: rootWorkspaceId,
       messageId: assistantMessageId,
-      metadata: { model: "openai:gpt-5.2" },
+      metadata: { model: "openai:gpt-5.2", finishReason: "stop" },
       parts: [
         {
           type: "dynamic-tool",
@@ -7728,7 +7733,7 @@ describe("TaskService", () => {
       type: "stream-end",
       workspaceId: rootWorkspaceId,
       messageId: assistantMessageId,
-      metadata: { model: "openai:gpt-5.2" },
+      metadata: { model: "openai:gpt-5.2", finishReason: "stop" },
       parts: [
         {
           type: "dynamic-tool",
@@ -8905,7 +8910,7 @@ describe("TaskService", () => {
       type: "stream-end",
       workspaceId: childTaskId,
       messageId: "assistant-child-output",
-      metadata: { model: "openai:gpt-5.2" },
+      metadata: { model: "openai:gpt-5.2", finishReason: "stop" },
       parts: [
         {
           type: "dynamic-tool",
@@ -8925,6 +8930,7 @@ describe("TaskService", () => {
             },
           },
         },
+        { type: "text", text: "Hello from child" },
       ],
     });
 
@@ -8993,7 +8999,7 @@ describe("TaskService", () => {
       type: "stream-end",
       workspaceId: childTaskId,
       messageId: "assistant-workflow-child-output",
-      metadata: { model: "openai:gpt-5.2" },
+      metadata: { model: "openai:gpt-5.2", finishReason: "stop" },
       parts: [
         {
           type: "dynamic-tool",
@@ -9006,6 +9012,7 @@ describe("TaskService", () => {
           state: "output-available",
           output: { success: true },
         },
+        { type: "text", text: "Workflow step report" },
       ],
     });
 
@@ -9065,7 +9072,7 @@ describe("TaskService", () => {
       type: "stream-end",
       workspaceId: backgroundChildId,
       messageId: "assistant-background-output",
-      metadata: { model: "openai:gpt-5.2" },
+      metadata: { model: "openai:gpt-5.2", finishReason: "stop" },
       parts: [
         {
           type: "dynamic-tool",
@@ -9075,6 +9082,7 @@ describe("TaskService", () => {
           state: "output-available",
           output: { success: true },
         },
+        { type: "text", text: "Background result" },
       ],
     });
     await flushTerminalAttentionDrains(taskService);
@@ -9086,7 +9094,7 @@ describe("TaskService", () => {
       type: "stream-end",
       workspaceId: foregroundChildId,
       messageId: "assistant-foreground-output",
-      metadata: { model: "openai:gpt-5.2" },
+      metadata: { model: "openai:gpt-5.2", finishReason: "stop" },
       parts: [
         {
           type: "dynamic-tool",
@@ -9096,6 +9104,7 @@ describe("TaskService", () => {
           state: "output-available",
           output: { success: true },
         },
+        { type: "text", text: "Foreground result" },
       ],
     });
 
@@ -9156,7 +9165,7 @@ describe("TaskService", () => {
       type: "stream-end",
       workspaceId: childTaskId,
       messageId: "assistant-child-output",
-      metadata: { model: "openai:gpt-5.2" },
+      metadata: { model: "openai:gpt-5.2", finishReason: "stop" },
       parts: [
         {
           type: "dynamic-tool",
@@ -9166,6 +9175,7 @@ describe("TaskService", () => {
           state: "output-available",
           output: { success: true },
         },
+        { type: "text", text: "Hello from child" },
       ],
     });
 
@@ -9222,7 +9232,7 @@ describe("TaskService", () => {
       type: "stream-end",
       workspaceId: childTaskId,
       messageId: "assistant-child-output",
-      metadata: { model: "openai:gpt-5.2" },
+      metadata: { model: "openai:gpt-5.2", finishReason: "stop" },
       parts: [
         {
           type: "dynamic-tool",
@@ -9232,6 +9242,7 @@ describe("TaskService", () => {
           state: "output-available",
           output: { success: true },
         },
+        { type: "text", text: "Hello from child" },
       ],
     });
 
@@ -10585,10 +10596,8 @@ describe("TaskService", () => {
     expect(findWorkspaceInConfig(config, childTaskId)?.taskStatus).toBe("interrupted");
     expect(sendMessage).toHaveBeenCalledWith(
       parentTaskId,
-      expect.stringContaining("awaiting its final agent_report"),
-      expect.objectContaining({
-        toolPolicy: [{ regex_match: "^agent_report$", action: "require" }],
-      }),
+      expect.stringContaining("awaiting its final assistant response"),
+      expect.any(Object),
       expect.objectContaining({ synthetic: true })
     );
   });
@@ -11123,10 +11132,8 @@ describe("TaskService", () => {
 
     expect(sendMessage).toHaveBeenCalledWith(
       childId,
-      expect.stringContaining("awaiting its final agent_report"),
-      expect.objectContaining({
-        toolPolicy: [{ regex_match: "^agent_report$", action: "require" }],
-      }),
+      expect.stringContaining("awaiting its final assistant response"),
+      expect.any(Object),
       expect.objectContaining({ synthetic: true })
     );
   });
@@ -11189,9 +11196,10 @@ describe("TaskService", () => {
 
     expect(sendMessage).toHaveBeenCalledWith(
       childId,
-      expect.stringContaining("awaiting its final propose_plan"),
+      expect.stringContaining("awaiting its propose_plan"),
       expect.objectContaining({
         toolPolicy: [{ regex_match: "^propose_plan$", action: "require" }],
+        agentId: customAgentId,
       }),
       expect.objectContaining({ synthetic: true })
     );
@@ -11254,9 +11262,10 @@ describe("TaskService", () => {
 
     expect(sendMessage).toHaveBeenCalledWith(
       childId,
-      expect.stringContaining("awaiting its final propose_plan"),
+      expect.stringContaining("awaiting its propose_plan"),
       expect.objectContaining({
         toolPolicy: [{ regex_match: "^propose_plan$", action: "require" }],
+        agentId: "exec",
       }),
       expect.objectContaining({ synthetic: true })
     );
@@ -11524,7 +11533,7 @@ describe("TaskService", () => {
     expect(sendMessage).toHaveBeenCalledTimes(1);
     expect(sendMessage).toHaveBeenCalledWith(
       childId,
-      expect.stringContaining("Your stream ended without calling agent_report"),
+      expect.stringContaining("Your stream ended without a final assistant response"),
       expect.any(Object),
       expect.objectContaining({ synthetic: true, agentInitiated: true })
     );
@@ -12108,6 +12117,7 @@ describe("TaskService", () => {
           state: "output-available",
           output: { success: true },
         },
+        { type: "text", text: "Premature report" },
       ],
     });
 
@@ -12604,6 +12614,7 @@ describe("TaskService", () => {
           state: "output-available",
           output: { success: true },
         },
+        { type: "text", text: "Hello from child" },
       ]
     );
     const writeChildPartial = await partialService.writePartial(childId, childPartial);
@@ -12617,7 +12628,7 @@ describe("TaskService", () => {
       type: "stream-end",
       workspaceId: childId,
       messageId: "assistant-child-partial",
-      metadata: { model: "test-model" },
+      metadata: { model: "test-model", finishReason: "stop" },
       parts: childPartial.parts as StreamEndEvent["parts"],
     });
 
@@ -12864,6 +12875,7 @@ describe("TaskService", () => {
           state: "output-available",
           output: { success: true },
         },
+        { type: "text", text: params.reportMarkdown },
       ]
     );
     expect((await params.partialService.writePartial(params.childId, childPartial)).success).toBe(
@@ -12875,7 +12887,7 @@ describe("TaskService", () => {
       type: "stream-end",
       workspaceId: params.childId,
       messageId: `assistant-${params.childId}-partial`,
-      metadata: { model: "test-model" },
+      metadata: { model: "test-model", finishReason: "stop" },
       parts: childPartial.parts as StreamEndEvent["parts"],
     });
   }
@@ -13334,6 +13346,7 @@ describe("TaskService", () => {
           state: "output-available",
           output: { success: true },
         },
+        { type: "text", text: "Report from child one" },
       ]
     );
     expect((await partialService.writePartial(childOneId, childPartial)).success).toBe(true);
@@ -13343,7 +13356,7 @@ describe("TaskService", () => {
       type: "stream-end",
       workspaceId: childOneId,
       messageId: `assistant-${childOneId}-partial`,
-      metadata: { model: "test-model" },
+      metadata: { model: "test-model", finishReason: "stop" },
       parts: childPartial.parts as StreamEndEvent["parts"],
     });
 
@@ -13466,6 +13479,7 @@ describe("TaskService", () => {
             state: "output-available",
             output: { success: true },
           },
+          { type: "text", text: reportMarkdown },
         ]
       );
       expect((await partialService.writePartial(childId, childPartial)).success).toBe(true);
@@ -13475,7 +13489,7 @@ describe("TaskService", () => {
         type: "stream-end",
         workspaceId: childId,
         messageId: `assistant-${childId}-partial`,
-        metadata: { model: "test-model" },
+        metadata: { model: "test-model", finishReason: "stop" },
         parts: childPartial.parts as StreamEndEvent["parts"],
       });
     }
@@ -13498,14 +13512,14 @@ describe("TaskService", () => {
       type: "stream-end",
       workspaceId: childTwoId,
       messageId: "assistant-child-two-interrupted",
-      metadata: { model: "test-model" },
+      metadata: { model: "test-model", finishReason: "stop" },
       parts: [],
     });
     await handleTaskServiceStreamEndForTest(taskService, {
       type: "stream-end",
       workspaceId: childTwoId,
       messageId: "assistant-child-two-interrupted-repeat",
-      metadata: { model: "test-model" },
+      metadata: { model: "test-model", finishReason: "stop" },
       parts: [],
     });
 
@@ -13608,6 +13622,7 @@ describe("TaskService", () => {
           state: "output-available",
           output: { success: true },
         },
+        { type: "text", text: "Hello from child" },
       ]
     );
     const writeChildPartial = await partialService.writePartial(childId, childPartial);
@@ -13625,7 +13640,7 @@ describe("TaskService", () => {
       type: "stream-end",
       workspaceId: childId,
       messageId: "assistant-child-partial",
-      metadata: { model: "test-model" },
+      metadata: { model: "test-model", finishReason: "stop" },
       parts: childPartial.parts as StreamEndEvent["parts"],
     });
 
@@ -13790,6 +13805,7 @@ describe("TaskService", () => {
           state: "output-available",
           output: { success: true },
         },
+        { type: "text", text: "Hello from child" },
       ]
     );
     expect((await partialService.writePartial(childId, childPartial)).success).toBe(true);
@@ -13806,7 +13822,7 @@ describe("TaskService", () => {
       type: "stream-end",
       workspaceId: childId,
       messageId: "assistant-child-partial",
-      metadata: { model: "test-model" },
+      metadata: { model: "test-model", finishReason: "stop" },
       parts: childPartial.parts as StreamEndEvent["parts"],
     });
 
@@ -13942,6 +13958,7 @@ describe("TaskService", () => {
           state: "output-available",
           output: { success: true },
         },
+        { type: "text", text: "Hello from child" },
       ]
     );
     const writeChildPartial = await partialService.writePartial(childId, childPartial);
@@ -13959,7 +13976,7 @@ describe("TaskService", () => {
       type: "stream-end",
       workspaceId: childId,
       messageId: "assistant-child-partial",
-      metadata: { model: "test-model" },
+      metadata: { model: "test-model", finishReason: "stop" },
       parts: childPartial.parts as StreamEndEvent["parts"],
     });
 
@@ -14083,6 +14100,7 @@ describe("TaskService", () => {
           state: "output-available",
           output: { success: true },
         },
+        { type: "text", text: "Hello from child" },
       ]
     );
     const writeChildPartial = await partialService.writePartial(childId, childPartial);
@@ -14092,7 +14110,7 @@ describe("TaskService", () => {
       type: "stream-end",
       workspaceId: childId,
       messageId: "assistant-child-partial",
-      metadata: { model: "test-model" },
+      metadata: { model: "test-model", finishReason: "stop" },
       parts: childPartial.parts as StreamEndEvent["parts"],
     });
 
@@ -14197,7 +14215,7 @@ describe("TaskService", () => {
       type: "stream-end",
       workspaceId: childId,
       messageId: "assistant-child-output",
-      metadata: { model: "openai:gpt-4o-mini" },
+      metadata: { model: "openai:gpt-4o-mini", finishReason: "stop" },
       parts: [
         {
           type: "dynamic-tool",
@@ -14207,6 +14225,7 @@ describe("TaskService", () => {
           state: "output-available",
           output: { success: true },
         },
+        { type: "text", text: "Hello from child" },
       ],
     });
 
@@ -14340,7 +14359,7 @@ describe("TaskService", () => {
         type: "stream-end",
         workspaceId: input.workspaceId,
         messageId: input.messageId,
-        metadata: { model: childModel },
+        metadata: { model: childModel, finishReason: "stop" },
         parts: [
           {
             type: "dynamic-tool",
@@ -14350,6 +14369,7 @@ describe("TaskService", () => {
             state: "output-available",
             output: { success: true },
           },
+          { type: "text", text: input.reportMarkdown },
         ],
       });
     }
@@ -14461,7 +14481,7 @@ describe("TaskService", () => {
       type: "stream-end",
       workspaceId: childId,
       messageId: "assistant-child-output",
-      metadata: { model: "openai:gpt-4o-mini" },
+      metadata: { model: "openai:gpt-4o-mini", finishReason: "stop" },
       parts: [
         {
           type: "dynamic-tool",
@@ -14548,7 +14568,7 @@ describe("TaskService", () => {
       type: "stream-end",
       workspaceId: childId,
       messageId: "assistant-child-output",
-      metadata: { model: "openai:gpt-4o-mini" },
+      metadata: { model: "openai:gpt-4o-mini", finishReason: "stop" },
       parts: [
         {
           type: "dynamic-tool",
@@ -14631,7 +14651,7 @@ describe("TaskService", () => {
         type: "stream-end",
         workspaceId: childId,
         messageId: `assistant-${toolName}-output`,
-        metadata: { model: "openai:gpt-4o-mini" },
+        metadata: { model: "openai:gpt-4o-mini", finishReason: "stop" },
         parts: [
           {
             type: "dynamic-tool",
@@ -14652,10 +14672,11 @@ describe("TaskService", () => {
             type: "dynamic-tool",
             toolCallId: "agent-report-call-1",
             toolName: "agent_report",
-            input: { reportMarkdown: "Final report", title: "Result" },
+            input: { reportMarkdown: "Progress report", title: "Progress" },
             state: "output-available",
             output: { success: true },
           },
+          { type: "text", text: "Final report" },
         ],
       });
 
@@ -14715,7 +14736,7 @@ describe("TaskService", () => {
       type: "stream-end",
       workspaceId: childId,
       messageId: "assistant-child-output",
-      metadata: { model: "openai:gpt-4o-mini" },
+      metadata: { model: "openai:gpt-4o-mini", finishReason: "stop" },
       parts: [
         {
           type: "dynamic-tool",
@@ -14725,6 +14746,7 @@ describe("TaskService", () => {
           state: "output-available",
           output: { success: true },
         },
+        { type: "text", text: "Interrupted child report" },
       ],
     });
 
@@ -14793,7 +14815,7 @@ describe("TaskService", () => {
       type: "stream-end",
       workspaceId: childId,
       messageId: "assistant-child-output",
-      metadata: { model: "openai:gpt-4o-mini" },
+      metadata: { model: "openai:gpt-4o-mini", finishReason: "stop" },
       parts: [],
     });
 
@@ -14857,13 +14879,140 @@ describe("TaskService", () => {
       type: "stream-end",
       workspaceId: childId,
       messageId: "assistant-child-output",
-      metadata: { model: "openai:gpt-4o-mini" },
+      metadata: { model: "openai:gpt-4o-mini", finishReason: "stop" },
       parts: [],
     });
 
     expect(sendMessage).not.toHaveBeenCalled();
     expect(findWorkspaceInConfig(config, childId)?.taskStatus).toBe("interrupted");
     expect(maybeStartQueuedTasks).toHaveBeenCalledTimes(1);
+  });
+
+  test("agent_report wakes the parent repeatedly without completing the subagent", async () => {
+    const config = await createTestConfig(rootDir);
+    const projectPath = path.join(rootDir, "repo");
+    const parentId = "parent-progress";
+    const childId = "child-progress";
+
+    await saveWorkspaces(
+      config,
+      projectPath,
+      [
+        projectWorkspace(projectPath, "parent", parentId),
+        projectWorkspace(projectPath, "child", childId, {
+          name: "agent_review_child",
+          parentWorkspaceId: parentId,
+          agentType: "review",
+          taskStatus: "running",
+          taskModelString: "openai:gpt-4o-mini",
+        }),
+      ],
+      testTaskSettings()
+    );
+
+    const { workspaceService, sendMessage } = createWorkspaceServiceMocks();
+    const { taskService } = createTaskServiceHarness(config, { workspaceService });
+
+    await taskService.reportAgentProgress(childId, "progress-1", {
+      reportMarkdown: "Found a correctness issue.",
+      title: "Finding",
+    });
+    await taskService.reportAgentProgress(childId, "progress-2", {
+      reportMarkdown: "Found a second issue.",
+    });
+
+    expect(sendMessage).toHaveBeenCalledTimes(2);
+    expect(sendMessage).toHaveBeenNthCalledWith(
+      1,
+      parentId,
+      expect.stringContaining("Found a correctness issue."),
+      expect.any(Object),
+      expect.objectContaining({
+        synthetic: true,
+        agentInitiated: true,
+        startStreamInBackground: true,
+        queueDedupeKey: "agent-report:child-progress:progress-1",
+      })
+    );
+    expect(sendMessage.mock.calls[0]?.[1]).toContain("<status>in_progress</status>");
+    expect(sendMessage.mock.calls[1]?.[1]).toContain("Found a second issue.");
+    expect(findWorkspaceInConfig(config, childId)?.taskStatus).toBe("running");
+    expect(await readSubagentReportArtifact(config.getSessionDir(parentId), childId)).toBeNull();
+  });
+
+  test("terminal reports supersede queued incremental updates for the same child", async () => {
+    const config = await createTestConfig(rootDir);
+    const projectPath = path.join(rootDir, "repo");
+    const parentId = "parent-queued-progress";
+    const childId = "child-queued-progress";
+
+    await saveWorkspaces(
+      config,
+      projectPath,
+      [
+        projectWorkspace(projectPath, "parent", parentId),
+        projectWorkspace(projectPath, "child", childId, {
+          name: "agent_explore_child",
+          parentWorkspaceId: parentId,
+          agentType: "explore",
+          taskStatus: "running",
+        }),
+      ],
+      testTaskSettings()
+    );
+
+    const removeQueuedMessagesByDedupeKeyPrefix = mock((): Result<number> => Ok(1));
+    const { workspaceService } = createWorkspaceServiceMocks();
+    workspaceService.removeQueuedMessagesByDedupeKeyPrefix = removeQueuedMessagesByDedupeKeyPrefix;
+    const { taskService } = createTaskServiceHarness(config, { workspaceService });
+
+    await handleTaskServiceStreamEndForTest(taskService, {
+      type: "stream-end",
+      workspaceId: childId,
+      messageId: "assistant-final",
+      metadata: { model: "openai:gpt-4o-mini", finishReason: "stop" },
+      parts: [{ type: "text", text: "Terminal result" }],
+    });
+
+    expect(removeQueuedMessagesByDedupeKeyPrefix).toHaveBeenCalledWith(
+      parentId,
+      `agent-report:${childId}:`,
+      { cancelReason: "Incremental sub-agent update superseded by the terminal report." }
+    );
+  });
+
+  test("workflow-owned agent_report updates do not wake the parent", async () => {
+    const config = await createTestConfig(rootDir);
+    const projectPath = path.join(rootDir, "repo");
+    const parentId = "parent-workflow-progress";
+    const childId = "child-workflow-progress";
+
+    await saveWorkspaces(
+      config,
+      projectPath,
+      [
+        projectWorkspace(projectPath, "parent", parentId),
+        projectWorkspace(projectPath, "child", childId, {
+          name: "agent_exec_child",
+          parentWorkspaceId: parentId,
+          agentType: "exec",
+          taskStatus: "running",
+          workflowTask: { runId: "wfr_progress", stepId: "collect", outputSchema: {} },
+        }),
+      ],
+      testTaskSettings()
+    );
+
+    const { workspaceService, sendMessage } = createWorkspaceServiceMocks();
+    const { taskService } = createTaskServiceHarness(config, { workspaceService });
+
+    await taskService.reportAgentProgress(childId, "workflow-progress", {
+      reportMarkdown: "Structured workflow update submitted.",
+      structuredOutput: { claims: ["verified"] },
+    });
+
+    expect(sendMessage).not.toHaveBeenCalled();
+    expect(findWorkspaceInConfig(config, childId)?.taskStatus).toBe("running");
   });
 
   test("non-plan subagent stream-end with final assistant text finalizes an implicit report", async () => {
@@ -14923,7 +15072,25 @@ describe("TaskService", () => {
       workspaceId: childId,
       messageId: "assistant-child-output",
       metadata: { model: "openai:gpt-4o-mini", finishReason: "stop" },
-      parts: [{ type: "text", text: "## Final answer\n\nImplicit report content from the child." }],
+      parts: [
+        {
+          type: "dynamic-tool",
+          toolCallId: "agent-report-progress-1",
+          toolName: "agent_report",
+          input: { reportMarkdown: "Early finding", title: "Finding" },
+          state: "output-available",
+          output: { success: true },
+        },
+        {
+          type: "dynamic-tool",
+          toolCallId: "agent-report-progress-2",
+          toolName: "agent_report",
+          input: { reportMarkdown: "Later finding", title: "Latest update" },
+          state: "output-available",
+          output: { success: true },
+        },
+        { type: "text", text: "## Final answer\n\nImplicit report content from the child." },
+      ],
     });
 
     const updatedParentPartial = await partialService.readPartial(parentId);
@@ -14953,7 +15120,7 @@ describe("TaskService", () => {
     expect(report?.reportMarkdown).toBe(
       "## Final answer\n\nImplicit report content from the child."
     );
-    expect(report?.title).toBeUndefined();
+    expect(report?.title).toBe("Latest update");
 
     const postCfg = config.loadConfigOrDefault();
     const ws = Array.from(postCfg.projects.values())
@@ -14970,7 +15137,94 @@ describe("TaskService", () => {
     }
   });
 
-  test("workflow subagent stream-end with final assistant text still requires structured agent_report", async () => {
+  test("workflow subagent reuses structured agent_report metadata from an earlier turn", async () => {
+    const config = await createTestConfig(rootDir);
+    const projectPath = path.join(rootDir, "repo");
+    const parentId = "parent-structured-history";
+    const childId = "child-structured-history";
+    const workflowRunId = "wfr_structured_history";
+
+    await saveWorkspaces(
+      config,
+      projectPath,
+      [
+        projectWorkspace(projectPath, "parent", parentId),
+        projectWorkspace(projectPath, "child", childId, {
+          name: "agent_exec_child",
+          parentWorkspaceId: parentId,
+          agentType: "exec",
+          taskStatus: "running",
+          taskModelString: "openai:gpt-4o-mini",
+          workflowTask: {
+            runId: workflowRunId,
+            stepId: "collect",
+            outputSchema: {
+              type: "object",
+              required: ["claims"],
+              properties: { claims: { type: "array", items: { type: "string" } } },
+              additionalProperties: false,
+            },
+          },
+        }),
+      ],
+      testTaskSettings()
+    );
+
+    const runStore = new WorkflowRunStore({ sessionDir: config.getSessionDir(parentId) });
+    await runStore.createRun({
+      id: workflowRunId,
+      workspaceId: parentId,
+      workflow: {
+        name: "structured-history",
+        description: "Structured history",
+        scope: "built-in",
+        executable: true,
+      },
+      source: "export default function workflow() { return {}; }\n",
+      args: {},
+      now: "2026-06-04T00:00:00.000Z",
+    });
+    await runStore.appendStatus(workflowRunId, "running", "2026-06-04T00:00:01.000Z");
+
+    const { aiService } = createAIServiceMocks(config);
+    const { workspaceService, sendMessage } = createWorkspaceServiceMocks();
+    const { historyService, taskService } = createTaskServiceHarness(config, {
+      aiService,
+      workspaceService,
+    });
+    const progressMessage = createMuxMessage(
+      "assistant-progress",
+      "assistant",
+      "",
+      { timestamp: Date.now() },
+      [
+        {
+          type: "dynamic-tool",
+          toolCallId: "agent-report-progress",
+          toolName: "agent_report",
+          input: { claims: ["persisted"] },
+          state: "output-available",
+          output: { success: true },
+        },
+      ]
+    );
+    expect((await historyService.appendToHistory(childId, progressMessage)).success).toBe(true);
+
+    await handleTaskServiceStreamEndForTest(taskService, {
+      type: "stream-end",
+      workspaceId: childId,
+      messageId: "assistant-child-output",
+      metadata: { model: "openai:gpt-4o-mini", finishReason: "stop" },
+      parts: [{ type: "text", text: "## Final answer\n\nFinal prose after an earlier update." }],
+    });
+
+    expect(sendMessage).not.toHaveBeenCalled();
+    const report = await readSubagentReportArtifact(config.getSessionDir(parentId), childId);
+    expect(report?.reportMarkdown).toBe("## Final answer\n\nFinal prose after an earlier update.");
+    expect(report?.structuredOutput).toEqual({ claims: ["persisted"] });
+  });
+
+  test("workflow subagent uses agent_report metadata with the final assistant response", async () => {
     const config = await createTestConfig(rootDir);
 
     const projectPath = path.join(rootDir, "repo");
@@ -15032,19 +15286,405 @@ describe("TaskService", () => {
       workspaceId: childId,
       messageId: "assistant-child-output",
       metadata: { model: "openai:gpt-4o-mini", finishReason: "stop" },
-      parts: [{ type: "text", text: "## Final answer\n\nThis prose is not structured output." }],
+      parts: [
+        {
+          type: "dynamic-tool",
+          toolCallId: "agent-report-structured",
+          toolName: "agent_report",
+          input: { claims: ["verified"] },
+          state: "output-available",
+          output: { success: true },
+        },
+        { type: "text", text: "## Final answer\n\nThis prose is the final workflow summary." },
+      ],
     });
 
-    expect(sendMessage).toHaveBeenCalledWith(
-      childId,
-      expect.stringContaining("Your stream ended without calling agent_report"),
-      expect.objectContaining({
-        toolPolicy: [{ regex_match: "^agent_report$", action: "require" }],
-      }),
-      expect.objectContaining({ synthetic: true, agentInitiated: true })
+    expect(sendMessage).not.toHaveBeenCalled();
+    expect(findWorkspaceInConfig(config, childId)?.taskStatus).toBe("reported");
+    const report = await readSubagentReportArtifact(config.getSessionDir(parentId), childId);
+    expect(report?.reportMarkdown).toBe(
+      "## Final answer\n\nThis prose is the final workflow summary."
     );
+    expect(report?.structuredOutput).toEqual({ claims: ["verified"] });
+  });
+
+  test("failed final workflow agent_report does not reuse stale structured output", async () => {
+    const config = await createTestConfig(rootDir);
+    const projectPath = path.join(rootDir, "repo");
+    const parentId = "parent-stale-structured";
+    const childId = "child-stale-structured";
+    const workflowRunId = "wfr_stale_structured";
+    const outputSchema = {
+      type: "object",
+      required: ["claims"],
+      properties: { claims: { type: "array", items: { type: "string" } } },
+      additionalProperties: false,
+    } as const;
+
+    await saveWorkspaces(
+      config,
+      projectPath,
+      [
+        projectWorkspace(projectPath, "parent", parentId),
+        projectWorkspace(projectPath, "child", childId, {
+          name: "agent_exec_child",
+          parentWorkspaceId: parentId,
+          agentType: "exec",
+          taskStatus: "running",
+          taskModelString: "openai:gpt-4o-mini",
+          workflowTask: { runId: workflowRunId, stepId: "collect", outputSchema },
+        }),
+      ],
+      testTaskSettings()
+    );
+    const runStore = new WorkflowRunStore({ sessionDir: config.getSessionDir(parentId) });
+    await runStore.createRun({
+      id: workflowRunId,
+      workspaceId: parentId,
+      workflow: {
+        name: "stale-structured",
+        description: "Stale structured",
+        scope: "built-in",
+        executable: true,
+      },
+      source: "export default function workflow() { return {}; }\n",
+      args: {},
+      now: "2026-06-04T00:00:00.000Z",
+    });
+    await runStore.appendStatus(workflowRunId, "running", "2026-06-04T00:00:01.000Z");
+
+    const { aiService } = createAIServiceMocks(config);
+    const { workspaceService, sendMessage } = createWorkspaceServiceMocks();
+    const { historyService, taskService } = createTaskServiceHarness(config, {
+      aiService,
+      workspaceService,
+    });
+    expect(
+      (
+        await historyService.appendToHistory(
+          childId,
+          createMuxMessage("assistant-progress", "assistant", "", { timestamp: Date.now() }, [
+            {
+              type: "dynamic-tool",
+              toolCallId: "agent-report-old",
+              toolName: "agent_report",
+              input: { claims: ["stale"] },
+              state: "output-available",
+              output: { success: true },
+            },
+          ])
+        )
+      ).success
+    ).toBe(true);
+
+    await handleTaskServiceStreamEndForTest(taskService, {
+      type: "stream-end",
+      workspaceId: childId,
+      messageId: "assistant-child-output",
+      metadata: { model: "openai:gpt-4o-mini", finishReason: "stop" },
+      parts: [
+        {
+          type: "dynamic-tool",
+          toolCallId: "agent-report-failed",
+          toolName: "agent_report",
+          input: { claims: [1] },
+          state: "output-available",
+          output: {
+            success: false,
+            message: "Structured output failed schema validation.",
+            errors: [{ path: "$.claims[0]", message: "must be string" }],
+          },
+        },
+        { type: "text", text: "Final summary should not reuse stale output." },
+      ],
+    });
+
     expect(findWorkspaceInConfig(config, childId)?.taskStatus).toBe("awaiting_report");
     expect(await readSubagentReportArtifact(config.getSessionDir(parentId), childId)).toBeNull();
+    expect(sendMessage).toHaveBeenCalledWith(
+      childId,
+      expect.stringContaining("First call agent_report"),
+      expect.any(Object),
+      expect.objectContaining({ synthetic: true, agentInitiated: true })
+    );
+  });
+
+  test("failed newer in-turn workflow agent_report invalidates an earlier success", async () => {
+    const config = await createTestConfig(rootDir);
+    const projectPath = path.join(rootDir, "repo");
+    const parentId = "parent-in-turn-stale-structured";
+    const childId = "child-in-turn-stale-structured";
+    const workflowRunId = "wfr_in_turn_stale_structured";
+    const outputSchema = {
+      type: "object",
+      required: ["claims"],
+      properties: { claims: { type: "array", items: { type: "string" } } },
+      additionalProperties: false,
+    } as const;
+
+    await saveWorkspaces(
+      config,
+      projectPath,
+      [
+        projectWorkspace(projectPath, "parent", parentId),
+        projectWorkspace(projectPath, "child", childId, {
+          name: "agent_exec_child",
+          parentWorkspaceId: parentId,
+          agentType: "exec",
+          taskStatus: "running",
+          taskModelString: "openai:gpt-4o-mini",
+          workflowTask: { runId: workflowRunId, stepId: "collect", outputSchema },
+        }),
+      ],
+      testTaskSettings()
+    );
+    const runStore = new WorkflowRunStore({ sessionDir: config.getSessionDir(parentId) });
+    await runStore.createRun({
+      id: workflowRunId,
+      workspaceId: parentId,
+      workflow: {
+        name: "in-turn-stale-structured",
+        description: "In-turn stale structured",
+        scope: "built-in",
+        executable: true,
+      },
+      source: "export default function workflow() { return {}; }\n",
+      args: {},
+      now: "2026-06-04T00:00:00.000Z",
+    });
+    await runStore.appendStatus(workflowRunId, "running", "2026-06-04T00:00:01.000Z");
+
+    const { aiService } = createAIServiceMocks(config);
+    const { workspaceService, sendMessage } = createWorkspaceServiceMocks();
+    const { taskService } = createTaskServiceHarness(config, { aiService, workspaceService });
+
+    await handleTaskServiceStreamEndForTest(taskService, {
+      type: "stream-end",
+      workspaceId: childId,
+      messageId: "assistant-child-output",
+      metadata: { model: "openai:gpt-4o-mini", finishReason: "stop" },
+      parts: [
+        {
+          type: "dynamic-tool",
+          toolCallId: "agent-report-success",
+          toolName: "agent_report",
+          input: { claims: ["stale"] },
+          state: "output-available",
+          output: { success: true },
+        },
+        {
+          type: "dynamic-tool",
+          toolCallId: "agent-report-failed",
+          toolName: "agent_report",
+          input: { claims: [1] },
+          state: "output-available",
+          output: {
+            success: false,
+            message: "Structured output failed schema validation.",
+            errors: [{ path: "$.claims[0]", message: "must be string" }],
+          },
+        },
+        { type: "text", text: "Final summary after failed replacement." },
+      ],
+    });
+
+    expect(findWorkspaceInConfig(config, childId)?.taskStatus).toBe("awaiting_report");
+    expect(await readSubagentReportArtifact(config.getSessionDir(parentId), childId)).toBeNull();
+    expect(sendMessage).toHaveBeenCalledWith(
+      childId,
+      expect.stringContaining("First call agent_report"),
+      expect.any(Object),
+      expect.objectContaining({ synthetic: true, agentInitiated: true })
+    );
+  });
+
+  test("newer valid in-turn workflow agent_report corrects an earlier failure", async () => {
+    const config = await createTestConfig(rootDir);
+    const projectPath = path.join(rootDir, "repo");
+    const parentId = "parent-corrected-structured";
+    const childId = "child-corrected-structured";
+    const workflowRunId = "wfr_corrected_structured";
+    const outputSchema = {
+      type: "object",
+      required: ["claims"],
+      properties: { claims: { type: "array", items: { type: "string" } } },
+      additionalProperties: false,
+    } as const;
+
+    await saveWorkspaces(
+      config,
+      projectPath,
+      [
+        projectWorkspace(projectPath, "parent", parentId),
+        projectWorkspace(projectPath, "child", childId, {
+          name: "agent_exec_child",
+          parentWorkspaceId: parentId,
+          agentType: "exec",
+          taskStatus: "running",
+          taskModelString: "openai:gpt-4o-mini",
+          workflowTask: { runId: workflowRunId, stepId: "collect", outputSchema },
+        }),
+      ],
+      testTaskSettings()
+    );
+    const runStore = new WorkflowRunStore({ sessionDir: config.getSessionDir(parentId) });
+    await runStore.createRun({
+      id: workflowRunId,
+      workspaceId: parentId,
+      workflow: {
+        name: "corrected-structured",
+        description: "Corrected structured",
+        scope: "built-in",
+        executable: true,
+      },
+      source: "export default function workflow() { return {}; }\n",
+      args: {},
+      now: "2026-06-04T00:00:00.000Z",
+    });
+    await runStore.appendStatus(workflowRunId, "running", "2026-06-04T00:00:01.000Z");
+
+    const { aiService } = createAIServiceMocks(config);
+    const { workspaceService, sendMessage } = createWorkspaceServiceMocks();
+    const { taskService } = createTaskServiceHarness(config, { aiService, workspaceService });
+
+    await handleTaskServiceStreamEndForTest(taskService, {
+      type: "stream-end",
+      workspaceId: childId,
+      messageId: "assistant-child-output",
+      metadata: { model: "openai:gpt-4o-mini", finishReason: "stop" },
+      parts: [
+        {
+          type: "dynamic-tool",
+          toolCallId: "agent-report-failed",
+          toolName: "agent_report",
+          input: { claims: [1] },
+          state: "output-available",
+          output: {
+            success: false,
+            message: "Structured output failed schema validation.",
+            errors: [{ path: "$.claims[0]", message: "must be string" }],
+          },
+        },
+        {
+          type: "dynamic-tool",
+          toolCallId: "agent-report-corrected",
+          toolName: "agent_report",
+          input: { claims: ["corrected"] },
+          state: "output-available",
+          output: { success: true },
+        },
+        { type: "text", text: "Final summary after correcting structured output." },
+      ],
+    });
+
+    expect(sendMessage).not.toHaveBeenCalled();
+    const report = await readSubagentReportArtifact(config.getSessionDir(parentId), childId);
+    expect(report?.reportMarkdown).toBe("Final summary after correcting structured output.");
+    expect(report?.structuredOutput).toEqual({ claims: ["corrected"] });
+  });
+
+  test("recovery final text does not scan past a failed workflow agent_report", async () => {
+    const config = await createTestConfig(rootDir);
+    const projectPath = path.join(rootDir, "repo");
+    const parentId = "parent-recovery-stale-structured";
+    const childId = "child-recovery-stale-structured";
+    const workflowRunId = "wfr_recovery_stale_structured";
+    const outputSchema = {
+      type: "object",
+      required: ["claims"],
+      properties: { claims: { type: "array", items: { type: "string" } } },
+      additionalProperties: false,
+    } as const;
+
+    await saveWorkspaces(
+      config,
+      projectPath,
+      [
+        projectWorkspace(projectPath, "parent", parentId),
+        projectWorkspace(projectPath, "child", childId, {
+          name: "agent_exec_child",
+          parentWorkspaceId: parentId,
+          agentType: "exec",
+          taskStatus: "awaiting_report",
+          taskModelString: "openai:gpt-4o-mini",
+          workflowTask: { runId: workflowRunId, stepId: "collect", outputSchema },
+        }),
+      ],
+      testTaskSettings()
+    );
+    const runStore = new WorkflowRunStore({ sessionDir: config.getSessionDir(parentId) });
+    await runStore.createRun({
+      id: workflowRunId,
+      workspaceId: parentId,
+      workflow: {
+        name: "recovery-stale-structured",
+        description: "Recovery stale structured",
+        scope: "built-in",
+        executable: true,
+      },
+      source: "export default function workflow() { return {}; }\n",
+      args: {},
+      now: "2026-06-04T00:00:00.000Z",
+    });
+    await runStore.appendStatus(workflowRunId, "running", "2026-06-04T00:00:01.000Z");
+
+    const { aiService } = createAIServiceMocks(config);
+    const { workspaceService, sendMessage } = createWorkspaceServiceMocks();
+    const { historyService, taskService } = createTaskServiceHarness(config, {
+      aiService,
+      workspaceService,
+    });
+    for (const message of [
+      createMuxMessage("assistant-old-progress", "assistant", "", { timestamp: Date.now() - 2 }, [
+        {
+          type: "dynamic-tool",
+          toolCallId: "agent-report-old",
+          toolName: "agent_report",
+          input: { claims: ["stale"] },
+          state: "output-available",
+          output: { success: true },
+        },
+      ]),
+      createMuxMessage(
+        "assistant-failed-progress",
+        "assistant",
+        "",
+        { timestamp: Date.now() - 1 },
+        [
+          {
+            type: "dynamic-tool",
+            toolCallId: "agent-report-failed",
+            toolName: "agent_report",
+            input: { claims: [1] },
+            state: "output-available",
+            output: {
+              success: false,
+              message: "Structured output failed schema validation.",
+              errors: [{ path: "$.claims[0]", message: "must be string" }],
+            },
+          },
+        ]
+      ),
+    ]) {
+      expect((await historyService.appendToHistory(childId, message)).success).toBe(true);
+    }
+
+    await handleTaskServiceStreamEndForTest(taskService, {
+      type: "stream-end",
+      workspaceId: childId,
+      messageId: "assistant-recovery-output",
+      metadata: { model: "openai:gpt-4o-mini", finishReason: "stop" },
+      parts: [{ type: "text", text: "Recovery final text without a fresh structured report." }],
+    });
+
+    expect(findWorkspaceInConfig(config, childId)?.taskStatus).toBe("awaiting_report");
+    expect(await readSubagentReportArtifact(config.getSessionDir(parentId), childId)).toBeNull();
+    expect(sendMessage).toHaveBeenCalledWith(
+      childId,
+      expect.stringContaining("First call agent_report"),
+      expect.any(Object),
+      expect.objectContaining({ synthetic: true, agentInitiated: true })
+    );
   });
 
   test("workflow subagent invalid structured agent_report does not finalize", async () => {
@@ -15122,15 +15762,14 @@ describe("TaskService", () => {
           state: "output-available",
           output: { success: true },
         },
+        { type: "text", text: "Final summary with invalid structured metadata." },
       ],
     });
 
     expect(sendMessage).toHaveBeenCalledWith(
       childId,
-      expect.stringContaining("The previous agent_report attempt failed"),
-      expect.objectContaining({
-        toolPolicy: [{ regex_match: "^agent_report$", action: "require" }],
-      }),
+      expect.stringContaining("The previous final assistant response attempt failed"),
+      expect.any(Object),
       expect.objectContaining({ synthetic: true, agentInitiated: true })
     );
     expect(findWorkspaceInConfig(config, childId)?.taskStatus).toBe("awaiting_report");
@@ -15207,6 +15846,7 @@ describe("TaskService", () => {
           state: "output-available",
           output: { success: true },
         },
+        { type: "text", text: "Legacy report" },
       ],
     });
 
@@ -15215,6 +15855,66 @@ describe("TaskService", () => {
     const report = await readSubagentReportArtifact(config.getSessionDir(parentId), childId);
     expect(report?.reportMarkdown).toBe("Legacy report");
     expect(report?.structuredOutput).toBeUndefined();
+  });
+
+  test("legacy invalid workflow schemas recover with a final response instead of structured agent_report", async () => {
+    const config = await createTestConfig(rootDir);
+    const projectPath = path.join(rootDir, "repo");
+    const parentId = "parent-legacy-invalid-recovery";
+    const childId = "child-legacy-invalid-recovery";
+    const workflowRunId = "wfr_legacy_invalid_recovery";
+
+    await saveWorkspaces(
+      config,
+      projectPath,
+      [
+        projectWorkspace(projectPath, "parent", parentId),
+        projectWorkspace(projectPath, "child", childId, {
+          name: "agent_exec_child",
+          parentWorkspaceId: parentId,
+          agentType: "exec",
+          taskStatus: "awaiting_report",
+          taskModelString: "openai:gpt-4o-mini",
+          workflowTask: {
+            runId: workflowRunId,
+            stepId: "collect",
+            outputSchema: { $ref: "#/defs/pre-upgrade" },
+          },
+        }),
+      ],
+      testTaskSettings()
+    );
+    const runStore = new WorkflowRunStore({ sessionDir: config.getSessionDir(parentId) });
+    await runStore.createRun({
+      id: workflowRunId,
+      workspaceId: parentId,
+      workflow: {
+        name: "legacy-invalid-recovery",
+        description: "Legacy invalid recovery",
+        scope: "built-in",
+        executable: true,
+      },
+      source: "export default function workflow() { return {}; }\n",
+      args: {},
+      agentOutputSchemaRequired: false,
+      now: "2026-06-04T00:00:00.000Z",
+    });
+    await runStore.appendStatus(workflowRunId, "running", "2026-06-04T00:00:01.000Z");
+
+    const { workspaceService, sendMessage } = createWorkspaceServiceMocks();
+    const { taskService } = createTaskServiceHarness(config, { workspaceService });
+    const internal = taskService as unknown as {
+      promptTaskForRequiredCompletionTool: (workspaceId: string) => Promise<boolean>;
+    };
+
+    expect(await internal.promptTaskForRequiredCompletionTool(childId)).toBe(true);
+    expect(sendMessage).toHaveBeenCalledWith(
+      childId,
+      expect.stringContaining("respond with your final assistant message"),
+      expect.any(Object),
+      expect.objectContaining({ synthetic: true, agentInitiated: true })
+    );
+    expect(sendMessage.mock.calls[0]?.[1]).not.toContain("First call agent_report");
   });
 
   test("workflow subagent treats strict-provider null optional fields as omitted", async () => {
@@ -15306,6 +16006,7 @@ describe("TaskService", () => {
           state: "output-available",
           output: { success: true },
         },
+        { type: "text", text: "Optional fields normalized." },
       ],
     });
 
@@ -15388,13 +16089,14 @@ describe("TaskService", () => {
           state: "output-available",
           output: { success: true },
         },
+        { type: "text", text: "Done" },
       ],
     });
 
     expect(sendMessage).not.toHaveBeenCalled();
     expect(findWorkspaceInConfig(config, childId)?.taskStatus).toBe("reported");
     const report = await readSubagentReportArtifact(config.getSessionDir(parentId), childId);
-    expect(report?.reportMarkdown).toBe(STRUCTURED_WORKFLOW_REPORT_PLACEHOLDER_MARKDOWN);
+    expect(report?.reportMarkdown).toBe("Done");
     expect(report?.structuredOutput).toEqual({ reportMarkdown: "Done", title: null });
   });
 
@@ -15439,10 +16141,8 @@ describe("TaskService", () => {
     expect(sendMessage).toHaveBeenCalledTimes(1);
     expect(sendMessage).toHaveBeenCalledWith(
       childId,
-      expect.stringContaining("Your stream ended without calling agent_report"),
-      expect.objectContaining({
-        toolPolicy: [{ regex_match: "^agent_report$", action: "require" }],
-      }),
+      expect.stringContaining("Your stream ended without a final assistant response"),
+      expect.any(Object),
       expect.objectContaining({ synthetic: true, agentInitiated: true })
     );
 
@@ -15525,19 +16225,15 @@ describe("TaskService", () => {
     expect(sendMessage).toHaveBeenNthCalledWith(
       1,
       childId,
-      expect.stringContaining("Your stream ended without calling agent_report"),
-      expect.objectContaining({
-        toolPolicy: [{ regex_match: "^agent_report$", action: "require" }],
-      }),
+      expect.stringContaining("Your stream ended without a final assistant response"),
+      expect.any(Object),
       expect.objectContaining({ synthetic: true, agentInitiated: true })
     );
     expect(sendMessage).toHaveBeenNthCalledWith(
       2,
       childId,
       expect.stringContaining("Do not continue investigating or call other tools"),
-      expect.objectContaining({
-        toolPolicy: [{ regex_match: "^agent_report$", action: "require" }],
-      }),
+      expect.any(Object),
       expect.objectContaining({ synthetic: true, agentInitiated: true })
     );
 
@@ -16154,6 +16850,162 @@ describe("TaskService", () => {
         /<task_id>child-best-of-concurrent-deferred-fallback-1<\/task_id>/g
       )
     ).toHaveLength(1);
+  });
+
+  test("incremental best-of updates do not suppress deferred terminal reports", async () => {
+    const config = await createTestConfig(rootDir);
+    const projectPath = path.join(rootDir, "repo");
+    const parentId = "parent-best-of-progress-fallback";
+    const childOneId = "child-best-of-progress-fallback-1";
+    const childTwoId = "child-best-of-progress-fallback-2";
+    const bestOf = { groupId: "best-of-progress-fallback-group", index: 0, total: 2 } as const;
+
+    await saveWorkspaces(
+      config,
+      projectPath,
+      [
+        projectWorkspace(projectPath, "parent", parentId),
+        projectWorkspace(projectPath, "child-1", childOneId, {
+          name: "agent_explore_child_1",
+          parentWorkspaceId: parentId,
+          agentType: "explore",
+          taskStatus: "reported",
+          bestOf,
+        }),
+        projectWorkspace(projectPath, "child-2", childTwoId, {
+          name: "agent_explore_child_2",
+          parentWorkspaceId: parentId,
+          agentType: "explore",
+          taskStatus: "interrupted",
+          bestOf: { ...bestOf, index: 1 },
+        }),
+      ],
+      testTaskSettings()
+    );
+
+    const { aiService } = createAIServiceMocks(config);
+    const { workspaceService } = createWorkspaceServiceMocks();
+    const { historyService, taskService } = createTaskServiceHarness(config, {
+      aiService,
+      workspaceService,
+    });
+    expect(
+      (
+        await historyService.appendToHistory(
+          parentId,
+          createMuxMessage(
+            "progress-report",
+            "user",
+            `<mux_subagent_report>\n<task_id>${childOneId}</task_id>\n<agent_type>explore</agent_type>\n<status>in_progress</status>\n<title>Finding</title>\n<report_markdown>\nEarly finding\n</report_markdown>\n</mux_subagent_report>`,
+            { timestamp: Date.now(), synthetic: true }
+          )
+        )
+      ).success
+    ).toBe(true);
+    await upsertSubagentReportArtifact({
+      workspaceId: parentId,
+      workspaceSessionDir: config.getSessionDir(parentId),
+      childTaskId: childOneId,
+      parentWorkspaceId: parentId,
+      ancestorWorkspaceIds: [parentId],
+      reportMarkdown: "Terminal result",
+      nowMs: Date.now(),
+    });
+
+    const internal = taskService as unknown as {
+      deliverDeferredBestOfSiblingReports: (params: {
+        parentWorkspaceId: string;
+        groupId: string;
+        total: number;
+      }) => Promise<void>;
+    };
+    await internal.deliverDeferredBestOfSiblingReports({
+      parentWorkspaceId: parentId,
+      groupId: bestOf.groupId,
+      total: bestOf.total,
+    });
+
+    const serialized = JSON.stringify(await collectFullHistory(historyService, parentId));
+    expect(serialized).toContain("Early finding");
+    expect(serialized).toContain("Terminal result");
+  });
+
+  test("completed best-of reports may quote the in-progress status tag without bypassing dedupe", async () => {
+    const config = await createTestConfig(rootDir);
+    const projectPath = path.join(rootDir, "repo");
+    const parentId = "parent-best-of-status-quote";
+    const childOneId = "child-best-of-status-quote-1";
+    const childTwoId = "child-best-of-status-quote-2";
+    const bestOf = { groupId: "best-of-status-quote-group", index: 0, total: 2 } as const;
+
+    await saveWorkspaces(
+      config,
+      projectPath,
+      [
+        projectWorkspace(projectPath, "parent", parentId),
+        projectWorkspace(projectPath, "child-1", childOneId, {
+          name: "agent_explore_child_1",
+          parentWorkspaceId: parentId,
+          agentType: "explore",
+          taskStatus: "reported",
+          bestOf,
+        }),
+        projectWorkspace(projectPath, "child-2", childTwoId, {
+          name: "agent_explore_child_2",
+          parentWorkspaceId: parentId,
+          agentType: "explore",
+          taskStatus: "interrupted",
+          bestOf: { ...bestOf, index: 1 },
+        }),
+      ],
+      testTaskSettings()
+    );
+
+    const { aiService } = createAIServiceMocks(config);
+    const { workspaceService } = createWorkspaceServiceMocks();
+    const { historyService, taskService } = createTaskServiceHarness(config, {
+      aiService,
+      workspaceService,
+    });
+    const quoted = "Terminal report quoting <status>in_progress</status>.";
+    expect(
+      (
+        await historyService.appendToHistory(
+          parentId,
+          createMuxMessage(
+            "completed-report",
+            "user",
+            `<mux_subagent_report>\n<task_id>${childOneId}</task_id>\n<agent_type>explore</agent_type>\n<status>completed</status>\n<title>Result</title>\n<report_markdown>\n${quoted}\n</report_markdown>\n</mux_subagent_report>`,
+            { timestamp: Date.now(), synthetic: true }
+          )
+        )
+      ).success
+    ).toBe(true);
+    await upsertSubagentReportArtifact({
+      workspaceId: parentId,
+      workspaceSessionDir: config.getSessionDir(parentId),
+      childTaskId: childOneId,
+      parentWorkspaceId: parentId,
+      ancestorWorkspaceIds: [parentId],
+      reportMarkdown: quoted,
+      nowMs: Date.now(),
+    });
+
+    const internal = taskService as unknown as {
+      deliverDeferredBestOfSiblingReports: (params: {
+        parentWorkspaceId: string;
+        groupId: string;
+        total: number;
+      }) => Promise<void>;
+    };
+    await internal.deliverDeferredBestOfSiblingReports({
+      parentWorkspaceId: parentId,
+      groupId: bestOf.groupId,
+      total: bestOf.total,
+    });
+
+    const serialized = JSON.stringify(await collectFullHistory(historyService, parentId));
+    expect(serialized.match(/Terminal report quoting/g)).toHaveLength(1);
   });
 
   test("concurrent direct and deferred best-of fallback delivery does not duplicate reports", async () => {
@@ -17039,21 +17891,17 @@ describe("TaskService", () => {
     expect(sendMessage).toHaveBeenNthCalledWith(
       1,
       childId,
-      expect.stringContaining("Your stream ended without calling agent_report"),
-      expect.objectContaining({
-        toolPolicy: [{ regex_match: "^agent_report$", action: "require" }],
-      }),
+      expect.stringContaining("Your stream ended without a final assistant response"),
+      expect.any(Object),
       expect.objectContaining({ synthetic: true, agentInitiated: true })
     );
     expect(sendMessage).toHaveBeenNthCalledWith(
       2,
       childId,
       expect.stringContaining(
-        "The previous agent_report attempt failed (last error: empty_output)"
+        "The previous final assistant response attempt failed (last error: empty_output)"
       ),
-      expect.objectContaining({
-        toolPolicy: [{ regex_match: "^agent_report$", action: "require" }],
-      }),
+      expect.any(Object),
       expect.objectContaining({ synthetic: true, agentInitiated: true })
     );
 
@@ -17121,10 +17969,8 @@ describe("TaskService", () => {
     expect(sendMessage).toHaveBeenNthCalledWith(
       1,
       childId,
-      expect.stringContaining("Your stream ended without calling agent_report"),
-      expect.objectContaining({
-        toolPolicy: [{ regex_match: "^agent_report$", action: "require" }],
-      }),
+      expect.stringContaining("Your stream ended without a final assistant response"),
+      expect.any(Object),
       expect.objectContaining({ synthetic: true, agentInitiated: true })
     );
     expect(sendMessage.mock.calls[1]?.[0]).toBe(parentId);
@@ -17726,7 +18572,7 @@ describe("TaskService", () => {
       type: "stream-end",
       workspaceId: childId,
       messageId: "assistant-child-report",
-      metadata: { model: "openai:gpt-5.5-pro" },
+      metadata: { model: "openai:gpt-5.5-pro", finishReason: "stop" },
       parts: [
         {
           type: "dynamic-tool",
@@ -17736,6 +18582,7 @@ describe("TaskService", () => {
           state: "output-available",
           output: { success: true },
         },
+        { type: "text", text: "All done" },
       ],
     });
 
