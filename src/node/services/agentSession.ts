@@ -2515,9 +2515,24 @@ export class AgentSession {
     // Mux still owns validation and durable history. Reject unsupported input before
     // accepting an ordinary Pi-backed turn so a failed attachment cannot poison a later
     // retry or a runtime switch; Pi validates again when replaying older persisted history.
+    // A TaskService continuation is synthetic for UI/history provenance, but it still starts a
+    // child agent's executable loop. Match AIService's routing exception here so unsupported
+    // attachments fail before history is mutated instead of surfacing only after Pi starts.
+    const isSyntheticDelegatedExecutable =
+      effectiveFileParts != null &&
+      options.experiments?.piAgentRuntime === true &&
+      internal?.synthetic === true &&
+      internal?.agentInitiated === true &&
+      (await this.getWorkspaceMetadataForRetry())?.parentWorkspaceId != null;
     if (
       effectiveFileParts &&
-      shouldUsePiAgentRuntime(options.experiments, typedMuxMetadata, typedMuxMetadata)
+      shouldUsePiAgentRuntime(
+        options.experiments,
+        typedMuxMetadata,
+        typedMuxMetadata,
+        internal?.synthetic === true,
+        isSyntheticDelegatedExecutable
+      )
     ) {
       for (const part of effectiveFileParts) {
         const incompatibility = getPiAgentRuntimeAttachmentIncompatibility(part);
@@ -4872,6 +4887,11 @@ export class AgentSession {
     });
     forward("tool-call-delta", (payload) => {
       this.markActiveStreamHadAnyOutput();
+      this.emitChatEvent(payload);
+    });
+    forward("tool-call-output-delta", (payload) => {
+      this.markActiveStreamHadAnyOutput();
+      this.markPendingTurnRestoreBlocked();
       this.emitChatEvent(payload);
     });
     forward("tool-call-end", async (payload) => {

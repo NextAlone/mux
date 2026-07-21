@@ -134,17 +134,22 @@ const PRESERVE_OUTPUT_TOOLS = new Set([
 
 function stripToolPartOutput(part: MuxToolPart): MuxToolPart {
   const nestedCalls = part.nestedCalls?.map(stripNestedToolCallOutput);
+  const {
+    partialOutput: _partialOutput,
+    partialOutputTimestamp: _partialOutputTimestamp,
+    ...partWithoutPartialOutput
+  } = part;
 
-  if (PRESERVE_OUTPUT_TOOLS.has(part.toolName)) {
-    return nestedCalls ? { ...part, nestedCalls } : part;
+  if (PRESERVE_OUTPUT_TOOLS.has(partWithoutPartialOutput.toolName)) {
+    return nestedCalls ? { ...partWithoutPartialOutput, nestedCalls } : partWithoutPartialOutput;
   }
 
-  if (part.state !== "output-available") {
-    return nestedCalls ? { ...part, nestedCalls } : part;
+  if (partWithoutPartialOutput.state !== "output-available") {
+    return nestedCalls ? { ...partWithoutPartialOutput, nestedCalls } : partWithoutPartialOutput;
   }
 
-  const failed = isFailedOutput(part.output);
-  const { output: _output, ...rest } = part;
+  const failed = isFailedOutput(partWithoutPartialOutput.output);
+  const { output: _output, ...rest } = partWithoutPartialOutput;
   return {
     ...rest,
     state: "output-redacted",

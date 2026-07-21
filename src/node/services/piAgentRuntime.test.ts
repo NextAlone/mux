@@ -653,6 +653,44 @@ describe("PiAgentRuntimeService", () => {
     expect(settled).toBe(true);
   });
 
+  test("reports missing Codex OAuth as non-retryable before starting Pi", async () => {
+    const workspaceId = "pi-runtime-missing-oauth";
+    const user = createMuxMessage("user-1", "user", "work", { timestamp: 1 });
+    await historyService.appendToHistory(workspaceId, user);
+    let createSessionCalls = 0;
+    let settledCalls = 0;
+    const service = new PiAgentRuntimeService({
+      historyService,
+      getCodexAuth: () => Promise.reject(new Error("Codex OAuth is not configured")),
+      createSession: () => {
+        createSessionCalls += 1;
+        throw new Error("Pi session must not start without OAuth");
+      },
+      emit: () => undefined,
+    });
+
+    const result = await service.startStream(
+      {
+        workspaceId,
+        cwd: "/workspace",
+        runtimeType: "worktree",
+        messages: [user],
+        modelString: "openai:gpt-5.6-sol",
+      },
+      () => {
+        settledCalls += 1;
+      }
+    );
+
+    expect(result).toEqual({
+      success: false,
+      error: { type: "oauth_not_connected", provider: "openai" },
+    });
+    expect(createSessionCalls).toBe(0);
+    expect(settledCalls).toBe(1);
+    expect(service.isStreaming(workspaceId)).toBe(false);
+  });
+
   test("surfaces a Pi provider error instead of committing an empty successful turn", async () => {
     const workspaceId = "pi-runtime-provider-error";
     const user = createMuxMessage("user-1", "user", "work", { timestamp: 1 });
@@ -1030,7 +1068,7 @@ describe("PiAgentRuntimeService", () => {
       success: true,
       path: "/workspace",
     });
-    expect(events.find((event) => event.type === "tool-call-delta")?.delta).toEqual({
+    expect(events.find((event) => event.type === "tool-call-output-delta")?.output).toEqual({
       progress: "running",
     });
     const emittedToolCallIds = events
@@ -1072,6 +1110,173 @@ describe("PiAgentRuntimeService", () => {
           JSON.stringify(part.output) === '{"success":true,"path":"/workspace"}'
       )
     ).toBe(true);
+  });
+
+  test("does not turn a finalized Pi turn into an error when partial cleanup fails", async () => {
+    const workspaceId = "pi-runtime-final-partial-cleanup";
+    const user = createMuxMessage("user-1", "user", "finish normally", { timestamp: 1 });
+    await historyService.appendToHistory(workspaceId, user);
+    const listeners = new Set<(event: AgentSessionEvent) => void>();
+    const finalAssistant: AssistantMessage = {
+      role: "assistant",
+      content: [{ type: "text", text: "done" }],
+      api: "openai-codex-responses",
+      provider: "openai-codex",
+      model: "gpt-5.6-sol",
+      usage: {
+        input: 1,
+        output: 1,
+        cacheRead: 0,
+        cacheWrite: 0,
+        totalTokens: 2,
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+      },
+      stopReason: "stop",
+      timestamp: 2,
+    };
+    const session: PiSessionAdapter = {
+      agent: { state: { messages: [] } },
+      subscribe(listener) {
+        listeners.add(listener);
+        return () => listeners.delete(listener);
+      },
+      prompt() {
+        for (const listener of listeners) {
+          listener({
+            type: "message_update",
+            message: finalAssistant,
+            assistantMessageEvent: {
+              type: "text_delta",
+              contentIndex: 0,
+              delta: "done",
+              partial: finalAssistant,
+            },
+          });
+          listener({ type: "message_end", message: finalAssistant });
+        }
+        return Promise.resolve();
+      },
+      abort: () => Promise.resolve(),
+      dispose: () => undefined,
+    };
+    const deletePartial = spyOn(historyService, "deletePartial").mockResolvedValue({
+      success: false,
+      error: "simulated cleanup failure",
+    });
+    const events: Array<{ type: string; [key: string]: unknown }> = [];
+    const service = new PiAgentRuntimeService({
+      historyService,
+      getCodexAuth: getTestCodexAuth,
+      createSession: () => Promise.resolve(session),
+      emit: (_name, event) => events.push(event),
+    });
+
+    const result = await service.stream({
+      workspaceId,
+      cwd: "/workspace",
+      runtimeType: "worktree",
+      messages: [user],
+      modelString: "openai:gpt-5.6-sol",
+    });
+
+    expect(result.success).toBe(true);
+    expect(deletePartial).toHaveBeenCalledTimes(1);
+    expect(events.map((event) => event.type)).toContain("stream-end");
+    expect(events.map((event) => event.type)).not.toContain("error");
+    const history = await historyService.getHistoryFromLatestBoundary(workspaceId);
+    expect(history.success).toBe(true);
+    if (history.success) {
+      expect(history.data.at(-1)?.metadata?.partial).toBe(false);
+      expect(history.data.at(-1)?.parts).toMatchObject([{ type: "text", text: "done" }]);
+    }
+  });
+
+  test("writes a Pi tool progress snapshot while it remains pending", async () => {
+    const workspaceId = "pi-runtime-tool-progress-abort";
+    const user = createMuxMessage("user-1", "user", "run a long tool", { timestamp: 1 });
+    await historyService.appendToHistory(workspaceId, user);
+    const abortController = new AbortController();
+    const writePartial = spyOn(historyService, "writePartial");
+    const listeners = new Set<(event: AgentSessionEvent) => void>();
+    const session: PiSessionAdapter = {
+      agent: { state: { messages: [] } },
+      subscribe(listener) {
+        listeners.add(listener);
+        return () => listeners.delete(listener);
+      },
+      prompt() {
+        for (const listener of listeners) {
+          listener({
+            type: "tool_execution_start",
+            toolCallId: "call-progress",
+            toolName: "bash",
+            args: { command: "sleep 10" },
+          });
+          listener({
+            type: "tool_execution_update",
+            toolCallId: "call-progress",
+            toolName: "bash",
+            args: { command: "sleep 10" },
+            partialResult: {
+              content: [{ type: "text", text: '{"progress":"halfway"}' }],
+              details: { output: { progress: "halfway" } },
+            },
+          });
+        }
+        abortController.abort();
+        return Promise.resolve();
+      },
+      abort: () => Promise.resolve(),
+      dispose: () => undefined,
+    };
+    const events: Array<{ type: string; [key: string]: unknown }> = [];
+    const service = new PiAgentRuntimeService({
+      historyService,
+      getCodexAuth: getTestCodexAuth,
+      createSession: () => Promise.resolve(session),
+      emit: (_name, event) => events.push(event),
+    });
+
+    const result = await service.stream({
+      workspaceId,
+      cwd: "/workspace",
+      runtimeType: "worktree",
+      messages: [user],
+      modelString: "openai:gpt-5.6-sol",
+      abortSignal: abortController.signal,
+    });
+
+    expect(result.success).toBe(true);
+    expect(events.find((event) => event.type === "tool-call-output-delta")?.output).toEqual({
+      progress: "halfway",
+    });
+    const progressSnapshot = writePartial.mock.calls.find(([, message]) =>
+      message.parts.some(
+        (part) =>
+          part.type === "dynamic-tool" &&
+          part.toolCallId === "call-progress" &&
+          part.partialOutput !== undefined
+      )
+    )?.[1];
+    const progressToolPart = progressSnapshot?.parts.find(
+      (part) => part.type === "dynamic-tool" && part.toolCallId === "call-progress"
+    );
+    expect(progressToolPart).toMatchObject({
+      type: "dynamic-tool",
+      toolCallId: "call-progress",
+      toolName: "bash",
+      input: { command: "sleep 10" },
+      state: "input-available",
+      partialOutput: { progress: "halfway" },
+    });
+    // History intentionally drops tool-only incomplete partials after abort so they
+    // cannot be replayed to a provider as a completed tool result.
+    expect(await historyService.readPartial(workspaceId)).toBeNull();
+    const history = await historyService.getHistoryFromLatestBoundary(workspaceId);
+    expect(history.success).toBe(true);
+    if (history.success) {
+      expect(history.data.map((message) => message.id)).toEqual([user.id]);
+    }
   });
 
   test("leaves an already-aborted turn with the Mux startup control plane", async () => {

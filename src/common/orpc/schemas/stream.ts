@@ -374,6 +374,27 @@ export const ToolCallDeltaEventSchema = z.object({
 });
 
 /**
+ * UI-only latest result snapshot from a tool that is still executing.
+ *
+ * This is deliberately distinct from `tool-call-delta`, which represents
+ * provider-streamed tool arguments. Tool output must not overwrite ACP rawInput
+ * or be counted as model argument tokens.
+ */
+export const ToolCallOutputDeltaEventSchema = z.object({
+  type: z.literal("tool-call-output-delta"),
+  workspaceId: z.string(),
+  messageId: z.string(),
+  replay: z
+    .boolean()
+    .optional()
+    .meta({ description: "True when this event is emitted during stream replay" }),
+  toolCallId: z.string(),
+  toolName: z.string(),
+  output: z.unknown(),
+  timestamp: z.number().meta({ description: "When the tool output snapshot was received" }),
+});
+
+/**
  * UI-only incremental output from the bash tool.
  *
  * This is intentionally NOT part of the tool result returned to the model.
@@ -663,6 +684,7 @@ export const WorkspaceChatMessageSchema = z.discriminatedUnion("type", [
   ToolCallStartEventSchema,
   ToolCallExecutionStartEventSchema,
   ToolCallDeltaEventSchema,
+  ToolCallOutputDeltaEventSchema,
   ToolCallEndEventSchema,
   BashOutputEventSchema,
   AdvisorOutputEventSchema,

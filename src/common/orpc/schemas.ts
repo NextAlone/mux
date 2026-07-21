@@ -261,6 +261,7 @@ export {
   StreamErrorMessageSchema,
   StreamStartEventSchema,
   ToolCallDeltaEventSchema,
+  ToolCallOutputDeltaEventSchema,
   ToolCallEndEventSchema,
   ToolCallExecutionStartEventSchema,
   ToolCallStartEventSchema,

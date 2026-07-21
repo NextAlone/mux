@@ -44,6 +44,10 @@ const MuxToolPartBase = z.object({
   // `timestamp` (when the model emitted the call). UI elapsed timers must use
   // this so queued-but-not-yet-executing tools don't appear to run.
   executionStartedAt: z.number().optional(),
+  // Latest UI-only result snapshot from a still-running tool. Unlike `output`,
+  // this never means the tool completed and must not become model context.
+  partialOutput: z.unknown().optional(),
+  partialOutputTimestamp: z.number().optional(),
   workflowRun: WorkflowRunToolAttachmentSchema.optional(),
 });
 

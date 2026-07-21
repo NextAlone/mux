@@ -20,13 +20,34 @@ describe("resolveAgentRuntimeKind", () => {
     expect(shouldUsePiAgentRuntime({ piAgentRuntime: true }, { type: "compaction-request" })).toBe(
       false
     );
-    expect(shouldUsePiAgentRuntime({ piAgentRuntime: true }, { type: "workspace-turn-task" })).toBe(
-      false
-    );
     expect(shouldUsePiAgentRuntime({ piAgentRuntime: true }, { type: "agent-skill" })).toBe(false);
     expect(
       shouldUsePiAgentRuntime({ piAgentRuntime: true }, undefined, { type: "heartbeat-request" })
     ).toBe(false);
+    expect(shouldUsePiAgentRuntime({ piAgentRuntime: true }, undefined, undefined, true)).toBe(
+      false
+    );
+    expect(
+      shouldUsePiAgentRuntime(
+        { piAgentRuntime: true },
+        { type: "compaction-request" },
+        undefined,
+        true,
+        true
+      )
+    ).toBe(false);
+  });
+
+  test("routes delegated workspace turns to Pi", () => {
+    expect(shouldUsePiAgentRuntime({ piAgentRuntime: true }, { type: "workspace-turn-task" })).toBe(
+      true
+    );
+  });
+
+  test("routes a synthetic delegated executable turn to Pi", () => {
+    expect(
+      shouldUsePiAgentRuntime({ piAgentRuntime: true }, undefined, undefined, true, true)
+    ).toBe(true);
   });
 
   test("routes only ordinary user turns to Pi", () => {

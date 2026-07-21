@@ -64,17 +64,22 @@ export function resolveAgentRuntimeKind(
 export function shouldUsePiAgentRuntime(
   experiments: SendMessageOptions["experiments"],
   muxMetadata: { type: MuxMessageMetadata["type"] } | undefined,
-  latestUserMuxMetadata?: { type: MuxMessageMetadata["type"] }
+  latestUserMuxMetadata?: { type: MuxMessageMetadata["type"] },
+  latestUserIsSynthetic = false,
+  latestUserIsDelegatedExecutable = false
 ): boolean {
-  const isOrdinaryTurn = (metadata: { type: MuxMessageMetadata["type"] } | undefined): boolean =>
-    metadata == null || metadata.type === "normal";
+  const isExecutableTurn = (metadata: { type: MuxMessageMetadata["type"] } | undefined): boolean =>
+    metadata == null || metadata.type === "normal" || metadata.type === "workspace-turn-task";
 
-  // Mux owns synthetic/control turns because their metadata drives orchestration,
-  // correlation, and UI behavior outside the model loop. Pi is an execution
-  // backend only for ordinary user turns.
+  // Mux owns synthetic control turns because their metadata drives orchestration,
+  // correlation, and UI behavior outside the model loop. TaskService also marks
+  // restart and Plan→Exec continuations synthetic to distinguish their UI/history
+  // origin, even though they start a delegated child agent's real model/tool loop.
+  // That explicit delegated-execution marker is the only synthetic exception.
   return (
     resolveAgentRuntimeKind(experiments) === "pi" &&
-    isOrdinaryTurn(muxMetadata) &&
-    isOrdinaryTurn(latestUserMuxMetadata)
+    (!latestUserIsSynthetic || latestUserIsDelegatedExecutable) &&
+    isExecutableTurn(muxMetadata) &&
+    isExecutableTurn(latestUserMuxMetadata)
   );
 }

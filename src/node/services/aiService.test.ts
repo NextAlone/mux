@@ -308,6 +308,7 @@ function stubCommonStreamMessageDependencies(args: {
   effectiveModelString?: string;
   canonicalProviderName?: ProviderName;
   canonicalModelId?: string;
+  openAIResponsesCompactionRoute?: "openai-api-key" | "codex-oauth";
   useRequestedModelString?: boolean;
   resolvedAgentId?: string;
   onPlanPayloadMessageIds?: (messageIds: string[]) => void;
@@ -375,6 +376,9 @@ function stubCommonStreamMessageDependencies(args: {
           canonicalModelId: args.canonicalModelId ?? modelIdFromModelString(canonicalModelString),
           routedThroughGateway: false,
           ...(args.routeProvider != null ? { routeProvider: args.routeProvider } : {}),
+          ...(args.openAIResponsesCompactionRoute != null
+            ? { openAIResponsesCompactionRoute: args.openAIResponsesCompactionRoute }
+            : {}),
         },
       });
     }
@@ -1365,6 +1369,7 @@ describe("AIService.streamMessage compaction boundary slicing", () => {
       effectiveModelString?: string;
       canonicalProviderName?: ProviderName;
       canonicalModelId?: string;
+      openAIResponsesCompactionRoute?: "openai-api-key" | "codex-oauth";
       useRequestedModelString?: boolean;
       resolvedAgentId?: string;
       experimentsService?: ExperimentsService;
@@ -1400,6 +1405,7 @@ describe("AIService.streamMessage compaction boundary slicing", () => {
       effectiveModelString: options?.effectiveModelString,
       canonicalProviderName: options?.canonicalProviderName,
       canonicalModelId: options?.canonicalModelId,
+      openAIResponsesCompactionRoute: options?.openAIResponsesCompactionRoute,
       useRequestedModelString: options?.useRequestedModelString,
       resolvedAgentId: options?.resolvedAgentId,
       onPlanPayloadMessageIds: (messageIds) => planPayloadMessageIds.push(messageIds),
@@ -1631,6 +1637,243 @@ describe("AIService.streamMessage compaction boundary slicing", () => {
       activeToolNames: [completionToolName],
     });
     expect(Object.keys(piCalls[0]?.muxTools ?? {})).toEqual([completionToolName]);
+    expect(harness.startStreamCalls).toHaveLength(0);
+  });
+
+  it("keeps direct Mux tools when Pi uses Codex GPT-5.6 OAuth", async () => {
+    using muxHome = new DisposableTempDir("ai-service-pi-codex-gpt56-tools");
+    const projectPath = path.join(muxHome.path, "project");
+    await fs.mkdir(projectPath, { recursive: true });
+    const workspaceId = "workspace-pi-codex-gpt56-tools";
+    const bash = tool({
+      description: "Run a shell command",
+      inputSchema: z.object({ command: z.string() }),
+      execute: ({ command }) => ({ command }),
+    });
+    const harness = createHarness(
+      muxHome.path,
+      createLocalWorkspaceMetadata(workspaceId, projectPath),
+      {
+        allTools: { bash },
+        effectiveModelString: "openai:gpt-5.6-sol",
+        canonicalProviderName: "openai",
+        canonicalModelId: "gpt-5.6-sol",
+        openAIResponsesCompactionRoute: "codex-oauth",
+      }
+    );
+    harness.service.setCodexOauthService({
+      getValidAuth: () => Promise.resolve({ success: true, data: TEST_CODEX_OAUTH }),
+      persistRuntimeAuthRefresh: () => Promise.resolve({ success: true, data: undefined }),
+    } as unknown as CodexOauthService);
+    const piCalls: PiAgentRuntimeStreamOptions[] = [];
+    spyOn(PiAgentRuntimeService.prototype, "startStream").mockImplementation(
+      (options, onSettled) => {
+        piCalls.push(options);
+        onSettled();
+        return Promise.resolve({ success: true, data: undefined });
+      }
+    );
+    const streamManager = (harness.service as unknown as { streamManager: StreamManager })
+      .streamManager;
+    spyOn(streamManager, "cleanupStreamTempDir").mockImplementation(() => undefined);
+
+    const result = await harness.service.streamMessage({
+      messages: [createMuxMessage("latest-user", "user", "run pwd")],
+      workspaceId,
+      modelString: "openai:gpt-5.6-sol",
+      thinkingLevel: "off",
+      experiments: { piAgentRuntime: true, codexGpt56Compat: true },
+    });
+
+    expect(result.success).toBe(true);
+    expect(piCalls).toHaveLength(1);
+    expect(Object.keys(piCalls[0]?.muxTools ?? {})).toEqual(["bash"]);
+    expect(piCalls[0]?.activeToolNames).toEqual(["bash"]);
+    expect(harness.startStreamCalls).toHaveLength(0);
+  });
+
+  it("does not advertise provider-native tools that Pi cannot execute", async () => {
+    using muxHome = new DisposableTempDir("ai-service-pi-native-tool-sentinel");
+    const projectPath = path.join(muxHome.path, "project");
+    await fs.mkdir(projectPath, { recursive: true });
+    const workspaceId = "workspace-pi-native-tool-sentinel";
+    const bash = tool({
+      description: "Run a shell command",
+      inputSchema: z.object({ command: z.string() }),
+      execute: ({ command }) => ({ command }),
+    });
+    const providerNative = tool({
+      description: "Provider-native capability without a Mux host handler",
+      inputSchema: z.object({}),
+    });
+    const harness = createHarness(
+      muxHome.path,
+      createLocalWorkspaceMetadata(workspaceId, projectPath),
+      { postPolicyTools: { bash, provider_native: providerNative } }
+    );
+    harness.service.setCodexOauthService({
+      getValidAuth: () => Promise.resolve({ success: true, data: TEST_CODEX_OAUTH }),
+      persistRuntimeAuthRefresh: () => Promise.resolve({ success: true, data: undefined }),
+    } as unknown as CodexOauthService);
+    const piCalls: PiAgentRuntimeStreamOptions[] = [];
+    spyOn(PiAgentRuntimeService.prototype, "startStream").mockImplementation(
+      (options, onSettled) => {
+        piCalls.push(options);
+        onSettled();
+        return Promise.resolve({ success: true, data: undefined });
+      }
+    );
+    const streamManager = (harness.service as unknown as { streamManager: StreamManager })
+      .streamManager;
+    spyOn(streamManager, "cleanupStreamTempDir").mockImplementation(() => undefined);
+    const preparedToolNames: string[][] = [];
+    spyOn(messagePipeline, "prepareMuxMessagesForProvider").mockImplementation((pipelineArgs) => {
+      preparedToolNames.push(pipelineArgs.toolNamesForSentinel);
+      return Promise.resolve(
+        pipelineArgs.messagesWithSentinel as unknown as Awaited<
+          ReturnType<typeof messagePipeline.prepareMuxMessagesForProvider>
+        >
+      );
+    });
+
+    const result = await harness.service.streamMessage({
+      messages: [createMuxMessage("latest-user", "user", "continue")],
+      workspaceId,
+      modelString: "openai:gpt-5.2",
+      thinkingLevel: "off",
+      experiments: { piAgentRuntime: true },
+    });
+
+    expect(result.success).toBe(true);
+    expect(piCalls).toHaveLength(1);
+    expect(Object.keys(piCalls[0]?.muxTools ?? {})).toEqual(["bash"]);
+    expect(piCalls[0]?.activeToolNames).toEqual(["bash"]);
+    expect(preparedToolNames).toEqual([["bash"]]);
+    expect(piCalls[0]?.systemPrompt).toContain("provider_native");
+  });
+
+  it("runs delegated workspace turns on Pi but keeps synthetic turns on Mux", async () => {
+    using muxHome = new DisposableTempDir("ai-service-pi-turn-ownership");
+    const projectPath = path.join(muxHome.path, "project");
+    await fs.mkdir(projectPath, { recursive: true });
+    const workspaceId = "workspace-pi-turn-ownership";
+    const workspaceTurnMetadata = {
+      type: "workspace-turn-task" as const,
+      taskHandleId: "task-handle",
+      ownerWorkspaceId: "parent-workspace",
+      turnId: "turn-id",
+    };
+    const workspaceTurnHarness = createHarness(
+      muxHome.path,
+      createLocalWorkspaceMetadata(workspaceId, projectPath)
+    );
+    workspaceTurnHarness.service.setCodexOauthService({
+      getValidAuth: () => Promise.resolve({ success: true, data: TEST_CODEX_OAUTH }),
+      persistRuntimeAuthRefresh: () => Promise.resolve({ success: true, data: undefined }),
+    } as unknown as CodexOauthService);
+    const piCalls: PiAgentRuntimeStreamOptions[] = [];
+    spyOn(PiAgentRuntimeService.prototype, "startStream").mockImplementation(
+      (options, onSettled) => {
+        piCalls.push(options);
+        onSettled();
+        return Promise.resolve({ success: true, data: undefined });
+      }
+    );
+    const workspaceTurnStreamManager = (
+      workspaceTurnHarness.service as unknown as { streamManager: StreamManager }
+    ).streamManager;
+    spyOn(workspaceTurnStreamManager, "cleanupStreamTempDir").mockImplementation(() => undefined);
+
+    const workspaceTurnResult = await workspaceTurnHarness.service.streamMessage({
+      messages: [
+        createMuxMessage("delegated-user", "user", "run delegated work", {
+          muxMetadata: workspaceTurnMetadata,
+        }),
+      ],
+      workspaceId,
+      modelString: "openai:gpt-5.2",
+      thinkingLevel: "off",
+      muxMetadata: workspaceTurnMetadata,
+      experiments: { piAgentRuntime: true },
+    });
+
+    expect(workspaceTurnResult.success).toBe(true);
+    expect(piCalls).toHaveLength(1);
+    expect(workspaceTurnHarness.startStreamCalls).toHaveLength(0);
+
+    mock.restore();
+    const syntheticHarness = createHarness(
+      muxHome.path,
+      createLocalWorkspaceMetadata("workspace-mux-synthetic", projectPath)
+    );
+    const syntheticPiCalls: PiAgentRuntimeStreamOptions[] = [];
+    spyOn(PiAgentRuntimeService.prototype, "startStream").mockImplementation(
+      (options, onSettled) => {
+        syntheticPiCalls.push(options);
+        onSettled();
+        return Promise.resolve({ success: true, data: undefined });
+      }
+    );
+
+    const syntheticResult = await syntheticHarness.service.streamMessage({
+      messages: [
+        createMuxMessage("synthetic-user", "user", "continue", {
+          synthetic: true,
+        }),
+      ],
+      workspaceId: "workspace-mux-synthetic",
+      modelString: "openai:gpt-5.2",
+      thinkingLevel: "off",
+      experiments: { piAgentRuntime: true },
+    });
+
+    expect(syntheticResult.success).toBe(true);
+    expect(syntheticPiCalls).toHaveLength(0);
+    expect(syntheticHarness.startStreamCalls).toHaveLength(1);
+  });
+
+  it("runs synthetic executable child continuations on Pi", async () => {
+    using muxHome = new DisposableTempDir("ai-service-pi-child-continuation");
+    const projectPath = path.join(muxHome.path, "project");
+    await fs.mkdir(projectPath, { recursive: true });
+    const workspaceId = "workspace-pi-child-continuation";
+    const harness = createHarness(
+      muxHome.path,
+      createLocalWorkspaceMetadata(workspaceId, projectPath, {
+        parentWorkspaceId: "parent-workspace",
+      })
+    );
+    harness.service.setCodexOauthService({
+      getValidAuth: () => Promise.resolve({ success: true, data: TEST_CODEX_OAUTH }),
+      persistRuntimeAuthRefresh: () => Promise.resolve({ success: true, data: undefined }),
+    } as unknown as CodexOauthService);
+    const piCalls: PiAgentRuntimeStreamOptions[] = [];
+    spyOn(PiAgentRuntimeService.prototype, "startStream").mockImplementation(
+      (options, onSettled) => {
+        piCalls.push(options);
+        onSettled();
+        return Promise.resolve({ success: true, data: undefined });
+      }
+    );
+    const streamManager = (harness.service as unknown as { streamManager: StreamManager })
+      .streamManager;
+    spyOn(streamManager, "cleanupStreamTempDir").mockImplementation(() => undefined);
+
+    const result = await harness.service.streamMessage({
+      messages: [
+        createMuxMessage("child-continuation", "user", "Implement the approved plan.", {
+          synthetic: true,
+        }),
+      ],
+      workspaceId,
+      modelString: "openai:gpt-5.2",
+      thinkingLevel: "off",
+      agentInitiated: true,
+      experiments: { piAgentRuntime: true },
+    });
+
+    expect(result.success).toBe(true);
+    expect(piCalls).toHaveLength(1);
     expect(harness.startStreamCalls).toHaveLength(0);
   });
 

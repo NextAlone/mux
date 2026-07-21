@@ -20,6 +20,7 @@ import {
   type ToolCallExecutionStartEvent,
   type ToolCallStartEvent,
   type ToolCallDeltaEvent,
+  type ToolCallOutputDeltaEvent,
   type ToolCallEndEvent,
   type ReasoningDeltaEvent,
   type ReasoningEndEvent,
@@ -2439,6 +2440,29 @@ export class StreamingMessageAggregator {
     // Track delta for token counting and TPS calculation
     this.trackDelta(data.messageId, data.tokens, data.timestamp, "tool-args");
     // Tool deltas are for display - args are in dynamic-tool part
+  }
+
+  handleToolCallOutputDelta(data: ToolCallOutputDeltaEvent): void {
+    const context = this.activeStreams.get(data.messageId);
+    if (context) {
+      this.updateStreamClock(context, data.timestamp);
+    }
+
+    const message = this.messages.get(data.messageId);
+    const toolPart = message?.parts.find(
+      (part): part is DynamicToolPart =>
+        part.type === "dynamic-tool" && part.toolCallId === data.toolCallId
+    );
+    if (toolPart?.state !== "input-available") {
+      return;
+    }
+
+    // Pi tool updates are result snapshots, not provider-streamed arguments.
+    // Keep the part pending so interruption recovery never treats a progress
+    // snapshot as a completed tool result or replays it to the model.
+    toolPart.partialOutput = data.output;
+    toolPart.partialOutputTimestamp = data.timestamp;
+    this.markMessageDirty(data.messageId);
   }
 
   /**

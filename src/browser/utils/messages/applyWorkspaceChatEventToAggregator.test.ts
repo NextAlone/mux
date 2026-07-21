@@ -13,6 +13,7 @@ import type {
   ToolCallDeltaEvent,
   ToolCallEndEvent,
   ToolCallExecutionStartEvent,
+  ToolCallOutputDeltaEvent,
   ToolCallStartEvent,
   UsageDeltaEvent,
 } from "@/common/types/stream";
@@ -58,6 +59,10 @@ class StubAggregator implements WorkspaceChatEventAggregator {
 
   handleToolCallDelta(data: ToolCallDeltaEvent): void {
     this.calls.push(`handleToolCallDelta:${data.toolCallId}`);
+  }
+
+  handleToolCallOutputDelta(data: ToolCallOutputDeltaEvent): void {
+    this.calls.push(`handleToolCallOutputDelta:${data.toolCallId}`);
   }
 
   handleToolCallEnd(data: ToolCallEndEvent): void {
@@ -274,6 +279,25 @@ describe("applyWorkspaceChatEventToAggregator", () => {
 
     expect(hint).toBe("throttled");
     expect(aggregator.calls).toEqual(["handleToolCallDelta:tool-1"]);
+  });
+
+  test("tool-call-output-delta routes to the pending output handler and is throttled", () => {
+    const aggregator = new StubAggregator();
+
+    const event: WorkspaceChatMessage = {
+      type: "tool-call-output-delta",
+      workspaceId: "ws-1",
+      messageId: "msg-1",
+      toolCallId: "tool-1",
+      toolName: "bash",
+      output: { progress: "halfway" },
+      timestamp: 1,
+    };
+
+    const hint = applyWorkspaceChatEventToAggregator(aggregator, event);
+
+    expect(hint).toBe("throttled");
+    expect(aggregator.calls).toEqual(["handleToolCallOutputDelta:tool-1"]);
   });
 
   test("message routes to handleMessage", () => {

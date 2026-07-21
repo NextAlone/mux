@@ -1571,13 +1571,26 @@ export class AIService extends EventEmitter {
 
       const metadata = metadataResult.data;
 
-      const latestUserMuxMetadata = [...messages]
+      const latestUserForRuntimeSelection = [...messages]
         .reverse()
-        .find((message) => message.role === "user")?.metadata?.muxMetadata;
+        .find((message) => message.role === "user");
+      const latestUserMuxMetadata = latestUserForRuntimeSelection?.metadata?.muxMetadata;
+      const latestUserIsSynthetic = latestUserForRuntimeSelection?.metadata?.synthetic === true;
+      // A TaskService continuation is synthetic for UI/history provenance, not because
+      // it is Mux control-plane work: Plan→Exec handoff and crash recovery begin a child
+      // agent's ordinary model/tool loop. Keep those delegated loops on Pi while every
+      // explicit control marker (compaction, heartbeat, follow-up, …) remains on Mux.
+      const latestUserIsDelegatedExecutable =
+        latestUserIsSynthetic &&
+        metadata.parentWorkspaceId != null &&
+        (agentInitiated === true ||
+          latestUserForRuntimeSelection?.metadata?.retrySendOptions?.agentInitiated === true);
       const piAgentRuntimeRequested = shouldUsePiAgentRuntime(
         experiments,
         muxMetadata,
-        latestUserMuxMetadata
+        latestUserMuxMetadata,
+        latestUserIsSynthetic,
+        latestUserIsDelegatedExecutable
       );
       if (piAgentRuntimeRequested) {
         const incompatibility = getPiAgentRuntimeIncompatibility({
@@ -1592,6 +1605,11 @@ export class AIService extends EventEmitter {
           return Err({ type: "unknown", raw: incompatibility });
         }
       }
+      const usePiAgentRuntime = piAgentRuntimeRequested;
+      // Mux retains product orchestration, but Pi owns its model/function-tool loop.
+      // Code Mode is a legacy Mux Responses-Lite JavaScript tool surface; passing it
+      // into Pi makes the model send shell source to a JavaScript-only `exec` tool.
+      const codeModeOnlyForMuxRuntime = codeModeOnlyEnabled && !usePiAgentRuntime;
 
       if (this.policyService?.isEnforced()) {
         if (!this.policyService.isRuntimeAllowed(metadata.runtimeConfig)) {
@@ -2658,7 +2676,7 @@ export class AIService extends EventEmitter {
         extraTools: this.extraTools,
         effectiveToolPolicy,
         experiments,
-        codeModeOnly: codeModeOnlyEnabled ? { workspaceId } : undefined,
+        codeModeOnly: codeModeOnlyForMuxRuntime ? { workspaceId } : undefined,
         emitNestedToolEvent: emitNestedPtcToolEvent,
       });
       let tools = toolAssembly.tools;
@@ -2676,7 +2694,7 @@ export class AIService extends EventEmitter {
       // presence-sniffing the record would misfire on an MCP tool named
       // code_execution (see prepareToolSearch).
       const ptcEnabled =
-        codeModeOnlyEnabled ||
+        codeModeOnlyForMuxRuntime ||
         experiments?.programmaticToolCalling === true ||
         experiments?.programmaticToolCallingExclusive === true;
       if (toolSearchRuntime) {
@@ -2691,8 +2709,6 @@ export class AIService extends EventEmitter {
           toolSearchRuntime.state = toolSearchPrep.state;
         }
       }
-
-      const usePiAgentRuntime = piAgentRuntimeRequested;
 
       if (usePiAgentRuntime && tools.advisor !== undefined) {
         // Advisor depends on StreamManager's per-step transcript snapshots. Pi owns
@@ -2802,9 +2818,9 @@ export class AIService extends EventEmitter {
         try {
           const piToolset = partitionPiCompatibleMuxTools(tools);
           const resolvePiActiveToolNames = (): string[] =>
-            (computeActiveToolNames(toolSearchRuntime?.state) ?? Object.keys(tools)).filter(
-              (toolName) => piToolset.tools[toolName] !== undefined
-            );
+            (computeActiveToolNames(toolSearchRuntime?.state) ?? Object.keys(tools))
+              .filter((toolName) => piToolset.tools[toolName] !== undefined)
+              .sort();
           const unavailableToolsWarning =
             piToolset.unsupportedToolNames.length > 0
               ? `\n\n[Pi harness limitation: provider-native tools are unavailable in this turn: ${piToolset.unsupportedToolNames.join(
@@ -2841,7 +2857,11 @@ export class AIService extends EventEmitter {
           const piMessages = await prepareMuxMessagesForProvider({
             messagesWithSentinel,
             effectiveAgentId,
-            toolNamesForSentinel,
+            // Pi owns the executable tool loop, so the transition sentinel must
+            // describe the same filtered Mux toolset passed to the harness. In
+            // particular, provider-native tools with no Mux host handler cannot
+            // be advertised as callable by Pi.
+            toolNamesForSentinel: resolvePiActiveToolNames(),
             planContentForTransition,
             planFilePath,
             changedFileAttachments,

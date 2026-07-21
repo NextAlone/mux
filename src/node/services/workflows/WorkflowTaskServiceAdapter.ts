@@ -36,6 +36,8 @@ interface WorkflowTaskExperiments {
   workspaceHeartbeats?: boolean;
   subagentFileReports?: boolean;
   dynamicWorkflows?: boolean;
+  codexGpt56Compat?: boolean;
+  piAgentRuntime?: boolean;
 }
 
 // Shared shape for agent task creation so the single-step `create` and the

@@ -23,4 +23,13 @@ describe("WorkspaceConfigSchema taskAttentionPolicy", () => {
       false
     );
   });
+
+  test("preserves a Pi runtime snapshot for restart-safe child tasks", () => {
+    const parsed = WorkspaceConfigSchema.parse({
+      ...base,
+      taskExperiments: { piAgentRuntime: true, codexGpt56Compat: true },
+    });
+
+    expect(parsed.taskExperiments).toEqual({ piAgentRuntime: true, codexGpt56Compat: true });
+  });
 });

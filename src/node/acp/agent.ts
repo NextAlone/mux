@@ -1583,6 +1583,7 @@ export class MuxAgent implements Agent {
         event.type === "stream-delta" ||
         event.type === "reasoning-delta" ||
         event.type === "tool-call-delta" ||
+        event.type === "tool-call-output-delta" ||
         event.type === "usage-delta" ||
         event.type === "session-usage-delta" ||
         event.type === "advisor-output" ||

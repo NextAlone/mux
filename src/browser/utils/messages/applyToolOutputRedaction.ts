@@ -92,7 +92,15 @@ export function applyToolOutputRedaction(messages: MuxMessage[]): MuxMessage[] {
     const newParts = msg.parts.map((part) => {
       if (part.type !== "dynamic-tool") return part;
       const providerPart = stripWorkflowRunAttachment(part);
-      if (providerPart.state !== "output-available") return providerPart;
+      if (providerPart.state !== "output-available") {
+        // A live tool snapshot is renderer-only progress, never provider context.
+        const {
+          partialOutput: _partialOutput,
+          partialOutputTimestamp: _partialOutputTimestamp,
+          ...withoutPartialOutput
+        } = providerPart;
+        return withoutPartialOutput;
+      }
 
       const outputWithoutUiOnly = stripWorkflowRunRecordForModel(
         providerPart.toolName,
