@@ -402,6 +402,24 @@ export class CodexOauthService {
     return Ok(refreshed.data);
   }
 
+  async persistRuntimeAuthRefresh(
+    expectedRefresh: string,
+    auth: CodexOauthAuth
+  ): Promise<Result<void, string>> {
+    await using _lock = await this.refreshMutex.acquire();
+    const latest = this.readStoredAuth();
+    if (!latest) {
+      return Err("Codex OAuth is not configured");
+    }
+
+    // Each Pi turn has its own credential store. A slower turn must not overwrite
+    // credentials already rotated and persisted by another workspace.
+    if (latest.refresh !== expectedRefresh || latest.expires > auth.expires) {
+      return Ok(undefined);
+    }
+    return await this.persistAuth(auth);
+  }
+
   async dispose(): Promise<void> {
     await this.desktopFlows.shutdownAll();
 

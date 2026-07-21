@@ -53,7 +53,7 @@ MAKEFLAGS += -j
 endif
 
 # Common esbuild flags for CLI API bundle (ESM format for trpc-cli)
-ESBUILD_CLI_FLAGS := --bundle --format=esm --platform=node --target=node20 --outfile=dist/cli/api.mjs --external:zod --external:commander --external:jsonc-parser --external:@trpc/server --external:ssh2 --external:cpu-features --external:@1password/sdk --external:@1password/sdk-core --banner:js="import{createRequire}from'module';globalThis.require=createRequire(import.meta.url);"
+ESBUILD_CLI_FLAGS := --bundle --format=esm --platform=node --target=node22 --outfile=dist/cli/api.mjs --external:zod --external:commander --external:jsonc-parser --external:@trpc/server --external:ssh2 --external:cpu-features --external:@1password/sdk --external:@1password/sdk-core --banner:js="import{createRequire}from'module';globalThis.require=createRequire(import.meta.url);"
 
 # Common esbuild flags for server runtime Docker bundle.
 # Place runtime bundles under dist/runtime so frontend dist/*.js layers remain stable.
@@ -80,18 +80,19 @@ include fmt.mk
 .PHONY: docs-server check-docs-links
 .PHONY: storybook storybook-run storybook-build test-storybook chromatic
 .PHONY: benchmark-terminal
-.PHONY: ensure-deps rebuild-native mux update-models
+.PHONY: ensure-deps rebuild-native mux update-models check-node-version
 .PHONY: check-eager-imports check-bundle-size check-startup check-node-dist-aliases check-ui-i18n
 
 # Build tools
 TSGO := bun run node_modules/@typescript/native-preview/bin/tsgo.js
 
 # Node.js version check
-REQUIRED_NODE_VERSION := 20
-NODE_VERSION := $(shell node --version | sed 's/v\([0-9]*\).*/\1/')
+REQUIRED_NODE_VERSION := 22.19.0
+NODE_VERSION ?= $(shell node --version | sed 's/^v//')
+NODE_VERSION_SUPPORTED := $(shell node -e 'const parse=(v)=>v.split(".").map(Number);const a=parse(process.argv[1]);const b=parse(process.argv[2]);const ok=a[0]>b[0]||(a[0]===b[0]&&(a[1]>b[1]||(a[1]===b[1]&&a[2]>=b[2])));process.stdout.write(ok?"1":"0")' "$(NODE_VERSION)" "$(REQUIRED_NODE_VERSION)")
 
 define check_node_version
-	@if [ "$(NODE_VERSION)" -lt "$(REQUIRED_NODE_VERSION)" ]; then \
+	@if [ "$(NODE_VERSION_SUPPORTED)" != "1" ]; then \
 		echo "Error: Node.js v$(REQUIRED_NODE_VERSION) or higher is required"; \
 		echo "Current version: v$(NODE_VERSION)"; \
 		echo ""; \
@@ -102,6 +103,9 @@ define check_node_version
 		exit 1; \
 	fi
 endef
+
+check-node-version: ## Verify the Node.js runtime satisfies bundled dependency engines
+	$(check_node_version)
 
 # Detect if browser opener is available that Storybook can use
 # Storybook uses 'open' package which tries xdg-open on Linux, open on macOS, start on Windows
@@ -118,7 +122,7 @@ all: build
 
 # Sentinel file to track when dependencies are installed
 # Depends on package.json and bun.lock - rebuilds if either changes
-node_modules/.installed: package.json bun.lock
+node_modules/.installed: package.json bun.lock | check-node-version
 	@echo "Dependencies out of date or missing, running bun install --frozen-lockfile..."
 	@# Keep local validation from silently rewriting bun.lock when a different Bun version is installed.
 	@bun install --frozen-lockfile
@@ -138,7 +142,7 @@ rebuild-native: node_modules/.installed ## Rebuild native modules (node-pty, Duc
 	@echo "Native modules rebuilt successfully"
 
 # Run compiled CLI with trailing arguments (builds only if missing)
-mux: ## Run the compiled mux CLI (e.g., make mux server --port 3000)
+mux: check-node-version ## Run the compiled mux CLI (e.g., make mux server --port 3000)
 	@test -f dist/cli/index.js -a -f dist/cli/api.mjs || $(MAKE) build-main
 	@node dist/cli/index.js $(filter-out $@,$(MAKECMDGOALS))
 

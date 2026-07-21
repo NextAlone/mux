@@ -1,13 +1,18 @@
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { spawnSync } from "node:child_process";
+import fs from "node:fs/promises";
+import path from "node:path";
 
 import {
   assertPiRuntimeCompatibility,
   buildPiTurnInput,
+  createPiCodexCredentialStore,
+  createEmbeddedPiResourceLoader,
   PiAgentRuntimeService,
   type PiSessionAdapter,
   resolvePiBuiltInTools,
   resolvePiCodexModelId,
+  rewritePiPayloadForRemoteCompaction,
 } from "./piAgentRuntime";
 import { createMuxMessage } from "@/common/types/message";
 import { createTestHistoryService } from "./testHistoryService";
@@ -15,17 +20,56 @@ import type { HistoryService } from "./historyService";
 import type { AgentSessionEvent } from "@earendil-works/pi-coding-agent";
 import type { AssistantMessage, Message } from "@earendil-works/pi-ai/compat";
 import { createOpenAIResponsesCompactionBoundaryMarker } from "./openaiResponsesCompactionReplay";
+import { DisposableTempDir } from "./tempDir";
+import type { CodexOauthAuth } from "@/node/utils/codexOauthAuth";
 
-function getTestCodexAuth() {
-  return Promise.resolve({
-    type: "oauth" as const,
+function validPiAuth(): CodexOauthAuth {
+  return {
+    type: "oauth",
     access: "access",
     refresh: "refresh",
     expires: Date.now() + 60_000,
-  });
+  };
+}
+
+function getTestCodexAuth(): Promise<CodexOauthAuth> {
+  return Promise.resolve(validPiAuth());
 }
 
 describe("Pi agent runtime compatibility", () => {
+  test("persists OAuth credentials rotated by Pi without rewriting the initial seed", async () => {
+    const persisted: Array<{ expectedRefresh: string; auth: ReturnType<typeof validPiAuth> }> = [];
+    const auth = validPiAuth();
+    const store = await createPiCodexCredentialStore(auth, (expectedRefresh, nextAuth) => {
+      persisted.push({ expectedRefresh, auth: nextAuth });
+      return Promise.resolve();
+    });
+
+    expect(persisted).toEqual([]);
+    await store.modify("openai-codex", () =>
+      Promise.resolve({
+        type: "oauth",
+        access: "rotated-access",
+        refresh: "rotated-refresh",
+        expires: auth.expires + 60_000,
+        accountId: "account-1",
+      })
+    );
+
+    expect(persisted).toEqual([
+      {
+        expectedRefresh: "refresh",
+        auth: {
+          type: "oauth",
+          access: "rotated-access",
+          refresh: "rotated-refresh",
+          expires: auth.expires + 60_000,
+          accountId: "account-1",
+        },
+      },
+    ]);
+  });
+
   test("loads Pi runtime dependencies from the CommonJS backend", () => {
     const result = spawnSync(
       "node",
@@ -88,10 +132,103 @@ describe("Pi agent runtime compatibility", () => {
     expect(JSON.stringify(input.context[1])).toContain("/workspace");
   });
 
+  test("excludes side questions and history before the latest context boundary", () => {
+    const history = [
+      createMuxMessage("old", "user", "obsolete context", { timestamp: 1 }),
+      createMuxMessage("summary", "assistant", "compacted context", {
+        timestamp: 2,
+        compacted: "user",
+        compactionBoundary: true,
+        compactionEpoch: 1,
+      }),
+      createMuxMessage("aside-user", "user", "private aside", {
+        timestamp: 3,
+        muxMetadata: { type: "side-question", rawCommand: "/btw private aside" },
+      }),
+      createMuxMessage("aside-answer", "assistant", "aside answer", {
+        timestamp: 4,
+        muxMetadata: { type: "side-question-answer", questionMessageId: "aside-user" },
+      }),
+      createMuxMessage("latest", "user", "continue", { timestamp: 5 }),
+    ];
+
+    const input = buildPiTurnInput(history, "gpt-5.6-sol");
+    const serializedContext = JSON.stringify(input.context);
+
+    expect(input.prompt).toBe("continue");
+    expect(serializedContext).toContain("compacted context");
+    expect(serializedContext).not.toContain("obsolete context");
+    expect(serializedContext).not.toContain("private aside");
+    expect(serializedContext).not.toContain("aside answer");
+  });
+
   test("keeps Pi plan and explore agents read-only", () => {
     expect(resolvePiBuiltInTools("plan")).not.toContain("edit");
     expect(resolvePiBuiltInTools("explore")).not.toContain("bash");
-    expect(resolvePiBuiltInTools("exec")).toBeUndefined();
+    expect(resolvePiBuiltInTools("exec")).toEqual(["read", "bash", "edit", "write"]);
+  });
+
+  test("maps Mux caller tool policy onto Pi built-in tools", () => {
+    expect(
+      resolvePiBuiltInTools("exec", [
+        { regex_match: ".*", action: "disable" },
+        { regex_match: "file_read", action: "enable" },
+      ])
+    ).toEqual(["read"]);
+  });
+
+  test("does not execute project-local Pi extensions", async () => {
+    using cwd = new DisposableTempDir("pi-runtime-untrusted-extension");
+    using agentDir = new DisposableTempDir("pi-runtime-agent-dir");
+    const markerPath = path.join(cwd.path, "extension-loaded");
+    const extensionDir = path.join(cwd.path, ".pi", "extensions");
+    await fs.mkdir(extensionDir, { recursive: true });
+    await fs.writeFile(
+      path.join(extensionDir, "untrusted.ts"),
+      `import fs from "node:fs"; fs.writeFileSync(${JSON.stringify(markerPath)}, "loaded"); export default () => {};`
+    );
+
+    const loader = await createEmbeddedPiResourceLoader({
+      cwd: cwd.path,
+      agentDir: agentDir.path,
+    });
+
+    expect(loader.getExtensions().extensions).toHaveLength(0);
+    expect(Bun.file(markerPath).exists()).resolves.toBe(false);
+  });
+
+  test("injects Mux instructions through Pi's resource loader", async () => {
+    using cwd = new DisposableTempDir("pi-runtime-system-prompt");
+    using agentDir = new DisposableTempDir("pi-runtime-agent-dir");
+
+    const loader = await createEmbeddedPiResourceLoader({
+      cwd: cwd.path,
+      agentDir: agentDir.path,
+      additionalSystemInstructions: "Mux-owned instruction",
+    });
+
+    expect(loader.getAppendSystemPrompt()).toContain("Mux-owned instruction");
+  });
+
+  test("fails closed when a remote compaction marker cannot be replayed", () => {
+    const replays = {
+      resp_compacted: {
+        type: "openai-responses-compact" as const,
+        responseId: "resp_compacted",
+        route: "codex-oauth" as const,
+        output: [{ type: "compaction", encrypted_content: "opaque-context" }],
+      },
+    };
+
+    expect(() => rewritePiPayloadForRemoteCompaction({ input: [] }, replays)).toThrow(
+      "did not contain its boundary marker"
+    );
+
+    const circular: Record<string, unknown> = { input: [] };
+    circular.self = circular;
+    expect(() => rewritePiPayloadForRemoteCompaction(circular, replays)).toThrow(
+      "could not be serialized"
+    );
   });
 });
 
@@ -105,6 +242,183 @@ describe("PiAgentRuntimeService", () => {
 
   afterEach(async () => {
     await cleanup();
+  });
+
+  test("persists streamed output before the Pi turn finishes", async () => {
+    const workspaceId = "pi-runtime-live-partial";
+    const user = createMuxMessage("user-1", "user", "start", { timestamp: 1 });
+    await historyService.appendToHistory(workspaceId, user);
+    const listeners = new Set<(event: AgentSessionEvent) => void>();
+    let releasePrompt: (() => void) | undefined;
+    const promptBlocked = new Promise<void>((resolve) => {
+      releasePrompt = resolve;
+    });
+    let promptStarted: (() => void) | undefined;
+    const didStartPrompt = new Promise<void>((resolve) => {
+      promptStarted = resolve;
+    });
+    const partialAssistant: AssistantMessage = {
+      role: "assistant",
+      content: [{ type: "text", text: "durable" }],
+      api: "openai-codex-responses",
+      provider: "openai-codex",
+      model: "gpt-5.6-sol",
+      usage: {
+        input: 1,
+        output: 1,
+        cacheRead: 0,
+        cacheWrite: 0,
+        totalTokens: 2,
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+      },
+      stopReason: "stop",
+      timestamp: 2,
+    };
+    const session: PiSessionAdapter = {
+      agent: { state: { messages: [] } },
+      subscribe(listener) {
+        listeners.add(listener);
+        return () => listeners.delete(listener);
+      },
+      async prompt() {
+        for (const listener of listeners) {
+          listener({
+            type: "message_update",
+            message: partialAssistant,
+            assistantMessageEvent: {
+              type: "text_delta",
+              contentIndex: 0,
+              delta: "durable",
+              partial: partialAssistant,
+            },
+          });
+        }
+        promptStarted?.();
+        await promptBlocked;
+        for (const listener of listeners) {
+          listener({ type: "message_end", message: partialAssistant });
+        }
+      },
+      abort: () => Promise.resolve(),
+      dispose: () => undefined,
+    };
+    const service = new PiAgentRuntimeService({
+      historyService,
+      getCodexAuth: getTestCodexAuth,
+      createSession: () => Promise.resolve(session),
+      emit: () => undefined,
+    });
+
+    const streamResult = service.stream({
+      workspaceId,
+      cwd: "/workspace",
+      runtimeType: "worktree",
+      messages: [user],
+      modelString: "openai:gpt-5.6-sol",
+    });
+    await didStartPrompt;
+
+    let partial = await historyService.readPartial(workspaceId);
+    for (let attempt = 0; partial == null && attempt < 100; attempt += 1) {
+      await Bun.sleep(1);
+      partial = await historyService.readPartial(workspaceId);
+    }
+    expect(partial?.parts.some((part) => part.type === "text" && part.text === "durable")).toBe(
+      true
+    );
+
+    releasePrompt?.();
+    expect((await streamResult).success).toBe(true);
+  });
+
+  test("replays text deltas produced after the reconnect cursor", async () => {
+    const workspaceId = "pi-runtime-reconnect";
+    const user = createMuxMessage("user-1", "user", "stream", { timestamp: 1 });
+    await historyService.appendToHistory(workspaceId, user);
+    const listeners = new Set<(event: AgentSessionEvent) => void>();
+    const assistant: AssistantMessage = {
+      role: "assistant",
+      content: [{ type: "text", text: "firstsecond" }],
+      api: "openai-codex-responses",
+      provider: "openai-codex",
+      model: "gpt-5.6-sol",
+      usage: {
+        input: 1,
+        output: 2,
+        cacheRead: 0,
+        cacheWrite: 0,
+        totalTokens: 3,
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+      },
+      stopReason: "stop",
+      timestamp: 3,
+    };
+    const now = 1_000;
+    const nowSpy = spyOn(Date, "now").mockImplementation(() => now);
+    const replayDeltas: string[] = [];
+    const session: PiSessionAdapter = {
+      agent: { state: { messages: [] } },
+      subscribe(listener) {
+        listeners.add(listener);
+        return () => listeners.delete(listener);
+      },
+      async prompt() {
+        for (const listener of listeners) {
+          listener({
+            type: "message_update",
+            message: assistant,
+            assistantMessageEvent: {
+              type: "text_delta",
+              contentIndex: 0,
+              delta: "first",
+              partial: assistant,
+            },
+          });
+        }
+        const cursor = service.getStreamInfo(workspaceId)?.parts.at(-1)?.timestamp;
+        expect(cursor).toBeDefined();
+        for (const listener of listeners) {
+          listener({
+            type: "message_update",
+            message: assistant,
+            assistantMessageEvent: {
+              type: "text_delta",
+              contentIndex: 0,
+              delta: "second",
+              partial: assistant,
+            },
+          });
+        }
+        await service.replayStream(workspaceId, { afterTimestamp: cursor });
+        for (const listener of listeners) listener({ type: "message_end", message: assistant });
+      },
+      abort: () => Promise.resolve(),
+      dispose: () => undefined,
+    };
+    const service = new PiAgentRuntimeService({
+      historyService,
+      getCodexAuth: getTestCodexAuth,
+      createSession: () => Promise.resolve(session),
+      emit: (_name, event) => {
+        if (event.type === "stream-delta" && event.replay === true) {
+          replayDeltas.push(String(event.delta));
+        }
+      },
+    });
+
+    try {
+      const result = await service.stream({
+        workspaceId,
+        cwd: "/workspace",
+        runtimeType: "worktree",
+        messages: [user],
+        modelString: "openai:gpt-5.6-sol",
+      });
+      expect(result.success).toBe(true);
+      expect(replayDeltas).toEqual(["second"]);
+    } finally {
+      nowSpy.mockRestore();
+    }
   });
 
   test("streams Pi text and tools through Mux events and commits one assistant row", async () => {
@@ -134,6 +448,17 @@ describe("PiAgentRuntimeService", () => {
       stopReason: "stop",
       timestamp: 2,
     };
+    const toolStepAssistant: AssistantMessage = {
+      ...finalAssistant,
+      content: [],
+      usage: {
+        ...finalAssistant.usage,
+        input: 7,
+        output: 1,
+        totalTokens: 8,
+      },
+      stopReason: "toolUse",
+    };
     const session: PiSessionAdapter = {
       agent: { state, onPayload: undefined },
       subscribe(listener) {
@@ -152,6 +477,7 @@ describe("PiAgentRuntimeService", () => {
               partial: finalAssistant,
             },
           });
+          listener({ type: "message_end", message: toolStepAssistant });
           listener({
             type: "tool_execution_start",
             toolCallId: piToolCallId,
@@ -230,13 +556,15 @@ describe("PiAgentRuntimeService", () => {
     ).toBe(true);
     expect(receivedModelId).toBe("gpt-5.6-sol");
     expect(receivedAccessToken).toBe("access");
-    expect(recordedInputTokens).toBe(12);
+    expect(recordedInputTokens).toBe(19);
 
     const history = await historyService.getHistoryFromLatestBoundary(workspaceId);
     expect(history.success).toBe(true);
     if (!history.success) return;
     const assistant = history.data.find((message) => message.role === "assistant");
     expect(assistant?.metadata?.partial).toBe(false);
+    expect(assistant?.metadata?.usage?.inputTokens).toBe(19);
+    expect(assistant?.metadata?.contextUsage?.inputTokens).toBe(12);
     expect(assistant?.parts.some((part) => part.type === "text" && part.text === "done")).toBe(
       true
     );
@@ -456,11 +784,11 @@ describe("PiAgentRuntimeService", () => {
       provider: "openai-codex",
       model: "gpt-5.6-sol",
       usage: {
-        input: 0,
-        output: 0,
+        input: 5,
+        output: 1,
         cacheRead: 0,
         cacheWrite: 0,
-        totalTokens: 0,
+        totalTokens: 6,
         cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
       },
       stopReason: "error",
@@ -485,16 +813,22 @@ describe("PiAgentRuntimeService", () => {
               partial: partialAssistant,
             },
           });
+          listener({ type: "message_end", message: partialAssistant });
         }
         return Promise.reject(new Error("provider disconnected"));
       },
       abort: () => Promise.resolve(),
       dispose: () => undefined,
     };
+    let recordedInputTokens: number | undefined;
     const service = new PiAgentRuntimeService({
       historyService,
       getCodexAuth: getTestCodexAuth,
       createSession: () => Promise.resolve(session),
+      recordUsage: (_workspaceId, _model, usage) => {
+        recordedInputTokens = usage.inputTokens;
+        return Promise.resolve();
+      },
       emit: () => undefined,
     });
 
@@ -512,6 +846,135 @@ describe("PiAgentRuntimeService", () => {
       true
     );
     expect(partial?.metadata?.partial).toBe(true);
+    expect(partial?.metadata?.usage?.inputTokens).toBe(5);
+    expect(partial?.metadata?.contextUsage?.inputTokens).toBe(5);
+    expect(recordedInputTokens).toBe(5);
+  });
+
+  test("isolates concurrent streams across Mux workspaces", async () => {
+    const workspaceIds = ["pi-runtime-workspace-a", "pi-runtime-workspace-b"];
+    for (const workspaceId of workspaceIds) {
+      await historyService.appendToHistory(
+        workspaceId,
+        createMuxMessage(`user-${workspaceId}`, "user", "run", { timestamp: 1 })
+      );
+    }
+    const sessions = workspaceIds.map(() => {
+      let releasePrompt: (() => void) | undefined;
+      const promptBlocked = new Promise<void>((resolve) => {
+        releasePrompt = resolve;
+      });
+      return {
+        agent: { state: { messages: [] as Message[] } },
+        subscribe: () => () => undefined,
+        prompt: () => promptBlocked,
+        abort: () => {
+          releasePrompt?.();
+          return Promise.resolve();
+        },
+        dispose: () => undefined,
+      } satisfies PiSessionAdapter;
+    });
+    let nextSession = 0;
+    const service = new PiAgentRuntimeService({
+      historyService,
+      getCodexAuth: getTestCodexAuth,
+      createSession: () => Promise.resolve(sessions[nextSession++]),
+      emit: () => undefined,
+    });
+    const streams = workspaceIds.map((workspaceId) =>
+      service.stream({
+        workspaceId,
+        cwd: `/workspace/${workspaceId}`,
+        runtimeType: "worktree",
+        messages: [createMuxMessage(`user-${workspaceId}`, "user", "run", { timestamp: 1 })],
+        modelString: "openai:gpt-5.6-sol",
+      })
+    );
+    while (!workspaceIds.every((workspaceId) => service.isStreaming(workspaceId))) {
+      await Bun.sleep(1);
+    }
+
+    await service.stop(workspaceIds[0]);
+    expect(service.isStreaming(workspaceIds[1])).toBe(true);
+    await service.stop(workspaceIds[1]);
+
+    expect((await Promise.all(streams)).every((result) => result.success)).toBe(true);
+  });
+
+  test("defers a soft interrupt until the next output block boundary", async () => {
+    const workspaceId = "pi-runtime-soft-interrupt";
+    const user = createMuxMessage("user-1", "user", "stop after this block", { timestamp: 1 });
+    await historyService.appendToHistory(workspaceId, user);
+    const listeners = new Set<(event: AgentSessionEvent) => void>();
+    const partialAssistant: AssistantMessage = {
+      role: "assistant",
+      content: [{ type: "text", text: "block" }],
+      api: "openai-codex-responses",
+      provider: "openai-codex",
+      model: "gpt-5.6-sol",
+      usage: {
+        input: 0,
+        output: 0,
+        cacheRead: 0,
+        cacheWrite: 0,
+        totalTokens: 0,
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+      },
+      stopReason: "aborted",
+      timestamp: 2,
+    };
+    let resolvePrompt: (() => void) | undefined;
+    const promptBlocked = new Promise<void>((resolve) => {
+      resolvePrompt = resolve;
+    });
+    let abortCalls = 0;
+    const session: PiSessionAdapter = {
+      agent: { state: { messages: [] } },
+      subscribe(listener) {
+        listeners.add(listener);
+        return () => listeners.delete(listener);
+      },
+      prompt: () => promptBlocked,
+      abort: () => {
+        abortCalls += 1;
+        resolvePrompt?.();
+        return Promise.resolve();
+      },
+      dispose: () => undefined,
+    };
+    const service = new PiAgentRuntimeService({
+      historyService,
+      getCodexAuth: getTestCodexAuth,
+      createSession: () => Promise.resolve(session),
+      emit: () => undefined,
+    });
+    const streamResult = service.stream({
+      workspaceId,
+      cwd: "/workspace",
+      runtimeType: "worktree",
+      messages: [user],
+      modelString: "openai:gpt-5.6-sol",
+    });
+    while (!service.isStreaming(workspaceId)) await Bun.sleep(1);
+
+    await service.stop(workspaceId, { soft: true, abortReason: "system" });
+    expect(abortCalls).toBe(0);
+    for (const listener of listeners) {
+      listener({
+        type: "message_update",
+        message: partialAssistant,
+        assistantMessageEvent: {
+          type: "text_end",
+          contentIndex: 0,
+          content: "block",
+          partial: partialAssistant,
+        },
+      });
+    }
+
+    expect((await streamResult).success).toBe(true);
+    expect(abortCalls).toBe(1);
   });
 
   test("discards partial output when Mux stops Pi with abandonPartial", async () => {
@@ -534,11 +997,11 @@ describe("PiAgentRuntimeService", () => {
       provider: "openai-codex",
       model: "gpt-5.6-sol",
       usage: {
-        input: 0,
-        output: 0,
+        input: 5,
+        output: 1,
         cacheRead: 0,
         cacheWrite: 0,
-        totalTokens: 0,
+        totalTokens: 6,
         cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
       },
       stopReason: "aborted",
@@ -562,6 +1025,7 @@ describe("PiAgentRuntimeService", () => {
               partial: partialAssistant,
             },
           });
+          listener({ type: "message_end", message: partialAssistant });
         }
         promptStarted?.();
         await promptBlocked;
@@ -573,10 +1037,15 @@ describe("PiAgentRuntimeService", () => {
       dispose: () => undefined,
     };
     const events: Array<{ type: string; [key: string]: unknown }> = [];
+    let recordedInputTokens: number | undefined;
     const service = new PiAgentRuntimeService({
       historyService,
       getCodexAuth: getTestCodexAuth,
       createSession: () => Promise.resolve(session),
+      recordUsage: (_workspaceId, _model, usage) => {
+        recordedInputTokens = usage.inputTokens;
+        return Promise.resolve();
+      },
       emit: (_name, event) => events.push(event),
     });
 
@@ -603,5 +1072,6 @@ describe("PiAgentRuntimeService", () => {
       abortReason: "system",
       abandonPartial: true,
     });
+    expect(recordedInputTokens).toBe(5);
   });
 });

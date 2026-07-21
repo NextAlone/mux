@@ -190,6 +190,33 @@ describe("CodexOauthService", () => {
     });
   });
 
+  describe("persistRuntimeAuthRefresh", () => {
+    it("persists a token rotation produced by the embedded runtime", async () => {
+      const current = validAuth({ refresh: "rt_current" });
+      const rotated = validAuth({ access: "access-rotated", refresh: "rt_rotated" });
+      deps.providersConfig = { openai: { codexOauth: current } };
+
+      const result = await service.persistRuntimeAuthRefresh(current.refresh, rotated);
+
+      expect(result.success).toBe(true);
+      expect(deps.setConfigValueCalls).toEqual([
+        { provider: "openai", keyPath: ["codexOauth"], value: rotated },
+      ]);
+    });
+
+    it("does not overwrite a newer rotated refresh token", async () => {
+      const newer = validAuth({ refresh: "rt_newer" });
+      deps.providersConfig = { openai: { codexOauth: newer } };
+
+      const result = await service.persistRuntimeAuthRefresh(
+        "rt_stale",
+        validAuth({ refresh: "rt_stale_rotation" })
+      );
+
+      expect(result.success).toBe(true);
+      expect(deps.setConfigValueCalls).toEqual([]);
+    });
+  });
   // -------------------------------------------------------------------------
   // Token refresh coalescing (AsyncMutex)
   // -------------------------------------------------------------------------
