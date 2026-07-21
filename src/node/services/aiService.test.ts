@@ -1633,6 +1633,40 @@ describe("AIService.streamMessage compaction boundary slicing", () => {
     expect(harness.startStreamCalls).toHaveLength(0);
   });
 
+  it("fails closed instead of falling back to the Mux harness for an incompatible Pi model", async () => {
+    using muxHome = new DisposableTempDir("ai-service-pi-incompatible-model");
+    const projectPath = path.join(muxHome.path, "project");
+    await fs.mkdir(projectPath, { recursive: true });
+    const workspaceId = "workspace-pi-incompatible-model";
+    const harness = createHarness(
+      muxHome.path,
+      createLocalWorkspaceMetadata(workspaceId, projectPath),
+      {
+        effectiveModelString: "anthropic:claude-opus-4-6",
+        canonicalProviderName: "anthropic",
+        canonicalModelId: "claude-opus-4-6",
+      }
+    );
+
+    const result = await harness.service.streamMessage({
+      messages: [createMuxMessage("latest-user", "user", "run the agent")],
+      workspaceId,
+      modelString: "anthropic:claude-opus-4-6",
+      thinkingLevel: "off",
+      experiments: { piAgentRuntime: true },
+    });
+
+    expect(result.success).toBe(false);
+    if (result.success) {
+      throw new Error("Expected incompatible Pi model to fail closed");
+    }
+    expect(result.error.type).toBe("unknown");
+    expect(result.error.type === "unknown" ? result.error.raw : "").toContain(
+      "requires an openai:* Codex OAuth model"
+    );
+    expect(harness.startStreamCalls).toHaveLength(0);
+  });
+
   it("provides a shared send_follow_up runtime for a top-level user turn", async () => {
     using muxHome = new DisposableTempDir("ai-service-send-follow-up");
     const projectPath = path.join(muxHome.path, "project");

@@ -37,7 +37,7 @@ describe("resolveAgentRuntimeKind", () => {
     expect(shouldUsePiAgentRuntime({ piAgentRuntime: false }, undefined, undefined)).toBe(false);
   });
 
-  test("falls back to Mux for unsupported workspace and compaction boundaries", () => {
+  test("identifies unsupported Pi workspace and compaction boundaries", () => {
     const compatible = {
       modelString: "openai:gpt-5.6-sol",
       runtimeType: "worktree" as const,

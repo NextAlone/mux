@@ -128,10 +128,18 @@ function formatToolPart(part: MuxToolPart): string {
   return `[Tool ${part.toolName}]\nInput: ${input}\nResult: [interrupted]`;
 }
 
-function decodeDataUrl(part: MuxFilePart): ImageContent | null {
-  const match = /^data:([^;,]+);base64,(.+)$/s.exec(part.url);
+function decodeImageDataUrl(part: MuxFilePart): ImageContent {
+  if (!part.mediaType.trim().toLowerCase().startsWith("image/")) {
+    throw new Error(
+      `Pi agent runtime supports image attachments only; remove ${part.filename ?? part.mediaType} or disable the Pi runtime experiment`
+    );
+  }
+
+  const match = /^data:(image\/[^;,]+);base64,(.+)$/is.exec(part.url);
   if (!match?.[1] || !match[2]) {
-    return null;
+    throw new Error(
+      `Pi agent runtime requires image attachments as base64 data URLs; reattach ${part.filename ?? "the image"} or disable the Pi runtime experiment`
+    );
   }
   return {
     type: "image",
@@ -155,8 +163,7 @@ function convertMuxMessageToPi(message: MuxMessage, modelId: string): Message | 
       if (part.type === "text" && part.text.length > 0) {
         content.push({ type: "text", text: part.text });
       } else if (part.type === "file") {
-        const image = decodeDataUrl(part);
-        if (image) content.push(image);
+        content.push(decodeImageDataUrl(part));
       }
     }
     if (content.length === 0) {
@@ -223,8 +230,7 @@ export function buildPiTurnInput(messages: readonly MuxMessage[], modelId: strin
     .join("\n");
   const images = latestUser.parts.flatMap((part) => {
     if (part.type !== "file") return [];
-    const image = decodeDataUrl(part);
-    return image ? [image] : [];
+    return [decodeImageDataUrl(part)];
   });
   if (prompt.length === 0 && images.length === 0) {
     throw new Error("Pi agent runtime cannot send an empty user message");
