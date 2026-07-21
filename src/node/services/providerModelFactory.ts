@@ -1505,6 +1505,8 @@ export class ProviderModelFactory {
 
         const openAIResponsesCompactionRoute: OpenAIResponsesCompactionRoute =
           shouldRouteThroughCodexOauth ? "codex-oauth" : "openai-api-key";
+        const hasOpenAIResponsesCompactionReplays =
+          Object.keys(opts?.openAIResponsesCompactionReplays ?? {}).length > 0;
         if (hasOpenAIResponsesCompactionReplayForOtherRoute(opts, openAIResponsesCompactionRoute)) {
           return Err({
             type: "unknown",
@@ -1627,6 +1629,13 @@ export class ProviderModelFactory {
                   body,
                   opts?.openAIResponsesCompactionReplays
                 );
+                if (hasOpenAIResponsesCompactionReplays && replayedBody === body) {
+                  // Mux owns the durable compaction boundary. Never let the provider continue
+                  // with a literal marker after the SDK request shape loses that boundary.
+                  throw new Error(
+                    "OpenAI Responses remote compaction payload did not contain its boundary marker"
+                  );
+                }
                 if (replayedBody !== body) {
                   const headers = new Headers(init?.headers);
                   headers.delete("content-length");
@@ -1760,7 +1769,7 @@ export class ProviderModelFactory {
             } catch (error) {
               // For normal OpenAI (API key) requests, fall back to the original fetch on unexpected errors.
               // For Codex OAuth routing, failures should surface (falling back would hit api.openai.com).
-              if (shouldRouteThroughCodexOauth) {
+              if (shouldRouteThroughCodexOauth || hasOpenAIResponsesCompactionReplays) {
                 throw error;
               }
               return baseFetch(input, init);

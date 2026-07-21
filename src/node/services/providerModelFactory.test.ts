@@ -1089,6 +1089,74 @@ describe("ProviderModelFactory GitHub Copilot", () => {
     });
   });
 
+  it("fails closed when direct Responses replay loses its compaction boundary marker", async () => {
+    await withTempConfig(async (config, factory) => {
+      const originalOpenAIRegistry = PROVIDER_REGISTRY.openai;
+      const requests: Array<{
+        input: Parameters<typeof fetch>[0];
+        init?: Parameters<typeof fetch>[1];
+      }> = [];
+      let capturedFetch: typeof fetch | undefined;
+
+      config.loadProvidersConfig = () => ({
+        openai: {
+          apiKey: "sk-test",
+          fetch: (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
+            requests.push({ input, init });
+            return Promise.resolve(new Response("{}", { status: 200 }));
+          },
+        },
+      });
+
+      PROVIDER_REGISTRY.openai = async () => {
+        const module = await originalOpenAIRegistry();
+        return {
+          ...module,
+          createOpenAI: (options) => {
+            capturedFetch = options?.fetch;
+            return module.createOpenAI(options);
+          },
+        };
+      };
+
+      try {
+        const result = await factory.createModel("openai:gpt-5.5", undefined, {
+          openAIResponsesCompactionReplays: {
+            resp_compact_1: {
+              type: "openai-responses-compact",
+              responseId: "resp_compact_1",
+              output: [
+                {
+                  id: "ci_1",
+                  type: "compaction",
+                  encrypted_content: "opaque-ciphertext",
+                },
+              ],
+            },
+          },
+        });
+        expect(result.success).toBe(true);
+        if (!result.success || !capturedFetch) {
+          throw new Error("Expected OpenAI fetch wrapper to be captured");
+        }
+
+        expect(
+          capturedFetch("https://api.openai.com/v1/responses", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              model: "gpt-5.5",
+              input: [{ role: "user", content: [{ type: "input_text", text: "continue" }] }],
+            }),
+          })
+        ).rejects.toThrow("did not contain its boundary marker");
+        expect(requests).toHaveLength(0);
+      } finally {
+        PROVIDER_REGISTRY.openai = originalOpenAIRegistry;
+      }
+    });
+  });
+
   it("captures direct OpenAI Responses compact calls using the SDK-shaped request body", async () => {
     await withTempConfig(async (config, factory) => {
       const originalOpenAIRegistry = PROVIDER_REGISTRY.openai;

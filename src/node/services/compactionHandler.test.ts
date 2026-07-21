@@ -306,6 +306,43 @@ describe("CompactionHandler", () => {
         error: "OpenAI Responses compact returned invalid opaque output",
       });
     });
+
+    it("installs a concurrent remote compaction request only once", async () => {
+      await seedHistory(createCompactionRequest("compact-request"));
+      const params = {
+        model: "openai:gpt-5.5",
+        responseId: "resp_compact_1",
+        output: [
+          {
+            id: "ci_1",
+            type: "compaction",
+            encrypted_content: "opaque-ciphertext",
+          },
+        ],
+      };
+
+      const results = await Promise.all([
+        handler.installOpenAIResponsesRemoteCompaction(params),
+        handler.installOpenAIResponsesRemoteCompaction(params),
+      ]);
+
+      expect(results.filter((result) => result.success)).toHaveLength(1);
+      expect(results.filter((result) => !result.success)).toEqual([
+        { success: false, error: "Compaction request has already been processed" },
+      ]);
+      const historyResult = await historyService.getHistoryFromLatestBoundary(workspaceId);
+      expect(historyResult.success).toBe(true);
+      if (!historyResult.success) {
+        throw new Error(historyResult.error);
+      }
+      expect(historyResult.data).toHaveLength(1);
+      expect(
+        emittedEvents.filter((event) => {
+          const message = event.data.message as { type?: unknown } | undefined;
+          return message?.type === "stream-end";
+        })
+      ).toHaveLength(1);
+    });
   });
 
   describe("handleCompletion() - Normal Compaction Flow", () => {
