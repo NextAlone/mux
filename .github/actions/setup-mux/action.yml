@@ -18,7 +18,7 @@ runs:
     - name: Setup Node
       uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
       with:
-        node-version: "22"
+        node-version: "22.19.0"
 
     - name: Setup Bun
       uses: oven-sh/setup-bun@b7a1c7ccf290d58743029c4f6903da283811b979 # v2.1.0

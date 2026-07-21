@@ -1,7 +1,23 @@
 import type { SendMessageOptions } from "@/common/orpc/types";
 import type { MuxMessageMetadata } from "@/common/types/message";
+import type { RuntimeMode } from "@/common/types/runtime";
+import type { OpenAIResponsesCompactionRoute } from "@/common/utils/compaction/remotePolicy";
 
 export type AgentRuntimeKind = "mux" | "pi";
+
+export function isPiAgentRuntimeWorkspaceCompatible(options: {
+  modelString: string;
+  runtimeType: RuntimeMode;
+  multiProject: boolean;
+  remoteCompactionRoute: OpenAIResponsesCompactionRoute | null;
+}): boolean {
+  return (
+    options.modelString.trim().startsWith("openai:") &&
+    (options.runtimeType === "local" || options.runtimeType === "worktree") &&
+    !options.multiProject &&
+    options.remoteCompactionRoute !== "openai-api-key"
+  );
+}
 
 /**
  * Runtime selection is captured with the accepted user turn. Reading the live
@@ -17,14 +33,19 @@ export function resolveAgentRuntimeKind(
 export function shouldUsePiAgentRuntime(
   experiments: SendMessageOptions["experiments"],
   muxMetadata: { type: MuxMessageMetadata["type"] } | undefined,
-  latestUserMuxMetadata?: { type: MuxMessageMetadata["type"] }
+  latestUserMuxMetadata?: { type: MuxMessageMetadata["type"] },
+  agentId?: string
 ): boolean {
-  // Codex remote compaction remains a Mux-owned control turn. Its opaque output
-  // is replayed into the next ordinary Pi request instead of teaching Pi a
-  // second, incompatible compaction protocol.
+  const isOrdinaryTurn = (metadata: { type: MuxMessageMetadata["type"] } | undefined): boolean =>
+    metadata == null || metadata.type === "normal";
+
+  // Mux owns synthetic/control turns because their metadata drives orchestration,
+  // correlation, and UI behavior outside the model loop. Pi is an execution
+  // backend only for ordinary user turns.
   return (
     resolveAgentRuntimeKind(experiments) === "pi" &&
-    muxMetadata?.type !== "compaction-request" &&
-    latestUserMuxMetadata?.type !== "compaction-request"
+    (agentId == null || agentId === "exec") &&
+    isOrdinaryTurn(muxMetadata) &&
+    isOrdinaryTurn(latestUserMuxMetadata)
   );
 }

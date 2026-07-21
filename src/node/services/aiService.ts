@@ -211,7 +211,10 @@ import {
 } from "@/node/services/workflows/WorkflowTaskServiceAdapter";
 import { resolveWorkflowScript } from "@/node/services/workflows/workflowScriptResolver";
 import { isWorkspaceProjectTrusted } from "@/node/utils/projectTrust";
-import { shouldUsePiAgentRuntime } from "./agentRuntimeSelection";
+import {
+  isPiAgentRuntimeWorkspaceCompatible,
+  shouldUsePiAgentRuntime,
+} from "./agentRuntimeSelection";
 import { PiAgentRuntimeService } from "./piAgentRuntime";
 
 const STREAM_STARTUP_DIAGNOSTIC_THRESHOLD_MS = 1_000;
@@ -800,6 +803,12 @@ export class AIService extends EventEmitter {
           throw new Error(result.error);
         }
         return result.data;
+      },
+      persistCodexAuth: async (expectedRefresh, auth) => {
+        const result = await service.persistRuntimeAuthRefresh(expectedRefresh, auth);
+        if (!result.success) {
+          throw new Error(result.error);
+        }
       },
       recordUsage: async (workspaceId, modelString, usage) => {
         if (!this.sessionUsageService) return;
@@ -1437,58 +1446,75 @@ export class AIService extends EventEmitter {
       const latestUserMuxMetadata = [...messages]
         .reverse()
         .find((message) => message.role === "user")?.metadata?.muxMetadata;
-      if (shouldUsePiAgentRuntime(experiments, muxMetadata, latestUserMuxMetadata)) {
-        const piRuntime = this.piAgentRuntimeService;
-        if (!piRuntime) {
-          return Err({
-            type: "unknown",
-            raw: "Pi agent runtime requires Codex OAuth to be configured",
-          });
-        }
+      if (shouldUsePiAgentRuntime(experiments, muxMetadata, latestUserMuxMetadata, agentId)) {
         const metadataResult = await this.getWorkspaceMetadata(workspaceId);
         if (!metadataResult.success) {
           return Err({ type: "unknown", raw: metadataResult.error });
         }
         const metadata = metadataResult.data;
+        const remoteCompaction = getLatestOpenAIResponsesRemoteCompaction(messages);
         if (
-          this.policyService?.isEnforced() &&
-          !this.policyService.isRuntimeAllowed(metadata.runtimeConfig)
+          isPiAgentRuntimeWorkspaceCompatible({
+            modelString,
+            runtimeType: metadata.runtimeConfig.type,
+            multiProject: isMultiProject(metadata),
+            remoteCompactionRoute: remoteCompaction?.route ?? null,
+          })
         ) {
-          return Err({
-            type: "policy_denied",
-            message: "Workspace runtime is not allowed by policy",
+          const piRuntime = this.piAgentRuntimeService;
+          if (!piRuntime) {
+            return Err({
+              type: "unknown",
+              raw: "Pi agent runtime requires Codex OAuth to be configured",
+            });
+          }
+          if (
+            this.policyService?.isEnforced() &&
+            !this.policyService.isRuntimeAllowed(metadata.runtimeConfig)
+          ) {
+            return Err({
+              type: "policy_denied",
+              message: "Workspace runtime is not allowed by policy",
+            });
+          }
+          const workspace = this.config.findWorkspace(workspaceId);
+          if (!workspace) {
+            return Err({ type: "unknown", raw: `Workspace ${workspaceId} not found in config` });
+          }
+          let piAdditionalSystemContext = additionalSystemContext;
+          if (piAdditionalSystemContext == null) {
+            try {
+              const record = await readAdditionalSystemContext(this.config, workspaceId);
+              piAdditionalSystemContext = effectiveAdditionalSystemContext(record);
+            } catch (error) {
+              log.warn("Failed to load workspace additional system context for Pi", {
+                workspaceId,
+                error,
+              });
+              piAdditionalSystemContext = "";
+            }
+          }
+          await this.initStateManager.waitForInit(workspaceId, combinedAbortSignal);
+          if (combinedAbortSignal.aborted) {
+            return Ok(undefined);
+          }
+          return await piRuntime.stream({
+            workspaceId,
+            cwd: workspace.workspacePath,
+            runtimeType: metadata.runtimeConfig.type,
+            messages,
+            modelString,
+            thinkingLevel,
+            agentId,
+            toolPolicy,
+            acpPromptId,
+            additionalSystemInstructions: mergeAdditionalSystemInstructions(
+              piAdditionalSystemContext,
+              additionalSystemInstructions
+            ),
+            abortSignal: combinedAbortSignal,
           });
         }
-        const multiProjectExecutionGate = this.ensureMultiProjectRuntimeExecutionEnabled(
-          workspaceId,
-          metadata
-        );
-        if (!multiProjectExecutionGate.success) {
-          return multiProjectExecutionGate;
-        }
-        const workspace = this.config.findWorkspace(workspaceId);
-        if (!workspace) {
-          return Err({ type: "unknown", raw: `Workspace ${workspaceId} not found in config` });
-        }
-        await this.initStateManager.waitForInit(workspaceId, combinedAbortSignal);
-        if (combinedAbortSignal.aborted) {
-          return Ok(undefined);
-        }
-        return await piRuntime.stream({
-          workspaceId,
-          cwd: workspace.workspacePath,
-          runtimeType: metadata.runtimeConfig.type,
-          messages,
-          modelString,
-          thinkingLevel,
-          agentId,
-          acpPromptId,
-          additionalSystemInstructions: mergeAdditionalSystemInstructions(
-            additionalSystemContext ?? "",
-            additionalSystemInstructions
-          ),
-          abortSignal: combinedAbortSignal,
-        });
       }
 
       // Helper: clean up an assistant placeholder that was appended to history but never

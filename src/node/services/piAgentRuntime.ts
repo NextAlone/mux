@@ -1,4 +1,7 @@
-import type { OpenAIResponsesCompactionRoute } from "@/common/utils/compaction/remotePolicy";
+import type {
+  OpenAIResponsesCompactionRoute,
+  OpenAIResponsesRemoteCompactionState,
+} from "@/common/utils/compaction/remotePolicy";
 import type { RuntimeMode } from "@/common/types/runtime";
 import type {
   MuxFilePart,
@@ -14,11 +17,19 @@ import {
   getLatestOpenAIResponsesRemoteCompaction,
   markOpenAIResponsesCompactionBoundaries,
 } from "./openaiResponsesCompactionReplay";
-import { InMemoryCredentialStore } from "@earendil-works/pi-ai";
+import {
+  InMemoryCredentialStore,
+  type Credential,
+  type CredentialInfo,
+  type CredentialStore,
+  type OAuthCredential,
+} from "@earendil-works/pi-ai";
 import type { Agent as PiAgent } from "@earendil-works/pi-agent-core";
 import type { ImageContent, Message, TextContent } from "@earendil-works/pi-ai/compat";
 import {
   createAgentSession,
+  DefaultResourceLoader,
+  getAgentDir,
   ModelRuntime,
   SessionManager,
   SettingsManager,
@@ -35,6 +46,10 @@ import { getErrorMessage } from "@/common/utils/errors";
 import { createAssistantMessageId } from "./utils/messageIds";
 import type { StreamAbortReason } from "@/common/types/stream";
 import { createHash } from "node:crypto";
+import { applyToolPolicyToNames, type ToolPolicy } from "@/common/utils/tools/toolPolicy";
+import { filterSideQuestionMessages } from "@/common/utils/messages/sideQuestion";
+import { filterWorkflowDisplayOnlyMessages } from "@/common/utils/workflowRunMessages";
+import { sliceMessagesForProviderFromLatestContextBoundary } from "@/common/utils/messages/compactionBoundary";
 
 export function resolvePiCodexModelId(modelString: string): string {
   const prefix = "openai:";
@@ -45,11 +60,26 @@ export function resolvePiCodexModelId(modelString: string): string {
   return trimmed.slice(prefix.length);
 }
 
-export function resolvePiBuiltInTools(agentId: string | undefined): string[] | undefined {
+export function resolvePiBuiltInTools(
+  agentId: string | undefined,
+  toolPolicy?: ToolPolicy
+): string[] {
   if (agentId === "plan" || agentId === "explore") {
     return ["read", "grep", "find", "ls"];
   }
-  return undefined;
+
+  const allowedMuxTools = new Set(
+    applyToolPolicyToNames(
+      ["file_read", "bash", "file_edit_replace_string", "file_edit_insert"],
+      toolPolicy
+    )
+  );
+  return [
+    ...(allowedMuxTools.has("file_read") ? ["read"] : []),
+    ...(allowedMuxTools.has("bash") ? ["bash"] : []),
+    ...(allowedMuxTools.has("file_edit_replace_string") ? ["edit"] : []),
+    ...(allowedMuxTools.has("file_edit_insert") ? ["write"] : []),
+  ];
 }
 
 export function assertPiRuntimeCompatibility(params: {
@@ -171,8 +201,11 @@ export interface PiTurnInput {
 }
 
 export function buildPiTurnInput(messages: readonly MuxMessage[], modelId: string): PiTurnInput {
-  const latestUserIndex = messages.findLastIndex((message) => message.role === "user");
-  const latestUser = messages[latestUserIndex];
+  const preparedMessages = sliceMessagesForProviderFromLatestContextBoundary(
+    filterWorkflowDisplayOnlyMessages(filterSideQuestionMessages([...messages]))
+  );
+  const latestUserIndex = preparedMessages.findLastIndex((message) => message.role === "user");
+  const latestUser = preparedMessages[latestUserIndex];
   if (!latestUser) {
     throw new Error("Pi agent runtime requires a user message at the end of the active context");
   }
@@ -190,7 +223,9 @@ export function buildPiTurnInput(messages: readonly MuxMessage[], modelId: strin
     throw new Error("Pi agent runtime cannot send an empty user message");
   }
 
-  const markedHistory = markOpenAIResponsesCompactionBoundaries(messages.slice(0, latestUserIndex));
+  const markedHistory = markOpenAIResponsesCompactionBoundaries(
+    preparedMessages.slice(0, latestUserIndex)
+  );
   const context = markedHistory.flatMap((message) => {
     const converted = convertMuxMessageToPi(message, modelId);
     return converted ? [converted] : [];
@@ -221,6 +256,83 @@ interface CreatePiSessionOptions {
   thinkingLevel: ThinkingLevel;
   auth: CodexOauthAuth;
   agentId?: string;
+  toolPolicy?: ToolPolicy;
+  additionalSystemInstructions?: string;
+  persistCodexAuth?: (expectedRefresh: string, auth: CodexOauthAuth) => Promise<void>;
+}
+
+function toCodexOauthAuth(credential: OAuthCredential): CodexOauthAuth {
+  const accountId = credential.accountId;
+  return {
+    type: "oauth",
+    access: credential.access,
+    refresh: credential.refresh,
+    expires: credential.expires,
+    ...(typeof accountId === "string" && accountId.length > 0 ? { accountId } : {}),
+  };
+}
+
+function isOAuthCredential(credential: Credential | undefined): credential is OAuthCredential {
+  return credential?.type === "oauth";
+}
+
+export async function createPiCodexCredentialStore(
+  auth: CodexOauthAuth,
+  persistCodexAuth?: (expectedRefresh: string, auth: CodexOauthAuth) => Promise<void>
+): Promise<CredentialStore> {
+  const store = new InMemoryCredentialStore();
+  await store.modify("openai-codex", () => Promise.resolve({ ...auth }));
+
+  return {
+    read: (providerId: string): Promise<Credential | undefined> => store.read(providerId),
+    list: (): Promise<readonly CredentialInfo[]> => store.list(),
+    modify: async (
+      providerId: string,
+      fn: (current: Credential | undefined) => Promise<Credential | undefined>
+    ): Promise<Credential | undefined> => {
+      let previous: Credential | undefined;
+      const next = await store.modify(providerId, async (current) => {
+        previous = current;
+        return await fn(current);
+      });
+      if (
+        providerId === "openai-codex" &&
+        persistCodexAuth &&
+        isOAuthCredential(previous) &&
+        isOAuthCredential(next) &&
+        (next.access !== previous.access ||
+          next.refresh !== previous.refresh ||
+          next.expires !== previous.expires)
+      ) {
+        await persistCodexAuth(previous.refresh, toCodexOauthAuth(next));
+      }
+      return next;
+    },
+    delete: (providerId: string): Promise<void> => store.delete(providerId),
+  };
+}
+
+export async function createEmbeddedPiResourceLoader(options: {
+  cwd: string;
+  agentDir?: string;
+  additionalSystemInstructions?: string;
+}): Promise<DefaultResourceLoader> {
+  const settingsManager = SettingsManager.inMemory(
+    { compaction: { enabled: false } },
+    { projectTrusted: false }
+  );
+  const instruction = options.additionalSystemInstructions?.trim();
+  const loader = new DefaultResourceLoader({
+    cwd: options.cwd,
+    agentDir: options.agentDir ?? getAgentDir(),
+    settingsManager,
+    // Mux owns project trust and extensions. Loading repository code here would
+    // bypass that boundary before the agent turn starts.
+    noExtensions: true,
+    ...(instruction ? { appendSystemPrompt: [instruction] } : {}),
+  });
+  await loader.reload();
+  return loader;
 }
 
 export interface PiAgentRuntimeDependencies {
@@ -232,6 +344,7 @@ export interface PiAgentRuntimeDependencies {
     modelString: string,
     usage: LanguageModelV2Usage
   ) => Promise<void>;
+  persistCodexAuth?: (expectedRefresh: string, auth: CodexOauthAuth) => Promise<void>;
   createSession?: (options: CreatePiSessionOptions) => Promise<PiSessionAdapter>;
 }
 
@@ -243,6 +356,7 @@ export interface PiAgentRuntimeStreamOptions {
   modelString: string;
   thinkingLevel?: ThinkingLevel;
   agentId?: string;
+  toolPolicy?: ToolPolicy;
   acpPromptId?: string;
   additionalSystemInstructions?: string;
   abortSignal?: AbortSignal;
@@ -257,13 +371,20 @@ interface ActivePiTurn {
   agentId?: string;
   thinkingLevel?: ThinkingLevel;
   parts: StreamPart[];
+  textDeltaChunks: Map<TextualStreamPart, TextDeltaChunk[]>;
   toolCompletionTimestamps: Map<string, number>;
   requestAbort: (options?: PiAbortOptions) => Promise<void>;
 }
 
 type StreamPart = MuxTextPart | MuxReasoningPart | MuxToolPart;
+type TextualStreamPart = MuxTextPart | MuxReasoningPart;
+interface TextDeltaChunk {
+  delta: string;
+  timestamp: number;
+}
 
 interface PiAbortOptions {
+  soft?: boolean;
   abandonPartial?: boolean;
   abortReason?: StreamAbortReason;
 }
@@ -275,6 +396,33 @@ interface PiAbortState {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
+}
+
+export function rewritePiPayloadForRemoteCompaction(
+  payload: unknown,
+  replays: Record<string, OpenAIResponsesRemoteCompactionState>
+): unknown {
+  let serialized: string;
+  try {
+    const candidate = JSON.stringify(payload);
+    if (candidate == null) {
+      throw new Error("empty serialization result");
+    }
+    serialized = candidate;
+  } catch {
+    throw new Error("Pi remote compaction payload could not be serialized");
+  }
+
+  const rewritten = applyOpenAIResponsesCompactionReplayToBody(serialized, replays);
+  if (rewritten === serialized) {
+    throw new Error("Pi remote compaction payload did not contain its boundary marker");
+  }
+
+  try {
+    return JSON.parse(rewritten) as unknown;
+  } catch {
+    throw new Error("Pi remote compaction replay produced an invalid request payload");
+  }
 }
 
 function getPiToolResultOutput(result: unknown): unknown {
@@ -305,14 +453,21 @@ function normalizePiToolCallId(toolCallId: string): string {
   return `pi_${createHash("sha256").update(toolCallId).digest("hex").slice(0, 61)}`;
 }
 
-function addTextDelta(parts: StreamPart[], type: "text" | "reasoning", delta: string): void {
-  if (delta.length === 0) return;
+function addTextDelta(
+  parts: StreamPart[],
+  type: "text" | "reasoning",
+  delta: string,
+  timestamp: number
+): TextualStreamPart | undefined {
+  if (delta.length === 0) return undefined;
   const last = parts.at(-1);
   if (last?.type === type) {
     last.text += delta;
-    return;
+    return last;
   }
-  parts.push({ type, text: delta, timestamp: Date.now() });
+  const part: TextualStreamPart = { type, text: delta, timestamp };
+  parts.push(part);
+  return part;
 }
 
 function getPiLegacyMode(agentId: string | undefined): "plan" | "exec" | undefined {
@@ -321,6 +476,7 @@ function getPiLegacyMode(agentId: string | undefined): "plan" | "exec" | undefin
 
 function sumPiUsage(events: readonly AgentSessionEvent[]): {
   usage: LanguageModelV2Usage | undefined;
+  contextUsage: LanguageModelV2Usage | undefined;
   finishReason: string | undefined;
 } {
   let inputTokens = 0;
@@ -328,6 +484,7 @@ function sumPiUsage(events: readonly AgentSessionEvent[]): {
   let cachedInputTokens = 0;
   let reasoningTokens = 0;
   let sawUsage = false;
+  let contextUsage: LanguageModelV2Usage | undefined;
   let finishReason: string | undefined;
   for (const event of events) {
     if (event.type !== "message_end" || !isRecord(event.message)) continue;
@@ -338,6 +495,17 @@ function sumPiUsage(events: readonly AgentSessionEvent[]): {
     outputTokens += typeof usage.output === "number" ? usage.output : 0;
     cachedInputTokens += typeof usage.cacheRead === "number" ? usage.cacheRead : 0;
     reasoningTokens += typeof usage.reasoning === "number" ? usage.reasoning : 0;
+    const stepInputTokens = typeof usage.input === "number" ? usage.input : 0;
+    const stepOutputTokens = typeof usage.output === "number" ? usage.output : 0;
+    const stepCachedInputTokens = typeof usage.cacheRead === "number" ? usage.cacheRead : 0;
+    const stepReasoningTokens = typeof usage.reasoning === "number" ? usage.reasoning : 0;
+    contextUsage = {
+      inputTokens: stepInputTokens,
+      outputTokens: stepOutputTokens,
+      totalTokens: stepInputTokens + stepOutputTokens,
+      ...(stepCachedInputTokens > 0 ? { cachedInputTokens: stepCachedInputTokens } : {}),
+      ...(stepReasoningTokens > 0 ? { reasoningTokens: stepReasoningTokens } : {}),
+    };
     finishReason = typeof message.stopReason === "string" ? message.stopReason : finishReason;
     sawUsage = true;
   }
@@ -351,21 +519,13 @@ function sumPiUsage(events: readonly AgentSessionEvent[]): {
           ...(reasoningTokens > 0 ? { reasoningTokens } : {}),
         }
       : undefined,
+    contextUsage,
     finishReason,
   };
 }
 
 async function createDefaultPiSession(options: CreatePiSessionOptions): Promise<PiSessionAdapter> {
-  const credentials = new InMemoryCredentialStore();
-  await credentials.modify("openai-codex", () =>
-    Promise.resolve({
-      type: "oauth",
-      access: options.auth.access,
-      refresh: options.auth.refresh,
-      expires: options.auth.expires,
-      ...(options.auth.accountId ? { accountId: options.auth.accountId } : {}),
-    })
-  );
+  const credentials = await createPiCodexCredentialStore(options.auth, options.persistCodexAuth);
   const modelRuntime = await ModelRuntime.create({
     credentials,
     modelsPath: null,
@@ -376,14 +536,23 @@ async function createDefaultPiSession(options: CreatePiSessionOptions): Promise<
     throw new Error(`Pi does not provide the Codex OAuth model ${options.modelId}`);
   }
 
+  const resourceLoader = await createEmbeddedPiResourceLoader({
+    cwd: options.cwd,
+    additionalSystemInstructions: options.additionalSystemInstructions,
+  });
+
   const { session } = await createAgentSession({
     cwd: options.cwd,
     modelRuntime,
     model,
     thinkingLevel: options.thinkingLevel,
-    tools: resolvePiBuiltInTools(options.agentId),
+    tools: resolvePiBuiltInTools(options.agentId, options.toolPolicy),
+    resourceLoader,
     sessionManager: SessionManager.inMemory(options.cwd),
-    settingsManager: SettingsManager.inMemory({ compaction: { enabled: false } }),
+    settingsManager: SettingsManager.inMemory(
+      { compaction: { enabled: false } },
+      { projectTrusted: false }
+    ),
   });
 
   return {
@@ -452,10 +621,36 @@ export class PiAgentRuntimeService {
 
     const parts = turn.parts.slice();
     for (const part of parts) {
-      const completionTimestamp =
-        part.type === "dynamic-tool"
-          ? turn.toolCompletionTimestamps.get(part.toolCallId)
-          : undefined;
+      if (part.type === "text" || part.type === "reasoning") {
+        const chunks = turn.textDeltaChunks.get(part) ?? [
+          { delta: part.text, timestamp: part.timestamp ?? turn.startTime },
+        ];
+        const replayChunks = chunks.filter(
+          (chunk) => options?.afterTimestamp == null || chunk.timestamp > options.afterTimestamp
+        );
+        for (const chunk of replayChunks) {
+          this.dependencies.emit(part.type === "text" ? "stream-delta" : "reasoning-delta", {
+            type: part.type === "text" ? "stream-delta" : "reasoning-delta",
+            workspaceId,
+            messageId: turn.messageId,
+            delta: chunk.delta,
+            tokens: 0,
+            timestamp: chunk.timestamp,
+            replay: true,
+          });
+        }
+        if (part.type === "reasoning" && replayChunks.length > 0) {
+          this.dependencies.emit("reasoning-end", {
+            type: "reasoning-end",
+            workspaceId,
+            messageId: turn.messageId,
+            replay: true,
+          });
+        }
+        continue;
+      }
+
+      const completionTimestamp = turn.toolCompletionTimestamps.get(part.toolCallId);
       if (
         options?.afterTimestamp != null &&
         (part.timestamp ?? completionTimestamp ?? 0) <= options.afterTimestamp &&
@@ -464,66 +659,38 @@ export class PiAgentRuntimeService {
         continue;
       }
 
-      if (part.type === "text") {
-        this.dependencies.emit("stream-delta", {
-          type: "stream-delta",
+      this.dependencies.emit("tool-call-start", {
+        type: "tool-call-start",
+        workspaceId,
+        messageId: turn.messageId,
+        toolCallId: part.toolCallId,
+        toolName: part.toolName,
+        args: part.input,
+        tokens: 0,
+        timestamp: part.timestamp ?? Date.now(),
+        executionStartedAt: part.executionStartedAt,
+        replay: true,
+      });
+      if (part.executionStartedAt != null) {
+        this.dependencies.emit("tool-call-execution-start", {
+          type: "tool-call-execution-start",
           workspaceId,
           messageId: turn.messageId,
-          delta: part.text,
-          tokens: 0,
-          timestamp: part.timestamp ?? Date.now(),
-          replay: true,
+          toolCallId: part.toolCallId,
+          timestamp: part.executionStartedAt,
         });
-      } else if (part.type === "reasoning") {
-        this.dependencies.emit("reasoning-delta", {
-          type: "reasoning-delta",
-          workspaceId,
-          messageId: turn.messageId,
-          delta: part.text,
-          tokens: 0,
-          timestamp: part.timestamp ?? Date.now(),
-          replay: true,
-        });
-        this.dependencies.emit("reasoning-end", {
-          type: "reasoning-end",
-          workspaceId,
-          messageId: turn.messageId,
-          replay: true,
-        });
-      } else {
-        this.dependencies.emit("tool-call-start", {
-          type: "tool-call-start",
+      }
+      if (part.state !== "input-available") {
+        this.dependencies.emit("tool-call-end", {
+          type: "tool-call-end",
           workspaceId,
           messageId: turn.messageId,
           toolCallId: part.toolCallId,
           toolName: part.toolName,
-          args: part.input,
-          tokens: 0,
-          timestamp: part.timestamp ?? Date.now(),
-          executionStartedAt: part.executionStartedAt,
+          result: part.state === "output-available" ? part.output : "[redacted]",
+          timestamp: completionTimestamp ?? part.timestamp ?? Date.now(),
           replay: true,
         });
-        if (part.executionStartedAt != null) {
-          this.dependencies.emit("tool-call-execution-start", {
-            type: "tool-call-execution-start",
-            workspaceId,
-            messageId: turn.messageId,
-            toolCallId: part.toolCallId,
-            timestamp: part.executionStartedAt,
-          });
-        }
-        if (part.state !== "input-available") {
-          this.dependencies.emit("tool-call-end", {
-            type: "tool-call-end",
-            workspaceId,
-            messageId: turn.messageId,
-            toolCallId: part.toolCallId,
-            toolName: part.toolName,
-            result: part.state === "output-available" ? part.output : "[redacted]",
-            timestamp: completionTimestamp ?? part.timestamp ?? Date.now(),
-            replay: true,
-          });
-        }
       }
     }
     return Promise.resolve();
@@ -550,32 +717,29 @@ export class PiAgentRuntimeService {
       modelId,
       thinkingLevel: options.thinkingLevel ?? "medium",
       auth,
+      persistCodexAuth: this.dependencies.persistCodexAuth,
       agentId: options.agentId,
+      toolPolicy: options.toolPolicy,
+      additionalSystemInstructions: options.additionalSystemInstructions,
     });
     session.agent.state.messages = turnInput.context;
-    if (options.additionalSystemInstructions?.trim()) {
-      session.agent.state.systemPrompt = `${session.agent.state.systemPrompt ?? ""}\n\n${options.additionalSystemInstructions.trim()}`;
-    }
 
     const replays = collectOpenAIResponsesCompactionReplays(options.messages);
     if (Object.keys(replays).length > 0) {
       const previousOnPayload = session.agent.onPayload;
       session.agent.onPayload = async (payload, model) => {
         const preparedPayload = (await previousOnPayload?.(payload, model)) ?? payload;
-        try {
-          const rewritten = applyOpenAIResponsesCompactionReplayToBody(
-            JSON.stringify(preparedPayload),
-            replays
-          );
-          return JSON.parse(rewritten) as unknown;
-        } catch {
-          return preparedPayload;
-        }
+        return rewritePiPayloadForRemoteCompaction(preparedPayload, replays);
       };
     }
 
     const messageId = createAssistantMessageId();
     const startTime = Date.now();
+    let latestEventTimestamp = startTime;
+    const nextEventTimestamp = (): number => {
+      latestEventTimestamp = Math.max(Date.now(), latestEventTimestamp + 1);
+      return latestEventTimestamp;
+    };
     const assistant = createMuxMessage(messageId, "assistant", "", {
       timestamp: startTime,
       model: options.modelString,
@@ -592,9 +756,15 @@ export class PiAgentRuntimeService {
     }
     const historySequence = assistant.metadata?.historySequence ?? 0;
     const parts: StreamPart[] = [];
+    const textDeltaChunks = new Map<TextualStreamPart, TextDeltaChunk[]>();
     const toolCompletionTimestamps = new Map<string, number>();
     const sessionEvents: AgentSessionEvent[] = [];
+    let pendingPartialSnapshot: MuxMessage | undefined;
+    let partialWriterRunning = false;
+    let partialWriteError: Error | undefined;
+    let partialWriterPromise = Promise.resolve();
     let aborted = false;
+    let softAbortPending = false;
     let abortPromise: Promise<void> | undefined;
     const abortState: PiAbortState = {
       abandonPartial: false,
@@ -604,13 +774,88 @@ export class PiAgentRuntimeService {
     const emit = (event: { type: string; [key: string]: unknown }): void => {
       this.dependencies.emit(event.type, event);
     };
+    const schedulePartialWrite = (): void => {
+      if (partialWriteError) return;
+      pendingPartialSnapshot = {
+        ...assistant,
+        parts: parts.map((part) => ({ ...part })),
+        metadata: {
+          ...assistant.metadata,
+          partial: true,
+          duration: Date.now() - startTime,
+        },
+      };
+      if (partialWriterRunning) return;
+
+      partialWriterRunning = true;
+      partialWriterPromise = (async () => {
+        while (pendingPartialSnapshot) {
+          const snapshot = pendingPartialSnapshot;
+          pendingPartialSnapshot = undefined;
+          const result = await this.dependencies.historyService.writePartial(
+            options.workspaceId,
+            snapshot
+          );
+          if (!result.success) {
+            throw new Error(result.error);
+          }
+        }
+      })()
+        .catch((error: unknown) => {
+          partialWriteError = new Error(getErrorMessage(error));
+          pendingPartialSnapshot = undefined;
+        })
+        .finally(() => {
+          partialWriterRunning = false;
+          if (pendingPartialSnapshot && !partialWriteError) {
+            schedulePartialWrite();
+          }
+        });
+    };
+    const flushPartialWrites = async (): Promise<void> => {
+      while (partialWriterRunning || pendingPartialSnapshot) {
+        await partialWriterPromise;
+      }
+      if (partialWriteError) {
+        throw partialWriteError;
+      }
+    };
+    const beginAbort = (): Promise<void> => {
+      aborted = true;
+      softAbortPending = false;
+      abortPromise ??= session.abort().catch(() => undefined);
+      return abortPromise;
+    };
+    const requestAbort = (abortOptions?: PiAbortOptions): Promise<void> => {
+      if (abortOptions?.abandonPartial != null) {
+        abortState.abandonPartial = abortOptions.abandonPartial;
+      }
+      if (abortOptions?.abortReason != null) {
+        abortState.abortReason = abortOptions.abortReason;
+      }
+      if (abortOptions?.soft && !aborted) {
+        softAbortPending = true;
+        return Promise.resolve();
+      }
+      return beginAbort();
+    };
+    const checkSoftAbortBoundary = (): void => {
+      if (!softAbortPending) return;
+      abortPromise = beginAbort();
+    };
     const unsubscribe = session.subscribe((event) => {
       sessionEvents.push(event);
-      const timestamp = Date.now();
+      const timestamp = nextEventTimestamp();
       if (event.type === "message_update") {
         const update = event.assistantMessageEvent;
         if (update.type === "text_delta") {
-          addTextDelta(parts, "text", update.delta);
+          const part = addTextDelta(parts, "text", update.delta, timestamp);
+          if (part) {
+            const chunks = textDeltaChunks.get(part) ?? [];
+            chunks.push({ delta: update.delta, timestamp });
+            textDeltaChunks.set(part, chunks);
+          }
+          schedulePartialWrite();
           emit({
             type: "stream-delta",
             workspaceId: options.workspaceId,
@@ -620,7 +865,13 @@ export class PiAgentRuntimeService {
             timestamp,
           });
         } else if (update.type === "thinking_delta") {
-          addTextDelta(parts, "reasoning", update.delta);
+          const part = addTextDelta(parts, "reasoning", update.delta, timestamp);
+          if (part) {
+            const chunks = textDeltaChunks.get(part) ?? [];
+            chunks.push({ delta: update.delta, timestamp });
+            textDeltaChunks.set(part, chunks);
+          }
+          schedulePartialWrite();
           emit({
             type: "reasoning-delta",
             workspaceId: options.workspaceId,
@@ -631,7 +882,14 @@ export class PiAgentRuntimeService {
           });
         } else if (update.type === "thinking_end") {
           emit({ type: "reasoning-end", workspaceId: options.workspaceId, messageId });
+          checkSoftAbortBoundary();
+        } else if (update.type === "text_end") {
+          checkSoftAbortBoundary();
         }
+        return;
+      }
+      if (event.type === "message_end") {
+        checkSoftAbortBoundary();
         return;
       }
       if (event.type === "tool_execution_start") {
@@ -645,6 +903,7 @@ export class PiAgentRuntimeService {
           timestamp,
           executionStartedAt: timestamp,
         });
+        schedulePartialWrite();
         emit({
           type: "tool-call-start",
           workspaceId: options.workspaceId,
@@ -700,6 +959,7 @@ export class PiAgentRuntimeService {
         };
         if (index >= 0) parts[index] = completed;
         else parts.push(completed);
+        schedulePartialWrite();
         emit({
           type: "tool-call-end",
           workspaceId: options.workspaceId,
@@ -709,20 +969,9 @@ export class PiAgentRuntimeService {
           result: completed.output,
           timestamp,
         });
+        checkSoftAbortBoundary();
       }
     });
-
-    const requestAbort = (abortOptions?: PiAbortOptions): Promise<void> => {
-      aborted = true;
-      if (abortOptions?.abandonPartial != null) {
-        abortState.abandonPartial = abortOptions.abandonPartial;
-      }
-      if (abortOptions?.abortReason != null) {
-        abortState.abortReason = abortOptions.abortReason;
-      }
-      abortPromise ??= session.abort().catch(() => undefined);
-      return abortPromise;
-    };
     const abortListener = (): void => {
       abortPromise = requestAbort();
     };
@@ -739,6 +988,7 @@ export class PiAgentRuntimeService {
       agentId: options.agentId,
       thinkingLevel: options.thinkingLevel,
       parts,
+      textDeltaChunks,
       toolCompletionTimestamps,
       requestAbort,
     });
@@ -752,9 +1002,18 @@ export class PiAgentRuntimeService {
       this.activeTurns.delete(options.workspaceId);
     };
     const completeAbort = async (): Promise<Result<void, SendMessageError>> => {
-      cleanupTurn();
       try {
-        await this.finishAbort(options, assistant, parts, startTime, abortState);
+        await flushPartialWrites();
+        const usageResult = sumPiUsage(sessionEvents);
+        if (usageResult.usage) {
+          await this.dependencies.recordUsage?.(
+            options.workspaceId,
+            options.modelString,
+            usageResult.usage
+          );
+        }
+        cleanupTurn();
+        await this.finishAbort(options, assistant, parts, startTime, abortState, usageResult);
         return Ok(undefined);
       } catch (error) {
         const errorMessage = getErrorMessage(error);
@@ -793,6 +1052,7 @@ export class PiAgentRuntimeService {
         return await completeAbort();
       }
 
+      await flushPartialWrites();
       const usageResult = sumPiUsage(sessionEvents);
       const finalMessage: MuxMessage = {
         ...assistant,
@@ -803,7 +1063,7 @@ export class PiAgentRuntimeService {
           agentId: options.agentId,
           mode: getPiLegacyMode(options.agentId),
           usage: usageResult.usage,
-          contextUsage: usageResult.usage,
+          contextUsage: usageResult.contextUsage,
           finishReason: usageResult.finishReason,
           duration: Date.now() - startTime,
           ttftMs: undefined,
@@ -855,6 +1115,14 @@ export class PiAgentRuntimeService {
         return await completeAbort();
       }
       let errorMessage = getErrorMessage(error);
+      const usageResult = sumPiUsage(sessionEvents);
+      if (usageResult.usage) {
+        await this.dependencies.recordUsage?.(
+          options.workspaceId,
+          options.modelString,
+          usageResult.usage
+        );
+      }
       if (parts.length === 0) {
         const deleteResult = await this.dependencies.historyService.deleteMessage(
           options.workspaceId,
@@ -874,6 +1142,9 @@ export class PiAgentRuntimeService {
               partial: true,
               error: errorMessage,
               errorType: "unknown",
+              usage: usageResult.usage,
+              contextUsage: usageResult.contextUsage,
+              finishReason: usageResult.finishReason,
               duration: Date.now() - startTime,
             },
           }
@@ -902,7 +1173,8 @@ export class PiAgentRuntimeService {
     assistant: MuxMessage,
     parts: StreamPart[],
     startTime: number,
-    abortState: PiAbortState
+    abortState: PiAbortState,
+    usageResult: ReturnType<typeof sumPiUsage>
   ): Promise<void> {
     if (abortState.abandonPartial) {
       const deletePartialResult = await this.dependencies.historyService.deletePartial(
@@ -922,7 +1194,14 @@ export class PiAgentRuntimeService {
       const writeResult = await this.dependencies.historyService.writePartial(options.workspaceId, {
         ...assistant,
         parts,
-        metadata: { ...assistant.metadata, partial: true, duration: Date.now() - startTime },
+        metadata: {
+          ...assistant.metadata,
+          partial: true,
+          usage: usageResult.usage,
+          contextUsage: usageResult.contextUsage,
+          finishReason: usageResult.finishReason,
+          duration: Date.now() - startTime,
+        },
       });
       if (!writeResult.success) {
         throw new Error(writeResult.error);
@@ -947,7 +1226,12 @@ export class PiAgentRuntimeService {
       workspaceId: options.workspaceId,
       messageId: assistant.id,
       abortReason: abortState.abortReason,
-      metadata: { duration: Date.now() - startTime },
+      metadata: {
+        duration: Date.now() - startTime,
+        usage: usageResult.usage,
+        contextUsage: usageResult.contextUsage,
+        finishReason: usageResult.finishReason,
+      },
       abandonPartial: abortState.abandonPartial,
       acpPromptId: options.acpPromptId,
     });
