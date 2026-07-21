@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
+import { spawnSync } from "node:child_process";
 
 import {
   assertPiRuntimeCompatibility,
@@ -25,6 +26,17 @@ function getTestCodexAuth() {
 }
 
 describe("Pi agent runtime compatibility", () => {
+  test("loads Pi runtime dependencies from the CommonJS backend", () => {
+    const result = spawnSync(
+      "node",
+      ["-e", "require('@earendil-works/pi-ai'); require('@earendil-works/pi-coding-agent')"],
+      { cwd: process.cwd(), encoding: "utf8" }
+    );
+
+    expect(result.stderr).toBe("");
+    expect(result.status).toBe(0);
+  });
+
   test("maps direct OpenAI model strings to Pi's Codex provider model ids", () => {
     expect(resolvePiCodexModelId("openai:gpt-5.6-sol")).toBe("gpt-5.6-sol");
   });
@@ -102,6 +114,8 @@ describe("PiAgentRuntimeService", () => {
 
     const listeners = new Set<(event: AgentSessionEvent) => void>();
     const state = { messages: [] as Message[] };
+    const piToolCallId =
+      "call_QIwSEaOnQppSthHiNLB14rIQ|fc_01665a15a5435180016a5f7a1ac3388191b02c21440319a755";
     let streamInfoDuringPrompt: ReturnType<PiAgentRuntimeService["getStreamInfo"]>;
     const finalAssistant: AssistantMessage = {
       role: "assistant",
@@ -140,13 +154,13 @@ describe("PiAgentRuntimeService", () => {
           });
           listener({
             type: "tool_execution_start",
-            toolCallId: "call-1",
+            toolCallId: piToolCallId,
             toolName: "bash",
             args: { command: "pwd" },
           });
           listener({
             type: "tool_execution_end",
-            toolCallId: "call-1",
+            toolCallId: piToolCallId,
             toolName: "bash",
             result: { content: [{ type: "text", text: "/workspace" }], details: {} },
             isError: false,
@@ -198,6 +212,13 @@ describe("PiAgentRuntimeService", () => {
     expect(events.map((event) => event.type)).toContain("stream-start");
     expect(events.map((event) => event.type)).toContain("stream-delta");
     expect(events.map((event) => event.type)).toContain("tool-call-end");
+    const emittedToolCallIds = events
+      .filter((event) => event.type.startsWith("tool-call"))
+      .map((event) => event.toolCallId);
+    expect(emittedToolCallIds).toHaveLength(6);
+    expect(
+      emittedToolCallIds.every((toolCallId) => toolCallId === "call_QIwSEaOnQppSthHiNLB14rIQ")
+    ).toBe(true);
     expect(events.some((event) => event.type === "stream-start" && event.replay === true)).toBe(
       true
     );
@@ -215,6 +236,7 @@ describe("PiAgentRuntimeService", () => {
     expect(history.success).toBe(true);
     if (!history.success) return;
     const assistant = history.data.find((message) => message.role === "assistant");
+    expect(assistant?.metadata?.partial).toBe(false);
     expect(assistant?.parts.some((part) => part.type === "text" && part.text === "done")).toBe(
       true
     );
@@ -222,6 +244,7 @@ describe("PiAgentRuntimeService", () => {
       assistant?.parts.some(
         (part) =>
           part.type === "dynamic-tool" &&
+          part.toolCallId === "call_QIwSEaOnQppSthHiNLB14rIQ" &&
           part.state === "output-available" &&
           JSON.stringify(part.output).includes("/workspace")
       )
