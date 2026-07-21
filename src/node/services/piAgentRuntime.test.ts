@@ -1078,7 +1078,7 @@ describe("PiAgentRuntimeService", () => {
     expect(events.at(-1)).toMatchObject({ type: "error", error: "disk unavailable" });
   });
 
-  test("replays Mux Codex remote compaction into Pi's request payload", async () => {
+  test("replays Mux Codex remote compaction into every Pi tool-loop request", async () => {
     const workspaceId = "pi-runtime-compacted";
     const responseId = "resp_compacted";
     const compactedOutput = [
@@ -1105,7 +1105,7 @@ describe("PiAgentRuntimeService", () => {
 
     const listeners = new Set<(event: AgentSessionEvent) => void>();
     const state = { messages: [] as Message[] };
-    let rewrittenPayload: unknown;
+    const rewrittenPayloads: unknown[] = [];
     const finalAssistant: AssistantMessage = {
       role: "assistant",
       content: [{ type: "text", text: "continued" }],
@@ -1130,23 +1130,27 @@ describe("PiAgentRuntimeService", () => {
         return () => listeners.delete(listener);
       },
       async prompt() {
-        rewrittenPayload = await session.agent.onPayload?.(
-          {
-            input: [
+        for (const text of ["continue", "after tool result"]) {
+          rewrittenPayloads.push(
+            await session.agent.onPayload?.(
               {
-                role: "assistant",
-                content: [
+                input: [
                   {
-                    type: "output_text",
-                    text: createOpenAIResponsesCompactionBoundaryMarker(responseId),
+                    role: "assistant",
+                    content: [
+                      {
+                        type: "output_text",
+                        text: createOpenAIResponsesCompactionBoundaryMarker(responseId),
+                      },
+                    ],
                   },
+                  { role: "user", content: [{ type: "input_text", text }] },
                 ],
               },
-              { role: "user", content: [{ type: "input_text", text: "continue" }] },
-            ],
-          },
-          finalAssistant as never
-        );
+              finalAssistant as never
+            )
+          );
+        }
         for (const listener of listeners) {
           listener({
             type: "message_update",
@@ -1180,12 +1184,20 @@ describe("PiAgentRuntimeService", () => {
     });
 
     expect(result.success).toBe(true);
-    expect(rewrittenPayload).toEqual({
-      input: [
-        ...compactedOutput,
-        { role: "user", content: [{ type: "input_text", text: "continue" }] },
-      ],
-    });
+    expect(rewrittenPayloads).toEqual([
+      {
+        input: [
+          ...compactedOutput,
+          { role: "user", content: [{ type: "input_text", text: "continue" }] },
+        ],
+      },
+      {
+        input: [
+          ...compactedOutput,
+          { role: "user", content: [{ type: "input_text", text: "after tool result" }] },
+        ],
+      },
+    ]);
   });
 
   test("keeps streamed text as a recoverable partial when Pi fails", async () => {

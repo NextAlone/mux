@@ -41,6 +41,7 @@ import { CODEX_ENDPOINT } from "@/common/constants/codexOAuth";
 import { addInterruptedSentinel } from "@/browser/utils/messages/modelMessageTransform";
 import { buildWorkflowRunCardMessage } from "@/common/utils/workflowRunMessages";
 import { tool, type LanguageModel, type Tool } from "ai";
+import { MockLanguageModelV3 } from "ai/test";
 import { z } from "zod";
 import { createMuxMessage } from "@/common/types/message";
 import type { ModelMessage, MuxMessage } from "@/common/types/message";
@@ -1664,6 +1665,121 @@ describe("AIService.streamMessage compaction boundary slicing", () => {
     expect(result.error.type === "unknown" ? result.error.raw : "").toContain(
       "requires an openai:* Codex OAuth model"
     );
+    expect(harness.startStreamCalls).toHaveLength(0);
+  });
+
+  it("does not install a captured remote compaction after the turn is aborted", async () => {
+    using muxHome = new DisposableTempDir("ai-service-remote-compaction-abort");
+    const projectPath = path.join(muxHome.path, "project");
+    await fs.mkdir(projectPath, { recursive: true });
+    const workspaceId = "workspace-remote-compaction-abort";
+    const harness = createHarness(
+      muxHome.path,
+      createLocalWorkspaceMetadata(workspaceId, projectPath)
+    );
+    const baseConfig = harness.config.loadConfigOrDefault();
+    spyOn(harness.config, "loadConfigOrDefault").mockReturnValue({
+      ...baseConfig,
+      compaction: {
+        ...baseConfig.compaction,
+        remotePolicy: "openai-responses-compact",
+      },
+    });
+    spyOn(messagePipeline, "prepareMessagesForProvider").mockResolvedValue([
+      { role: "user", content: [{ type: "text", text: "/compact" }] },
+    ]);
+    const historyService = Reflect.get(harness.service, "historyService") as HistoryService;
+    spyOn(historyService, "deleteMessage").mockResolvedValue({ success: true, data: undefined });
+    const abortController = new AbortController();
+    const compactGenerate = mock(() => undefined);
+    const providerModelFactory = Reflect.get(
+      harness.service,
+      "providerModelFactory"
+    ) as ProviderModelFactory;
+    const resolveModelSpy = spyOn(providerModelFactory, "resolveAndCreateModel").mockImplementation(
+      (_modelString, _thinkingLevel, _muxProviderOptions, options) => {
+        const model = new MockLanguageModelV3({
+          doGenerate: () => {
+            compactGenerate();
+            options?.openAIResponsesCompactCapture?.({
+              id: "resp_compacted_after_abort",
+              created_at: 1,
+              object: "response.compaction",
+              output: [
+                {
+                  id: "ci_after_abort",
+                  type: "compaction",
+                  encrypted_content: "opaque-after-abort",
+                },
+              ],
+              usage: {
+                input_tokens: 3,
+                input_tokens_details: { cached_tokens: 0 },
+                output_tokens: 1,
+                output_tokens_details: { reasoning_tokens: 0 },
+                total_tokens: 4,
+              },
+            });
+            abortController.abort();
+            return Promise.resolve({
+              content: [],
+              finishReason: { unified: "stop" as const, raw: "stop" },
+              warnings: [],
+              usage: {
+                inputTokens: { total: 3, noCache: 3, cacheRead: 0, cacheWrite: 0 },
+                outputTokens: { total: 1, text: 1, reasoning: 0 },
+              },
+            });
+          },
+        });
+        return Promise.resolve({
+          success: true,
+          data: {
+            model,
+            openAIResponsesCompactionRoute: "openai-api-key" as const,
+            effectiveModelString: "openai:gpt-5.2",
+            canonicalModelString: "openai:gpt-5.2",
+            canonicalProviderName: "openai",
+            canonicalModelId: "gpt-5.2",
+            routedThroughGateway: false,
+          },
+        });
+      }
+    );
+    const installRemoteCompaction = mock(() =>
+      Promise.resolve({
+        success: true as const,
+        data: {
+          workspaceId,
+          summaryMessageId: "summary-after-abort",
+          summaryHistorySequence: 10,
+          compactionEpoch: 1,
+          compactionRequestMessageId: "compact-request",
+        },
+      })
+    );
+
+    const result = await harness.service.streamMessage({
+      messages: [
+        createMuxMessage("compact-request", "user", "/compact", {
+          muxMetadata: {
+            type: "compaction-request",
+            rawCommand: "/compact",
+            parsed: {},
+          },
+        }),
+      ],
+      workspaceId,
+      modelString: "openai:gpt-5.2",
+      thinkingLevel: "off",
+      abortSignal: abortController.signal,
+      installOpenAIResponsesRemoteCompaction: installRemoteCompaction,
+    });
+
+    expect(result).toEqual({ success: true, data: undefined });
+    expect(resolveModelSpy).toHaveBeenCalledTimes(2);
+    expect(compactGenerate).toHaveBeenCalledTimes(1);
+    expect(installRemoteCompaction).not.toHaveBeenCalled();
     expect(harness.startStreamCalls).toHaveLength(0);
   });
 

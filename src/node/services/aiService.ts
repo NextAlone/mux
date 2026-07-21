@@ -3223,6 +3223,13 @@ export class AIService extends EventEmitter {
           }
 
           if (compactedResponse) {
+            if (combinedAbortSignal.aborted) {
+              // Mux owns turn lifecycle even when the provider has already returned opaque
+              // compacted state. A stopped control turn must not install a new boundary or
+              // dispatch its pending follow-up.
+              await deleteAbortedPlaceholder(assistantMessageId);
+              return Ok(undefined);
+            }
             if (!isOpenAIResponsesCompactionOutput(compactedResponse.output)) {
               return Err({
                 type: "unknown",
