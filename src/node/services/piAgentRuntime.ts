@@ -34,6 +34,7 @@ import type { LanguageModelV2Usage } from "@ai-sdk/provider";
 import { getErrorMessage } from "@/common/utils/errors";
 import { createAssistantMessageId } from "./utils/messageIds";
 import type { StreamAbortReason } from "@/common/types/stream";
+import { createHash } from "node:crypto";
 
 export function resolvePiCodexModelId(modelString: string): string {
   const prefix = "openai:";
@@ -291,6 +292,17 @@ function getPiToolResultOutput(result: unknown): unknown {
       return stringifyToolValue(part);
     })
     .join("\n");
+}
+
+function normalizePiToolCallId(toolCallId: string): string {
+  const providerCallId = toolCallId.split("|", 1)[0] ?? toolCallId;
+  if (providerCallId.length <= 64) {
+    return providerCallId;
+  }
+
+  // Pi may combine the Responses call_id and item id. Mux later replays this value as
+  // call_id, whose OpenAI boundary is 64 characters, so keep one stable bounded id.
+  return `pi_${createHash("sha256").update(toolCallId).digest("hex").slice(0, 61)}`;
 }
 
 function addTextDelta(parts: StreamPart[], type: "text" | "reasoning", delta: string): void {
@@ -623,9 +635,10 @@ export class PiAgentRuntimeService {
         return;
       }
       if (event.type === "tool_execution_start") {
+        const toolCallId = normalizePiToolCallId(event.toolCallId);
         parts.push({
           type: "dynamic-tool",
-          toolCallId: event.toolCallId,
+          toolCallId,
           toolName: event.toolName,
           input: event.args,
           state: "input-available",
@@ -636,7 +649,7 @@ export class PiAgentRuntimeService {
           type: "tool-call-start",
           workspaceId: options.workspaceId,
           messageId,
-          toolCallId: event.toolCallId,
+          toolCallId,
           toolName: event.toolName,
           args: event.args,
           tokens: 0,
@@ -647,17 +660,18 @@ export class PiAgentRuntimeService {
           type: "tool-call-execution-start",
           workspaceId: options.workspaceId,
           messageId,
-          toolCallId: event.toolCallId,
+          toolCallId,
           timestamp,
         });
         return;
       }
       if (event.type === "tool_execution_update") {
+        const toolCallId = normalizePiToolCallId(event.toolCallId);
         emit({
           type: "tool-call-delta",
           workspaceId: options.workspaceId,
           messageId,
-          toolCallId: event.toolCallId,
+          toolCallId,
           toolName: event.toolName,
           delta: getPiToolResultOutput(event.partialResult),
           tokens: 0,
@@ -666,14 +680,15 @@ export class PiAgentRuntimeService {
         return;
       }
       if (event.type === "tool_execution_end") {
-        toolCompletionTimestamps.set(event.toolCallId, timestamp);
+        const toolCallId = normalizePiToolCallId(event.toolCallId);
+        toolCompletionTimestamps.set(toolCallId, timestamp);
         const index = parts.findIndex(
-          (part) => part.type === "dynamic-tool" && part.toolCallId === event.toolCallId
+          (part) => part.type === "dynamic-tool" && part.toolCallId === toolCallId
         );
         const pending = index >= 0 ? parts[index] : undefined;
         const completed: MuxToolPart = {
           type: "dynamic-tool",
-          toolCallId: event.toolCallId,
+          toolCallId,
           toolName: event.toolName,
           input: pending?.type === "dynamic-tool" ? pending.input : {},
           output: getPiToolResultOutput(event.result),
@@ -689,7 +704,7 @@ export class PiAgentRuntimeService {
           type: "tool-call-end",
           workspaceId: options.workspaceId,
           messageId,
-          toolCallId: event.toolCallId,
+          toolCallId,
           toolName: event.toolName,
           result: completed.output,
           timestamp,
@@ -792,6 +807,7 @@ export class PiAgentRuntimeService {
           finishReason: usageResult.finishReason,
           duration: Date.now() - startTime,
           ttftMs: undefined,
+          partial: false,
         },
       };
       const writeResult = await this.dependencies.historyService.writePartial(
@@ -801,11 +817,21 @@ export class PiAgentRuntimeService {
       if (!writeResult.success) {
         throw new Error(writeResult.error);
       }
-      const commitResult = await this.dependencies.historyService.commitPartial(
+      // Keep a crash-recovery snapshot until the durable history row is finalized. commitPartial()
+      // intentionally preserves partial:true, so successful streams must update the placeholder
+      // directly before removing the recovery file.
+      const updateResult = await this.dependencies.historyService.updateHistory(
+        options.workspaceId,
+        finalMessage
+      );
+      if (!updateResult.success) {
+        throw new Error(updateResult.error);
+      }
+      const deletePartialResult = await this.dependencies.historyService.deletePartial(
         options.workspaceId
       );
-      if (!commitResult.success) {
-        throw new Error(commitResult.error);
+      if (!deletePartialResult.success) {
+        throw new Error(deletePartialResult.error);
       }
       if (usageResult.usage) {
         await this.dependencies.recordUsage?.(
