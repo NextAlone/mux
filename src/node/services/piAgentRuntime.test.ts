@@ -291,6 +291,30 @@ describe("Pi agent runtime compatibility", () => {
     expect(JSON.stringify(input.context[1])).toContain("/workspace");
   });
 
+  test.each([
+    {
+      name: "PDF data URL",
+      file: {
+        type: "file" as const,
+        mediaType: "application/pdf",
+        url: "data:application/pdf;base64,JVBERi0xLjQ=",
+      },
+    },
+    {
+      name: "hosted image URL",
+      file: {
+        type: "file" as const,
+        mediaType: "image/png",
+        url: "https://example.com/image.png",
+      },
+    },
+  ])("rejects an unsupported $name instead of silently dropping it", ({ file }) => {
+    const message = createMuxMessage("latest", "user", "inspect this attachment");
+    message.parts.push(file);
+
+    expect(() => buildPiTurnInput([message], "gpt-5.6-sol")).toThrow(/image attachment/i);
+  });
+
   test("excludes side questions and history before the latest context boundary", () => {
     const history = [
       createMuxMessage("old", "user", "obsolete context", { timestamp: 1 }),

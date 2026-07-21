@@ -5,18 +5,35 @@ import type { OpenAIResponsesCompactionRoute } from "@/common/utils/compaction/r
 
 export type AgentRuntimeKind = "mux" | "pi";
 
-export function isPiAgentRuntimeWorkspaceCompatible(options: {
+interface PiAgentRuntimeWorkspaceOptions {
   modelString: string;
   runtimeType: RuntimeMode;
   multiProject: boolean;
   remoteCompactionRoute: OpenAIResponsesCompactionRoute | null;
-}): boolean {
-  return (
-    options.modelString.trim().startsWith("openai:") &&
-    (options.runtimeType === "local" || options.runtimeType === "worktree") &&
-    !options.multiProject &&
-    options.remoteCompactionRoute !== "openai-api-key"
-  );
+}
+
+export function getPiAgentRuntimeIncompatibility(
+  options: PiAgentRuntimeWorkspaceOptions
+): string | null {
+  if (!options.modelString.trim().startsWith("openai:")) {
+    return "Pi agent runtime requires an openai:* Codex OAuth model. Select a direct OpenAI Codex OAuth model or disable the Pi runtime experiment.";
+  }
+  if (options.runtimeType !== "local" && options.runtimeType !== "worktree") {
+    return "Pi agent runtime supports only local and worktree workspaces. Move this task to a local/worktree workspace or disable the Pi runtime experiment.";
+  }
+  if (options.multiProject) {
+    return "Pi agent runtime does not support multi-project workspaces. Use a single-project workspace or disable the Pi runtime experiment.";
+  }
+  if (options.remoteCompactionRoute === "openai-api-key") {
+    return "This workspace context was compacted with direct OpenAI API-key routing. Reset context before using the Pi Codex OAuth runtime.";
+  }
+  return null;
+}
+
+export function isPiAgentRuntimeWorkspaceCompatible(
+  options: PiAgentRuntimeWorkspaceOptions
+): boolean {
+  return getPiAgentRuntimeIncompatibility(options) === null;
 }
 
 /**

@@ -212,10 +212,7 @@ import {
 } from "@/node/services/workflows/WorkflowTaskServiceAdapter";
 import { resolveWorkflowScript } from "@/node/services/workflows/workflowScriptResolver";
 import { isWorkspaceProjectTrusted } from "@/node/utils/projectTrust";
-import {
-  isPiAgentRuntimeWorkspaceCompatible,
-  shouldUsePiAgentRuntime,
-} from "./agentRuntimeSelection";
+import { getPiAgentRuntimeIncompatibility, shouldUsePiAgentRuntime } from "./agentRuntimeSelection";
 import { partitionPiCompatibleMuxTools, PiAgentRuntimeService } from "./piAgentRuntime";
 
 const STREAM_STARTUP_DIAGNOSTIC_THRESHOLD_MS = 1_000;
@@ -1594,6 +1591,28 @@ export class AIService extends EventEmitter {
 
       const metadata = metadataResult.data;
 
+      const latestUserMuxMetadata = [...messages]
+        .reverse()
+        .find((message) => message.role === "user")?.metadata?.muxMetadata;
+      const piAgentRuntimeRequested = shouldUsePiAgentRuntime(
+        experiments,
+        muxMetadata,
+        latestUserMuxMetadata
+      );
+      if (piAgentRuntimeRequested) {
+        const incompatibility = getPiAgentRuntimeIncompatibility({
+          modelString: canonicalModelString,
+          runtimeType: metadata.runtimeConfig.type,
+          multiProject: isMultiProject(metadata),
+          remoteCompactionRoute: latestOpenAIResponsesRemoteCompaction?.route ?? null,
+        });
+        // Mux keeps the control plane, but an accepted Pi execution turn must not
+        // silently switch its model/tool loop back to the legacy Mux harness.
+        if (incompatibility) {
+          return Err({ type: "unknown", raw: incompatibility });
+        }
+      }
+
       if (this.policyService?.isEnforced()) {
         if (!this.policyService.isRuntimeAllowed(metadata.runtimeConfig)) {
           return Err({
@@ -2696,18 +2715,7 @@ export class AIService extends EventEmitter {
         }
       }
 
-      const latestUserMuxMetadata = [...messages]
-        .reverse()
-        .find((message) => message.role === "user")?.metadata?.muxMetadata;
-      const remoteCompaction = getLatestOpenAIResponsesRemoteCompaction(messages);
-      const usePiAgentRuntime =
-        shouldUsePiAgentRuntime(experiments, muxMetadata, latestUserMuxMetadata) &&
-        isPiAgentRuntimeWorkspaceCompatible({
-          modelString: canonicalModelString,
-          runtimeType: metadata.runtimeConfig.type,
-          multiProject: isMultiProject(metadata),
-          remoteCompactionRoute: remoteCompaction?.route ?? null,
-        });
+      const usePiAgentRuntime = piAgentRuntimeRequested;
 
       if (usePiAgentRuntime && tools.advisor !== undefined) {
         // Advisor depends on StreamManager's per-step transcript snapshots. Pi owns
@@ -2872,6 +2880,12 @@ export class AIService extends EventEmitter {
             workspaceId,
           });
 
+          workspaceLog.info("[agent-runtime] Starting Pi agent harness", {
+            agentId: effectiveAgentId,
+            delegated: isSubagentWorkspace,
+            runtimeType: metadata.runtimeConfig.type,
+            modelString: canonicalModelString,
+          });
           emitStartupBreadcrumb("starting_stream");
           const startResult = await piRuntime.startStream(
             {
