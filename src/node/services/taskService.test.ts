@@ -6109,6 +6109,54 @@ describe("TaskService", () => {
     expect(childEntry?.taskThinkingLevel).toBe("medium");
   }, 20_000);
 
+  test("persists the Pi runtime snapshot for delegated child turns", async () => {
+    const config = await createTestConfig(rootDir);
+    stubStableIds(config, ["aaaaaaaaaa"], "bbbbbbbbbb");
+    const projectPath = await createTestProject(rootDir, "repo", { initGit: false });
+    const parentId = "1111111111";
+    await saveWorkspaces(
+      config,
+      projectPath,
+      [
+        {
+          path: projectPath,
+          id: parentId,
+          name: "parent",
+          createdAt: new Date().toISOString(),
+          runtimeConfig: { type: "local" },
+          aiSettings: { model: "openai:gpt-5.2", thinkingLevel: "medium" },
+        },
+      ],
+      testTaskSettings()
+    );
+    const { workspaceService, sendMessage } = createWorkspaceServiceMocks();
+    const { taskService } = createTaskServiceHarness(config, { workspaceService });
+
+    const created = await createAgentTask(taskService, parentId, "delegate through Pi", {
+      modelString: "openai:gpt-5.2",
+      thinkingLevel: "medium",
+      experiments: { piAgentRuntime: true, codexGpt56Compat: true },
+    });
+
+    expect(created.success).toBe(true);
+    if (!created.success) return;
+    expect(sendMessage).toHaveBeenCalledWith(
+      created.data.taskId,
+      "delegate through Pi",
+      {
+        model: "openai:gpt-5.2",
+        agentId: "explore",
+        thinkingLevel: "medium",
+        experiments: { piAgentRuntime: true, codexGpt56Compat: true },
+      },
+      { agentInitiated: true }
+    );
+    expect(findWorkspaceInConfig(config, created.data.taskId)?.taskExperiments).toEqual({
+      piAgentRuntime: true,
+      codexGpt56Compat: true,
+    });
+  }, 20_000);
+
   test("inherits parent model + thinking when target agent has no global defaults", async () => {
     const config = await createTestConfig(rootDir);
     stubStableIds(config, ["aaaaaaaaaa"], "bbbbbbbbbb");

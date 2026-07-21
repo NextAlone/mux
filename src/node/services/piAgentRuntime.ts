@@ -37,7 +37,7 @@ import {
   type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 import type { CodexOauthAuth } from "@/node/utils/codexOauthAuth";
-import type { HistoryService } from "./historyService";
+import { hasCommitWorthyParts, type HistoryService } from "./historyService";
 import type { Result } from "@/common/types/result";
 import { Err, Ok } from "@/common/types/result";
 import type { SendMessageError } from "@/common/types/errors";
@@ -45,6 +45,7 @@ import type { ThinkingLevel } from "@/common/types/thinking";
 import type { LanguageModelV2Usage } from "@ai-sdk/provider";
 import { getErrorMessage } from "@/common/utils/errors";
 import { createAssistantMessageId } from "./utils/messageIds";
+import { log } from "./log";
 import type { StreamAbortReason } from "@/common/types/stream";
 import { createHash } from "node:crypto";
 import {
@@ -368,6 +369,17 @@ export interface PiAgentRuntimeDependencies {
   ) => Promise<void>;
   persistCodexAuth?: (expectedRefresh: string, auth: CodexOauthAuth) => Promise<void>;
   createSession?: (options: CreatePiSessionOptions) => Promise<PiSessionAdapter>;
+}
+
+function classifyPiStartupError(error: unknown): SendMessageError {
+  const raw = getErrorMessage(error);
+  if (raw === "Codex OAuth is not configured") {
+    // This is a durable configuration requirement, not a transient harness failure.
+    // Returning the provider error lets Mux show the OAuth connection action and
+    // prevents its normal stream auto-retry from multiplying the same error.
+    return { type: "oauth_not_connected", provider: "openai" };
+  }
+  return { type: "unknown", raw };
 }
 
 export interface PiAgentRuntimeStreamOptions {
@@ -781,10 +793,7 @@ export class PiAgentRuntimeService {
         }
       } catch (error) {
         const errorMessage = getErrorMessage(error);
-        const result: Result<void, SendMessageError> = Err({
-          type: "unknown",
-          raw: errorMessage,
-        });
+        const result: Result<void, SendMessageError> = Err(classifyPiStartupError(error));
         if (!didStart) {
           resolveStarted(result);
         } else {
@@ -896,10 +905,12 @@ export class PiAgentRuntimeService {
       }
 
       const completionTimestamp = turn.toolCompletionTimestamps.get(part.toolCallId);
+      const partialOutputTimestamp = part.partialOutputTimestamp;
       if (
         options?.afterTimestamp != null &&
         (part.timestamp ?? completionTimestamp ?? 0) <= options.afterTimestamp &&
-        (completionTimestamp ?? 0) <= options.afterTimestamp
+        (completionTimestamp ?? 0) <= options.afterTimestamp &&
+        (partialOutputTimestamp ?? 0) <= options.afterTimestamp
       ) {
         continue;
       }
@@ -923,6 +934,18 @@ export class PiAgentRuntimeService {
           messageId: turn.messageId,
           toolCallId: part.toolCallId,
           timestamp: part.executionStartedAt,
+        });
+      }
+      if (part.state === "input-available" && part.partialOutput !== undefined) {
+        this.dependencies.emit("tool-call-output-delta", {
+          type: "tool-call-output-delta",
+          workspaceId,
+          messageId: turn.messageId,
+          toolCallId: part.toolCallId,
+          toolName: part.toolName,
+          output: part.partialOutput,
+          timestamp: partialOutputTimestamp ?? part.timestamp ?? Date.now(),
+          replay: true,
         });
       }
       if (part.state !== "input-available") {
@@ -1202,14 +1225,26 @@ export class PiAgentRuntimeService {
       }
       if (event.type === "tool_execution_update") {
         const toolCallId = normalizePiToolCallId(event.toolCallId);
+        const partialOutput = getPiToolResultOutput(event.partialResult);
+        const index = parts.findIndex(
+          (part) => part.type === "dynamic-tool" && part.toolCallId === toolCallId
+        );
+        const pending = index >= 0 ? parts[index] : undefined;
+        if (pending?.type === "dynamic-tool" && pending.state === "input-available") {
+          parts[index] = {
+            ...pending,
+            partialOutput,
+            partialOutputTimestamp: timestamp,
+          };
+          schedulePartialWrite();
+        }
         emit({
-          type: "tool-call-delta",
+          type: "tool-call-output-delta",
           workspaceId: options.workspaceId,
           messageId,
           toolCallId,
           toolName: event.toolName,
-          delta: getPiToolResultOutput(event.partialResult),
-          tokens: 0,
+          output: partialOutput,
           timestamp,
         });
         return;
@@ -1374,7 +1409,15 @@ export class PiAgentRuntimeService {
         options.workspaceId
       );
       if (!deletePartialResult.success) {
-        throw new Error(deletePartialResult.error);
+        // The finalized row is already durable. Reporting a cleanup failure as a
+        // stream failure would overwrite its crash-recovery snapshot with an error
+        // partial and make a completed turn look failed after reload. Startup's
+        // idempotent commitPartial() will remove a leftover matching snapshot.
+        log.warn("Failed to delete Pi partial after finalizing history", {
+          workspaceId: options.workspaceId,
+          messageId,
+          error: deletePartialResult.error,
+        });
       }
       if (usageResult.usage) {
         await this.dependencies.recordUsage?.(
@@ -1473,7 +1516,7 @@ export class PiAgentRuntimeService {
       if (!deleteMessageResult.success) {
         throw new Error(deleteMessageResult.error);
       }
-    } else if (parts.length > 0) {
+    } else if (parts.length > 0 && hasCommitWorthyParts(parts)) {
       const writeResult = await this.dependencies.historyService.writePartial(options.workspaceId, {
         ...assistant,
         parts,
@@ -1496,6 +1539,15 @@ export class PiAgentRuntimeService {
         throw new Error(commitResult.error);
       }
     } else {
+      // An input-available tool has no result that can safely re-enter provider
+      // history. Remove both its crash snapshot and the empty assistant placeholder
+      // rather than leaving a blank completed-looking row after an interrupt.
+      const deletePartialResult = await this.dependencies.historyService.deletePartial(
+        options.workspaceId
+      );
+      if (!deletePartialResult.success) {
+        throw new Error(deletePartialResult.error);
+      }
       const deleteMessageResult = await this.dependencies.historyService.deleteMessage(
         options.workspaceId,
         assistant.id

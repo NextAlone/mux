@@ -132,6 +132,39 @@ export class StreamTranslator {
         ];
       }
 
+      case "tool-call-output-delta": {
+        const scopedToolCallKey = this.getScopedToolCallKey(sessionId, event.toolCallId);
+        const toolState = this.toolCallsByKey.get(scopedToolCallKey);
+        const updates: SessionUpdate[] = [];
+        if (!toolState) {
+          this.registerToolCall(
+            sessionId,
+            event.messageId,
+            event.toolCallId,
+            event.toolName,
+            undefined
+          );
+          updates.push({
+            sessionUpdate: "tool_call",
+            toolCallId: event.toolCallId,
+            title: event.toolName,
+            kind: inferToolKind(event.toolName),
+            rawInput: undefined,
+            status: "in_progress",
+          });
+        }
+        updates.push({
+          sessionUpdate: "tool_call_update",
+          toolCallId: event.toolCallId,
+          title: event.toolName,
+          kind: inferToolKind(event.toolName),
+          rawOutput: event.output,
+          content: this.asToolOutputContent(event.output),
+          status: "in_progress",
+        });
+        return updates;
+      }
+
       case "tool-call-end": {
         const toolState = this.toolCallsByKey.get(
           this.getScopedToolCallKey(sessionId, event.toolCallId)
@@ -302,6 +335,18 @@ export class StreamTranslator {
             content: [textToolContent(redactionMessage)],
           });
           continue;
+        }
+
+        if (part.partialOutput !== undefined) {
+          updates.push({
+            sessionUpdate: "tool_call_update",
+            toolCallId: part.toolCallId,
+            title: part.toolName,
+            kind: inferToolKind(part.toolName),
+            rawOutput: part.partialOutput,
+            content: this.asToolOutputContent(part.partialOutput),
+            status: "in_progress",
+          });
         }
 
         assert(

@@ -910,6 +910,10 @@ export class WorkspaceStore {
       applyWorkspaceChatEventToAggregator(aggregator, data);
       this.scheduleStreamingStateBump(workspaceId);
     },
+    "tool-call-output-delta": (workspaceId, aggregator, data) => {
+      applyWorkspaceChatEventToAggregator(aggregator, data);
+      this.scheduleStreamingStateBump(workspaceId);
+    },
     "tool-call-end": (workspaceId, aggregator, data) => {
       const toolCallEnd = data as Extract<WorkspaceChatMessage, { type: "tool-call-end" }>;
       const transient = this.chatTransientState.get(workspaceId);

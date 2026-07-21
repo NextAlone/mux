@@ -1,6 +1,7 @@
 import { describe, expect, it, mock, afterEach } from "bun:test";
 import { EventEmitter } from "events";
 import { PROVIDER_DISPLAY_NAMES } from "@/common/constants/providers";
+import { WorkspaceMetadataSchema } from "@/common/orpc/schemas/workspace";
 import type { AIService } from "@/node/services/aiService";
 import type { BackgroundProcessManager } from "@/node/services/backgroundProcessManager";
 import type { InitStateManager } from "@/node/services/initStateManager";
@@ -122,6 +123,89 @@ describe("AgentSession pre-stream errors", () => {
         },
       ],
     });
+
+    expect(result.success).toBe(false);
+    expect(streamMessage).not.toHaveBeenCalled();
+    const history = await historyService.getHistoryFromLatestBoundary(workspaceId);
+    expect(history.success).toBe(true);
+    if (history.success) {
+      expect(history.data).toHaveLength(0);
+    }
+  });
+
+  it("leaves synthetic control-turn attachments to the Mux execution path", async () => {
+    const workspaceId = "ws-synthetic-control-attachment";
+    const streamMessage = mock((_history: MuxMessage[]) => Promise.resolve(Ok(undefined)));
+    const { session, historyService, cleanup } = await createAgentSessionHarness({
+      workspaceId,
+      aiServiceOverrides: {
+        streamMessage: streamMessage as unknown as AIService["streamMessage"],
+      },
+    });
+    historyCleanup = cleanup;
+
+    const result = await session.sendMessage(
+      "synthetic control prompt with a provider-supported attachment",
+      {
+        model: "openai:gpt-5.6-sol",
+        agentId: "exec",
+        experiments: { piAgentRuntime: true },
+        fileParts: [
+          {
+            url: "data:text/plain;base64,aGVsbG8=",
+            mediaType: "text/plain",
+            filename: "control.txt",
+          },
+        ],
+      },
+      { synthetic: true, agentInitiated: true }
+    );
+
+    expect(result.success).toBe(true);
+    expect(streamMessage).toHaveBeenCalledTimes(1);
+    const history = await historyService.getHistoryFromLatestBoundary(workspaceId);
+    expect(history.success).toBe(true);
+    if (history.success) {
+      expect(history.data.at(-1)?.metadata?.synthetic).toBe(true);
+    }
+  });
+
+  it("rejects unsupported Pi attachments for synthetic executable child continuations", async () => {
+    const workspaceId = "ws-pi-child-continuation-attachment";
+    const streamMessage = mock((_history: MuxMessage[]) => Promise.resolve(Ok(undefined)));
+    const childMetadata = WorkspaceMetadataSchema.parse({
+      id: workspaceId,
+      name: "child-task",
+      projectPath: "/tmp/project",
+      projectName: "project",
+      runtimeConfig: { type: "local" },
+      parentWorkspaceId: "parent-workspace",
+    });
+    const { session, historyService, cleanup } = await createAgentSessionHarness({
+      workspaceId,
+      aiServiceOverrides: {
+        streamMessage: streamMessage as unknown as AIService["streamMessage"],
+        getWorkspaceMetadata: mock(() => Promise.resolve(Ok(childMetadata))),
+      },
+    });
+    historyCleanup = cleanup;
+
+    const result = await session.sendMessage(
+      "resume the delegated task with this attachment",
+      {
+        model: "openai:gpt-5.6-sol",
+        agentId: "exec",
+        experiments: { piAgentRuntime: true },
+        fileParts: [
+          {
+            url: "data:text/plain;base64,aGVsbG8=",
+            mediaType: "text/plain",
+            filename: "notes.txt",
+          },
+        ],
+      },
+      { synthetic: true, agentInitiated: true }
+    );
 
     expect(result.success).toBe(false);
     expect(streamMessage).not.toHaveBeenCalled();

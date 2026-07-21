@@ -525,7 +525,7 @@ function appendToolRows(
     toolCallId: part.toolCallId,
     toolName: part.toolName,
     args: part.input,
-    result: part.state === "output-available" ? part.output : undefined,
+    result: part.state === "output-available" ? part.output : part.partialOutput,
     status,
     isPartial: options.isPartial,
     historySequence: options.historySequence,

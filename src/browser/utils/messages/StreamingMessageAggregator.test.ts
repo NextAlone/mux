@@ -257,6 +257,35 @@ function historicalTodoMessage(
 }
 
 describe("StreamingMessageAggregator", () => {
+  test("shows a pending Pi tool result snapshot without completing the tool", () => {
+    const aggregator = createTestAggregator();
+    startTestStream(aggregator, { messageId: "msg-1" });
+    startToolCall(aggregator, {
+      messageId: "msg-1",
+      toolCallId: "pi-progress-tool",
+      toolName: "bash",
+      args: { command: "sleep 10" },
+    });
+
+    aggregator.handleToolCallOutputDelta({
+      type: "tool-call-output-delta",
+      workspaceId: TEST_WORKSPACE_ID,
+      messageId: "msg-1",
+      toolCallId: "pi-progress-tool",
+      toolName: "bash",
+      output: { progress: "halfway" },
+      timestamp: Date.now(),
+    });
+
+    const toolMessage = aggregator
+      .getDisplayedMessages()
+      .find((message) => message.type === "tool" && message.toolCallId === "pi-progress-tool");
+    expect(toolMessage).toMatchObject({
+      status: "executing",
+      result: { progress: "halfway" },
+    });
+  });
+
   describe("workflow run attachments", () => {
     test("preserves persisted workflow run attachments on displayed tool rows", () => {
       const aggregator = createTestAggregator();

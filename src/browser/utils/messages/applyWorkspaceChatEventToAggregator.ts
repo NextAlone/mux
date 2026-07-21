@@ -25,6 +25,7 @@ import {
   isToolCallDelta,
   isToolCallEnd,
   isToolCallExecutionStart,
+  isToolCallOutputDelta,
   isToolCallStart,
   isUsageDelta,
 } from "@/common/orpc/types";
@@ -38,6 +39,7 @@ import type {
   ToolCallDeltaEvent,
   ToolCallEndEvent,
   ToolCallExecutionStartEvent,
+  ToolCallOutputDeltaEvent,
   ToolCallStartEvent,
   UsageDeltaEvent,
   RuntimeStatusEvent,
@@ -71,6 +73,7 @@ export interface WorkspaceChatEventAggregator {
   handleToolCallStart(data: ToolCallStartEvent): void;
   handleToolCallExecutionStart(data: ToolCallExecutionStartEvent): void;
   handleToolCallDelta(data: ToolCallDeltaEvent): void;
+  handleToolCallOutputDelta(data: ToolCallOutputDeltaEvent): void;
   handleToolCallEnd(data: ToolCallEndEvent): void;
 
   handleReasoningDelta(data: ReasoningDeltaEvent): void;
@@ -177,6 +180,11 @@ export function applyWorkspaceChatEventToAggregator(
 
   if (isToolCallDelta(event)) {
     aggregator.handleToolCallDelta(event);
+    return "throttled";
+  }
+
+  if (isToolCallOutputDelta(event)) {
+    aggregator.handleToolCallOutputDelta(event);
     return "throttled";
   }
 

@@ -286,8 +286,11 @@ export interface ToolConfiguration {
     memory?: boolean;
     workspaceHeartbeats?: boolean;
     toolSearch?: boolean;
+    codexGpt56Compat?: boolean;
     /** claude-skills-compat: discover skills from .claude/skills and ~/.claude/skills (read-only). */
     claudeSkillsCompat?: boolean;
+    /** Pi owns the delegated agent's model/tool loop while Mux retains orchestration. */
+    piAgentRuntime?: boolean;
   };
   /** Available sub-agents for the task tool description (dynamic context) */
   availableSubagents?: AgentDefinitionDescriptor[];

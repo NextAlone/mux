@@ -269,6 +269,8 @@ export interface TaskCreateArgs {
     advisorTool?: boolean;
     execSubagentHardRestart?: boolean;
     dynamicWorkflows?: boolean;
+    codexGpt56Compat?: boolean;
+    piAgentRuntime?: boolean;
   };
 }
 
