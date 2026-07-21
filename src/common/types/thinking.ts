@@ -305,6 +305,15 @@ export function openaiSupportsProMode(modelString: string): boolean {
 }
 
 /**
+ * Kimi K3 (Moonshot AI) always reasons and supports only the max reasoning
+ * effort; the thinking policy and the Moonshot/OpenRouter provider-options
+ * branches key off this predicate.
+ */
+export function isKimiK3Model(modelString: string): boolean {
+  return stripModelProviderPrefixes(modelString) === "kimi-k3";
+}
+
+/**
  * Whether the given Anthropic model rejects `thinking: { type: "disabled" }`.
  *
  * Mythos-class models (Fable/Mythos) cannot turn thinking off: the API errors with
