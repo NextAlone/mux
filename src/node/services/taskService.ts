@@ -708,6 +708,25 @@ const WORKSPACE_TURN_RECOVERABLE_STREAM_ERRORS: ReadonlySet<StreamErrorType> = n
   "context_exceeded",
 ]);
 
+/** Marker persisted by settleStaleWorkspaceTurn when restart recovery interrupts a handle. */
+const WORKSPACE_TURN_STALE_RESTART_ERROR = "Workspace turn interrupted after restart";
+
+/**
+ * Settled workspace-turn records eligible for self-heal correction (resettle from a
+ * correlated stream-end, or read-time repair/revive): transient stream-error settlements
+ * (status "error") and stale restart-recovery interrupts. Explicit interrupts — user Esc,
+ * task_terminate, cancel reasons — must stay terminal even if a late correlated stream-end
+ * or same-turn retry evidence arrives, so canceled work never resurfaces as completed.
+ */
+function isSelfHealEligibleSettledWorkspaceTurn(
+  record: Pick<WorkspaceTurnTaskHandleRecord, "status" | "error">
+): boolean {
+  if (record.status === "error") {
+    return true;
+  }
+  return record.status === "interrupted" && record.error === WORKSPACE_TURN_STALE_RESTART_ERROR;
+}
+
 /**
  * A workspace-turn stream error may resolve without parent intervention when
  * the child can still make progress on its own. The caller must still confirm
@@ -5247,6 +5266,13 @@ export class TaskService {
     waiterSettlement:
       | { status: "completed"; result: WorkspaceTurnWaitResult }
       | { status: "error"; error: Error };
+    /**
+     * Allow replacing an already-settled interrupted/error record (never completed).
+     * Only the strictly turn-correlated stream-end path may set this: a handle that
+     * settled from a transient failure can self-heal when the child auto-retries the
+     * same turn, and the correlated stream-end proves the turn's real outcome.
+     */
+    allowTerminalResettle?: boolean;
   }): Promise<void> {
     assert(
       params.next.handleId === params.record.handleId,
@@ -5262,7 +5288,7 @@ export class TaskService {
     const pendingNotify = await this.workspaceTurnSettlementLocks.withLock(
       params.record.handleId,
       async (): Promise<
-        | { kind: "notify"; outcome: TerminalAttentionOutcome; title?: string }
+        | { kind: "notify"; outcome: TerminalAttentionOutcome; title?: string; resettled: boolean }
         | { kind: "drain_pending" }
         | null
       > => {
@@ -5278,7 +5304,17 @@ export class TaskService {
           "settleWorkspaceTurn requires current record to match workspaceId"
         );
 
-        if (this.isTerminalWorkspaceTurnStatus(current.status)) {
+        // A completed record is immutable; a self-heal-eligible settled record (transient
+        // error / stale restart interrupt — never an explicit user interrupt) may be
+        // corrected once by an explicitly allowed resettle, but only when the new settlement
+        // actually changes the outcome (duplicate stream-end replays must stay idempotent).
+        const resettleStaleTerminal =
+          params.allowTerminalResettle === true &&
+          this.isTerminalWorkspaceTurnStatus(current.status) &&
+          current.status !== "completed" &&
+          isSelfHealEligibleSettledWorkspaceTurn(current) &&
+          (params.next.status !== current.status || params.next.messageId !== current.messageId);
+        if (this.isTerminalWorkspaceTurnStatus(current.status) && !resettleStaleTerminal) {
           const active = this.activeWorkspaceTurnHandleByWorkspaceId.get(params.record.workspaceId);
           if (
             active?.handleId === params.record.handleId &&
@@ -5305,11 +5341,24 @@ export class TaskService {
         }
 
         // Decide the terminal wake-up using persisted policy + the restart-safe dedupe marker.
+        // A resettle corrects a previously reported outcome, so it re-arms the wake-up even if
+        // the stale settlement was already notified/consumed.
         const policy = resolveBackgroundWorkAttentionPolicy(current.attentionPolicy);
         const shouldNotify =
-          policy === "notify_on_terminal" && current.terminalAttentionNotifiedAt == null;
+          policy === "notify_on_terminal" &&
+          (current.terminalAttentionNotifiedAt == null || resettleStaleTerminal);
 
-        await this.taskHandleStore.upsertWorkspaceTurn(params.next);
+        const nextRecord = { ...params.next };
+        if (resettleStaleTerminal) {
+          log.debug("Workspace turn resettled from stale terminal status", {
+            handleId: current.handleId,
+            workspaceId: current.workspaceId,
+            staleStatus: current.status,
+            nextStatus: nextRecord.status,
+          });
+          delete nextRecord.terminalAttentionNotifiedAt;
+        }
+        await this.taskHandleStore.upsertWorkspaceTurn(nextRecord);
         const active = this.activeWorkspaceTurnHandleByWorkspaceId.get(params.record.workspaceId);
         if (
           active?.handleId === params.record.handleId &&
@@ -5322,7 +5371,7 @@ export class TaskService {
           params.waiterSettlement
         );
         this.markTaskForegroundRelevant(params.record.handleId);
-        await this.cleanupDisposableWorkspaceTurn(params.next);
+        await this.cleanupDisposableWorkspaceTurn(nextRecord);
         this.scheduleMaybeStartQueuedTasks();
 
         // A foreground waiter that received this terminal result already integrates it, so suppress
@@ -5336,8 +5385,9 @@ export class TaskService {
         }
         return {
           kind: "notify",
-          outcome: workspaceTurnTerminalOutcome(params.next.status),
-          ...(params.next.title != null ? { title: params.next.title } : {}),
+          outcome: workspaceTurnTerminalOutcome(nextRecord.status),
+          resettled: resettleStaleTerminal,
+          ...(nextRecord.title != null ? { title: nextRecord.title } : {}),
         };
       }
     );
@@ -5353,6 +5403,14 @@ export class TaskService {
     // Enqueue the terminal wake-up outside the lock. The persisted notification is the restart-safe
     // record of intent; only after it is accepted do we set terminalAttentionNotifiedAt on the
     // handle so a duplicate settlement / stale recovery cannot double-wake.
+    if (pendingNotify.resettled) {
+      // The stale settlement's wake-up may already be delivered/consumed; enqueueIfAbsent
+      // treats that tombstone as "already notified" and would swallow the corrected outcome.
+      await this.terminalAttentionStore.delete(
+        params.record.ownerWorkspaceId,
+        TerminalAttentionStore.notificationId("workspace_turn", params.record.handleId)
+      );
+    }
     await this.enqueueTerminalAttention({
       ownerWorkspaceId: params.record.ownerWorkspaceId,
       sourceKind: "workspace_turn",
@@ -6273,7 +6331,16 @@ export class TaskService {
   }
 
   private async normalizeWorkspaceTurnRecord(
-    record: WorkspaceTurnTaskHandleRecord
+    record: WorkspaceTurnTaskHandleRecord,
+    options: {
+      /**
+       * Also reconcile settled interrupted/error records against the child's durable
+       * history (one history read per record). Enabled for single-handle snapshot reads
+       * (task_await) but not for list paths, which would pay that read for every
+       * historical terminal handle on each call.
+       */
+      repairSettledTurnsFromHistory?: boolean;
+    } = {}
   ): Promise<WorkspaceTurnTaskHandleRecord | null> {
     assert(record.ownerWorkspaceId.length > 0, "normalizeWorkspaceTurnRecord requires owner id");
     assert(record.handleId.length > 0, "normalizeWorkspaceTurnRecord requires handle id");
@@ -6283,7 +6350,7 @@ export class TaskService {
     // task_await agree on the self-healed terminal status.
     if (
       record.status === "interrupted" &&
-      record.error === "Workspace turn interrupted after restart" &&
+      record.error === WORKSPACE_TURN_STALE_RESTART_ERROR &&
       (record.deferredMessageIds?.length ?? 0) > 0
     ) {
       const recovered = await this.recoverTerminalWorkspaceTurnFromHistory(record);
@@ -6312,7 +6379,224 @@ export class TaskService {
       return await this.taskHandleStore.getWorkspaceTurn(record.ownerWorkspaceId, record.handleId);
     }
 
+    if (
+      (record.status === "interrupted" || record.status === "error") &&
+      isSelfHealEligibleSettledWorkspaceTurn(record)
+    ) {
+      return await this.reconcileSettledWorkspaceTurn(record, {
+        repairFromHistory: options.repairSettledTurnsFromHistory === true,
+      });
+    }
+
     return record;
+  }
+
+  /**
+   * Settled interrupted/error handles can go stale: a stream error or restart can settle
+   * the handle even though the child workspace self-heals by auto-retrying the same turn
+   * (retries replay the turn's synthetic prompt, so their output still correlates via
+   * muxMetadata). Reconcile against the child's live state at read time so task_await and
+   * task_list report reality instead of the stale settlement.
+   */
+  private async reconcileSettledWorkspaceTurn(
+    record: WorkspaceTurnTaskHandleRecord,
+    options: { repairFromHistory: boolean }
+  ): Promise<WorkspaceTurnTaskHandleRecord | null> {
+    assert(
+      record.status === "interrupted" || record.status === "error",
+      "reconcileSettledWorkspaceTurn requires a settled interrupted/error record"
+    );
+    // Lazily computed and cached: whether the child still has active descendant/workflow/
+    // nested-turn work. A settled record cannot accumulate deferredMessageIds (the deferral
+    // path skips inactive handles), so the repair/deferred decisions below must consult
+    // these blockers — otherwise a retried turn could be reported completed while its
+    // background work is still running.
+    let blockersActive: boolean | null = null;
+    const deferredBlockersActive = async (): Promise<boolean> => {
+      blockersActive ??= await this.hasActiveWorkspaceTurnDeferredBlockers(record);
+      return blockersActive;
+    };
+    // Evidence the turn is still live. All checks are in-memory so historical terminal
+    // handles stay cheap on list/blocker-scan paths (no history reads). Queued/preparing
+    // turns are deliberately excluded: ordinary queued manual input is not yet in history,
+    // so it would defeat the newest-correlated-prompt guard below and revive unrelated
+    // work. The synthetic background-await continuation between retry streams is instead
+    // covered by the descendant hint — it is only queued while such blockers are active.
+    const turnLive =
+      this.aiService.isStreaming(record.workspaceId) ||
+      this.workspaceService.hasPendingAutoRetry(record.workspaceId) ||
+      this.hasActiveDescendantAgentTasks(this.config.loadConfigOrDefault(), record.workspaceId);
+    if (!turnLive && !options.repairFromHistory) {
+      return record;
+    }
+
+    const historyResult = await this.historyService.getHistoryFromLatestBoundary(
+      record.workspaceId
+    );
+    if (!historyResult.success) {
+      return record;
+    }
+    // Auto-retry replays the newest accepted user message, so live child activity belongs
+    // to this turn only while its prompt is still that newest message. Any newer user
+    // message disables the revive — but only the revive: a correlated final assistant
+    // message older than that unrelated prompt still proves the turn completed, so the
+    // durable-history repair scan must continue past it.
+    let reviveAllowed = turnLive;
+    for (const message of historyResult.data.toReversed()) {
+      if (
+        this.isDeferredWorkspaceTurnMessage(record, message.id) &&
+        (await deferredBlockersActive())
+      ) {
+        continue;
+      }
+      const event = this.buildWorkspaceTurnStreamEndEventFromHistory(record, message);
+      if (event != null) {
+        // The turn produced a correlated final assistant message after settlement, so the
+        // child self-healed. While its background work is still running, revive the handle
+        // with the final recorded as deferred: the parent stays blocked, and the standard
+        // deferred-recovery machinery settles the true outcome once blockers finish.
+        if (reviveAllowed && (await deferredBlockersActive())) {
+          return await this.reviveRetryingWorkspaceTurn(record, {
+            deferredMessageIds: [event.messageId],
+          });
+        }
+        const recovered = this.buildTerminalWorkspaceTurnRecordFromEvent(record, event);
+        if (
+          !options.repairFromHistory ||
+          (recovered.status === record.status && recovered.messageId === record.messageId)
+        ) {
+          return record;
+        }
+        if (await deferredBlockersActive()) {
+          return record;
+        }
+        return await this.persistRepairedSettledWorkspaceTurn(record, recovered);
+      }
+      if (message.role !== "user") {
+        continue;
+      }
+      const metadata = this.getWorkspaceTurnMetadataFromValue(message.metadata?.muxMetadata);
+      const correlatedPrompt =
+        metadata != null &&
+        metadata.taskHandleId === record.handleId &&
+        metadata.ownerWorkspaceId === record.ownerWorkspaceId &&
+        metadata.turnId === record.turnId;
+      if (correlatedPrompt) {
+        if (reviveAllowed) {
+          return await this.reviveRetryingWorkspaceTurn(record);
+        }
+        // A correlated final must be newer than the prompt; nothing older can repair.
+        return record;
+      }
+      reviveAllowed = false;
+      if (!options.repairFromHistory) {
+        return record;
+      }
+    }
+    return record;
+  }
+
+  private async persistRepairedSettledWorkspaceTurn(
+    record: WorkspaceTurnTaskHandleRecord,
+    recovered: WorkspaceTurnTaskHandleRecord
+  ): Promise<WorkspaceTurnTaskHandleRecord | null> {
+    const next = await this.workspaceTurnSettlementLocks.withLock(record.handleId, async () => {
+      const current = await this.taskHandleStore.getWorkspaceTurn(
+        record.ownerWorkspaceId,
+        record.handleId
+      );
+      // A concurrent settlement/repair wins; only replace the exact record we reconciled.
+      // Comparing updatedAt (not just status) matters: a concurrent settlement can produce
+      // a NEWER record with the same status that must not be clobbered by our stale read.
+      if (
+        current == null ||
+        current.status !== record.status ||
+        current.updatedAt !== record.updatedAt
+      ) {
+        return current;
+      }
+      log.debug("Workspace turn repaired from self-healed child history", {
+        handleId: record.handleId,
+        workspaceId: record.workspaceId,
+        staleStatus: record.status,
+        nextStatus: recovered.status,
+      });
+      await this.taskHandleStore.upsertWorkspaceTurn(recovered);
+      return recovered;
+    });
+    if (next === recovered) {
+      await this.cleanupDisposableWorkspaceTurn(recovered);
+      const active = this.activeWorkspaceTurnHandleByWorkspaceId.get(record.workspaceId);
+      if (
+        active?.handleId === record.handleId &&
+        active.ownerWorkspaceId === record.ownerWorkspaceId
+      ) {
+        this.activeWorkspaceTurnHandleByWorkspaceId.delete(record.workspaceId);
+      }
+    }
+    return next;
+  }
+
+  private async reviveRetryingWorkspaceTurn(
+    record: WorkspaceTurnTaskHandleRecord,
+    options: { deferredMessageIds?: string[] } = {}
+  ): Promise<WorkspaceTurnTaskHandleRecord | null> {
+    return await this.workspaceTurnSettlementLocks.withLock(record.handleId, async () => {
+      const current = await this.taskHandleStore.getWorkspaceTurn(
+        record.ownerWorkspaceId,
+        record.handleId
+      );
+      // A concurrent transition wins; only revive the exact record we reconciled against.
+      // Comparing updatedAt (not just status) matters: the live retry itself can fail and
+      // settle a NEWER record with the same status (e.g. error → error) between our read
+      // and this lock — reviving that fresh terminal failure would strand task_await.
+      if (
+        current == null ||
+        current.status !== record.status ||
+        current.updatedAt !== record.updatedAt
+      ) {
+        return current;
+      }
+      // Another turn already owns the child workspace; the activity is not this turn's retry.
+      const active = this.activeWorkspaceTurnHandleByWorkspaceId.get(record.workspaceId);
+      if (
+        active != null &&
+        (active.handleId !== record.handleId || active.ownerWorkspaceId !== record.ownerWorkspaceId)
+      ) {
+        return current;
+      }
+      const next: WorkspaceTurnTaskHandleRecord = {
+        ...current,
+        status: "running",
+        updatedAt: getIsoNow(),
+        // An already-observed correlated final (blocked on child background work) rides
+        // along as deferred so standard deferred recovery settles it once blockers finish.
+        ...(options.deferredMessageIds != null
+          ? { deferredMessageIds: options.deferredMessageIds }
+          : {}),
+      };
+      delete next.error;
+      // The revived turn's next terminal transition is a new outcome; re-arm its wake-up.
+      // The notification tombstone must go too: enqueueIfAbsent would otherwise treat the
+      // stale settlement's delivered wake-up as "already notified" and swallow the new one.
+      delete next.terminalAttentionNotifiedAt;
+      await this.terminalAttentionStore.delete(
+        record.ownerWorkspaceId,
+        TerminalAttentionStore.notificationId("workspace_turn", record.handleId)
+      );
+      await this.taskHandleStore.upsertWorkspaceTurn(next);
+      // Re-register so stream-end/abort/error settlement paths own the handle again.
+      this.activeWorkspaceTurnHandleByWorkspaceId.set(record.workspaceId, {
+        handleId: record.handleId,
+        ownerWorkspaceId: record.ownerWorkspaceId,
+      });
+      log.debug("Workspace turn revived: child is retrying the same turn", {
+        handleId: record.handleId,
+        workspaceId: record.workspaceId,
+        staleStatus: record.status,
+      });
+      return next;
+    });
   }
 
   async getWorkspaceTurnSnapshot(
@@ -6326,7 +6610,11 @@ export class TaskService {
     if (record == null) {
       return null;
     }
-    return await this.normalizeWorkspaceTurnRecord(record);
+    // Snapshot reads back task_await, which must report the child's live state even when
+    // a stale settlement (interrupted/error) was later corrected by a self-healed retry.
+    return await this.normalizeWorkspaceTurnRecord(record, {
+      repairSettledTurnsFromHistory: true,
+    });
   }
 
   async listWorkspaceTurnTasks(
@@ -7225,14 +7513,14 @@ export class TaskService {
       ...record,
       status: "interrupted",
       updatedAt: getIsoNow(),
-      error: "Workspace turn interrupted after restart",
+      error: WORKSPACE_TURN_STALE_RESTART_ERROR,
     };
     await this.settleWorkspaceTurn({
       record,
       next,
       waiterSettlement: {
         status: "error",
-        error: new Error("Workspace turn interrupted after restart"),
+        error: new Error(WORKSPACE_TURN_STALE_RESTART_ERROR),
       },
     });
   }
@@ -7276,23 +7564,41 @@ export class TaskService {
   private async listActiveWorkspaceTurnTaskIdsForOwner(
     ownerWorkspaceId: string
   ): Promise<string[]> {
-    const records = await this.taskHandleStore.listWorkspaceTurns(ownerWorkspaceId, {
-      statuses: ["queued", "starting", "running"],
-    });
+    const records = await this.taskHandleStore.listWorkspaceTurns(ownerWorkspaceId);
     const taskIds: string[] = [];
     for (const record of records) {
       if (
-        record.status !== "queued" &&
-        record.status !== "starting" &&
-        record.status !== "running"
+        record.status === "queued" ||
+        record.status === "starting" ||
+        record.status === "running"
       ) {
+        if (!(await this.isLiveWorkspaceTurn(record))) {
+          await this.settleStaleWorkspaceTurn(record);
+          continue;
+        }
+        taskIds.push(record.handleId);
         continue;
       }
-      if (!(await this.isLiveWorkspaceTurn(record))) {
-        await this.settleStaleWorkspaceTurn(record);
-        continue;
+      // A stale settled handle whose child is actively retrying the same turn is live
+      // delegated work: revive it here too, so the parent's turn-end blocker scan cannot
+      // finish while the child is still running. Cheap for historical handles — reconcile
+      // short-circuits on in-memory runtime checks before touching history.
+      if (
+        (record.status === "interrupted" || record.status === "error") &&
+        isSelfHealEligibleSettledWorkspaceTurn(record)
+      ) {
+        const latest = await this.reconcileSettledWorkspaceTurn(record, {
+          repairFromHistory: false,
+        });
+        if (
+          latest != null &&
+          (latest.status === "queued" ||
+            latest.status === "starting" ||
+            latest.status === "running")
+        ) {
+          taskIds.push(latest.handleId);
+        }
       }
-      taskIds.push(record.handleId);
     }
     return taskIds;
   }
@@ -8528,6 +8834,11 @@ export class TaskService {
         next.status === "completed"
           ? { status: "completed", result: this.buildWorkspaceTurnWaitResult(next) }
           : { status: "error", error: new Error(next.error ?? "Workspace turn failed") },
+      // This stream-end is strictly correlated (workspaceId + turnId), so it proves the
+      // delegated turn's real outcome. A handle that settled interrupted/error from a
+      // transient failure (provider error, restart) may have self-healed via auto-retry
+      // of the same turn; let this settlement correct that stale record.
+      allowTerminalResettle: true,
     });
     return true;
   }
