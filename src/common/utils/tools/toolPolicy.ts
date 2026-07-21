@@ -61,6 +61,24 @@ export function buildRequiredToolPatterns(policy?: ToolPolicy): RegExp[] {
     });
 }
 
+/** Match StreamManager's completion boundary without coupling alternate runtimes to it. */
+export function isSuccessfulToolOutput(output: unknown): boolean {
+  if (typeof output !== "object" || output === null) {
+    return false;
+  }
+  const parsedOutput = output as Record<string, unknown>;
+  if ("success" in parsedOutput) {
+    return parsedOutput.success === true;
+  }
+  if ("ok" in parsedOutput) {
+    return parsedOutput.ok === true;
+  }
+  if (parsedOutput.error != null || parsedOutput.isError === true) {
+    return false;
+  }
+  return true;
+}
+
 /**
  * Apply tool policy to filter available tools
  * @param tools All available tools

@@ -61,7 +61,11 @@ import {
 import { linkAbortSignal } from "@/node/utils/abort";
 import { AsyncMutex } from "@/node/utils/concurrency/asyncMutex";
 import { stripInternalToolResultFields } from "@/common/utils/tools/internalToolResultFields";
-import { buildRequiredToolPatterns, type ToolPolicy } from "@/common/utils/tools/toolPolicy";
+import {
+  buildRequiredToolPatterns,
+  isSuccessfulToolOutput,
+  type ToolPolicy,
+} from "@/common/utils/tools/toolPolicy";
 import {
   computeActiveToolNames,
   type ToolSearchStreamState,
@@ -1044,7 +1048,7 @@ export class StreamManager extends EventEmitter {
     return resolvedPath;
   }
 
-  private cleanupStreamTempDir(runtime: Runtime, runtimeTempDir: string): void {
+  public cleanupStreamTempDir(runtime: Runtime, runtimeTempDir: string): void {
     // Use parent directory as cwd for safety - if runtimeTempDir is malformed,
     // we won't accidentally run rm -rf from root.
     const tempDirBasename = PlatformPaths.basename(runtimeTempDir);
@@ -1809,23 +1813,6 @@ export class StreamManager extends EventEmitter {
     // should be retried, so don't stop. When no marker is present (e.g.,
     // MCP tools, arbitrary required tools), treat non-null object results
     // as successful completion unless the result is error-shaped.
-    const isSuccessfulOutput = (output: unknown): boolean => {
-      if (typeof output !== "object" || output === null) {
-        return false;
-      }
-      const parsedOutput = output as Record<string, unknown>;
-      if ("success" in parsedOutput) {
-        return parsedOutput.success === true;
-      }
-      if ("ok" in parsedOutput) {
-        return parsedOutput.ok === true;
-      }
-      if (parsedOutput.error != null || parsedOutput.isError === true) {
-        return false;
-      }
-      return true;
-    };
-
     const requiredPatterns = buildRequiredToolPatterns(request.toolPolicy);
 
     const hasSuccessfulRequiredToolResult: ReturnType<typeof stepCountIs> = ({ steps }) => {
@@ -1837,7 +1824,7 @@ export class StreamManager extends EventEmitter {
         lastStep?.toolResults?.some(
           (toolResult) =>
             requiredPatterns.some((pattern) => pattern.test(toolResult.toolName)) &&
-            isSuccessfulOutput(toolResult.output)
+            isSuccessfulToolOutput(toolResult.output)
         ) ?? false
       );
     };

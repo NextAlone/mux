@@ -30,27 +30,11 @@ describe("resolveAgentRuntimeKind", () => {
   });
 
   test("routes only ordinary user turns to Pi", () => {
-    expect(shouldUsePiAgentRuntime({ piAgentRuntime: true }, undefined, undefined, "exec")).toBe(
+    expect(shouldUsePiAgentRuntime({ piAgentRuntime: true }, undefined, undefined)).toBe(true);
+    expect(shouldUsePiAgentRuntime({ piAgentRuntime: true }, { type: "normal" }, undefined)).toBe(
       true
     );
-    expect(
-      shouldUsePiAgentRuntime({ piAgentRuntime: true }, { type: "normal" }, undefined, "exec")
-    ).toBe(true);
-    expect(shouldUsePiAgentRuntime({ piAgentRuntime: false }, undefined, undefined, "exec")).toBe(
-      false
-    );
-  });
-
-  test("keeps plan, explore, and custom agents on Mux", () => {
-    expect(shouldUsePiAgentRuntime({ piAgentRuntime: true }, undefined, undefined, "plan")).toBe(
-      false
-    );
-    expect(shouldUsePiAgentRuntime({ piAgentRuntime: true }, undefined, undefined, "explore")).toBe(
-      false
-    );
-    expect(shouldUsePiAgentRuntime({ piAgentRuntime: true }, undefined, undefined, "review")).toBe(
-      false
-    );
+    expect(shouldUsePiAgentRuntime({ piAgentRuntime: false }, undefined, undefined)).toBe(false);
   });
 
   test("falls back to Mux for unsupported workspace and compaction boundaries", () => {

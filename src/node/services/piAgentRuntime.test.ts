@@ -6,14 +6,18 @@ import path from "node:path";
 import {
   assertPiRuntimeCompatibility,
   buildPiTurnInput,
+  createPiToolDefinitions,
   createPiCodexCredentialStore,
   createEmbeddedPiResourceLoader,
   PiAgentRuntimeService,
   type PiSessionAdapter,
+  partitionPiCompatibleMuxTools,
   resolvePiBuiltInTools,
   resolvePiCodexModelId,
   rewritePiPayloadForRemoteCompaction,
 } from "./piAgentRuntime";
+import { jsonSchema, tool } from "ai";
+import { z } from "zod";
 import { createMuxMessage } from "@/common/types/message";
 import { createTestHistoryService } from "./testHistoryService";
 import type { HistoryService } from "./historyService";
@@ -37,6 +41,161 @@ function getTestCodexAuth(): Promise<CodexOauthAuth> {
 }
 
 describe("Pi agent runtime compatibility", () => {
+  test("bridges Mux tools into Pi while preserving schema, cancellation, and call identity", async () => {
+    let received:
+      | { input: unknown; toolCallId: string; abortSignal: AbortSignal | undefined }
+      | undefined;
+    const muxTool = tool({
+      description: "Echo one value",
+      inputSchema: z.object({ value: z.string() }),
+      execute: (input, options) => {
+        received = {
+          input,
+          toolCallId: options.toolCallId,
+          abortSignal: options.abortSignal,
+        };
+        return { echoed: input.value };
+      },
+    });
+    const [definition] = await createPiToolDefinitions({ echo: muxTool });
+    const abortController = new AbortController();
+    const longCallId = `${"call_"}${"x".repeat(80)}|item`;
+
+    expect(definition?.name).toBe("echo");
+    expect(definition?.description).toBe("Echo one value");
+    expect(definition?.parameters).toMatchObject({
+      type: "object",
+      required: ["value"],
+    });
+    const result = await definition?.execute(
+      longCallId,
+      { value: "hello" },
+      abortController.signal,
+      undefined,
+      {} as never
+    );
+
+    expect(received?.input).toEqual({ value: "hello" });
+    expect(received?.toolCallId).toMatch(/^pi_[a-f0-9]{61}$/);
+    expect(received?.abortSignal).toBe(abortController.signal);
+    expect(result?.content).toEqual([{ type: "text", text: '{"echoed":"hello"}' }]);
+  });
+
+  test("refreshes Pi active tools after a Mux catalog tool changes activation state", async () => {
+    let refreshCount = 0;
+    const catalogTool = tool({
+      description: "Activate a deferred tool",
+      inputSchema: z.object({ query: z.string() }),
+      execute: () => ({ activated: ["deferred_tool"] }),
+    });
+    const [definition] = await createPiToolDefinitions(
+      { tool_catalog_search: catalogTool },
+      { onAfterExecute: () => refreshCount++ }
+    );
+
+    await definition?.execute(
+      "call-1",
+      { query: "deferred" },
+      new AbortController().signal,
+      undefined,
+      {} as never
+    );
+
+    expect(refreshCount).toBe(1);
+  });
+
+  test("preserves Mux required-tool stop and sequential execution semantics", async () => {
+    let succeeds = true;
+    const reportTool = tool({
+      description: "Submit the child report",
+      inputSchema: z.object({ reportMarkdown: z.string() }),
+      execute: () => (succeeds ? { success: true } : { success: false, error: "retry" }),
+    });
+    const [definition] = await createPiToolDefinitions(
+      { agent_report: reportTool },
+      { toolPolicy: [{ regex_match: "^agent_report$", action: "require" }] }
+    );
+
+    expect(definition?.executionMode).toBe("sequential");
+    const successResult = await definition?.execute(
+      "call-1",
+      { reportMarkdown: "done" },
+      new AbortController().signal,
+      undefined,
+      {} as never
+    );
+    expect(successResult?.terminate).toBe(true);
+
+    succeeds = false;
+    const failedResult = await definition?.execute(
+      "call-2",
+      { reportMarkdown: "retry" },
+      new AbortController().signal,
+      undefined,
+      {} as never
+    );
+    expect(failedResult?.terminate).toBe(false);
+  });
+
+  test("wraps OpenAI custom string tools in an object schema for Pi function calling", async () => {
+    let receivedSource: unknown;
+    const execTool = tool({
+      description: "Execute source",
+      inputSchema: jsonSchema<string>({ type: "string" }),
+      execute: (source) => {
+        receivedSource = source;
+        return "ok";
+      },
+    });
+    const [definition] = await createPiToolDefinitions({ exec: execTool });
+
+    expect(definition?.parameters).toMatchObject({
+      type: "object",
+      required: ["source"],
+      properties: { source: { type: "string" } },
+    });
+    await definition?.execute(
+      "call-1",
+      { source: "return 1;" },
+      new AbortController().signal,
+      undefined,
+      {} as never
+    );
+    expect(receivedSource).toBe("return 1;");
+  });
+
+  test("rejects tools that Pi cannot execute instead of advertising a broken capability", async () => {
+    const muxTool = tool({
+      description: "Provider-only tool",
+      inputSchema: z.object({}),
+    });
+
+    let errorMessage = "";
+    try {
+      await createPiToolDefinitions({ provider_only: muxTool });
+    } catch (error) {
+      errorMessage = error instanceof Error ? error.message : String(error);
+    }
+    expect(errorMessage).toContain("provider_only");
+  });
+
+  test("partitions provider-native tools before constructing a Pi session", () => {
+    const executable = tool({
+      description: "Executable",
+      inputSchema: z.object({}),
+      execute: () => "ok",
+    });
+    const providerOnly = tool({
+      description: "Provider-only",
+      inputSchema: z.object({}),
+    });
+
+    expect(partitionPiCompatibleMuxTools({ executable, web_search: providerOnly })).toEqual({
+      tools: { executable },
+      unsupportedToolNames: ["web_search"],
+    });
+  });
+
   test("persists OAuth credentials rotated by Pi without rewriting the initial seed", async () => {
     const persisted: Array<{ expectedRefresh: string; auth: ReturnType<typeof validPiAuth> }> = [];
     const auth = validPiAuth();
@@ -197,6 +356,29 @@ describe("Pi agent runtime compatibility", () => {
     expect(Bun.file(markerPath).exists()).resolves.toBe(false);
   });
 
+  test("does not merge Pi skills, prompts, themes, or context files into Mux-owned agents", async () => {
+    using cwd = new DisposableTempDir("pi-runtime-mux-owned-resources");
+    using agentDir = new DisposableTempDir("pi-runtime-agent-resources");
+    await fs.mkdir(path.join(agentDir.path, "skills", "foreign"), { recursive: true });
+    await fs.writeFile(
+      path.join(agentDir.path, "skills", "foreign", "SKILL.md"),
+      "---\nname: foreign\ndescription: foreign\n---\nForeign skill"
+    );
+    await fs.writeFile(path.join(cwd.path, "AGENTS.md"), "Foreign context");
+
+    const loader = await createEmbeddedPiResourceLoader({
+      cwd: cwd.path,
+      agentDir: agentDir.path,
+      systemPrompt: "Mux system prompt",
+    });
+
+    expect(loader.getSkills().skills).toHaveLength(0);
+    expect(loader.getPrompts().prompts).toHaveLength(0);
+    expect(loader.getThemes().themes).toHaveLength(0);
+    expect(loader.getAgentsFiles().agentsFiles).toHaveLength(0);
+    expect(loader.getSystemPrompt()).toBe("Mux system prompt");
+  });
+
   test("injects Mux instructions through Pi's resource loader", async () => {
     using cwd = new DisposableTempDir("pi-runtime-system-prompt");
     using agentDir = new DisposableTempDir("pi-runtime-agent-dir");
@@ -242,6 +424,209 @@ describe("PiAgentRuntimeService", () => {
 
   afterEach(async () => {
     await cleanup();
+  });
+
+  test("runs a resolved Mux agent configuration inside the Pi harness", async () => {
+    const workspaceId = "pi-runtime-resolved-agent";
+    const user = createMuxMessage("user-1", "user", "make a plan", { timestamp: 1 });
+    await historyService.appendToHistory(workspaceId, user);
+    const listeners = new Set<(event: AgentSessionEvent) => void>();
+    const assistant: AssistantMessage = {
+      role: "assistant",
+      content: [{ type: "text", text: "planned" }],
+      api: "openai-codex-responses",
+      provider: "openai-codex",
+      model: "gpt-5.6-sol",
+      usage: {
+        input: 1,
+        output: 1,
+        cacheRead: 0,
+        cacheWrite: 0,
+        totalTokens: 2,
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+      },
+      stopReason: "stop",
+      timestamp: 2,
+    };
+    const session: PiSessionAdapter = {
+      agent: { state: { messages: [] } },
+      subscribe(listener) {
+        listeners.add(listener);
+        return () => listeners.delete(listener);
+      },
+      prompt() {
+        for (const listener of listeners) {
+          listener({
+            type: "message_update",
+            message: assistant,
+            assistantMessageEvent: {
+              type: "text_delta",
+              contentIndex: 0,
+              delta: "planned",
+              partial: assistant,
+            },
+          });
+          listener({ type: "message_end", message: assistant });
+        }
+        return Promise.resolve();
+      },
+      abort: () => Promise.resolve(),
+      dispose: () => undefined,
+    };
+    const proposePlan = tool({
+      description: "Persist the plan",
+      inputSchema: z.object({ plan: z.string() }),
+      execute: ({ plan }) => ({ plan }),
+    });
+    let receivedSystemPrompt: string | undefined;
+    let receivedToolNames: string[] | undefined;
+    const service = new PiAgentRuntimeService({
+      historyService,
+      getCodexAuth: getTestCodexAuth,
+      createSession: (options) => {
+        receivedSystemPrompt = options.systemPrompt;
+        receivedToolNames = Object.keys(options.muxTools ?? {});
+        return Promise.resolve(session);
+      },
+      emit: () => undefined,
+    });
+
+    const result = await service.stream({
+      workspaceId,
+      cwd: "/workspace",
+      runtimeType: "worktree",
+      messages: [user],
+      modelString: "openai:gpt-5.6-sol",
+      agentId: "plan",
+      mode: "plan",
+      messageId: "assistant-fixed",
+      systemPrompt: "Resolved Mux Plan prompt",
+      systemMessageTokens: 123,
+      muxTools: { propose_plan: proposePlan },
+    });
+
+    expect(result.success).toBe(true);
+    expect(receivedSystemPrompt).toBe("Resolved Mux Plan prompt");
+    expect(receivedToolNames).toEqual(["propose_plan"]);
+    const history = await historyService.getHistoryFromLatestBoundary(workspaceId);
+    expect(history.success).toBe(true);
+    if (!history.success) return;
+    const persisted = history.data.find((message) => message.id === "assistant-fixed");
+    expect(persisted?.metadata).toMatchObject({
+      agentId: "plan",
+      mode: "plan",
+      systemMessageTokens: 123,
+    });
+  });
+
+  test("starts Pi in the background so delegated task launch is not blocked by child completion", async () => {
+    const workspaceId = "pi-runtime-background-start";
+    const user = createMuxMessage("user-1", "user", "work", { timestamp: 1 });
+    await historyService.appendToHistory(workspaceId, user);
+    let finishPrompt: (() => void) | undefined;
+    const promptGate = new Promise<void>((resolve) => {
+      finishPrompt = resolve;
+    });
+    const session: PiSessionAdapter = {
+      agent: { state: { messages: [] } },
+      subscribe: () => () => undefined,
+      prompt: () => promptGate,
+      abort: () => Promise.resolve(),
+      dispose: () => undefined,
+    };
+    let settled = false;
+    const service = new PiAgentRuntimeService({
+      historyService,
+      getCodexAuth: getTestCodexAuth,
+      createSession: () => Promise.resolve(session),
+      emit: () => undefined,
+    });
+
+    const result = await service.startStream(
+      {
+        workspaceId,
+        cwd: "/workspace",
+        runtimeType: "worktree",
+        messages: [user],
+        modelString: "openai:gpt-5.6-sol",
+      },
+      () => {
+        settled = true;
+      }
+    );
+
+    expect(result.success).toBe(true);
+    expect(service.isStreaming(workspaceId)).toBe(true);
+    expect(settled).toBe(false);
+    finishPrompt?.();
+    await service.waitForIdle(workspaceId);
+    expect(settled).toBe(true);
+  });
+
+  test("surfaces a Pi provider error instead of committing an empty successful turn", async () => {
+    const workspaceId = "pi-runtime-provider-error";
+    const user = createMuxMessage("user-1", "user", "work", { timestamp: 1 });
+    await historyService.appendToHistory(workspaceId, user);
+    const listeners = new Set<(event: AgentSessionEvent) => void>();
+    const failedAssistant: AssistantMessage = {
+      role: "assistant",
+      content: [],
+      api: "openai-codex-responses",
+      provider: "openai-codex",
+      model: "gpt-5.6-sol",
+      usage: {
+        input: 0,
+        output: 0,
+        cacheRead: 0,
+        cacheWrite: 0,
+        totalTokens: 0,
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+      },
+      stopReason: "error",
+      errorMessage: "Codex rejected the request",
+      timestamp: 2,
+    };
+    const session: PiSessionAdapter = {
+      agent: { state: { messages: [] } },
+      subscribe(listener) {
+        listeners.add(listener);
+        return () => listeners.delete(listener);
+      },
+      prompt() {
+        for (const listener of listeners) {
+          listener({ type: "message_end", message: failedAssistant });
+        }
+        return Promise.resolve();
+      },
+      abort: () => Promise.resolve(),
+      dispose: () => undefined,
+    };
+    const events: Array<{ type: string; [key: string]: unknown }> = [];
+    const service = new PiAgentRuntimeService({
+      historyService,
+      getCodexAuth: getTestCodexAuth,
+      createSession: () => Promise.resolve(session),
+      emit: (_eventName, event) => events.push(event),
+    });
+
+    const result = await service.stream({
+      workspaceId,
+      cwd: "/workspace",
+      runtimeType: "worktree",
+      messages: [user],
+      modelString: "openai:gpt-5.6-sol",
+    });
+
+    expect(result.success).toBe(false);
+    if (!result.success && result.error.type === "unknown") {
+      expect(result.error.raw).toContain("Codex rejected the request");
+    }
+    expect(events.some((event) => event.type === "error")).toBe(true);
+    const history = await historyService.getHistoryFromLatestBoundary(workspaceId);
+    expect(history.success).toBe(true);
+    if (history.success) {
+      expect(history.data.some((message) => message.role === "assistant")).toBe(false);
+    }
   });
 
   test("persists streamed output before the Pi turn finishes", async () => {
@@ -488,7 +873,10 @@ describe("PiAgentRuntimeService", () => {
             type: "tool_execution_end",
             toolCallId: piToolCallId,
             toolName: "bash",
-            result: { content: [{ type: "text", text: "/workspace" }], details: {} },
+            result: {
+              content: [{ type: "text", text: '{"success":true,"path":"/workspace"}' }],
+              details: { output: { success: true, path: "/workspace" } },
+            },
             isError: false,
           });
           listener({ type: "message_end", message: finalAssistant });
@@ -538,6 +926,10 @@ describe("PiAgentRuntimeService", () => {
     expect(events.map((event) => event.type)).toContain("stream-start");
     expect(events.map((event) => event.type)).toContain("stream-delta");
     expect(events.map((event) => event.type)).toContain("tool-call-end");
+    expect(events.find((event) => event.type === "tool-call-end")?.result).toEqual({
+      success: true,
+      path: "/workspace",
+    });
     const emittedToolCallIds = events
       .filter((event) => event.type.startsWith("tool-call"))
       .map((event) => event.toolCallId);
@@ -574,7 +966,7 @@ describe("PiAgentRuntimeService", () => {
           part.type === "dynamic-tool" &&
           part.toolCallId === "call_QIwSEaOnQppSthHiNLB14rIQ" &&
           part.state === "output-available" &&
-          JSON.stringify(part.output).includes("/workspace")
+          JSON.stringify(part.output) === '{"success":true,"path":"/workspace"}'
       )
     ).toBe(true);
   });
