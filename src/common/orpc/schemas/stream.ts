@@ -741,6 +741,7 @@ export const ExperimentsSchema = z.object({
   memory: z.boolean().optional(),
   workspaceHeartbeats: z.boolean().optional(),
   toolSearch: z.boolean().optional(),
+  piAgentRuntime: z.boolean().optional(),
 });
 
 /**

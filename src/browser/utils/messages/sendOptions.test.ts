@@ -4,6 +4,7 @@ import {
   getModelKey,
   getWorkspaceAISettingsByAgentKey,
 } from "@/common/constants/storage";
+import { EXPERIMENT_IDS, getExperimentKey } from "@/common/constants/experiments";
 import { WORKSPACE_DEFAULTS } from "@/constants/workspaceDefaults";
 import { installDom } from "../../../../tests/ui/dom";
 import { getSendOptionsFromStorage } from "./sendOptions";
@@ -95,5 +96,14 @@ describe("getSendOptionsFromStorage", () => {
     );
 
     expect(getSendOptionsFromStorage(workspaceId).taskDelegationMode).toBe("explicit");
+  });
+
+  test("snapshots the Pi agent runtime experiment into send options", () => {
+    window.localStorage.setItem(
+      getExperimentKey(EXPERIMENT_IDS.PI_AGENT_RUNTIME),
+      JSON.stringify(true)
+    );
+
+    expect(getSendOptionsFromStorage("ws-pi-runtime").experiments?.piAgentRuntime).toBe(true);
   });
 });

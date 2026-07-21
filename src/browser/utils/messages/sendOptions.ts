@@ -115,6 +115,7 @@ export function getSendOptionsFromStorage(workspaceId: string): SendMessageOptio
       dynamicWorkflows: isExperimentEnabled(EXPERIMENT_IDS.DYNAMIC_WORKFLOWS),
       memory: isExperimentEnabled(EXPERIMENT_IDS.MEMORY),
       toolSearch: isExperimentEnabled(EXPERIMENT_IDS.TOOL_SEARCH),
+      piAgentRuntime: isExperimentEnabled(EXPERIMENT_IDS.PI_AGENT_RUNTIME),
     },
   });
 }
