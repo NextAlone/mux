@@ -79,6 +79,74 @@ export interface PrepareMessagesOptions {
 }
 
 /**
+ * Run the request-only MuxMessage transforms shared by all model runtimes.
+ *
+ * Pi consumes this form directly so its harness gets the same transition,
+ * attachment, redaction, and self-healing context as the AI SDK runtime while
+ * retaining data URLs for Pi's native image input.
+ */
+export async function prepareMuxMessagesForProvider(
+  opts: PrepareMessagesOptions
+): Promise<MuxMessage[]> {
+  const {
+    messagesWithSentinel,
+    effectiveAgentId,
+    toolNamesForSentinel,
+    planContentForTransition,
+    planFilePath,
+    changedFileAttachments,
+    postCompactionAttachments,
+    runtime,
+    workspacePath,
+    abortSignal,
+    providerForMessages,
+    usesAnthropicMessagesApi,
+    modelString,
+    providersConfig,
+    workspaceId,
+  } = opts;
+  const isAnthropicMessagesApi =
+    usesAnthropicMessagesApi ?? usesAnthropicMessagesWireFormat(modelString, providersConfig);
+
+  const messagesWithAgentContext = injectAgentTransition(
+    messagesWithSentinel,
+    effectiveAgentId,
+    toolNamesForSentinel,
+    planContentForTransition,
+    planContentForTransition ? planFilePath : undefined
+  );
+  const messagesWithFileChanges = injectFileChangeNotifications(
+    messagesWithAgentContext,
+    changedFileAttachments
+  );
+  const messagesWithPostCompaction = injectPostCompactionAttachments(
+    messagesWithFileChanges,
+    postCompactionAttachments
+  );
+  const messagesWithRemoteCompactionMarkers =
+    providerForMessages === "openai"
+      ? markOpenAIResponsesCompactionBoundaries(messagesWithPostCompaction)
+      : messagesWithPostCompaction;
+  const messagesWithFileAtMentions = await injectFileAtMentions(
+    messagesWithRemoteCompactionMarkers,
+    {
+      runtime,
+      workspacePath,
+      abortSignal,
+    }
+  );
+  const redactedForProvider = applyToolOutputRedaction(messagesWithFileAtMentions);
+  log.debug_obj(`${workspaceId}/2a_redacted_messages.json`, redactedForProvider);
+  const sanitizedMessages = sanitizeToolInputs(redactedForProvider);
+  log.debug_obj(`${workspaceId}/2b_sanitized_messages.json`, sanitizedMessages);
+  const messagesWithInlinedSvg = inlineSvgAsTextForProvider(sanitizedMessages);
+  const messagesWithSanitizedPdf = isAnthropicMessagesApi
+    ? sanitizeAnthropicPdfFilenames(messagesWithInlinedSvg)
+    : messagesWithInlinedSvg;
+  return await extractToolMediaAsUserMessages(messagesWithSanitizedPdf);
+}
+
+/**
  * Run the full message preparation pipeline.
  *
  * Transforms pre-filtered `MuxMessage[]` into provider-ready `ModelMessage[]` by:
@@ -102,16 +170,6 @@ export async function prepareMessagesForProvider(
   opts: PrepareMessagesOptions
 ): Promise<ModelMessage[]> {
   const {
-    messagesWithSentinel,
-    effectiveAgentId,
-    toolNamesForSentinel,
-    planContentForTransition,
-    planFilePath,
-    changedFileAttachments,
-    postCompactionAttachments,
-    runtime,
-    workspacePath,
-    abortSignal,
     providerForMessages,
     usesAnthropicMessagesApi,
     anthropicThinkingEnabled,
@@ -127,78 +185,8 @@ export async function prepareMessagesForProvider(
     anthropicThinkingEnabled ??
     (hasAnthropicClaudeCapabilities(modelString, providersConfig) &&
       effectiveThinkingLevel !== "off");
-
-  // --- MuxMessage-level transforms ---
-
-  // Inject agent transition context with plan content (for plan→exec handoff)
-  const messagesWithAgentContext = injectAgentTransition(
-    messagesWithSentinel,
-    effectiveAgentId,
-    toolNamesForSentinel,
-    planContentForTransition,
-    planContentForTransition ? planFilePath : undefined
-  );
-
-  // Inject file change notifications as user messages (preserves system message cache)
-  const messagesWithFileChanges = injectFileChangeNotifications(
-    messagesWithAgentContext,
-    changedFileAttachments
-  );
-
-  // Inject post-compaction attachments (plan file, loaded skills, edited files) after compaction summary
-  const messagesWithPostCompaction = injectPostCompactionAttachments(
-    messagesWithFileChanges,
-    postCompactionAttachments
-  );
-
-  const messagesWithRemoteCompactionMarkers =
-    providerForMessages === "openai"
-      ? markOpenAIResponsesCompactionBoundaries(messagesWithPostCompaction)
-      : messagesWithPostCompaction;
-
-  // Expand @file mentions (e.g. @src/foo.ts#L1-20) into in-memory synthetic user messages.
-  // Keeps chat history clean while giving the model immediate file context.
-  const messagesWithFileAtMentions = await injectFileAtMentions(
-    messagesWithRemoteCompactionMarkers,
-    {
-      runtime,
-      workspacePath,
-      abortSignal,
-    }
-  );
-
-  // Apply centralized tool-output redaction BEFORE converting to provider ModelMessages.
-  // Keeps the persisted/UI history intact while trimming heavy fields for the request.
-  const redactedForProvider = applyToolOutputRedaction(messagesWithFileAtMentions);
-  log.debug_obj(`${workspaceId}/2a_redacted_messages.json`, redactedForProvider);
-
-  // Sanitize tool inputs to ensure they are valid objects (not strings or arrays).
-  // Fixes cases where corrupted data in history has malformed tool inputs
-  // that would cause API errors like "Input should be a valid dictionary".
-  const sanitizedMessages = sanitizeToolInputs(redactedForProvider);
-  log.debug_obj(`${workspaceId}/2b_sanitized_messages.json`, sanitizedMessages);
-
-  // Inline SVG user attachments as text (providers generally don't accept image/svg+xml).
-  // Request-only — does not mutate persisted history.
-  const messagesWithInlinedSvg = inlineSvgAsTextForProvider(sanitizedMessages);
-
-  // Sanitize PDF filenames for Anthropic (request-only, preserves original in UI/history).
-  // Anthropic rejects document names containing periods, underscores, etc.
-  const messagesWithSanitizedPdf = isAnthropicMessagesApi
-    ? sanitizeAnthropicPdfFilenames(messagesWithInlinedSvg)
-    : messagesWithInlinedSvg;
-
-  // Rewrite supported tool-result attachments to small text placeholders + file parts.
-  // Prevents providers from treating large base64 payloads as text/JSON context.
-  const messagesWithToolMediaExtracted =
-    await extractToolMediaAsUserMessages(messagesWithSanitizedPdf);
-
-  // Rewrite user file-part data URIs to raw base64 payloads before SDK conversion.
-  // convertToModelMessages maps FileUIPart.url -> FilePart.data; keeping data: URLs here
-  // can trigger URL-download validation in downstream provider utilities.
-  const messagesWithSdkSafeFileParts = convertDataUriFilePartsForSdk(
-    messagesWithToolMediaExtracted
-  );
+  const preparedMuxMessages = await prepareMuxMessagesForProvider(opts);
+  const messagesWithSdkSafeFileParts = convertDataUriFilePartsForSdk(preparedMuxMessages);
 
   // --- Convert to ModelMessage format ---
 

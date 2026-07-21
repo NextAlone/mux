@@ -34,6 +34,7 @@ import {
   SessionManager,
   SettingsManager,
   type AgentSessionEvent,
+  type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 import type { CodexOauthAuth } from "@/node/utils/codexOauthAuth";
 import type { HistoryService } from "./historyService";
@@ -46,10 +47,16 @@ import { getErrorMessage } from "@/common/utils/errors";
 import { createAssistantMessageId } from "./utils/messageIds";
 import type { StreamAbortReason } from "@/common/types/stream";
 import { createHash } from "node:crypto";
-import { applyToolPolicyToNames, type ToolPolicy } from "@/common/utils/tools/toolPolicy";
+import {
+  applyToolPolicyToNames,
+  buildRequiredToolPatterns,
+  isSuccessfulToolOutput,
+  type ToolPolicy,
+} from "@/common/utils/tools/toolPolicy";
 import { filterSideQuestionMessages } from "@/common/utils/messages/sideQuestion";
 import { filterWorkflowDisplayOnlyMessages } from "@/common/utils/workflowRunMessages";
 import { sliceMessagesForProviderFromLatestContextBoundary } from "@/common/utils/messages/compactionBoundary";
+import { asSchema, type Tool, type ToolExecutionOptions } from "ai";
 
 export function resolvePiCodexModelId(modelString: string): string {
   const prefix = "openai:";
@@ -104,7 +111,7 @@ function stringifyToolValue(value: unknown): string {
     return value;
   }
   try {
-    return JSON.stringify(value);
+    return JSON.stringify(value) ?? "undefined";
   } catch {
     return String(value);
   }
@@ -258,6 +265,10 @@ interface CreatePiSessionOptions {
   agentId?: string;
   toolPolicy?: ToolPolicy;
   additionalSystemInstructions?: string;
+  systemPrompt?: string;
+  muxTools?: Record<string, Tool>;
+  activeToolNames?: string[];
+  resolveActiveToolNames?: () => string[] | undefined;
   persistCodexAuth?: (expectedRefresh: string, auth: CodexOauthAuth) => Promise<void>;
 }
 
@@ -316,12 +327,14 @@ export async function createEmbeddedPiResourceLoader(options: {
   cwd: string;
   agentDir?: string;
   additionalSystemInstructions?: string;
+  systemPrompt?: string;
 }): Promise<DefaultResourceLoader> {
   const settingsManager = SettingsManager.inMemory(
     { compaction: { enabled: false } },
     { projectTrusted: false }
   );
   const instruction = options.additionalSystemInstructions?.trim();
+  const systemPrompt = options.systemPrompt?.trim();
   const loader = new DefaultResourceLoader({
     cwd: options.cwd,
     agentDir: options.agentDir ?? getAgentDir(),
@@ -329,6 +342,11 @@ export async function createEmbeddedPiResourceLoader(options: {
     // Mux owns project trust and extensions. Loading repository code here would
     // bypass that boundary before the agent turn starts.
     noExtensions: true,
+    noSkills: true,
+    noPromptTemplates: true,
+    noThemes: true,
+    noContextFiles: true,
+    ...(systemPrompt ? { systemPromptOverride: () => systemPrompt } : {}),
     ...(instruction ? { appendSystemPrompt: [instruction] } : {}),
   });
   await loader.reload();
@@ -356,9 +374,16 @@ export interface PiAgentRuntimeStreamOptions {
   modelString: string;
   thinkingLevel?: ThinkingLevel;
   agentId?: string;
+  mode?: "plan" | "exec" | "compact";
   toolPolicy?: ToolPolicy;
   acpPromptId?: string;
   additionalSystemInstructions?: string;
+  systemPrompt?: string;
+  systemMessageTokens?: number;
+  muxTools?: Record<string, Tool>;
+  activeToolNames?: string[];
+  resolveActiveToolNames?: () => string[] | undefined;
+  messageId?: string;
   abortSignal?: AbortSignal;
 }
 
@@ -369,6 +394,7 @@ interface ActivePiTurn {
   historySequence: number;
   startTime: number;
   agentId?: string;
+  mode?: "plan" | "exec" | "compact";
   thinkingLevel?: ThinkingLevel;
   parts: StreamPart[];
   textDeltaChunks: Map<TextualStreamPart, TextDeltaChunk[]>;
@@ -429,6 +455,11 @@ function getPiToolResultOutput(result: unknown): unknown {
   if (!isRecord(result) || !Array.isArray(result.content)) {
     return result;
   }
+  if (isRecord(result.details) && Object.prototype.hasOwnProperty.call(result.details, "output")) {
+    // Mux lifecycle consumers inspect structured tool results (for example
+    // agent_report.success). Pi's content is only the model-facing text rendering.
+    return result.details.output;
+  }
   return result.content
     .map((part) => {
       if (!isRecord(part)) return stringifyToolValue(part);
@@ -451,6 +482,125 @@ function normalizePiToolCallId(toolCallId: string): string {
   // Pi may combine the Responses call_id and item id. Mux later replays this value as
   // call_id, whose OpenAI boundary is 64 characters, so keep one stable bounded id.
   return `pi_${createHash("sha256").update(toolCallId).digest("hex").slice(0, 61)}`;
+}
+
+function isAsyncIterable(value: unknown): value is AsyncIterable<unknown> {
+  return (
+    isRecord(value) &&
+    Symbol.asyncIterator in value &&
+    typeof (value as Record<symbol, unknown>)[Symbol.asyncIterator] === "function"
+  );
+}
+
+function toPiToolResult(
+  output: unknown,
+  terminate = false
+): {
+  content: Array<{ type: "text"; text: string }>;
+  details: { output: unknown };
+  terminate: boolean;
+} {
+  return {
+    content: [{ type: "text", text: stringifyToolValue(output) }],
+    details: { output },
+    terminate,
+  };
+}
+
+/**
+ * Mux keeps ownership of tool assembly, policy, hooks, task workspaces, and reporting.
+ * Pi only owns the model/tool loop, so its custom tools delegate to the already-resolved
+ * AI SDK tool implementations instead of recreating a second capability catalog.
+ */
+export async function createPiToolDefinitions(
+  tools: Record<string, Tool>,
+  options?: { onAfterExecute?: () => void; toolPolicy?: ToolPolicy }
+): Promise<ToolDefinition[]> {
+  const requiredPatterns = buildRequiredToolPatterns(options?.toolPolicy);
+  return await Promise.all(
+    Object.entries(tools).map(async ([name, muxTool]) => {
+      if (muxTool.execute == null) {
+        throw new Error(
+          `Pi harness cannot execute Mux tool '${name}' because it has no host handler`
+        );
+      }
+
+      const schema = asSchema(muxTool.inputSchema);
+      const parameters = await schema.jsonSchema;
+      const wrapsNonObjectInput = !isRecord(parameters) || parameters.type !== "object";
+      const wrappedParameterName = name === "exec" ? "source" : "input";
+      // Pi exposes Mux tools through function calling, whose strict OpenAI schema must be an
+      // object even when the original custom tool accepts a raw value (notably code-mode exec).
+      const piParameters = wrapsNonObjectInput
+        ? {
+            type: "object" as const,
+            properties: { [wrappedParameterName]: parameters },
+            required: [wrappedParameterName],
+            additionalProperties: false,
+          }
+        : parameters;
+      const execute = muxTool.execute as (
+        input: unknown,
+        options: ToolExecutionOptions<unknown>
+      ) => unknown;
+
+      return {
+        name,
+        label: muxTool.title ?? name,
+        description:
+          typeof muxTool.description === "string" ? muxTool.description : `Mux tool ${name}`,
+        parameters: piParameters as ToolDefinition["parameters"],
+        // Mux tools may share runtime, task, or activation state. Preserve the
+        // execution ordering that StreamManager provides to the AI SDK path.
+        executionMode: "sequential",
+        async execute(toolCallId, params, signal, onUpdate) {
+          const muxInput =
+            wrapsNonObjectInput && isRecord(params) ? params[wrappedParameterName] : params;
+          const output = await execute(muxInput, {
+            toolCallId: normalizePiToolCallId(toolCallId),
+            messages: [],
+            abortSignal: signal,
+            context: undefined,
+          });
+          if (!isAsyncIterable(output)) {
+            const terminate =
+              requiredPatterns.some((pattern) => pattern.test(name)) &&
+              isSuccessfulToolOutput(output);
+            const result = toPiToolResult(output, terminate);
+            options?.onAfterExecute?.();
+            return result;
+          }
+
+          let latestOutput: unknown;
+          for await (const update of output) {
+            latestOutput = update;
+            onUpdate?.(toPiToolResult(update));
+          }
+          options?.onAfterExecute?.();
+          const terminate =
+            requiredPatterns.some((pattern) => pattern.test(name)) &&
+            isSuccessfulToolOutput(latestOutput);
+          return toPiToolResult(latestOutput, terminate);
+        },
+      } satisfies ToolDefinition;
+    })
+  );
+}
+
+export function partitionPiCompatibleMuxTools(tools: Record<string, Tool>): {
+  tools: Record<string, Tool>;
+  unsupportedToolNames: string[];
+} {
+  const compatible: Record<string, Tool> = {};
+  const unsupportedToolNames: string[] = [];
+  for (const [name, tool] of Object.entries(tools)) {
+    if (tool.execute == null) {
+      unsupportedToolNames.push(name);
+    } else {
+      compatible[name] = tool;
+    }
+  }
+  return { tools: compatible, unsupportedToolNames };
 }
 
 function addTextDelta(
@@ -478,6 +628,7 @@ function sumPiUsage(events: readonly AgentSessionEvent[]): {
   usage: LanguageModelV2Usage | undefined;
   contextUsage: LanguageModelV2Usage | undefined;
   finishReason: string | undefined;
+  errorMessage: string | undefined;
 } {
   let inputTokens = 0;
   let outputTokens = 0;
@@ -486,6 +637,7 @@ function sumPiUsage(events: readonly AgentSessionEvent[]): {
   let sawUsage = false;
   let contextUsage: LanguageModelV2Usage | undefined;
   let finishReason: string | undefined;
+  let errorMessage: string | undefined;
   for (const event of events) {
     if (event.type !== "message_end" || !isRecord(event.message)) continue;
     const message = event.message;
@@ -507,6 +659,7 @@ function sumPiUsage(events: readonly AgentSessionEvent[]): {
       ...(stepReasoningTokens > 0 ? { reasoningTokens: stepReasoningTokens } : {}),
     };
     finishReason = typeof message.stopReason === "string" ? message.stopReason : finishReason;
+    errorMessage = typeof message.errorMessage === "string" ? message.errorMessage : errorMessage;
     sawUsage = true;
   }
   return {
@@ -521,6 +674,7 @@ function sumPiUsage(events: readonly AgentSessionEvent[]): {
       : undefined,
     contextUsage,
     finishReason,
+    errorMessage,
   };
 }
 
@@ -539,14 +693,34 @@ async function createDefaultPiSession(options: CreatePiSessionOptions): Promise<
   const resourceLoader = await createEmbeddedPiResourceLoader({
     cwd: options.cwd,
     additionalSystemInstructions: options.additionalSystemInstructions,
+    systemPrompt: options.systemPrompt,
   });
+
+  const toolActivation: {
+    session?: { setActiveToolsByName(toolNames: string[]): void };
+  } = {};
+  const customTools = options.muxTools
+    ? await createPiToolDefinitions(options.muxTools, {
+        toolPolicy: options.toolPolicy,
+        onAfterExecute: () => {
+          const activeToolNames = options.resolveActiveToolNames?.();
+          if (activeToolNames) {
+            toolActivation.session?.setActiveToolsByName(activeToolNames);
+          }
+        },
+      })
+    : undefined;
 
   const { session } = await createAgentSession({
     cwd: options.cwd,
     modelRuntime,
     model,
     thinkingLevel: options.thinkingLevel,
-    tools: resolvePiBuiltInTools(options.agentId, options.toolPolicy),
+    tools:
+      options.activeToolNames ??
+      customTools?.map((tool) => tool.name) ??
+      resolvePiBuiltInTools(options.agentId, options.toolPolicy),
+    ...(customTools ? { customTools } : {}),
     resourceLoader,
     sessionManager: SessionManager.inMemory(options.cwd),
     settingsManager: SettingsManager.inMemory(
@@ -554,6 +728,7 @@ async function createDefaultPiSession(options: CreatePiSessionOptions): Promise<
       { projectTrusted: false }
     ),
   });
+  toolActivation.session = session;
 
   return {
     agent: session.agent,
@@ -566,10 +741,75 @@ async function createDefaultPiSession(options: CreatePiSessionOptions): Promise<
 
 export class PiAgentRuntimeService {
   private readonly activeTurns = new Map<string, ActivePiTurn>();
+  private readonly backgroundTurns = new Map<string, Promise<void>>();
   private readonly createSession: NonNullable<PiAgentRuntimeDependencies["createSession"]>;
 
   constructor(private readonly dependencies: PiAgentRuntimeDependencies) {
     this.createSession = dependencies.createSession ?? createDefaultPiSession;
+  }
+
+  async startStream(
+    options: PiAgentRuntimeStreamOptions,
+    onSettled: () => void
+  ): Promise<Result<void, SendMessageError>> {
+    if (this.backgroundTurns.has(options.workspaceId)) {
+      onSettled();
+      return Err({
+        type: "unknown",
+        raw: "Pi agent runtime is already streaming in this workspace",
+      });
+    }
+
+    let didStart = false;
+    let resolveStarted: (result: Result<void, SendMessageError>) => void = () => undefined;
+    const started = new Promise<Result<void, SendMessageError>>((resolve) => {
+      resolveStarted = resolve;
+    });
+    const turn: { promise?: Promise<void> } = {};
+    const background = (async () => {
+      try {
+        const result = await this.stream(options, () => {
+          didStart = true;
+          resolveStarted(Ok(undefined));
+        });
+        if (!didStart) {
+          resolveStarted(result);
+        }
+      } catch (error) {
+        const errorMessage = getErrorMessage(error);
+        const result: Result<void, SendMessageError> = Err({
+          type: "unknown",
+          raw: errorMessage,
+        });
+        if (!didStart) {
+          resolveStarted(result);
+        } else {
+          this.dependencies.emit("error", {
+            type: "error",
+            workspaceId: options.workspaceId,
+            messageId: this.activeTurns.get(options.workspaceId)?.messageId ?? "",
+            error: errorMessage,
+            errorType: "unknown",
+            acpPromptId: options.acpPromptId,
+          });
+        }
+      } finally {
+        try {
+          onSettled();
+        } finally {
+          if (this.backgroundTurns.get(options.workspaceId) === turn.promise) {
+            this.backgroundTurns.delete(options.workspaceId);
+          }
+        }
+      }
+    })();
+    turn.promise = background;
+    this.backgroundTurns.set(options.workspaceId, background);
+    return await started;
+  }
+
+  async waitForIdle(workspaceId: string): Promise<void> {
+    await this.backgroundTurns.get(workspaceId);
   }
 
   isStreaming(workspaceId: string): boolean {
@@ -600,6 +840,7 @@ export class PiAgentRuntimeService {
 
   async stop(workspaceId: string, options?: PiAbortOptions): Promise<void> {
     await this.activeTurns.get(workspaceId)?.requestAbort(options);
+    await this.waitForIdle(workspaceId);
   }
 
   replayStream(workspaceId: string, options?: { afterTimestamp?: number }): Promise<void> {
@@ -615,7 +856,7 @@ export class PiAgentRuntimeService {
       startTime: turn.startTime,
       replay: true,
       agentId: turn.agentId,
-      mode: getPiLegacyMode(turn.agentId),
+      mode: turn.mode ?? getPiLegacyMode(turn.agentId),
       thinkingLevel: turn.thinkingLevel,
     });
 
@@ -696,7 +937,10 @@ export class PiAgentRuntimeService {
     return Promise.resolve();
   }
 
-  async stream(options: PiAgentRuntimeStreamOptions): Promise<Result<void, SendMessageError>> {
+  async stream(
+    options: PiAgentRuntimeStreamOptions,
+    onStarted?: () => void
+  ): Promise<Result<void, SendMessageError>> {
     if (this.activeTurns.has(options.workspaceId)) {
       return Err({
         type: "unknown",
@@ -721,6 +965,10 @@ export class PiAgentRuntimeService {
       agentId: options.agentId,
       toolPolicy: options.toolPolicy,
       additionalSystemInstructions: options.additionalSystemInstructions,
+      systemPrompt: options.systemPrompt,
+      muxTools: options.muxTools,
+      activeToolNames: options.activeToolNames,
+      resolveActiveToolNames: options.resolveActiveToolNames,
     });
     session.agent.state.messages = turnInput.context;
 
@@ -733,7 +981,7 @@ export class PiAgentRuntimeService {
       };
     }
 
-    const messageId = createAssistantMessageId();
+    const messageId = options.messageId ?? createAssistantMessageId();
     const startTime = Date.now();
     let latestEventTimestamp = startTime;
     const nextEventTimestamp = (): number => {
@@ -744,7 +992,8 @@ export class PiAgentRuntimeService {
       timestamp: startTime,
       model: options.modelString,
       agentId: options.agentId,
-      mode: getPiLegacyMode(options.agentId),
+      mode: options.mode ?? getPiLegacyMode(options.agentId),
+      systemMessageTokens: options.systemMessageTokens,
     });
     const appendResult = await this.dependencies.historyService.appendToHistory(
       options.workspaceId,
@@ -986,6 +1235,7 @@ export class PiAgentRuntimeService {
       historySequence,
       startTime,
       agentId: options.agentId,
+      mode: options.mode,
       thinkingLevel: options.thinkingLevel,
       parts,
       textDeltaChunks,
@@ -1036,10 +1286,11 @@ export class PiAgentRuntimeService {
       historySequence,
       startTime,
       agentId: options.agentId,
-      mode: getPiLegacyMode(options.agentId),
+      mode: options.mode ?? getPiLegacyMode(options.agentId),
       thinkingLevel: options.thinkingLevel,
       acpPromptId: options.acpPromptId,
     });
+    onStarted?.();
 
     try {
       if (!aborted) {
@@ -1054,6 +1305,11 @@ export class PiAgentRuntimeService {
 
       await flushPartialWrites();
       const usageResult = sumPiUsage(sessionEvents);
+      if (usageResult.finishReason === "error" || usageResult.finishReason === "aborted") {
+        throw new Error(
+          usageResult.errorMessage ?? `Pi provider stopped with ${usageResult.finishReason}`
+        );
+      }
       const finalMessage: MuxMessage = {
         ...assistant,
         parts,
@@ -1061,7 +1317,7 @@ export class PiAgentRuntimeService {
           ...assistant.metadata,
           model: options.modelString,
           agentId: options.agentId,
-          mode: getPiLegacyMode(options.agentId),
+          mode: options.mode ?? getPiLegacyMode(options.agentId),
           usage: usageResult.usage,
           contextUsage: usageResult.contextUsage,
           finishReason: usageResult.finishReason,

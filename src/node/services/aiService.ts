@@ -171,7 +171,7 @@ import {
   modelCostsIncluded,
   usesCodexResponsesLite,
 } from "./providerModelFactory";
-import { prepareMessagesForProvider } from "./messagePipeline";
+import { prepareMessagesForProvider, prepareMuxMessagesForProvider } from "./messagePipeline";
 import {
   collectOpenAIResponsesCompactionReplays,
   getLatestOpenAIResponsesRemoteCompaction,
@@ -215,7 +215,7 @@ import {
   isPiAgentRuntimeWorkspaceCompatible,
   shouldUsePiAgentRuntime,
 } from "./agentRuntimeSelection";
-import { PiAgentRuntimeService } from "./piAgentRuntime";
+import { partitionPiCompatibleMuxTools, PiAgentRuntimeService } from "./piAgentRuntime";
 
 const STREAM_STARTUP_DIAGNOSTIC_THRESHOLD_MS = 1_000;
 
@@ -1442,80 +1442,6 @@ export class AIService extends EventEmitter {
       const commitPartialStartedAt = Date.now();
       await this.historyService.commitPartial(workspaceId);
       recordStartupPhaseTiming("commitPartialMs", commitPartialStartedAt);
-
-      const latestUserMuxMetadata = [...messages]
-        .reverse()
-        .find((message) => message.role === "user")?.metadata?.muxMetadata;
-      if (shouldUsePiAgentRuntime(experiments, muxMetadata, latestUserMuxMetadata, agentId)) {
-        const metadataResult = await this.getWorkspaceMetadata(workspaceId);
-        if (!metadataResult.success) {
-          return Err({ type: "unknown", raw: metadataResult.error });
-        }
-        const metadata = metadataResult.data;
-        const remoteCompaction = getLatestOpenAIResponsesRemoteCompaction(messages);
-        if (
-          isPiAgentRuntimeWorkspaceCompatible({
-            modelString,
-            runtimeType: metadata.runtimeConfig.type,
-            multiProject: isMultiProject(metadata),
-            remoteCompactionRoute: remoteCompaction?.route ?? null,
-          })
-        ) {
-          const piRuntime = this.piAgentRuntimeService;
-          if (!piRuntime) {
-            return Err({
-              type: "unknown",
-              raw: "Pi agent runtime requires Codex OAuth to be configured",
-            });
-          }
-          if (
-            this.policyService?.isEnforced() &&
-            !this.policyService.isRuntimeAllowed(metadata.runtimeConfig)
-          ) {
-            return Err({
-              type: "policy_denied",
-              message: "Workspace runtime is not allowed by policy",
-            });
-          }
-          const workspace = this.config.findWorkspace(workspaceId);
-          if (!workspace) {
-            return Err({ type: "unknown", raw: `Workspace ${workspaceId} not found in config` });
-          }
-          let piAdditionalSystemContext = additionalSystemContext;
-          if (piAdditionalSystemContext == null) {
-            try {
-              const record = await readAdditionalSystemContext(this.config, workspaceId);
-              piAdditionalSystemContext = effectiveAdditionalSystemContext(record);
-            } catch (error) {
-              log.warn("Failed to load workspace additional system context for Pi", {
-                workspaceId,
-                error,
-              });
-              piAdditionalSystemContext = "";
-            }
-          }
-          await this.initStateManager.waitForInit(workspaceId, combinedAbortSignal);
-          if (combinedAbortSignal.aborted) {
-            return Ok(undefined);
-          }
-          return await piRuntime.stream({
-            workspaceId,
-            cwd: workspace.workspacePath,
-            runtimeType: metadata.runtimeConfig.type,
-            messages,
-            modelString,
-            thinkingLevel,
-            agentId,
-            toolPolicy,
-            acpPromptId,
-            additionalSystemInstructions: mergeAdditionalSystemInstructions(
-              piAdditionalSystemContext,
-              additionalSystemInstructions
-            ),
-            abortSignal: combinedAbortSignal,
-          });
-        }
-      }
 
       // Helper: clean up an assistant placeholder that was appended to history but never
       // streamed (due to abort during setup). Used in two abort-check sites below.
@@ -2747,6 +2673,27 @@ export class AIService extends EventEmitter {
         }
       }
 
+      const latestUserMuxMetadata = [...messages]
+        .reverse()
+        .find((message) => message.role === "user")?.metadata?.muxMetadata;
+      const remoteCompaction = getLatestOpenAIResponsesRemoteCompaction(messages);
+      const usePiAgentRuntime =
+        shouldUsePiAgentRuntime(experiments, muxMetadata, latestUserMuxMetadata) &&
+        isPiAgentRuntimeWorkspaceCompatible({
+          modelString: canonicalModelString,
+          runtimeType: metadata.runtimeConfig.type,
+          multiProject: isMultiProject(metadata),
+          remoteCompactionRoute: remoteCompaction?.route ?? null,
+        });
+
+      if (usePiAgentRuntime && tools.advisor !== undefined) {
+        // Advisor depends on StreamManager's per-step transcript snapshots. Pi owns
+        // the step loop in this mode, so advertising advisor would fail at execution.
+        const { advisor: _advisor, ...piSafeTools } = tools;
+        tools = piSafeTools;
+        workspaceLog.warn("Pi harness omitted advisor because step snapshots are unavailable");
+      }
+
       const taskDelegationCallSurface = proactiveTaskDelegation
         ? resolveTaskDelegationCallSurface({
             tools,
@@ -2827,6 +2774,112 @@ export class AIService extends EventEmitter {
       const toolNamesForSentinel = (
         computeActiveToolNames(toolSearchRuntime?.state) ?? Object.keys(tools)
       ).sort();
+
+      if (usePiAgentRuntime) {
+        const piRuntime = this.piAgentRuntimeService;
+        const cleanupPiResources = (): void => {
+          this.mcpServerManager?.releaseLease(workspaceId);
+          runLanguageModelCleanup(modelResult.data.model);
+          this.streamManager.cleanupStreamTempDir(runtime, runtimeTempDir);
+        };
+        if (!piRuntime) {
+          cleanupPiResources();
+          return Err({
+            type: "unknown",
+            raw: "Pi agent runtime requires Codex OAuth to be configured",
+          });
+        }
+
+        let cleanupTransferred = false;
+        try {
+          const piToolset = partitionPiCompatibleMuxTools(tools);
+          const resolvePiActiveToolNames = (): string[] =>
+            (computeActiveToolNames(toolSearchRuntime?.state) ?? Object.keys(tools)).filter(
+              (toolName) => piToolset.tools[toolName] !== undefined
+            );
+          const unavailableToolsWarning =
+            piToolset.unsupportedToolNames.length > 0
+              ? `\n\n[Pi harness limitation: provider-native tools are unavailable in this turn: ${piToolset.unsupportedToolNames.join(
+                  ", "
+                )}. Do not claim to have used them.]`
+              : "";
+          const piSystemPrompt = `${systemMessage}${unavailableToolsWarning}`;
+          let piSystemMessageTokens = systemMessageTokens;
+          if (unavailableToolsWarning.length > 0) {
+            workspaceLog.warn("Pi harness omitted provider-native tools without host handlers", {
+              toolNames: piToolset.unsupportedToolNames,
+            });
+            const metadataModel = resolveModelForMetadata(
+              canonicalModelString,
+              this.providerService.getConfig()
+            );
+            const tokenizer = await getTokenizerForModel(canonicalModelString, metadataModel);
+            piSystemMessageTokens = await tokenizer.countTokens(piSystemPrompt);
+          }
+
+          captureMcpToolTelemetry({
+            telemetryService: this.telemetryService,
+            mcpStats,
+            mcpTools,
+            tools,
+            mcpSetupDurationMs,
+            workspaceId,
+            modelString: canonicalModelString,
+            effectiveAgentId,
+            metadata,
+            effectiveToolPolicy,
+          });
+
+          const piMessages = await prepareMuxMessagesForProvider({
+            messagesWithSentinel,
+            effectiveAgentId,
+            toolNamesForSentinel,
+            planContentForTransition,
+            planFilePath,
+            changedFileAttachments,
+            postCompactionAttachments,
+            runtime,
+            workspacePath,
+            abortSignal: combinedAbortSignal,
+            providerForMessages: canonicalProviderName,
+            effectiveThinkingLevel,
+            modelString,
+            anthropicCacheTtl: effectiveMuxProviderOptions.anthropic?.cacheTtl,
+            providersConfig: this.providerService.getConfig(),
+            workspaceId,
+          });
+
+          emitStartupBreadcrumb("starting_stream");
+          const startResult = await piRuntime.startStream(
+            {
+              workspaceId,
+              cwd: workspacePath,
+              runtimeType: metadata.runtimeConfig.type,
+              messages: piMessages,
+              modelString: canonicalModelString,
+              thinkingLevel: effectiveThinkingLevel,
+              agentId: effectiveAgentId,
+              mode: legacyModeForMetadata,
+              toolPolicy: effectiveToolPolicy,
+              acpPromptId,
+              systemPrompt: piSystemPrompt,
+              systemMessageTokens: piSystemMessageTokens,
+              muxTools: piToolset.tools,
+              activeToolNames: resolvePiActiveToolNames(),
+              resolveActiveToolNames: resolvePiActiveToolNames,
+              messageId: assistantMessageId,
+              abortSignal: combinedAbortSignal,
+            },
+            cleanupPiResources
+          );
+          cleanupTransferred = true;
+          return startResult;
+        } finally {
+          if (!cleanupTransferred) {
+            cleanupPiResources();
+          }
+        }
+      }
 
       // Run the full message preparation pipeline (inject context, transform, validate).
       // This is a purely functional pipeline with no service dependencies.

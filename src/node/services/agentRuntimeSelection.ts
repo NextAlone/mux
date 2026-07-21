@@ -33,8 +33,7 @@ export function resolveAgentRuntimeKind(
 export function shouldUsePiAgentRuntime(
   experiments: SendMessageOptions["experiments"],
   muxMetadata: { type: MuxMessageMetadata["type"] } | undefined,
-  latestUserMuxMetadata?: { type: MuxMessageMetadata["type"] },
-  agentId?: string
+  latestUserMuxMetadata?: { type: MuxMessageMetadata["type"] }
 ): boolean {
   const isOrdinaryTurn = (metadata: { type: MuxMessageMetadata["type"] } | undefined): boolean =>
     metadata == null || metadata.type === "normal";
@@ -44,7 +43,6 @@ export function shouldUsePiAgentRuntime(
   // backend only for ordinary user turns.
   return (
     resolveAgentRuntimeKind(experiments) === "pi" &&
-    (agentId == null || agentId === "exec") &&
     isOrdinaryTurn(muxMetadata) &&
     isOrdinaryTurn(latestUserMuxMetadata)
   );

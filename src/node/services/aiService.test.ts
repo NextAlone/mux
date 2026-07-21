@@ -40,7 +40,8 @@ import { CODEX_ENDPOINT } from "@/common/constants/codexOAuth";
 
 import { addInterruptedSentinel } from "@/browser/utils/messages/modelMessageTransform";
 import { buildWorkflowRunCardMessage } from "@/common/utils/workflowRunMessages";
-import type { LanguageModel, Tool } from "ai";
+import { tool, type LanguageModel, type Tool } from "ai";
+import { z } from "zod";
 import { createMuxMessage } from "@/common/types/message";
 import type { ModelMessage, MuxMessage } from "@/common/types/message";
 import type { MuxToolScope } from "@/common/types/toolScope";
@@ -78,6 +79,7 @@ import { normalizeToCanonical } from "@/common/utils/ai/models";
 import * as toolsModule from "@/common/utils/tools/tools";
 import * as providerOptionsModule from "@/common/utils/ai/providerOptions";
 import * as systemMessageModule from "./systemMessage";
+import { PiAgentRuntimeService, type PiAgentRuntimeStreamOptions } from "./piAgentRuntime";
 
 interface BasicAIServiceParts {
   config: Config;
@@ -255,24 +257,26 @@ function createLocalWorkspaceMetadata(
 }
 
 function resolvedAgentResultFor(
-  metadata: WorkspaceMetadata
+  metadata: WorkspaceMetadata,
+  effectiveAgentId = "exec"
 ): Awaited<ReturnType<typeof agentResolution.resolveAgentForStream>> {
+  const agentIsPlanLike = effectiveAgentId === "plan";
   return {
     success: true,
     data: {
-      effectiveAgentId: "exec",
+      effectiveAgentId,
       agentDefinition: {
-        id: "exec",
+        id: effectiveAgentId,
         scope: "built-in",
-        frontmatter: { name: "Exec" },
-        body: "Exec agent body",
+        frontmatter: { name: effectiveAgentId },
+        body: `${effectiveAgentId} agent body`,
       },
       agentDiscoveryRuntime: new LocalRuntime(metadata.projectPath),
       agentDiscoveryPath: metadata.projectPath,
       isSubagentWorkspace: metadata.parentWorkspaceId != null,
-      agentInheritanceChain: [{ id: "exec", tools: { add: [".*"] } }],
-      agentIsPlanLike: false,
-      effectiveMode: "exec",
+      agentInheritanceChain: [{ id: effectiveAgentId, tools: { add: [".*"] } }],
+      agentIsPlanLike,
+      effectiveMode: agentIsPlanLike ? "plan" : "exec",
       taskSettings: DEFAULT_TASK_SETTINGS,
       taskDepth: 0,
       shouldDisableTaskToolsForDepth: false,
@@ -304,6 +308,7 @@ function stubCommonStreamMessageDependencies(args: {
   canonicalProviderName?: ProviderName;
   canonicalModelId?: string;
   useRequestedModelString?: boolean;
+  resolvedAgentId?: string;
   onPlanPayloadMessageIds?: (messageIds: string[]) => void;
   onBuildStreamSystemContext?: (
     args: Parameters<typeof streamContextBuilder.buildStreamSystemContext>[0]
@@ -313,7 +318,7 @@ function stubCommonStreamMessageDependencies(args: {
   ) => void;
 }): ReturnType<typeof spyOn<typeof toolsModule, "getToolsForModel">> {
   spyOn(agentResolution, "resolveAgentForStream").mockResolvedValue(
-    resolvedAgentResultFor(args.metadata)
+    resolvedAgentResultFor(args.metadata, args.resolvedAgentId)
   );
   spyOn(streamContextBuilder, "buildPlanInstructions").mockImplementation((planArgs) => {
     args.onPlanPayloadMessageIds?.(planArgs.requestPayloadMessages.map((message) => message.id));
@@ -1360,6 +1365,7 @@ describe("AIService.streamMessage compaction boundary slicing", () => {
       canonicalProviderName?: ProviderName;
       canonicalModelId?: string;
       useRequestedModelString?: boolean;
+      resolvedAgentId?: string;
       experimentsService?: ExperimentsService;
     }
   ): StreamMessageHarness {
@@ -1394,6 +1400,7 @@ describe("AIService.streamMessage compaction boundary slicing", () => {
       canonicalProviderName: options?.canonicalProviderName,
       canonicalModelId: options?.canonicalModelId,
       useRequestedModelString: options?.useRequestedModelString,
+      resolvedAgentId: options?.resolvedAgentId,
       onPlanPayloadMessageIds: (messageIds) => planPayloadMessageIds.push(messageIds),
       onBuildStreamSystemContext: (contextArgs) => {
         if (!contextArgs.muxScope) {
@@ -1541,6 +1548,89 @@ describe("AIService.streamMessage compaction boundary slicing", () => {
 
   afterEach(() => {
     mock.restore();
+  });
+
+  it.each([
+    { name: "top-level exec", agentId: "exec", completionToolName: "file_read" },
+    { name: "top-level plan", agentId: "plan", completionToolName: "propose_plan" },
+    { name: "top-level custom", agentId: "review", completionToolName: "file_read" },
+    {
+      name: "delegated exec",
+      agentId: "exec",
+      completionToolName: "agent_report",
+      parentWorkspaceId: "parent-workspace",
+    },
+    {
+      name: "delegated explore",
+      agentId: "explore",
+      completionToolName: "agent_report",
+      parentWorkspaceId: "parent-workspace",
+    },
+    {
+      name: "delegated custom",
+      agentId: "review",
+      completionToolName: "agent_report",
+      parentWorkspaceId: "parent-workspace",
+    },
+  ])("runs $name with resolved Mux tools on the Pi harness", async (testCase) => {
+    using muxHome = new DisposableTempDir(`ai-service-pi-${testCase.agentId}`);
+    const projectPath = path.join(muxHome.path, "project");
+    await fs.mkdir(projectPath, { recursive: true });
+    const workspaceId = `workspace-pi-${testCase.agentId}`;
+    const completionToolName = testCase.completionToolName;
+    const completionTool = tool({
+      description: `Complete ${testCase.agentId}`,
+      inputSchema: z.object({ result: z.string() }),
+      execute: ({ result }) => ({ result }),
+    });
+    const advisorTool = tool({
+      description: "Requires StreamManager step snapshots",
+      inputSchema: z.object({ question: z.string().nullish() }),
+      execute: () => ({ answer: "unused" }),
+    });
+    const metadata = createLocalWorkspaceMetadata(workspaceId, projectPath, {
+      parentWorkspaceId: testCase.parentWorkspaceId,
+    });
+    const harness = createHarness(muxHome.path, metadata, {
+      resolvedAgentId: testCase.agentId,
+      postPolicyTools: { [completionToolName]: completionTool, advisor: advisorTool },
+    });
+    harness.service.setCodexOauthService({
+      getValidAuth: () => Promise.resolve({ success: true, data: TEST_CODEX_OAUTH }),
+      persistRuntimeAuthRefresh: () => Promise.resolve({ success: true, data: undefined }),
+    } as unknown as CodexOauthService);
+    const piCalls: PiAgentRuntimeStreamOptions[] = [];
+    spyOn(PiAgentRuntimeService.prototype, "startStream").mockImplementation(
+      (options, onSettled) => {
+        piCalls.push(options);
+        onSettled();
+        return Promise.resolve({ success: true, data: undefined });
+      }
+    );
+    const streamManager = (harness.service as unknown as { streamManager: StreamManager })
+      .streamManager;
+    spyOn(streamManager, "cleanupStreamTempDir").mockImplementation(() => undefined);
+
+    const result = await harness.service.streamMessage({
+      messages: [createMuxMessage("latest-user", "user", "run the agent")],
+      workspaceId,
+      modelString: "openai:gpt-5.2",
+      thinkingLevel: "off",
+      agentId: testCase.agentId,
+      experiments: { piAgentRuntime: true },
+    });
+
+    expect(result.success).toBe(true);
+    expect(piCalls).toHaveLength(1);
+    expect(piCalls[0]).toMatchObject({
+      workspaceId,
+      agentId: testCase.agentId,
+      systemPrompt: "test-system-message",
+      systemMessageTokens: 1,
+      activeToolNames: [completionToolName],
+    });
+    expect(Object.keys(piCalls[0]?.muxTools ?? {})).toEqual([completionToolName]);
+    expect(harness.startStreamCalls).toHaveLength(0);
   });
 
   it("provides a shared send_follow_up runtime for a top-level user turn", async () => {

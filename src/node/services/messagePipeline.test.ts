@@ -4,7 +4,11 @@ import type { AssistantModelMessage, ModelMessage } from "ai";
 import { createMuxMessage, type MuxMessage } from "@/common/types/message";
 import { LocalRuntime } from "@/node/runtime/LocalRuntime";
 import { transformModelMessages } from "@/browser/utils/messages/modelMessageTransform";
-import { prepareMessagesForProvider, sanitizeAssistantModelMessages } from "./messagePipeline";
+import {
+  prepareMessagesForProvider,
+  prepareMuxMessagesForProvider,
+  sanitizeAssistantModelMessages,
+} from "./messagePipeline";
 
 function isAssistantMessage(message: ModelMessage | undefined): message is AssistantModelMessage {
   return message?.role === "assistant";
@@ -57,6 +61,49 @@ describe("sanitizeAssistantModelMessages", () => {
 });
 
 describe("prepareMessagesForProvider", () => {
+  it("exposes Mux-level transition context for alternate model runtimes", async () => {
+    const prepared = await prepareMuxMessagesForProvider({
+      messagesWithSentinel: [
+        createMuxMessage("user-1", "user", "make a plan"),
+        {
+          ...createMuxMessage("assistant-1", "assistant", "the plan"),
+          metadata: { timestamp: 2, agentId: "plan" },
+        },
+        {
+          ...createMuxMessage("user-2", "user", "execute it"),
+          parts: [
+            { type: "text", text: "execute it" },
+            { type: "file", mediaType: "image/png", url: "data:image/png;base64,aGVsbG8=" },
+          ],
+        },
+      ],
+      effectiveAgentId: "exec",
+      toolNamesForSentinel: [],
+      planContentForTransition: "# Persisted plan",
+      planFilePath: "/tmp/plan.md",
+      runtime: new LocalRuntime("/tmp/mux-test"),
+      workspacePath: "/tmp/mux-test",
+      abortSignal: new AbortController().signal,
+      providerForMessages: "openai",
+      effectiveThinkingLevel: "medium",
+      modelString: "openai:gpt-5.6-sol",
+      workspaceId: "workspace-test",
+    });
+
+    const transition = prepared.find((message) => message.metadata?.synthetic === true);
+    expect(transition?.role).toBe("user");
+    const transitionPart = transition?.parts[0];
+    expect(transitionPart?.type).toBe("text");
+    if (transitionPart?.type === "text") {
+      expect(transitionPart.text).toContain("# Persisted plan");
+    }
+    expect(prepared.at(-1)?.parts).toContainEqual({
+      type: "file",
+      mediaType: "image/png",
+      url: "data:image/png;base64,aGVsbG8=",
+    });
+  });
+
   it("applies Anthropic wire-format transforms for non-Claude compatible providers", async () => {
     const reasoningOnlyAssistant: MuxMessage = {
       id: "assistant-reasoning-only",
