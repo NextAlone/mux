@@ -959,7 +959,16 @@ export class PiAgentRuntimeService {
       remoteCompactionRoute: remoteCompaction?.route ?? null,
     });
     const turnInput = buildPiTurnInput(options.messages, modelId);
+    // Mux owns the pre-stream control plane and emits the synthetic startup abort. Pi must
+    // stay silent until it has claimed the turn with stream-start, otherwise one stop can
+    // produce synthetic abort -> stream-start -> second abort in the renderer.
+    if (options.abortSignal?.aborted) {
+      return Ok(undefined);
+    }
     const auth = await this.dependencies.getCodexAuth();
+    if (options.abortSignal?.aborted) {
+      return Ok(undefined);
+    }
     const session = await this.createSession({
       cwd: options.cwd,
       modelId,
@@ -974,6 +983,10 @@ export class PiAgentRuntimeService {
       activeToolNames: options.activeToolNames,
       resolveActiveToolNames: options.resolveActiveToolNames,
     });
+    if (options.abortSignal?.aborted) {
+      session.dispose();
+      return Ok(undefined);
+    }
     session.agent.state.messages = turnInput.context;
 
     const replays = collectOpenAIResponsesCompactionReplays(options.messages);
@@ -1006,6 +1019,16 @@ export class PiAgentRuntimeService {
     if (!appendResult.success) {
       session.dispose();
       return Err({ type: "unknown", raw: appendResult.error });
+    }
+    if (options.abortSignal?.aborted) {
+      session.dispose();
+      const deleteResult = await this.dependencies.historyService.deleteMessage(
+        options.workspaceId,
+        messageId
+      );
+      return deleteResult.success
+        ? Ok(undefined)
+        : Err({ type: "unknown", raw: deleteResult.error });
     }
     const historySequence = assistant.metadata?.historySequence ?? 0;
     const parts: StreamPart[] = [];
