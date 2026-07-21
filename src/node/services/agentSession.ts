@@ -153,6 +153,10 @@ import { materializeFileAtMentions } from "@/node/services/fileAtMentions";
 import { getErrorMessage } from "@/common/utils/errors";
 import { CompactionMonitor, type CompactionStatusEvent } from "./compactionMonitor";
 import { formatReviewForModel } from "@/common/types/review";
+import {
+  getPiAgentRuntimeAttachmentIncompatibility,
+  shouldUsePiAgentRuntime,
+} from "./agentRuntimeSelection";
 
 /**
  * Tracked file state for detecting external edits.
@@ -2506,6 +2510,22 @@ export class AgentSession {
             filename: part.filename,
           }))
         : fileParts;
+    const typedMuxMetadata = options.muxMetadata as MuxMessageMetadata | undefined;
+
+    // Mux still owns validation and durable history. Reject unsupported input before
+    // accepting an ordinary Pi-backed turn so a failed attachment cannot poison a later
+    // retry or a runtime switch; Pi validates again when replaying older persisted history.
+    if (
+      effectiveFileParts &&
+      shouldUsePiAgentRuntime(options.experiments, typedMuxMetadata, typedMuxMetadata)
+    ) {
+      for (const part of effectiveFileParts) {
+        const incompatibility = getPiAgentRuntimeAttachmentIncompatibility(part);
+        if (incompatibility) {
+          return Err(createUnknownSendMessageError(incompatibility));
+        }
+      }
+    }
 
     // Defense-in-depth: reject PDFs for models we know don't support them.
     // (Frontend should also block this, but it's easy to bypass via IPC / older clients.)
@@ -2666,7 +2686,6 @@ export class AgentSession {
     // toolPolicy is properly typed via Zod schema inference
     const typedToolPolicy = options?.toolPolicy;
     // muxMetadata is z.any() in schema - cast to proper type
-    const typedMuxMetadata = options?.muxMetadata as MuxMessageMetadata | undefined;
     const acpPromptId =
       normalizeAcpPromptId(options?.acpPromptId) ?? extractAcpPromptId(typedMuxMetadata);
     const delegatedToolNames =

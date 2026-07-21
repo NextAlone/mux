@@ -57,6 +57,7 @@ import { filterSideQuestionMessages } from "@/common/utils/messages/sideQuestion
 import { filterWorkflowDisplayOnlyMessages } from "@/common/utils/workflowRunMessages";
 import { sliceMessagesForProviderFromLatestContextBoundary } from "@/common/utils/messages/compactionBoundary";
 import { asSchema, type Tool, type ToolExecutionOptions } from "ai";
+import { getPiAgentRuntimeAttachmentIncompatibility } from "./agentRuntimeSelection";
 
 export function resolvePiCodexModelId(modelString: string): string {
   const prefix = "openai:";
@@ -129,16 +130,13 @@ function formatToolPart(part: MuxToolPart): string {
 }
 
 function decodeImageDataUrl(part: MuxFilePart): ImageContent {
-  if (!part.mediaType.trim().toLowerCase().startsWith("image/")) {
-    throw new Error(
-      `Pi agent runtime supports image attachments only; remove ${part.filename ?? part.mediaType} or disable the Pi runtime experiment`
-    );
-  }
+  const incompatibility = getPiAgentRuntimeAttachmentIncompatibility(part);
+  if (incompatibility) throw new Error(incompatibility);
 
   const match = /^data:(image\/[^;,]+);base64,(.+)$/is.exec(part.url);
   if (!match?.[1] || !match[2]) {
     throw new Error(
-      `Pi agent runtime requires image attachments as base64 data URLs; reattach ${part.filename ?? "the image"} or disable the Pi runtime experiment`
+      `Pi agent runtime could not decode ${part.filename ?? "the image"}; reattach it or disable the Pi runtime experiment`
     );
   }
   return {
