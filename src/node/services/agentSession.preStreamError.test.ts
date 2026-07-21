@@ -92,6 +92,46 @@ describe("AgentSession pre-stream errors", () => {
     expect(streamError?.messageId).toMatch(/^assistant-/);
   });
 
+  it("rejects unsupported Pi attachments before persisting the user message", async () => {
+    const workspaceId = "ws-pi-unsupported-attachment";
+    const streamMessage = mock((_history: MuxMessage[]) =>
+      Promise.resolve(
+        Err({
+          type: "unknown",
+          raw: "Pi agent runtime supports image attachments only",
+        })
+      )
+    );
+    const { session, historyService, cleanup } = await createAgentSessionHarness({
+      workspaceId,
+      aiServiceOverrides: {
+        streamMessage: streamMessage as unknown as AIService["streamMessage"],
+      },
+    });
+    historyCleanup = cleanup;
+
+    const result = await session.sendMessage("summarize the attachment", {
+      model: "openai:gpt-5.6-sol",
+      agentId: "exec",
+      experiments: { piAgentRuntime: true },
+      fileParts: [
+        {
+          url: "data:text/plain;base64,aGVsbG8=",
+          mediaType: "text/plain",
+          filename: "notes.txt",
+        },
+      ],
+    });
+
+    expect(result.success).toBe(false);
+    expect(streamMessage).not.toHaveBeenCalled();
+    const history = await historyService.getHistoryFromLatestBoundary(workspaceId);
+    expect(history.success).toBe(true);
+    if (history.success) {
+      expect(history.data).toHaveLength(0);
+    }
+  });
+
   it("acknowledges edited sends immediately and surfaces later startup failure via stream-error", async () => {
     const workspaceId = "ws-edit-startup-failed";
 

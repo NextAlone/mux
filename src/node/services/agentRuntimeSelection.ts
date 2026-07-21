@@ -1,4 +1,4 @@
-import type { SendMessageOptions } from "@/common/orpc/types";
+import type { FilePart, SendMessageOptions } from "@/common/orpc/types";
 import type { MuxMessageMetadata } from "@/common/types/message";
 import type { RuntimeMode } from "@/common/types/runtime";
 import type { OpenAIResponsesCompactionRoute } from "@/common/utils/compaction/remotePolicy";
@@ -34,6 +34,20 @@ export function isPiAgentRuntimeWorkspaceCompatible(
   options: PiAgentRuntimeWorkspaceOptions
 ): boolean {
   return getPiAgentRuntimeIncompatibility(options) === null;
+}
+
+export function getPiAgentRuntimeAttachmentIncompatibility(
+  part: Pick<FilePart, "url" | "mediaType" | "filename">
+): string | null {
+  if (!part.mediaType.trim().toLowerCase().startsWith("image/")) {
+    return `Pi agent runtime supports image attachments only; remove ${part.filename ?? part.mediaType} or disable the Pi runtime experiment`;
+  }
+
+  if (!/^data:image\/[^;,]+;base64,.+$/is.test(part.url)) {
+    return `Pi agent runtime requires image attachments as base64 data URLs; reattach ${part.filename ?? "the image"} or disable the Pi runtime experiment`;
+  }
+
+  return null;
 }
 
 /**
