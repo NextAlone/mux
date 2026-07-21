@@ -81,6 +81,49 @@ describe("Pi agent runtime compatibility", () => {
     expect(result?.content).toEqual([{ type: "text", text: '{"echoed":"hello"}' }]);
   });
 
+  test("forwards streaming Mux tool snapshots through Pi and returns the latest result", async () => {
+    const streamingTool = tool({
+      description: "Stream progress",
+      inputSchema: z.object({}),
+      async *execute() {
+        await Promise.resolve();
+        yield { progress: 1, success: false };
+        yield { progress: 2, success: true };
+      },
+    });
+    const [definition] = await createPiToolDefinitions(
+      { agent_report: streamingTool },
+      { toolPolicy: [{ regex_match: "^agent_report$", action: "require" }] }
+    );
+    const updates: unknown[] = [];
+
+    const result = await definition?.execute(
+      "call-1",
+      {},
+      new AbortController().signal,
+      (update) => updates.push(update),
+      {} as never
+    );
+
+    expect(updates).toEqual([
+      {
+        content: [{ type: "text", text: '{"progress":1,"success":false}' }],
+        details: { output: { progress: 1, success: false } },
+        terminate: false,
+      },
+      {
+        content: [{ type: "text", text: '{"progress":2,"success":true}' }],
+        details: { output: { progress: 2, success: true } },
+        terminate: false,
+      },
+    ]);
+    expect(result).toEqual({
+      content: [{ type: "text", text: '{"progress":2,"success":true}' }],
+      details: { output: { progress: 2, success: true } },
+      terminate: true,
+    });
+  });
+
   test("refreshes Pi active tools after a Mux catalog tool changes activation state", async () => {
     let refreshCount = 0;
     const catalogTool = tool({
@@ -559,10 +602,15 @@ describe("PiAgentRuntimeService", () => {
       dispose: () => undefined,
     };
     let settled = false;
+    let rejectedTurnSettled = false;
+    let createSessionCalls = 0;
     const service = new PiAgentRuntimeService({
       historyService,
       getCodexAuth: getTestCodexAuth,
-      createSession: () => Promise.resolve(session),
+      createSession: () => {
+        createSessionCalls += 1;
+        return Promise.resolve(session);
+      },
       emit: () => undefined,
     });
 
@@ -582,6 +630,24 @@ describe("PiAgentRuntimeService", () => {
     expect(result.success).toBe(true);
     expect(service.isStreaming(workspaceId)).toBe(true);
     expect(settled).toBe(false);
+    const rejectedResult = await service.startStream(
+      {
+        workspaceId,
+        cwd: "/workspace",
+        runtimeType: "worktree",
+        messages: [user],
+        modelString: "openai:gpt-5.6-sol",
+      },
+      () => {
+        rejectedTurnSettled = true;
+      }
+    );
+    expect(rejectedResult).toEqual({
+      success: false,
+      error: { type: "unknown", raw: "Pi agent runtime is already streaming in this workspace" },
+    });
+    expect(rejectedTurnSettled).toBe(true);
+    expect(createSessionCalls).toBe(1);
     finishPrompt?.();
     await service.waitForIdle(workspaceId);
     expect(settled).toBe(true);
@@ -894,6 +960,16 @@ describe("PiAgentRuntimeService", () => {
             args: { command: "pwd" },
           });
           listener({
+            type: "tool_execution_update",
+            toolCallId: piToolCallId,
+            toolName: "bash",
+            args: { command: "pwd" },
+            partialResult: {
+              content: [{ type: "text", text: '{"progress":"running"}' }],
+              details: { output: { progress: "running" } },
+            },
+          });
+          listener({
             type: "tool_execution_end",
             toolCallId: piToolCallId,
             toolName: "bash",
@@ -954,10 +1030,13 @@ describe("PiAgentRuntimeService", () => {
       success: true,
       path: "/workspace",
     });
+    expect(events.find((event) => event.type === "tool-call-delta")?.delta).toEqual({
+      progress: "running",
+    });
     const emittedToolCallIds = events
       .filter((event) => event.type.startsWith("tool-call"))
       .map((event) => event.toolCallId);
-    expect(emittedToolCallIds).toHaveLength(6);
+    expect(emittedToolCallIds).toHaveLength(7);
     expect(
       emittedToolCallIds.every((toolCallId) => toolCallId === "call_QIwSEaOnQppSthHiNLB14rIQ")
     ).toBe(true);
@@ -995,12 +1074,13 @@ describe("PiAgentRuntimeService", () => {
     ).toBe(true);
   });
 
-  test("honors an already-aborted turn without prompting Pi", async () => {
+  test("leaves an already-aborted turn with the Mux startup control plane", async () => {
     const workspaceId = "pi-runtime-aborted";
     const user = createMuxMessage("user-1", "user", "do not run", { timestamp: 1 });
     await historyService.appendToHistory(workspaceId, user);
     const abortController = new AbortController();
     abortController.abort();
+    let createSessionCalls = 0;
     let promptCalls = 0;
     let abortCalls = 0;
     const session: PiSessionAdapter = {
@@ -1020,7 +1100,10 @@ describe("PiAgentRuntimeService", () => {
     const service = new PiAgentRuntimeService({
       historyService,
       getCodexAuth: getTestCodexAuth,
-      createSession: () => Promise.resolve(session),
+      createSession: () => {
+        createSessionCalls += 1;
+        return Promise.resolve(session);
+      },
       emit: (_name, event) => events.push(event),
     });
 
@@ -1034,9 +1117,86 @@ describe("PiAgentRuntimeService", () => {
     });
 
     expect(result.success).toBe(true);
+    expect(createSessionCalls).toBe(0);
     expect(promptCalls).toBe(0);
-    expect(abortCalls).toBe(1);
-    expect(events.at(-1)?.type).toBe("stream-abort");
+    expect(abortCalls).toBe(0);
+    expect(events).toEqual([]);
+  });
+
+  test("does not enter streaming when Mux aborts while Pi creates its session", async () => {
+    const workspaceId = "pi-runtime-aborted-during-session-start";
+    const user = createMuxMessage("user-1", "user", "do not start", { timestamp: 1 });
+    await historyService.appendToHistory(workspaceId, user);
+    const abortController = new AbortController();
+    let sessionCreationStarted: (() => void) | undefined;
+    const didStartSessionCreation = new Promise<void>((resolve) => {
+      sessionCreationStarted = resolve;
+    });
+    let releaseSessionCreation: (() => void) | undefined;
+    const sessionCreationBlocked = new Promise<void>((resolve) => {
+      releaseSessionCreation = resolve;
+    });
+    let promptCalls = 0;
+    let abortCalls = 0;
+    let disposeCalls = 0;
+    const session: PiSessionAdapter = {
+      agent: { state: { messages: [] } },
+      subscribe: () => () => undefined,
+      prompt() {
+        promptCalls += 1;
+        return Promise.resolve();
+      },
+      abort() {
+        abortCalls += 1;
+        return Promise.resolve();
+      },
+      dispose() {
+        disposeCalls += 1;
+      },
+    };
+    const events: Array<{ type: string; [key: string]: unknown }> = [];
+    let settledCalls = 0;
+    const service = new PiAgentRuntimeService({
+      historyService,
+      getCodexAuth: getTestCodexAuth,
+      async createSession() {
+        sessionCreationStarted?.();
+        await sessionCreationBlocked;
+        return session;
+      },
+      emit: (_name, event) => events.push(event),
+    });
+
+    const startResultPromise = service.startStream(
+      {
+        workspaceId,
+        cwd: "/workspace",
+        runtimeType: "worktree",
+        messages: [user],
+        modelString: "openai:gpt-5.6-sol",
+        abortSignal: abortController.signal,
+      },
+      () => {
+        settledCalls += 1;
+      }
+    );
+    await didStartSessionCreation;
+    abortController.abort();
+    releaseSessionCreation?.();
+
+    expect((await startResultPromise).success).toBe(true);
+    await service.waitForIdle(workspaceId);
+    expect(promptCalls).toBe(0);
+    expect(abortCalls).toBe(0);
+    expect(disposeCalls).toBe(1);
+    expect(settledCalls).toBe(1);
+    expect(events).toEqual([]);
+    expect(service.isStreaming(workspaceId)).toBe(false);
+    const history = await historyService.getHistoryFromLatestBoundary(workspaceId);
+    expect(history.success).toBe(true);
+    if (history.success) {
+      expect(history.data.map((message) => message.id)).toEqual([user.id]);
+    }
   });
 
   test("reports an abort cleanup failure without retrying destructive history work", async () => {
@@ -1044,16 +1204,29 @@ describe("PiAgentRuntimeService", () => {
     const user = createMuxMessage("user-1", "user", "do not run", { timestamp: 1 });
     await historyService.appendToHistory(workspaceId, user);
     const abortController = new AbortController();
-    abortController.abort();
     const deleteMessage = spyOn(historyService, "deleteMessage").mockResolvedValueOnce({
       success: false,
       error: "disk unavailable",
     });
+    let promptStarted: (() => void) | undefined;
+    const didStartPrompt = new Promise<void>((resolve) => {
+      promptStarted = resolve;
+    });
+    let releasePrompt: (() => void) | undefined;
+    const promptBlocked = new Promise<void>((resolve) => {
+      releasePrompt = resolve;
+    });
     const session: PiSessionAdapter = {
       agent: { state: { messages: [] } },
       subscribe: () => () => undefined,
-      prompt: () => Promise.resolve(),
-      abort: () => Promise.resolve(),
+      async prompt() {
+        promptStarted?.();
+        await promptBlocked;
+      },
+      abort() {
+        releasePrompt?.();
+        return Promise.resolve();
+      },
       dispose: () => undefined,
     };
     const events: Array<{ type: string; [key: string]: unknown }> = [];
@@ -1064,7 +1237,7 @@ describe("PiAgentRuntimeService", () => {
       emit: (_name, event) => events.push(event),
     });
 
-    const result = await service.stream({
+    const resultPromise = service.stream({
       workspaceId,
       cwd: "/workspace",
       runtimeType: "worktree",
@@ -1072,6 +1245,9 @@ describe("PiAgentRuntimeService", () => {
       modelString: "openai:gpt-5.6-sol",
       abortSignal: abortController.signal,
     });
+    await didStartPrompt;
+    abortController.abort();
+    const result = await resultPromise;
 
     expect(result).toEqual({ success: false, error: { type: "unknown", raw: "disk unavailable" } });
     expect(deleteMessage).toHaveBeenCalledTimes(1);
@@ -1279,35 +1455,56 @@ describe("PiAgentRuntimeService", () => {
     expect(recordedInputTokens).toBe(5);
   });
 
-  test("isolates concurrent streams across Mux workspaces", async () => {
-    const workspaceIds = ["pi-runtime-workspace-a", "pi-runtime-workspace-b"];
+  test("isolates concurrent streams and cleanup across Mux workspaces", async () => {
+    const workspaceIds = Array.from({ length: 8 }, (_, index) => `pi-runtime-workspace-${index}`);
     for (const workspaceId of workspaceIds) {
       await historyService.appendToHistory(
         workspaceId,
         createMuxMessage(`user-${workspaceId}`, "user", "run", { timestamp: 1 })
       );
     }
-    const sessions = workspaceIds.map(() => {
+    const promptStarted = new Map<string, Promise<void>>();
+    const sessions = new Map<string, PiSessionAdapter>();
+    const abortCalls = new Map<string, number>();
+    const disposeCalls = new Map<string, number>();
+    for (const workspaceId of workspaceIds) {
       let releasePrompt: (() => void) | undefined;
       const promptBlocked = new Promise<void>((resolve) => {
         releasePrompt = resolve;
       });
-      return {
+      let markPromptStarted: (() => void) | undefined;
+      promptStarted.set(
+        workspaceId,
+        new Promise<void>((resolve) => {
+          markPromptStarted = resolve;
+        })
+      );
+      sessions.set(workspaceId, {
         agent: { state: { messages: [] as Message[] } },
         subscribe: () => () => undefined,
-        prompt: () => promptBlocked,
+        prompt: () => {
+          markPromptStarted?.();
+          return promptBlocked;
+        },
         abort: () => {
+          abortCalls.set(workspaceId, (abortCalls.get(workspaceId) ?? 0) + 1);
           releasePrompt?.();
           return Promise.resolve();
         },
-        dispose: () => undefined,
-      } satisfies PiSessionAdapter;
-    });
-    let nextSession = 0;
+        dispose: () => {
+          disposeCalls.set(workspaceId, (disposeCalls.get(workspaceId) ?? 0) + 1);
+        },
+      });
+    }
     const service = new PiAgentRuntimeService({
       historyService,
       getCodexAuth: getTestCodexAuth,
-      createSession: () => Promise.resolve(sessions[nextSession++]),
+      createSession: (options) => {
+        const workspaceId = path.basename(options.cwd);
+        const session = sessions.get(workspaceId);
+        if (!session) throw new Error(`Missing session for ${workspaceId}`);
+        return Promise.resolve(session);
+      },
       emit: () => undefined,
     });
     const streams = workspaceIds.map((workspaceId) =>
@@ -1319,15 +1516,18 @@ describe("PiAgentRuntimeService", () => {
         modelString: "openai:gpt-5.6-sol",
       })
     );
-    while (!workspaceIds.every((workspaceId) => service.isStreaming(workspaceId))) {
-      await Bun.sleep(1);
-    }
+    await Promise.all(promptStarted.values());
 
-    await service.stop(workspaceIds[0]);
-    expect(service.isStreaming(workspaceIds[1])).toBe(true);
-    await service.stop(workspaceIds[1]);
+    const firstHalf = workspaceIds.slice(0, 4);
+    const secondHalf = workspaceIds.slice(4);
+    await Promise.all(firstHalf.map((workspaceId) => service.stop(workspaceId)));
+    expect(firstHalf.every((workspaceId) => !service.isStreaming(workspaceId))).toBe(true);
+    expect(secondHalf.every((workspaceId) => service.isStreaming(workspaceId))).toBe(true);
+    await Promise.all(secondHalf.map((workspaceId) => service.stop(workspaceId)));
 
     expect((await Promise.all(streams)).every((result) => result.success)).toBe(true);
+    expect([...abortCalls.values()]).toEqual(workspaceIds.map(() => 1));
+    expect([...disposeCalls.values()]).toEqual(workspaceIds.map(() => 1));
   });
 
   test("defers a soft interrupt until the next output block boundary", async () => {
