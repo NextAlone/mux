@@ -24,6 +24,7 @@ export const EXPERIMENT_IDS = {
   TOOL_SEARCH: "tool-search",
   CLAUDE_SKILLS_COMPAT: "claude-skills-compat",
   SKILL_DYNAMIC_CONTEXT: "skill-dynamic-context",
+  PI_AGENT_RUNTIME: "pi-agent-runtime",
 } as const;
 
 export type ExperimentId = (typeof EXPERIMENT_IDS)[keyof typeof EXPERIMENT_IDS];
@@ -224,6 +225,16 @@ export const EXPERIMENTS: Record<ExperimentId, ExperimentDefinition> = {
     showInSettings: true,
     // Executes repo-controlled shell commands: enabling must be a deliberate
     // local user action, never a remote rollout bucket.
+    localOverrideOnly: true,
+  },
+  [EXPERIMENT_IDS.PI_AGENT_RUNTIME]: {
+    id: EXPERIMENT_IDS.PI_AGENT_RUNTIME,
+    name: "Pi agent runtime",
+    description:
+      "Run new turns through the experimental Pi agent backend while keeping Mux projects, workspaces, and UI",
+    enabledByDefault: false,
+    userOverridable: true,
+    showInSettings: true,
     localOverrideOnly: true,
   },
 };

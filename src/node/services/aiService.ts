@@ -211,6 +211,8 @@ import {
 } from "@/node/services/workflows/WorkflowTaskServiceAdapter";
 import { resolveWorkflowScript } from "@/node/services/workflows/workflowScriptResolver";
 import { isWorkspaceProjectTrusted } from "@/node/utils/projectTrust";
+import { shouldUsePiAgentRuntime } from "./agentRuntimeSelection";
+import { PiAgentRuntimeService } from "./piAgentRuntime";
 
 const STREAM_STARTUP_DIAGNOSTIC_THRESHOLD_MS = 1_000;
 
@@ -733,6 +735,7 @@ export class AIService extends EventEmitter {
   private analyticsService?: { executeRawQuery(sql: string): Promise<unknown> };
   private desktopSessionManager?: DesktopSessionManager;
   private codexImageGenerationService?: CodexImageGenerationService;
+  private piAgentRuntimeService?: PiAgentRuntimeService;
 
   constructor(
     config: Config,
@@ -789,6 +792,34 @@ export class AIService extends EventEmitter {
   setCodexOauthService(service: CodexOauthService): void {
     this.providerModelFactory.codexOauthService = service;
     this.codexImageGenerationService = new CodexImageGenerationService({ oauth: service });
+    this.piAgentRuntimeService = new PiAgentRuntimeService({
+      historyService: this.historyService,
+      getCodexAuth: async () => {
+        const result = await service.getValidAuth();
+        if (!result.success) {
+          throw new Error(result.error);
+        }
+        return result.data;
+      },
+      recordUsage: async (workspaceId, modelString, usage) => {
+        if (!this.sessionUsageService) return;
+        const displayUsage = createDisplayUsage(usage, modelString);
+        if (!displayUsage) return;
+        try {
+          await this.sessionUsageService.recordUsage(
+            workspaceId,
+            normalizeToCanonical(modelString),
+            displayUsage
+          );
+        } catch (error) {
+          log.warn("Failed to record Pi agent runtime usage", {
+            workspaceId,
+            error: getErrorMessage(error),
+          });
+        }
+      },
+      emit: (eventName, event) => this.emit(eventName, event),
+    });
   }
   setMCPServerManager(manager: MCPServerManager): void {
     this.mcpServerManager = manager;
@@ -1402,6 +1433,63 @@ export class AIService extends EventEmitter {
       const commitPartialStartedAt = Date.now();
       await this.historyService.commitPartial(workspaceId);
       recordStartupPhaseTiming("commitPartialMs", commitPartialStartedAt);
+
+      const latestUserMuxMetadata = [...messages]
+        .reverse()
+        .find((message) => message.role === "user")?.metadata?.muxMetadata;
+      if (shouldUsePiAgentRuntime(experiments, muxMetadata, latestUserMuxMetadata)) {
+        const piRuntime = this.piAgentRuntimeService;
+        if (!piRuntime) {
+          return Err({
+            type: "unknown",
+            raw: "Pi agent runtime requires Codex OAuth to be configured",
+          });
+        }
+        const metadataResult = await this.getWorkspaceMetadata(workspaceId);
+        if (!metadataResult.success) {
+          return Err({ type: "unknown", raw: metadataResult.error });
+        }
+        const metadata = metadataResult.data;
+        if (
+          this.policyService?.isEnforced() &&
+          !this.policyService.isRuntimeAllowed(metadata.runtimeConfig)
+        ) {
+          return Err({
+            type: "policy_denied",
+            message: "Workspace runtime is not allowed by policy",
+          });
+        }
+        const multiProjectExecutionGate = this.ensureMultiProjectRuntimeExecutionEnabled(
+          workspaceId,
+          metadata
+        );
+        if (!multiProjectExecutionGate.success) {
+          return multiProjectExecutionGate;
+        }
+        const workspace = this.config.findWorkspace(workspaceId);
+        if (!workspace) {
+          return Err({ type: "unknown", raw: `Workspace ${workspaceId} not found in config` });
+        }
+        await this.initStateManager.waitForInit(workspaceId, combinedAbortSignal);
+        if (combinedAbortSignal.aborted) {
+          return Ok(undefined);
+        }
+        return await piRuntime.stream({
+          workspaceId,
+          cwd: workspace.workspacePath,
+          runtimeType: metadata.runtimeConfig.type,
+          messages,
+          modelString,
+          thinkingLevel,
+          agentId,
+          acpPromptId,
+          additionalSystemInstructions: mergeAdditionalSystemInstructions(
+            additionalSystemContext ?? "",
+            additionalSystemInstructions
+          ),
+          abortSignal: combinedAbortSignal,
+        });
+      }
 
       // Helper: clean up an assistant placeholder that was appended to history but never
       // streamed (due to abort during setup). Used in two abort-check sites below.
@@ -3619,10 +3707,11 @@ export class AIService extends EventEmitter {
     options?: { soft?: boolean; abandonPartial?: boolean; abortReason?: StreamAbortReason }
   ): Promise<Result<void>> {
     const pending = this.pendingStreamStarts.get(workspaceId);
+    const isPiStreaming = this.piAgentRuntimeService?.isStreaming(workspaceId) === true;
     const isActuallyStreaming =
       this.mockModeEnabled && this.mockAiStreamPlayer
         ? this.mockAiStreamPlayer.isStreaming(workspaceId)
-        : this.streamManager.isStreaming(workspaceId);
+        : isPiStreaming || this.streamManager.isStreaming(workspaceId);
 
     if (pending) {
       pending.abortController.abort();
@@ -3647,6 +3736,10 @@ export class AIService extends EventEmitter {
       await this.mockAiStreamPlayer.stop(workspaceId);
       return Ok(undefined);
     }
+    if (isPiStreaming) {
+      await this.piAgentRuntimeService?.stop(workspaceId, options);
+      return Ok(undefined);
+    }
     return this.streamManager.stopStream(workspaceId, options);
   }
 
@@ -3657,7 +3750,10 @@ export class AIService extends EventEmitter {
     if (this.mockModeEnabled && this.mockAiStreamPlayer) {
       return this.mockAiStreamPlayer.isStreaming(workspaceId);
     }
-    return this.streamManager.isStreaming(workspaceId);
+    return (
+      this.piAgentRuntimeService?.isStreaming(workspaceId) === true ||
+      this.streamManager.isStreaming(workspaceId)
+    );
   }
 
   /**
@@ -3666,6 +3762,9 @@ export class AIService extends EventEmitter {
   getStreamState(workspaceId: string): string {
     if (this.mockModeEnabled && this.mockAiStreamPlayer) {
       return this.mockAiStreamPlayer.isStreaming(workspaceId) ? "streaming" : "idle";
+    }
+    if (this.piAgentRuntimeService?.isStreaming(workspaceId)) {
+      return "streaming";
     }
     return this.streamManager.getStreamState(workspaceId);
   }
@@ -3677,6 +3776,10 @@ export class AIService extends EventEmitter {
   getStreamInfo(workspaceId: string): ReturnType<typeof this.streamManager.getStreamInfo> {
     if (this.mockModeEnabled && this.mockAiStreamPlayer) {
       return undefined;
+    }
+    const piStreamInfo = this.piAgentRuntimeService?.getStreamInfo(workspaceId);
+    if (piStreamInfo) {
+      return piStreamInfo;
     }
     return this.streamManager.getStreamInfo(workspaceId);
   }
@@ -3697,6 +3800,10 @@ export class AIService extends EventEmitter {
   async replayStream(workspaceId: string, opts?: { afterTimestamp?: number }): Promise<void> {
     if (this.mockModeEnabled && this.mockAiStreamPlayer) {
       await this.mockAiStreamPlayer.replayStream(workspaceId);
+      return;
+    }
+    if (this.piAgentRuntimeService?.isStreaming(workspaceId)) {
+      await this.piAgentRuntimeService.replayStream(workspaceId, opts);
       return;
     }
     await this.streamManager.replayStream(workspaceId, opts);

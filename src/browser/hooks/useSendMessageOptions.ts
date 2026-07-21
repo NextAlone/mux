@@ -69,6 +69,7 @@ export function useSendMessageOptions(workspaceId: string): SendMessageOptionsWi
   const dynamicWorkflows = useExperimentOverrideValue(EXPERIMENT_IDS.DYNAMIC_WORKFLOWS);
   const memory = useExperimentOverrideValue(EXPERIMENT_IDS.MEMORY);
   const toolSearch = useExperimentOverrideValue(EXPERIMENT_IDS.TOOL_SEARCH);
+  const piAgentRuntime = useExperimentOverrideValue(EXPERIMENT_IDS.PI_AGENT_RUNTIME);
 
   // Prefer metadata over the global default until workspace localStorage seeding catches up.
   const metadataSettings = getWorkspaceAiSettingsFromMetadata(
@@ -96,6 +97,7 @@ export function useSendMessageOptions(workspaceId: string): SendMessageOptionsWi
       dynamicWorkflows,
       memory,
       toolSearch,
+      piAgentRuntime,
     },
     disableWorkspaceAgents,
   });

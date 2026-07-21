@@ -13,6 +13,7 @@ export interface ExperimentValues {
   dynamicWorkflows: boolean | undefined;
   memory: boolean | undefined;
   toolSearch: boolean | undefined;
+  piAgentRuntime: boolean | undefined;
 }
 
 export interface SendMessageOptionsInput {

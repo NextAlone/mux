@@ -29,4 +29,13 @@ describe("experiments registry", () => {
     expect(experiment.userOverridable).toBe(true);
     expect(experiment.showInSettings).toBe(true);
   });
+
+  test("requires an explicit local opt-in for the Pi agent runtime", () => {
+    const experiment = EXPERIMENTS[EXPERIMENT_IDS.PI_AGENT_RUNTIME];
+
+    expect(experiment.enabledByDefault).toBe(false);
+    expect(experiment.userOverridable).toBe(true);
+    expect(experiment.showInSettings).toBe(true);
+    expect(experiment.localOverrideOnly).toBe(true);
+  });
 });
