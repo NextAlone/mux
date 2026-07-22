@@ -69,15 +69,25 @@ export function shouldUsePiAgentRuntime(
   latestUserIsSyntheticExecutable = false
 ): boolean {
   const isExecutableTurn = (metadata: { type: MuxMessageMetadata["type"] } | undefined): boolean =>
-    metadata == null || metadata.type === "normal" || metadata.type === "workspace-turn-task";
+    metadata == null ||
+    metadata.type === "normal" ||
+    metadata.type === "workspace-turn-task" ||
+    metadata.type === "bash-monitor-wake";
+
+  const isPiContinuation = (metadata: { type: MuxMessageMetadata["type"] } | undefined): boolean =>
+    metadata?.type === "bash-monitor-wake";
 
   // Mux owns synthetic control turns because their metadata drives orchestration,
   // correlation, and UI behavior outside the model loop. Internal continuations
   // can also be synthetic for UI/history provenance while still carrying the
-  // original executable request. Only that explicit marker keeps ownership on Pi.
+  // original executable request. Keep explicit continuation markers on Pi too:
+  // Mux schedules the wake, but the resumed model/tool loop must stay in the
+  // same harness that owned the interrupted executable turn.
   return (
     resolveAgentRuntimeKind(experiments) === "pi" &&
-    (!latestUserIsSynthetic || latestUserIsSyntheticExecutable) &&
+    (!latestUserIsSynthetic ||
+      latestUserIsSyntheticExecutable ||
+      isPiContinuation(latestUserMuxMetadata)) &&
     isExecutableTurn(muxMetadata) &&
     isExecutableTurn(latestUserMuxMetadata)
   );

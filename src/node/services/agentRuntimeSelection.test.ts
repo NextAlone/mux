@@ -50,6 +50,18 @@ describe("resolveAgentRuntimeKind", () => {
     ).toBe(true);
   });
 
+  test("keeps agent-initiated monitor wakes on Pi", () => {
+    expect(
+      shouldUsePiAgentRuntime(
+        { piAgentRuntime: true },
+        { type: "bash-monitor-wake" },
+        { type: "bash-monitor-wake" },
+        true,
+        false
+      )
+    ).toBe(true);
+  });
+
   test("routes only ordinary user turns to Pi", () => {
     expect(shouldUsePiAgentRuntime({ piAgentRuntime: true }, undefined, undefined)).toBe(true);
     expect(shouldUsePiAgentRuntime({ piAgentRuntime: true }, { type: "normal" }, undefined)).toBe(
