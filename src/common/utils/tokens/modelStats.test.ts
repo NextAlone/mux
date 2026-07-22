@@ -80,12 +80,12 @@ describe("getModelStats", () => {
     expect(stats.tiered_pricing_threshold_tokens).toBeUndefined();
   });
 
-  test("resolves Gemini 3.5 Flash with published standard pricing and limits", () => {
+  test("resolves Gemini 3.6 Flash with published standard pricing and limits", () => {
     const stats = expectStats(KNOWN_MODELS.GEMINI_FLASH.id);
     expect(stats.max_input_tokens).toBe(1048576);
     expect(stats.max_output_tokens).toBe(65536);
     expect(stats.input_cost_per_token).toBe(0.0000015);
-    expect(stats.output_cost_per_token).toBe(0.000009);
+    expect(stats.output_cost_per_token).toBe(0.0000075);
     expect(stats.cache_read_input_token_cost).toBe(0.00000015);
   });
 
@@ -143,6 +143,18 @@ describe("getModelStats", () => {
     expect(flash.input_cost_per_token).toBe(0.00000014);
     expect(flash.output_cost_per_token).toBe(0.00000028);
     expect(flash.cache_read_input_token_cost).toBe(0.000000014);
+  });
+
+  test("resolves Kimi K3 pricing and limits via direct and gateway forms", () => {
+    const stats = expectStats("moonshotai:kimi-k3");
+    expect(stats.max_input_tokens).toBe(1_048_576);
+    expect(stats.max_output_tokens).toBe(131_072);
+    expect(stats.input_cost_per_token).toBe(0.000003);
+    expect(stats.output_cost_per_token).toBe(0.000015);
+    expect(stats.cache_read_input_token_cost).toBe(0.0000003);
+
+    // The legacy OpenRouter form canonicalizes back to the direct Moonshot entry.
+    expect(expectStats("openrouter:moonshotai/kimi-k3")).toEqual(stats);
   });
 
   test("resolves the default image generation model pricing", () => {

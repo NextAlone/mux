@@ -599,8 +599,30 @@ describe("getThinkingPolicyForModel", () => {
     }
   });
 
+  test("returns off/low/medium/high for stable Gemini 3.6 Flash", () => {
+    for (const model of [
+      "google:gemini-3.6-flash",
+      "mux-gateway:google/gemini-3.6-flash",
+      "google:gemini-3.6-flash-001",
+    ]) {
+      expect(getThinkingPolicyForModel(model)).toEqual(["off", "low", "medium", "high"]);
+    }
+  });
+
   test("returns off/low/medium/high for stable Gemini 3.5 Flash behind OpenRouter", () => {
     expect(getThinkingPolicyForModel("openrouter:google/gemini-3.5-flash")).toEqual([
+      "off",
+      "low",
+      "medium",
+      "high",
+    ]);
+  });
+
+  test("returns a fixed max policy for Kimi K3 (direct and via OpenRouter)", () => {
+    expect(getThinkingPolicyForModel("moonshotai:kimi-k3")).toEqual(["max"]);
+    expect(getThinkingPolicyForModel("openrouter:moonshotai/kimi-k3")).toEqual(["max"]);
+    // Variant ids must not inherit the fixed K3 policy.
+    expect(getThinkingPolicyForModel("moonshotai:kimi-k3-turbo")).toEqual([
       "off",
       "low",
       "medium",
@@ -652,6 +674,7 @@ describe("isGeminiFlashThinkingLevelModelName", () => {
   test("does not classify Gemini Flash Lite variants as Flash thinking-level chat models", () => {
     expect(isGeminiFlashThinkingLevelModelName("gemini-3-flash-lite")).toBe(false);
     expect(isGeminiFlashThinkingLevelModelName("gemini-3.5-flash-lite")).toBe(false);
+    expect(isGeminiFlashThinkingLevelModelName("gemini-3.6-flash-lite")).toBe(false);
   });
 });
 

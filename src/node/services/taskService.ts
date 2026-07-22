@@ -234,6 +234,12 @@ export interface TaskCreateArgs {
    * "fork" (isolated copy) when omitted. Ignored (treated as "fork") on unsupported runtimes.
    */
   isolation?: TaskIsolation;
+  /**
+   * Keep the child workspace after it reports. This is an explicit per-task retention request;
+   * automatic cleanup and workflow sweeps must leave sticky tasks intact until the user chooses a
+   * lifecycle action.
+   */
+  sticky?: boolean;
   parentRuntimeAiSettings?: { modelString?: string; thinkingLevel?: ThinkingLevel };
   /**
    * Model-refusal policy persisted on the child workspace. "fail" opts the task
@@ -283,11 +289,25 @@ function stringifyStructuredOutputForSubagentReport(structuredOutput: unknown): 
   return json;
 }
 
+function parseSubagentReportEnvelope(text: string): { taskId: string; status?: string } | null {
+  const envelope = /^<mux_subagent_report>\n([\s\S]*?)\n<\/mux_subagent_report>$/.exec(text);
+  if (envelope == null) {
+    return null;
+  }
+  const taskId = /^<task_id>([^<]+)<\/task_id>$/m.exec(envelope[1])?.[1]?.trim();
+  if (!taskId) {
+    return null;
+  }
+  const status = /^<status>([^<]+)<\/status>$/m.exec(envelope[1])?.[1]?.trim();
+  return { taskId, ...(status ? { status } : {}) };
+}
+
 function formatSubagentReportUserMessage(params: {
   childWorkspaceId: string;
   agentType: string;
   title: string;
   reportMarkdown: string;
+  status: "in_progress" | "completed";
   structuredOutput?: unknown;
 }): string {
   assert(params.childWorkspaceId.length > 0, "subagent report message requires child id");
@@ -299,6 +319,7 @@ function formatSubagentReportUserMessage(params: {
     "<mux_subagent_report>",
     `<task_id>${params.childWorkspaceId}</task_id>`,
     `<agent_type>${params.agentType}</agent_type>`,
+    `<status>${params.status}</status>`,
     `<title>${params.title}</title>`,
     "<report_markdown>",
     params.reportMarkdown,
@@ -407,13 +428,17 @@ function workspaceTurnTerminalOutcome(status: WorkspaceTurnTaskStatus): Terminal
 }
 
 function getTaskCompletionInstruction(params: {
-  completionToolName: "agent_report" | "propose_plan";
+  completionKind: "final_response" | "propose_plan";
+  requiresStructuredOutput?: boolean;
 }): string {
-  if (params.completionToolName === "propose_plan") {
+  if (params.completionKind === "propose_plan") {
     return "Call propose_plan exactly once now. Base it only on the planning work already completed in this workspace.";
   }
 
-  return "Call agent_report exactly once now with your final report. Base it only on the work already completed in this workspace.";
+  const structuredInstruction = params.requiresStructuredOutput
+    ? "First call agent_report with the final structured output required by this workflow step. Then "
+    : "";
+  return `${structuredInstruction}respond with your final assistant message now. Base it only on the work already completed in this workspace.`;
 }
 
 type AgentReportFinalizationResult =
@@ -594,6 +619,7 @@ interface TaskLaunchPlan {
   bestOf?: TaskCreateArgs["bestOf"];
   experiments?: TaskCreateArgs["experiments"];
   onRefusal?: TaskCreateArgs["onRefusal"];
+  sticky?: TaskCreateArgs["sticky"];
   attentionPolicy?: TaskCreateArgs["attentionPolicy"];
 }
 
@@ -625,6 +651,7 @@ export interface DescendantAgentTaskInfo {
   createdAt?: string;
   modelString?: string;
   thinkingLevel?: ThinkingLevel;
+  sticky?: boolean;
   depth: number;
 }
 
@@ -690,6 +717,25 @@ const WORKSPACE_TURN_RECOVERABLE_STREAM_ERRORS: ReadonlySet<StreamErrorType> = n
   "aborted",
   "context_exceeded",
 ]);
+
+/** Marker persisted by settleStaleWorkspaceTurn when restart recovery interrupts a handle. */
+const WORKSPACE_TURN_STALE_RESTART_ERROR = "Workspace turn interrupted after restart";
+
+/**
+ * Settled workspace-turn records eligible for self-heal correction (resettle from a
+ * correlated stream-end, or read-time repair/revive): transient stream-error settlements
+ * (status "error") and stale restart-recovery interrupts. Explicit interrupts — user Esc,
+ * task_terminate, cancel reasons — must stay terminal even if a late correlated stream-end
+ * or same-turn retry evidence arrives, so canceled work never resurfaces as completed.
+ */
+function isSelfHealEligibleSettledWorkspaceTurn(
+  record: Pick<WorkspaceTurnTaskHandleRecord, "status" | "error">
+): boolean {
+  if (record.status === "error") {
+    return true;
+  }
+  return record.status === "interrupted" && record.error === WORKSPACE_TURN_STALE_RESTART_ERROR;
+}
 
 /**
  * A workspace-turn stream error may resolve without parent intervention when
@@ -1115,9 +1161,10 @@ export class ForegroundWaitBackgroundedError extends Error {
 
 function buildWorkflowTimeoutFinalizationPrompt(
   finalInstructions: string | undefined,
-  completionToolName: "agent_report" | "propose_plan"
+  completionKind: "final_response" | "propose_plan",
+  requiresStructuredOutput: boolean
 ): string {
-  const reportNoun = completionToolName === "propose_plan" ? "plan" : "report";
+  const reportNoun = completionKind === "propose_plan" ? "plan" : "response";
   const base =
     `Your workflow step time budget has expired. Stop starting new work and prepare a final ${reportNoun} now.\n\n` +
     `In your ${reportNoun}:\n` +
@@ -1126,7 +1173,7 @@ function buildWorkflowTimeoutFinalizationPrompt(
     "- include validation/test results already obtained;\n" +
     "- call out uncertainty and remaining work;\n" +
     `- do not run additional long-running tools unless absolutely necessary to write the ${reportNoun}.\n\n` +
-    getTaskCompletionInstruction({ completionToolName });
+    getTaskCompletionInstruction({ completionKind, requiresStructuredOutput });
   if (finalInstructions == null) {
     return base;
   }
@@ -2116,7 +2163,7 @@ export class TaskService {
       const resumeStartedAt = Date.now();
       const restartCompletionInstruction = isPlanLike
         ? "When you have a final plan, call propose_plan exactly once."
-        : "When you have a final answer, call agent_report exactly once.";
+        : "When you have a final answer, return it in your final assistant message.";
       const sendResult = await this.workspaceService.sendMessage(
         task.id,
         "Mux restarted while this task was running. Continue where you left off. " +
@@ -2545,6 +2592,7 @@ export class TaskService {
         bestOf: normalizedBestOf,
         experiments: args.experiments,
         onRefusal: args.onRefusal,
+        sticky: args.sticky === true ? true : undefined,
         attentionPolicy: args.attentionPolicy,
         status,
         ...(sharedWorkspacePath != null ? { sharedWorkspacePath } : {}),
@@ -2618,6 +2666,7 @@ export class TaskService {
           taskOnRefusal: plan.onRefusal,
           taskExperiments: plan.experiments,
           taskIsolation: plan.sharedWorkspacePath != null ? "none" : undefined,
+          taskSticky: plan.sticky === true ? true : undefined,
           taskAttentionPolicy: plan.attentionPolicy,
           projects: plan.parentMeta.projects,
         });
@@ -3693,6 +3742,7 @@ export class TaskService {
           taskOnRefusal: args.onRefusal,
           taskExperiments: args.experiments,
           taskIsolation: useSharedWorkspace ? "none" : undefined,
+          taskSticky: args.sticky === true ? true : undefined,
           taskAttentionPolicy: args.attentionPolicy,
           projects: parentMeta.projects,
         });
@@ -3857,6 +3907,7 @@ export class TaskService {
         taskOnRefusal: args.onRefusal,
         taskExperiments: args.experiments,
         taskIsolation: useSharedWorkspace ? "none" : undefined,
+        taskSticky: args.sticky === true ? true : undefined,
         taskAttentionPolicy: args.attentionPolicy,
         projects: inheritedProjects,
       });
@@ -4121,6 +4172,7 @@ export class TaskService {
           ([taskId, workspace]) =>
             this.isWorkflowRunDescendant(index, taskId, workflowRunId) &&
             workspace.taskStatus === "interrupted" &&
+            workspace.taskSticky !== true &&
             !hasCompletedAgentReport(workspace) &&
             !isWorkspaceArchived(workspace.archivedAt, workspace.unarchivedAt)
         )
@@ -4160,6 +4212,9 @@ export class TaskService {
         if (isWorkspaceArchived(entry.workspace.archivedAt, entry.workspace.unarchivedAt)) {
           continue;
         }
+        // A sticky task may be structurally blocked by archived children, but it must remain visible
+        // until the user explicitly chooses a lifecycle action.
+        if (entry.workspace.taskSticky === true) continue;
         // Defensive: never hide a workspace with an active stream.
         if (this.aiService.isStreaming(taskId)) continue;
         const freshIndex = this.buildAgentTaskIndex(freshConfig);
@@ -4253,6 +4308,7 @@ export class TaskService {
     const inactiveRunIds = new Set<string>();
     for (const [taskId, workspace] of index.byId) {
       if (isWorkspaceArchived(workspace.archivedAt, workspace.unarchivedAt)) continue;
+      if (workspace.taskSticky === true) continue;
       // Seed from two unarchived shapes so a crash mid-sweep still self-heals:
       // - interrupted-without-report children (normal leftover garbage), and
       // - reported tasks, covering a crash after phase 1 archived the interrupted
@@ -5229,6 +5285,13 @@ export class TaskService {
     waiterSettlement:
       | { status: "completed"; result: WorkspaceTurnWaitResult }
       | { status: "error"; error: Error };
+    /**
+     * Allow replacing an already-settled interrupted/error record (never completed).
+     * Only the strictly turn-correlated stream-end path may set this: a handle that
+     * settled from a transient failure can self-heal when the child auto-retries the
+     * same turn, and the correlated stream-end proves the turn's real outcome.
+     */
+    allowTerminalResettle?: boolean;
   }): Promise<void> {
     assert(
       params.next.handleId === params.record.handleId,
@@ -5244,7 +5307,7 @@ export class TaskService {
     const pendingNotify = await this.workspaceTurnSettlementLocks.withLock(
       params.record.handleId,
       async (): Promise<
-        | { kind: "notify"; outcome: TerminalAttentionOutcome; title?: string }
+        | { kind: "notify"; outcome: TerminalAttentionOutcome; title?: string; resettled: boolean }
         | { kind: "drain_pending" }
         | null
       > => {
@@ -5260,7 +5323,17 @@ export class TaskService {
           "settleWorkspaceTurn requires current record to match workspaceId"
         );
 
-        if (this.isTerminalWorkspaceTurnStatus(current.status)) {
+        // A completed record is immutable; a self-heal-eligible settled record (transient
+        // error / stale restart interrupt — never an explicit user interrupt) may be
+        // corrected once by an explicitly allowed resettle, but only when the new settlement
+        // actually changes the outcome (duplicate stream-end replays must stay idempotent).
+        const resettleStaleTerminal =
+          params.allowTerminalResettle === true &&
+          this.isTerminalWorkspaceTurnStatus(current.status) &&
+          current.status !== "completed" &&
+          isSelfHealEligibleSettledWorkspaceTurn(current) &&
+          (params.next.status !== current.status || params.next.messageId !== current.messageId);
+        if (this.isTerminalWorkspaceTurnStatus(current.status) && !resettleStaleTerminal) {
           const active = this.activeWorkspaceTurnHandleByWorkspaceId.get(params.record.workspaceId);
           if (
             active?.handleId === params.record.handleId &&
@@ -5287,11 +5360,24 @@ export class TaskService {
         }
 
         // Decide the terminal wake-up using persisted policy + the restart-safe dedupe marker.
+        // A resettle corrects a previously reported outcome, so it re-arms the wake-up even if
+        // the stale settlement was already notified/consumed.
         const policy = resolveBackgroundWorkAttentionPolicy(current.attentionPolicy);
         const shouldNotify =
-          policy === "notify_on_terminal" && current.terminalAttentionNotifiedAt == null;
+          policy === "notify_on_terminal" &&
+          (current.terminalAttentionNotifiedAt == null || resettleStaleTerminal);
 
-        await this.taskHandleStore.upsertWorkspaceTurn(params.next);
+        const nextRecord = { ...params.next };
+        if (resettleStaleTerminal) {
+          log.debug("Workspace turn resettled from stale terminal status", {
+            handleId: current.handleId,
+            workspaceId: current.workspaceId,
+            staleStatus: current.status,
+            nextStatus: nextRecord.status,
+          });
+          delete nextRecord.terminalAttentionNotifiedAt;
+        }
+        await this.taskHandleStore.upsertWorkspaceTurn(nextRecord);
         const active = this.activeWorkspaceTurnHandleByWorkspaceId.get(params.record.workspaceId);
         if (
           active?.handleId === params.record.handleId &&
@@ -5304,7 +5390,7 @@ export class TaskService {
           params.waiterSettlement
         );
         this.markTaskForegroundRelevant(params.record.handleId);
-        await this.cleanupDisposableWorkspaceTurn(params.next);
+        await this.cleanupDisposableWorkspaceTurn(nextRecord);
         this.scheduleMaybeStartQueuedTasks();
 
         // A foreground waiter that received this terminal result already integrates it, so suppress
@@ -5318,8 +5404,9 @@ export class TaskService {
         }
         return {
           kind: "notify",
-          outcome: workspaceTurnTerminalOutcome(params.next.status),
-          ...(params.next.title != null ? { title: params.next.title } : {}),
+          outcome: workspaceTurnTerminalOutcome(nextRecord.status),
+          resettled: resettleStaleTerminal,
+          ...(nextRecord.title != null ? { title: nextRecord.title } : {}),
         };
       }
     );
@@ -5335,6 +5422,14 @@ export class TaskService {
     // Enqueue the terminal wake-up outside the lock. The persisted notification is the restart-safe
     // record of intent; only after it is accepted do we set terminalAttentionNotifiedAt on the
     // handle so a duplicate settlement / stale recovery cannot double-wake.
+    if (pendingNotify.resettled) {
+      // The stale settlement's wake-up may already be delivered/consumed; enqueueIfAbsent
+      // treats that tombstone as "already notified" and would swallow the corrected outcome.
+      await this.terminalAttentionStore.delete(
+        params.record.ownerWorkspaceId,
+        TerminalAttentionStore.notificationId("workspace_turn", params.record.handleId)
+      );
+    }
     await this.enqueueTerminalAttention({
       ownerWorkspaceId: params.record.ownerWorkspaceId,
       sourceKind: "workspace_turn",
@@ -5481,6 +5576,89 @@ export class TaskService {
     });
   }
 
+  async reportAgentProgress(
+    childWorkspaceId: string,
+    toolCallId: string,
+    report: { reportMarkdown: string; title?: string; structuredOutput?: unknown }
+  ): Promise<void> {
+    assert(childWorkspaceId.length > 0, "reportAgentProgress requires childWorkspaceId");
+    assert(toolCallId.length > 0, "reportAgentProgress requires toolCallId");
+    assert(report.reportMarkdown.length > 0, "reportAgentProgress requires reportMarkdown");
+
+    await this.workspaceEventLocks.withLock(childWorkspaceId, async () => {
+      const cfg = this.config.loadConfigOrDefault();
+      const childEntry = findWorkspaceEntry(cfg, childWorkspaceId);
+      const parentWorkspaceId = childEntry?.workspace.parentWorkspaceId;
+      if (!childEntry || !parentWorkspaceId) {
+        throw new Error("agent_report is only available from an active sub-agent task");
+      }
+      if (hasCompletedAgentReport(childEntry.workspace)) {
+        throw new Error("agent_report cannot send updates after the sub-agent has completed");
+      }
+      if (childEntry.workspace.taskStatus === "interrupted") {
+        throw new Error("agent_report cannot send updates from an interrupted sub-agent");
+      }
+
+      if (childEntry.workspace.workflowTask != null) {
+        // Workflow-owned tasks deliver structured output through WorkflowRunner's journal/result
+        // path. Waking the parent here would background a foreground workflow wait and expose the
+        // internal schema handoff as a user-visible sub-agent update.
+        return;
+      }
+
+      const parentEntry = findWorkspaceEntry(cfg, parentWorkspaceId);
+      if (!parentEntry) {
+        throw new Error("agent_report could not find the parent workspace");
+      }
+
+      const agentType = coerceNonEmptyString(childEntry.workspace.agentType) ?? "agent";
+      const title = coerceNonEmptyString(report.title) ?? `Subagent (${agentType}) update`;
+      const reportContent = formatSubagentReportUserMessage({
+        childWorkspaceId,
+        agentType,
+        title,
+        reportMarkdown: report.reportMarkdown,
+        status: "in_progress",
+        ...(report.structuredOutput !== undefined
+          ? { structuredOutput: report.structuredOutput }
+          : {}),
+      });
+      const resumeOptions = await this.resolveParentAutoResumeOptions(
+        parentWorkspaceId,
+        parentEntry,
+        defaultModel
+      );
+
+      // A progress report is itself the wake-up message. Unlike terminal attention, it must be
+      // allowed through while this child is still active so review findings and other incremental
+      // results can immediately background a foreground wait or queue behind a busy parent turn.
+      const sendResult = await this.workspaceService.sendMessage(
+        parentWorkspaceId,
+        reportContent,
+        {
+          model: resumeOptions.model,
+          agentId: resumeOptions.agentId,
+          thinkingLevel: resumeOptions.thinkingLevel,
+          reasoningMode: resumeOptions.reasoningMode,
+        },
+        {
+          skipAutoResumeReset: true,
+          synthetic: true,
+          agentInitiated: true,
+          startStreamInBackground: true,
+          queueDedupeKey: `agent-report:${childWorkspaceId}:${toolCallId}`,
+          removableQueueDedupeKey: true,
+        }
+      );
+      if (!sendResult.success) {
+        const formattedError = formatSendMessageError(sendResult.error);
+        throw new Error(
+          `agent_report failed to wake the parent workspace: ${formattedError.message}`
+        );
+      }
+    });
+  }
+
   async requestAgentFinalReportForTimeout(
     taskId: string,
     options: {
@@ -5574,21 +5752,30 @@ export class TaskService {
       });
       finalizationAccepted = true;
     };
-    const completionToolName = (await this.isPlanLikeTaskWorkspace(freshEntry))
+    const completionKind = (await this.isPlanLikeTaskWorkspace(freshEntry))
       ? "propose_plan"
-      : "agent_report";
+      : "final_response";
+    const requiresStructuredOutput =
+      freshEntry.workspace.workflowTask?.outputSchema !== undefined &&
+      !(await this.shouldAllowLegacyInvalidWorkflowOutputSchema(taskId, freshEntry));
     const model = freshEntry.workspace.taskModelString ?? defaultModel;
     const agentId = resolveTaskAgentIdForResume(freshEntry.workspace);
     const sendResult = await this.workspaceService.sendMessage(
       taskId,
-      buildWorkflowTimeoutFinalizationPrompt(options.finalInstructions, completionToolName),
+      buildWorkflowTimeoutFinalizationPrompt(
+        options.finalInstructions,
+        completionKind,
+        requiresStructuredOutput
+      ),
       {
         model,
         agentId,
         thinkingLevel: freshEntry.workspace.taskThinkingLevel,
         reasoningMode: coerceOpenAIReasoningMode(freshEntry.workspace.aiSettings?.reasoningMode),
         experiments: freshEntry.workspace.taskExperiments,
-        toolPolicy: [{ regex_match: `^${completionToolName}$`, action: "require" }],
+        ...(completionKind === "propose_plan"
+          ? { toolPolicy: [{ regex_match: "^propose_plan$", action: "require" as const }] }
+          : {}),
       },
       {
         synthetic: true,
@@ -6091,6 +6278,30 @@ export class TaskService {
     return this.hasActiveDescendantAgentTasks(cfg, workspaceId);
   }
 
+  hasStickyDescendants(workspaceId: string): boolean {
+    assert(workspaceId.length > 0, "hasStickyDescendants: workspaceId must be non-empty");
+
+    const cfg = this.config.loadConfigOrDefault();
+    const index = this.buildAgentTaskIndex(cfg);
+    return this.listDescendantAgentTaskIdsFromIndex(index, workspaceId).some(
+      (descendantId) => index.byId.get(descendantId)?.taskSticky === true
+    );
+  }
+
+  hasUnarchivedStickyDescendants(workspaceId: string): boolean {
+    assert(workspaceId.length > 0, "hasUnarchivedStickyDescendants: workspaceId must be non-empty");
+
+    const cfg = this.config.loadConfigOrDefault();
+    const index = this.buildAgentTaskIndex(cfg);
+    return this.listDescendantAgentTaskIdsFromIndex(index, workspaceId).some((descendantId) => {
+      const descendant = index.byId.get(descendantId);
+      return (
+        descendant?.taskSticky === true &&
+        !isWorkspaceArchived(descendant.archivedAt, descendant.unarchivedAt)
+      );
+    });
+  }
+
   hasPreservedCompletedDescendants(workspaceId: string): boolean {
     assert(
       workspaceId.length > 0,
@@ -6163,7 +6374,16 @@ export class TaskService {
   }
 
   private async normalizeWorkspaceTurnRecord(
-    record: WorkspaceTurnTaskHandleRecord
+    record: WorkspaceTurnTaskHandleRecord,
+    options: {
+      /**
+       * Also reconcile settled interrupted/error records against the child's durable
+       * history (one history read per record). Enabled for single-handle snapshot reads
+       * (task_await) but not for list paths, which would pay that read for every
+       * historical terminal handle on each call.
+       */
+      repairSettledTurnsFromHistory?: boolean;
+    } = {}
   ): Promise<WorkspaceTurnTaskHandleRecord | null> {
     assert(record.ownerWorkspaceId.length > 0, "normalizeWorkspaceTurnRecord requires owner id");
     assert(record.handleId.length > 0, "normalizeWorkspaceTurnRecord requires handle id");
@@ -6173,7 +6393,7 @@ export class TaskService {
     // task_await agree on the self-healed terminal status.
     if (
       record.status === "interrupted" &&
-      record.error === "Workspace turn interrupted after restart" &&
+      record.error === WORKSPACE_TURN_STALE_RESTART_ERROR &&
       (record.deferredMessageIds?.length ?? 0) > 0
     ) {
       const recovered = await this.recoverTerminalWorkspaceTurnFromHistory(record);
@@ -6202,7 +6422,224 @@ export class TaskService {
       return await this.taskHandleStore.getWorkspaceTurn(record.ownerWorkspaceId, record.handleId);
     }
 
+    if (
+      (record.status === "interrupted" || record.status === "error") &&
+      isSelfHealEligibleSettledWorkspaceTurn(record)
+    ) {
+      return await this.reconcileSettledWorkspaceTurn(record, {
+        repairFromHistory: options.repairSettledTurnsFromHistory === true,
+      });
+    }
+
     return record;
+  }
+
+  /**
+   * Settled interrupted/error handles can go stale: a stream error or restart can settle
+   * the handle even though the child workspace self-heals by auto-retrying the same turn
+   * (retries replay the turn's synthetic prompt, so their output still correlates via
+   * muxMetadata). Reconcile against the child's live state at read time so task_await and
+   * task_list report reality instead of the stale settlement.
+   */
+  private async reconcileSettledWorkspaceTurn(
+    record: WorkspaceTurnTaskHandleRecord,
+    options: { repairFromHistory: boolean }
+  ): Promise<WorkspaceTurnTaskHandleRecord | null> {
+    assert(
+      record.status === "interrupted" || record.status === "error",
+      "reconcileSettledWorkspaceTurn requires a settled interrupted/error record"
+    );
+    // Lazily computed and cached: whether the child still has active descendant/workflow/
+    // nested-turn work. A settled record cannot accumulate deferredMessageIds (the deferral
+    // path skips inactive handles), so the repair/deferred decisions below must consult
+    // these blockers — otherwise a retried turn could be reported completed while its
+    // background work is still running.
+    let blockersActive: boolean | null = null;
+    const deferredBlockersActive = async (): Promise<boolean> => {
+      blockersActive ??= await this.hasActiveWorkspaceTurnDeferredBlockers(record);
+      return blockersActive;
+    };
+    // Evidence the turn is still live. All checks are in-memory so historical terminal
+    // handles stay cheap on list/blocker-scan paths (no history reads). Queued/preparing
+    // turns are deliberately excluded: ordinary queued manual input is not yet in history,
+    // so it would defeat the newest-correlated-prompt guard below and revive unrelated
+    // work. The synthetic background-await continuation between retry streams is instead
+    // covered by the descendant hint — it is only queued while such blockers are active.
+    const turnLive =
+      this.aiService.isStreaming(record.workspaceId) ||
+      this.workspaceService.hasPendingAutoRetry(record.workspaceId) ||
+      this.hasActiveDescendantAgentTasks(this.config.loadConfigOrDefault(), record.workspaceId);
+    if (!turnLive && !options.repairFromHistory) {
+      return record;
+    }
+
+    const historyResult = await this.historyService.getHistoryFromLatestBoundary(
+      record.workspaceId
+    );
+    if (!historyResult.success) {
+      return record;
+    }
+    // Auto-retry replays the newest accepted user message, so live child activity belongs
+    // to this turn only while its prompt is still that newest message. Any newer user
+    // message disables the revive — but only the revive: a correlated final assistant
+    // message older than that unrelated prompt still proves the turn completed, so the
+    // durable-history repair scan must continue past it.
+    let reviveAllowed = turnLive;
+    for (const message of historyResult.data.toReversed()) {
+      if (
+        this.isDeferredWorkspaceTurnMessage(record, message.id) &&
+        (await deferredBlockersActive())
+      ) {
+        continue;
+      }
+      const event = this.buildWorkspaceTurnStreamEndEventFromHistory(record, message);
+      if (event != null) {
+        // The turn produced a correlated final assistant message after settlement, so the
+        // child self-healed. While its background work is still running, revive the handle
+        // with the final recorded as deferred: the parent stays blocked, and the standard
+        // deferred-recovery machinery settles the true outcome once blockers finish.
+        if (reviveAllowed && (await deferredBlockersActive())) {
+          return await this.reviveRetryingWorkspaceTurn(record, {
+            deferredMessageIds: [event.messageId],
+          });
+        }
+        const recovered = this.buildTerminalWorkspaceTurnRecordFromEvent(record, event);
+        if (
+          !options.repairFromHistory ||
+          (recovered.status === record.status && recovered.messageId === record.messageId)
+        ) {
+          return record;
+        }
+        if (await deferredBlockersActive()) {
+          return record;
+        }
+        return await this.persistRepairedSettledWorkspaceTurn(record, recovered);
+      }
+      if (message.role !== "user") {
+        continue;
+      }
+      const metadata = this.getWorkspaceTurnMetadataFromValue(message.metadata?.muxMetadata);
+      const correlatedPrompt =
+        metadata != null &&
+        metadata.taskHandleId === record.handleId &&
+        metadata.ownerWorkspaceId === record.ownerWorkspaceId &&
+        metadata.turnId === record.turnId;
+      if (correlatedPrompt) {
+        if (reviveAllowed) {
+          return await this.reviveRetryingWorkspaceTurn(record);
+        }
+        // A correlated final must be newer than the prompt; nothing older can repair.
+        return record;
+      }
+      reviveAllowed = false;
+      if (!options.repairFromHistory) {
+        return record;
+      }
+    }
+    return record;
+  }
+
+  private async persistRepairedSettledWorkspaceTurn(
+    record: WorkspaceTurnTaskHandleRecord,
+    recovered: WorkspaceTurnTaskHandleRecord
+  ): Promise<WorkspaceTurnTaskHandleRecord | null> {
+    const next = await this.workspaceTurnSettlementLocks.withLock(record.handleId, async () => {
+      const current = await this.taskHandleStore.getWorkspaceTurn(
+        record.ownerWorkspaceId,
+        record.handleId
+      );
+      // A concurrent settlement/repair wins; only replace the exact record we reconciled.
+      // Comparing updatedAt (not just status) matters: a concurrent settlement can produce
+      // a NEWER record with the same status that must not be clobbered by our stale read.
+      if (
+        current == null ||
+        current.status !== record.status ||
+        current.updatedAt !== record.updatedAt
+      ) {
+        return current;
+      }
+      log.debug("Workspace turn repaired from self-healed child history", {
+        handleId: record.handleId,
+        workspaceId: record.workspaceId,
+        staleStatus: record.status,
+        nextStatus: recovered.status,
+      });
+      await this.taskHandleStore.upsertWorkspaceTurn(recovered);
+      return recovered;
+    });
+    if (next === recovered) {
+      await this.cleanupDisposableWorkspaceTurn(recovered);
+      const active = this.activeWorkspaceTurnHandleByWorkspaceId.get(record.workspaceId);
+      if (
+        active?.handleId === record.handleId &&
+        active.ownerWorkspaceId === record.ownerWorkspaceId
+      ) {
+        this.activeWorkspaceTurnHandleByWorkspaceId.delete(record.workspaceId);
+      }
+    }
+    return next;
+  }
+
+  private async reviveRetryingWorkspaceTurn(
+    record: WorkspaceTurnTaskHandleRecord,
+    options: { deferredMessageIds?: string[] } = {}
+  ): Promise<WorkspaceTurnTaskHandleRecord | null> {
+    return await this.workspaceTurnSettlementLocks.withLock(record.handleId, async () => {
+      const current = await this.taskHandleStore.getWorkspaceTurn(
+        record.ownerWorkspaceId,
+        record.handleId
+      );
+      // A concurrent transition wins; only revive the exact record we reconciled against.
+      // Comparing updatedAt (not just status) matters: the live retry itself can fail and
+      // settle a NEWER record with the same status (e.g. error → error) between our read
+      // and this lock — reviving that fresh terminal failure would strand task_await.
+      if (
+        current == null ||
+        current.status !== record.status ||
+        current.updatedAt !== record.updatedAt
+      ) {
+        return current;
+      }
+      // Another turn already owns the child workspace; the activity is not this turn's retry.
+      const active = this.activeWorkspaceTurnHandleByWorkspaceId.get(record.workspaceId);
+      if (
+        active != null &&
+        (active.handleId !== record.handleId || active.ownerWorkspaceId !== record.ownerWorkspaceId)
+      ) {
+        return current;
+      }
+      const next: WorkspaceTurnTaskHandleRecord = {
+        ...current,
+        status: "running",
+        updatedAt: getIsoNow(),
+        // An already-observed correlated final (blocked on child background work) rides
+        // along as deferred so standard deferred recovery settles it once blockers finish.
+        ...(options.deferredMessageIds != null
+          ? { deferredMessageIds: options.deferredMessageIds }
+          : {}),
+      };
+      delete next.error;
+      // The revived turn's next terminal transition is a new outcome; re-arm its wake-up.
+      // The notification tombstone must go too: enqueueIfAbsent would otherwise treat the
+      // stale settlement's delivered wake-up as "already notified" and swallow the new one.
+      delete next.terminalAttentionNotifiedAt;
+      await this.terminalAttentionStore.delete(
+        record.ownerWorkspaceId,
+        TerminalAttentionStore.notificationId("workspace_turn", record.handleId)
+      );
+      await this.taskHandleStore.upsertWorkspaceTurn(next);
+      // Re-register so stream-end/abort/error settlement paths own the handle again.
+      this.activeWorkspaceTurnHandleByWorkspaceId.set(record.workspaceId, {
+        handleId: record.handleId,
+        ownerWorkspaceId: record.ownerWorkspaceId,
+      });
+      log.debug("Workspace turn revived: child is retrying the same turn", {
+        handleId: record.handleId,
+        workspaceId: record.workspaceId,
+        staleStatus: record.status,
+      });
+      return next;
+    });
   }
 
   async getWorkspaceTurnSnapshot(
@@ -6216,7 +6653,11 @@ export class TaskService {
     if (record == null) {
       return null;
     }
-    return await this.normalizeWorkspaceTurnRecord(record);
+    // Snapshot reads back task_await, which must report the child's live state even when
+    // a stale settlement (interrupted/error) was later corrected by a self-healed retry.
+    return await this.normalizeWorkspaceTurnRecord(record, {
+      repairSettledTurnsFromHistory: true,
+    });
   }
 
   async listWorkspaceTurnTasks(
@@ -6680,6 +7121,7 @@ export class TaskService {
           createdAt: entry.createdAt,
           modelString: entry.aiSettings?.model,
           thinkingLevel: entry.aiSettings?.thinkingLevel,
+          sticky: entry.taskSticky === true ? true : undefined,
           depth: next.depth,
         });
       }
@@ -7115,14 +7557,14 @@ export class TaskService {
       ...record,
       status: "interrupted",
       updatedAt: getIsoNow(),
-      error: "Workspace turn interrupted after restart",
+      error: WORKSPACE_TURN_STALE_RESTART_ERROR,
     };
     await this.settleWorkspaceTurn({
       record,
       next,
       waiterSettlement: {
         status: "error",
-        error: new Error("Workspace turn interrupted after restart"),
+        error: new Error(WORKSPACE_TURN_STALE_RESTART_ERROR),
       },
     });
   }
@@ -7166,23 +7608,41 @@ export class TaskService {
   private async listActiveWorkspaceTurnTaskIdsForOwner(
     ownerWorkspaceId: string
   ): Promise<string[]> {
-    const records = await this.taskHandleStore.listWorkspaceTurns(ownerWorkspaceId, {
-      statuses: ["queued", "starting", "running"],
-    });
+    const records = await this.taskHandleStore.listWorkspaceTurns(ownerWorkspaceId);
     const taskIds: string[] = [];
     for (const record of records) {
       if (
-        record.status !== "queued" &&
-        record.status !== "starting" &&
-        record.status !== "running"
+        record.status === "queued" ||
+        record.status === "starting" ||
+        record.status === "running"
       ) {
+        if (!(await this.isLiveWorkspaceTurn(record))) {
+          await this.settleStaleWorkspaceTurn(record);
+          continue;
+        }
+        taskIds.push(record.handleId);
         continue;
       }
-      if (!(await this.isLiveWorkspaceTurn(record))) {
-        await this.settleStaleWorkspaceTurn(record);
-        continue;
+      // A stale settled handle whose child is actively retrying the same turn is live
+      // delegated work: revive it here too, so the parent's turn-end blocker scan cannot
+      // finish while the child is still running. Cheap for historical handles — reconcile
+      // short-circuits on in-memory runtime checks before touching history.
+      if (
+        (record.status === "interrupted" || record.status === "error") &&
+        isSelfHealEligibleSettledWorkspaceTurn(record)
+      ) {
+        const latest = await this.reconcileSettledWorkspaceTurn(record, {
+          repairFromHistory: false,
+        });
+        if (
+          latest != null &&
+          (latest.status === "queued" ||
+            latest.status === "starting" ||
+            latest.status === "running")
+        ) {
+          taskIds.push(latest.handleId);
+        }
       }
-      taskIds.push(record.handleId);
     }
     return taskIds;
   }
@@ -7867,33 +8327,39 @@ export class TaskService {
     await this.emitWorkspaceMetadata(workspaceId);
   }
 
-  private buildCompletionToolRecoveryMessage(
-    completionToolName: "agent_report" | "propose_plan",
+  private buildTaskCompletionRecoveryMessage(
+    completionKind: "final_response" | "propose_plan",
+    requiresStructuredOutput: boolean,
     options?: {
       reason?: "startup" | "stream_end" | "error";
       error?: Pick<ErrorEvent, "error" | "errorType">;
     }
   ): string {
-    const completionToolLabel =
-      completionToolName === "propose_plan" ? "propose_plan" : "agent_report";
-    const completionInstruction = getTaskCompletionInstruction({ completionToolName });
+    const completionLabel =
+      completionKind === "propose_plan" ? "propose_plan" : "final assistant response";
+    const completionInstruction = getTaskCompletionInstruction({
+      completionKind,
+      requiresStructuredOutput,
+    });
     const noExtraWorkInstruction =
-      completionToolName === "propose_plan"
+      completionKind === "propose_plan"
         ? "Do not continue planning or call other tools."
-        : "Do not continue investigating or call other tools.";
+        : requiresStructuredOutput
+          ? "Do not continue investigating or call tools other than agent_report."
+          : "Do not continue investigating or call other tools.";
 
     switch (options?.reason) {
       case "startup":
-        return `This task is awaiting its final ${completionToolLabel}. ${noExtraWorkInstruction} ${completionInstruction}`;
+        return `This task is awaiting its ${completionLabel}. ${noExtraWorkInstruction} ${completionInstruction}`;
       case "error": {
         const errorType = options.error?.errorType
           ? ` (last error: ${options.error.errorType})`
           : "";
-        return `The previous ${completionToolLabel} attempt failed${errorType}. ${noExtraWorkInstruction} ${completionInstruction}`;
+        return `The previous ${completionLabel} attempt failed${errorType}. ${noExtraWorkInstruction} ${completionInstruction}`;
       }
       case "stream_end":
       default:
-        return `Your stream ended without calling ${completionToolLabel}. ${noExtraWorkInstruction} ${completionInstruction}`;
+        return `Your stream ended without a ${completionLabel}. ${noExtraWorkInstruction} ${completionInstruction}`;
     }
   }
 
@@ -7936,7 +8402,10 @@ export class TaskService {
     }
 
     const isPlanLike = await this.isPlanLikeTaskWorkspace(entry);
-    const completionToolName = isPlanLike ? "propose_plan" : "agent_report";
+    const completionKind = isPlanLike ? "propose_plan" : "final_response";
+    const requiresStructuredOutput =
+      entry.workspace.workflowTask?.outputSchema !== undefined &&
+      !(await this.shouldAllowLegacyInvalidWorkflowOutputSchema(workspaceId, entry));
 
     // Persisted circuit breaker: a task that keeps consuming recovery prompts
     // without ever completing is stuck (repeated empty output, repeated
@@ -7958,7 +8427,7 @@ export class TaskService {
       });
       await this.failAgentTaskTerminally(workspaceId, entry, {
         errorType: "task_recovery_limit",
-        errorMessage: `Task interrupted after ${MAX_TASK_RECOVERY_ATTEMPTS} recovery attempts without a successful ${completionToolName}.${lastError} The task model may be unable to complete this request; try a different model or a simpler prompt.`,
+        errorMessage: `Task interrupted after ${MAX_TASK_RECOVERY_ATTEMPTS} recovery attempts without a successful ${completionKind === "propose_plan" ? "propose_plan" : "final assistant response"}.${lastError} The task model may be unable to complete this request; try a different model or a simpler prompt.`,
       });
       return false;
     }
@@ -7978,24 +8447,26 @@ export class TaskService {
     const startedAt = Date.now();
     const sendResult = await this.workspaceService.sendMessage(
       workspaceId,
-      this.buildCompletionToolRecoveryMessage(completionToolName, options),
+      this.buildTaskCompletionRecoveryMessage(completionKind, requiresStructuredOutput, options),
       {
         model,
         agentId,
         thinkingLevel: entry.workspace.taskThinkingLevel,
         reasoningMode: coerceOpenAIReasoningMode(entry.workspace.aiSettings?.reasoningMode),
         experiments: entry.workspace.taskExperiments,
-        toolPolicy: [{ regex_match: `^${completionToolName}$`, action: "require" }],
+        ...(completionKind === "propose_plan"
+          ? { toolPolicy: [{ regex_match: "^propose_plan$", action: "require" as const }] }
+          : {}),
       },
       { synthetic: true, agentInitiated: true }
     );
     const durationMs = Date.now() - startedAt;
     if (!sendResult.success) {
-      log.error("Failed to prompt task for required completion tool", {
+      log.error("Failed to prompt task for required completion", {
         workspaceId,
         taskName: entry.workspace.name,
         projectPath: entry.projectPath,
-        completionToolName,
+        completionKind,
         reason: options?.reason,
         model,
         agentId,
@@ -8007,11 +8478,11 @@ export class TaskService {
       return false;
     }
 
-    log.info("Prompted task for required completion tool", {
+    log.info("Prompted task for required completion", {
       workspaceId,
       taskName: entry.workspace.name,
       projectPath: entry.projectPath,
-      completionToolName,
+      completionKind,
       reason: options?.reason,
       model,
       agentId,
@@ -8407,6 +8878,11 @@ export class TaskService {
         next.status === "completed"
           ? { status: "completed", result: this.buildWorkspaceTurnWaitResult(next) }
           : { status: "error", error: new Error(next.error ?? "Workspace turn failed") },
+      // This stream-end is strictly correlated (workspaceId + turnId), so it proves the
+      // delegated turn's real outcome. A handle that settled interrupted/error from a
+      // transient failure (provider error, restart) may have self-healed via auto-retry
+      // of the same turn; let this settlement correct that stale record.
+      allowTerminalResettle: true,
     });
     return true;
   }
@@ -8673,10 +9149,17 @@ export class TaskService {
     const acceptsSchemaShapedWorkflowReport =
       workflowOutputSchema !== undefined &&
       validateJsonSchemaSubsetSchema(workflowOutputSchema, { requireObjectSchema: true }).success;
-    const reportArgs = this.findAgentReportArgsInParts(event.parts, {
-      acceptSchemaShapedWorkflowReport: acceptsSchemaShapedWorkflowReport,
-    });
+    // Missing finish reasons are not proof of a clean stop: providers may omit them and metadata
+    // collection may time out. Only explicit `stop` can promote the final assistant response to the
+    // terminal report; otherwise recovery asks the child to finish instead of finalizing an update.
+    const finalAgentReportArgs =
+      event.metadata.finishReason === "stop"
+        ? await this.resolveFinalAgentReportArgs(workspaceId, event.parts, {
+            acceptSchemaShapedWorkflowReport: acceptsSchemaShapedWorkflowReport,
+          })
+        : null;
     const isPlanLike = await this.isPlanLikeTaskWorkspace(entry);
+    const reportArgs = isPlanLike ? null : finalAgentReportArgs;
     const proposePlanResult = this.findProposePlanSuccessInParts(event.parts);
 
     // Stream-end settlement: interrupted tasks must settle all pending waiters.
@@ -8782,30 +9265,6 @@ export class TaskService {
         proposePlanResult,
       });
       return;
-    }
-
-    // Only infer an implicit report from a clean natural stop. Length-truncated or other
-    // provider finish reasons still go through explicit completion-tool recovery so partial
-    // assistant text cannot prematurely finalize the task.
-    const requiresStructuredOutput = entry.workspace.workflowTask?.outputSchema !== undefined;
-    if (
-      !requiresStructuredOutput &&
-      !isPlanLike &&
-      status !== "awaiting_report" &&
-      event.metadata.finishReason === "stop"
-    ) {
-      const implicitReportArgs = this.findImplicitAgentReportArgsInParts(event.parts);
-      if (implicitReportArgs) {
-        const finalization = await this.finalizeAgentTaskReport(
-          workspaceId,
-          entry,
-          implicitReportArgs
-        );
-        if (finalization.finalized) {
-          await this.finalizeTerminationPhaseForReportedTask(workspaceId);
-        }
-        return;
-      }
     }
 
     if (status !== "awaiting_report") {
@@ -9754,15 +10213,11 @@ export class TaskService {
             .filter((part): part is Extract<typeof part, { type: "text" }> => part.type === "text")
             .map((part) => part.text)
             .join("\n");
-          if (!text.includes("<mux_subagent_report>")) {
+          const reportEnvelope = parseSubagentReportEnvelope(text);
+          if (reportEnvelope == null || reportEnvelope.status === "in_progress") {
             continue;
           }
-          for (const match of text.matchAll(/<task_id>([^<]+)<\/task_id>/g)) {
-            const taskId = coerceNonEmptyString(match[1]);
-            if (taskId) {
-              syntheticReportTaskIds.add(taskId);
-            }
-          }
+          syntheticReportTaskIds.add(reportEnvelope.taskId);
         }
       }
 
@@ -10076,6 +10531,19 @@ export class TaskService {
 
     await this.maybeStartPatchGenerationForReportedTask(childWorkspaceId);
 
+    const queuedProgressRemoval = this.workspaceService.removeQueuedMessagesByDedupeKeyPrefix(
+      parentWorkspaceId,
+      `agent-report:${childWorkspaceId}:`,
+      { cancelReason: "Incremental sub-agent update superseded by the terminal report." }
+    );
+    if (!queuedProgressRemoval.success) {
+      log.warn("Failed to remove queued incremental sub-agent reports", {
+        parentWorkspaceId,
+        childWorkspaceId,
+        error: queuedProgressRemoval.error,
+      });
+    }
+
     await this.deliverReportToParent(
       parentWorkspaceId,
       childWorkspaceId,
@@ -10241,11 +10709,13 @@ export class TaskService {
     return null;
   }
 
-  private findImplicitAgentReportArgsInParts(
+  private findFinalAssistantResponseInParts(
     parts: readonly unknown[]
   ): { reportMarkdown: string } | null {
+    const lastToolIndex = parts.findLastIndex((part) => isDynamicToolPart(part));
     let reportMarkdown = "";
-    for (const part of parts) {
+    for (let index = lastToolIndex + 1; index < parts.length; index += 1) {
+      const part = parts[index];
       if (!part || typeof part !== "object") continue;
       const maybeText = part as { type?: unknown; text?: unknown };
       if (maybeText.type !== "text" || typeof maybeText.text !== "string") continue;
@@ -10258,6 +10728,92 @@ export class TaskService {
     }
 
     return { reportMarkdown: trimmedReport };
+  }
+
+  private async findLatestAgentReportArgsInHistory(
+    workspaceId: string,
+    options: { acceptSchemaShapedWorkflowReport?: boolean } = {}
+  ): Promise<{ reportMarkdown: string; title?: string; structuredOutput?: unknown } | null> {
+    const historyResult = await this.historyService.getHistoryFromLatestBoundary(workspaceId);
+    if (!historyResult.success) {
+      log.warn("Failed to read sub-agent history for final report metadata", {
+        workspaceId,
+        error: historyResult.error,
+      });
+      return null;
+    }
+
+    for (let index = historyResult.data.length - 1; index >= 0; index -= 1) {
+      const message = historyResult.data[index];
+      if (message.role !== "assistant") {
+        continue;
+      }
+      // A failed newer report invalidates all older structured candidates. Recovery must
+      // produce a fresh successful report rather than scanning backward to stale metadata.
+      const outcome = this.findLatestAgentReportOutcomeInParts(message.parts, options);
+      if (outcome?.kind === "failure") {
+        return null;
+      }
+      if (outcome?.kind === "success") {
+        return outcome.report;
+      }
+    }
+    return null;
+  }
+
+  private async resolveFinalAgentReportArgs(
+    workspaceId: string,
+    parts: readonly unknown[],
+    options: { acceptSchemaShapedWorkflowReport?: boolean } = {}
+  ): Promise<{ reportMarkdown: string; title?: string; structuredOutput?: unknown } | null> {
+    const finalResponse = this.findFinalAssistantResponseInParts(parts);
+    if (finalResponse == null) {
+      return null;
+    }
+
+    // The newest agent_report attempt controls replacement semantics: a newer correction may
+    // recover from an earlier failure, while a newer failure invalidates older successes.
+    const latestOutcomeInTurn = this.findLatestAgentReportOutcomeInParts(parts, options);
+    const latestProgress =
+      latestOutcomeInTurn?.kind === "success"
+        ? latestOutcomeInTurn.report
+        : latestOutcomeInTurn?.kind === "failure"
+          ? null
+          : await this.findLatestAgentReportArgsInHistory(workspaceId, options);
+    return {
+      reportMarkdown: finalResponse.reportMarkdown,
+      ...(latestProgress?.title !== undefined ? { title: latestProgress.title } : {}),
+      ...(latestProgress?.structuredOutput !== undefined
+        ? { structuredOutput: latestProgress.structuredOutput }
+        : {}),
+    };
+  }
+
+  private findLatestAgentReportOutcomeInParts(
+    parts: readonly unknown[],
+    options: { acceptSchemaShapedWorkflowReport?: boolean } = {}
+  ):
+    | {
+        kind: "success";
+        report: { reportMarkdown: string; title?: string; structuredOutput?: unknown };
+      }
+    | { kind: "failure" }
+    | null {
+    for (let index = parts.length - 1; index >= 0; index -= 1) {
+      const part = parts[index];
+      if (!isDynamicToolPart(part) || part.toolName !== "agent_report") {
+        continue;
+      }
+      if (part.state !== "output-available") {
+        continue;
+      }
+      if (!isSuccessfulToolResult(part.output)) {
+        return { kind: "failure" };
+      }
+      const report = this.findAgentReportArgsInParts([part], options);
+      return report == null ? { kind: "failure" } : { kind: "success", report };
+    }
+    return null;
   }
 
   private findAgentReportArgsInParts(
@@ -10673,6 +11229,7 @@ export class TaskService {
       agentType,
       title: titlePrefix,
       reportMarkdown: report.reportMarkdown,
+      status: "completed",
       ...(report.structuredOutput !== undefined
         ? { structuredOutput: report.structuredOutput }
         : {}),
@@ -10834,6 +11391,12 @@ export class TaskService {
 
     if (!hasCompletedAgentReport(entry.workspace)) {
       return { ok: false, reason: "task_not_reported" };
+    }
+
+    // Sticky tasks are an explicit user retention request. They can still be archived, removed, or
+    // terminated manually, but no automatic cleanup path should make that lifecycle decision.
+    if (entry.workspace.taskSticky === true) {
+      return { ok: false, reason: "sticky" };
     }
 
     if (entry.workspace.bestOf?.total != null && entry.workspace.bestOf.total > 1) {

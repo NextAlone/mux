@@ -143,7 +143,7 @@ function GallerySection(props: {
 /**
  * Gallery of non-interactive CodeExecutionToolCall states stacked vertically in
  * labeled sections. Folds the former Completed, Executing, Failed, and
- * SyntaxHighlighting stories into a single snapshot to conserve the Chromatic
+ * SyntaxHighlighting stories into a single snapshot to conserve the snapshot
  * budget while preserving each distinct visual state.
  */
 export const Gallery: Story = {

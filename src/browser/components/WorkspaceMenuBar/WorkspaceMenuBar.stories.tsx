@@ -1,9 +1,4 @@
-import {
-  CHROMATIC_SMOKE_MODES,
-  appMeta,
-  AppWithMocks,
-  type AppStory,
-} from "@/browser/stories/meta.js";
+import { PIXEL_DUAL_THEME, appMeta, AppWithMocks, type AppStory } from "@/browser/stories/meta.js";
 import { createGitStatusExecutor } from "@/browser/stories/helpers/git";
 import {
   collapseRightSidebar,
@@ -28,52 +23,25 @@ const DEVCONTAINER_RUNTIME = {
 };
 
 /**
- * Build a mock executor that handles BookmarkSelector's jj bookmark probes plus
- * GitStatusStore's consolidated status script, using a per-workspace bookmark map.
+ * Build a mock executor that handles BranchSelector's `git rev-parse --abbrev-ref HEAD`
+ * plus GitStatusStore's consolidated status script, using a per-workspace branch map.
  */
-function createBookmarkAwareExecutor(
-  bookmarks: Map<string, string>,
+function createBranchAwareExecutor(
+  branches: Map<string, string>,
   gitStatus?: Map<string, { ahead?: number; behind?: number; dirty?: number }>
 ) {
   const baseExecutor = createGitStatusExecutor(gitStatus);
   return (workspaceId: string, script: string) => {
-    if (script.includes("jj --no-pager --color never root")) {
+    // BranchSelector uses `git rev-parse --abbrev-ref HEAD` to detect the current branch
+    if (script.includes("git rev-parse --abbrev-ref HEAD")) {
+      const branch = branches.get(workspaceId) ?? "main";
       return Promise.resolve({
         success: true as const,
-        output: "true",
+        output: branch,
         exitCode: 0,
         wall_duration_ms: 10,
       });
     }
-
-    if (script.includes("latest(::@ & bookmarks())")) {
-      const bookmark = bookmarks.get(workspaceId) ?? "main";
-      return Promise.resolve({
-        success: true as const,
-        output: bookmark,
-        exitCode: 0,
-        wall_duration_ms: 10,
-      });
-    }
-
-    if (script.includes("jj --no-pager --color never bookmark list")) {
-      return Promise.resolve({
-        success: true as const,
-        output: Array.from(bookmarks.values()).join("\n"),
-        exitCode: 0,
-        wall_duration_ms: 10,
-      });
-    }
-
-    if (script.includes("jj --no-pager --color never git remote list")) {
-      return Promise.resolve({
-        success: true as const,
-        output: "",
-        exitCode: 0,
-        wall_duration_ms: 10,
-      });
-    }
-
     return baseExecutor(workspaceId, script);
   };
 }
@@ -103,15 +71,15 @@ function createDevcontainerClient(runtimeStatus: "running" | "stopped" | "unknow
   collapseRightSidebar();
   collapseLeftSidebar();
 
-  const bookmarks = new Map([
-    // dc-1 bookmark is only available when the runtime is running;
-    // otherwise BookmarkSelector falls back to bookmarkCache / workspaceName.
+  const branches = new Map([
+    // dc-1 branch is only available from git when the runtime is running;
+    // otherwise BranchSelector falls back to branchCache / workspaceName.
     ...(runtimeStatus === "running" ? [["dc-1", "feature/lazy-start"] as const] : []),
     ["dc-2", "fix/sidebar-overflow"],
   ]);
   const gitStatus = new Map([
-    // Passive repository status is gated behind runtime eligibility — stopped/unknown
-    // devcontainers have no repository status data until the runtime starts.
+    // Passive git status is gated behind runtime eligibility — stopped/unknown
+    // devcontainers have no git status data until the runtime starts.
     ...(runtimeStatus === "running" ? [["dc-1", { ahead: 2, dirty: 1 }] as const] : []),
     ["dc-2", { ahead: 0, behind: 3 }],
   ]);
@@ -119,7 +87,7 @@ function createDevcontainerClient(runtimeStatus: "running" | "stopped" | "unknow
   return createMockORPCClient({
     projects,
     workspaces,
-    executeBash: createBookmarkAwareExecutor(bookmarks, gitStatus),
+    executeBash: createBranchAwareExecutor(branches, gitStatus),
     runtimeStatuses: new Map([
       ["dc-1", runtimeStatus],
       ["dc-2", "unsupported"],
@@ -129,11 +97,11 @@ function createDevcontainerClient(runtimeStatus: "running" | "stopped" | "unknow
 
 /**
  * Devcontainer workspace with a running container.
- * The top bar shows a "Container running" indicator next to the bookmark selector.
+ * The top bar shows a "Container running" indicator next to the branch selector.
  */
 export const DevcontainerRunning: AppStory = {
   parameters: {
-    chromatic: { modes: CHROMATIC_SMOKE_MODES },
+    pixel: { matrix: PIXEL_DUAL_THEME },
   },
   render: () => <AppWithMocks setup={() => createDevcontainerClient("running")} />,
 };
@@ -156,11 +124,8 @@ export const ScratchWorkspace: AppStory = {
     viewport: { value: "mobile1", isRotated: false },
   },
   parameters: {
-    chromatic: {
-      modes: {
-        // ScratchWorkspace was added for the phone regression; desktop remains covered elsewhere.
-        mobile: { theme: "light", viewport: "mobile1", hasTouch: true },
-      },
+    pixel: {
+      matrix: { themes: ["dark", "light"], viewports: ["laptop", "phone"] },
     },
   },
   render: () => (

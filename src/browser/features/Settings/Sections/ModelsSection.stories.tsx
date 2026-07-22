@@ -4,7 +4,7 @@
  * agents section via settings context, but the visual section swap is only
  * exercised in the SettingsPage smoke story.
  */
-import { CHROMATIC_DISABLED, lightweightMeta } from "@/browser/stories/meta.js";
+import { PIXEL_DISABLED, lightweightMeta } from "@/browser/stories/meta.js";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { waitFor, within } from "@storybook/test";
 import { ModelsSection } from "./ModelsSection.js";
@@ -65,14 +65,8 @@ export const ModelsConfiguredMobile: Story = {
     viewport: { value: "mobile1", isRotated: false },
   },
   parameters: {
-    chromatic: {
-      // The responsive play contract runs in CI without adding two visual snapshots.
-      ...CHROMATIC_DISABLED,
-      modes: {
-        "dark-mobile": { theme: "dark", viewport: 375 },
-        "light-mobile": { theme: "light", viewport: 375 },
-      },
-    },
+    // The responsive play contract runs in CI without adding a Pixel snapshot.
+    pixel: PIXEL_DISABLED,
   },
   render: () => (
     <div className="w-[343px] p-3">

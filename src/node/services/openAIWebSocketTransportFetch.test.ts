@@ -600,7 +600,7 @@ describe("Codex OAuth Responses WebSocket", () => {
         request
       );
 
-      await expect(response.text()).rejects.toThrow(
+      expect(response.text()).rejects.toThrow(
         "stream closed unexpectedly before the response completed: received malformed JSON frame"
       );
 

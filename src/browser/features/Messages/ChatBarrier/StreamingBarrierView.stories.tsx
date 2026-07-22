@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { fn } from "@storybook/test";
-import { CHROMATIC_DISABLED, lightweightMeta } from "@/browser/stories/meta.js";
+import { PIXEL_DISABLED, lightweightMeta } from "@/browser/stories/meta.js";
 import { StreamingBarrierView } from "./StreamingBarrierView";
 
 const meta = {
@@ -85,7 +85,7 @@ export const Streaming: Story = {
  * the token-stats slot is not rendered.
  */
 export const WaitingOnBackgroundBashMonitor: Story = {
-  parameters: { chromatic: CHROMATIC_DISABLED },
+  parameters: { pixel: PIXEL_DISABLED },
   args: {
     statusText: "Waiting on background bash monitor...",
     cancelText: "agent wakes on matching output",
@@ -98,11 +98,11 @@ export const WaitingOnBackgroundBashMonitor: Story = {
  * Same waiting state in a phone-width pane: the low-priority hint hides via the
  * barrier's own container query so the row cannot overflow horizontally. The
  * fixed-width wrapper drives the container query directly, so this contract
- * holds in the Storybook test-runner and Chromatic without viewport modes.
+ * holds in the Storybook test-runner and Pixel without viewport variants.
  */
 export const WaitingOnBackgroundBashMonitorNarrow: Story = {
   // Container-query coverage remains executable without duplicating the visual budget.
-  parameters: { chromatic: CHROMATIC_DISABLED },
+  parameters: { pixel: PIXEL_DISABLED },
   args: {
     statusText: "Waiting on background bash monitor...",
     cancelText: "agent wakes on matching output",

@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { userEvent, within } from "@storybook/test";
-import { CHROMATIC_DISABLED, lightweightMeta } from "@/browser/stories/meta.js";
+import { PIXEL_DISABLED, lightweightMeta } from "@/browser/stories/meta.js";
 import { createMockORPCClient } from "@/browser/stories/mocks/orpc";
 import { createWorkspace, groupWorkspacesByProject } from "@/browser/stories/mocks/workspaces";
 import { selectWorkspace } from "@/browser/stories/helpers/uiState";
@@ -68,7 +68,7 @@ function renderSecretsSection(setup: () => ReturnType<typeof createMockORPCClien
 
 export const GlobalSecretsView: Story = {
   // ProjectSecrets owns the visual snapshot; this duplicate desktop state stays as play coverage.
-  parameters: { chromatic: CHROMATIC_DISABLED },
+  parameters: { pixel: PIXEL_DISABLED },
   render: () => renderSecretsSection(() => setupSecretsStory()),
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
@@ -80,7 +80,7 @@ export const GlobalSecretsView: Story = {
 
 export const PopulatedGlobalSecrets: Story = {
   // The interaction assertions remain useful without duplicating the shared Secrets layout snapshot.
-  parameters: { chromatic: CHROMATIC_DISABLED },
+  parameters: { pixel: PIXEL_DISABLED },
   render: () =>
     renderSecretsSection(() =>
       setupSecretsStory({

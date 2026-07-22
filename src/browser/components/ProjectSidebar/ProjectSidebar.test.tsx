@@ -60,6 +60,7 @@ function installProviderIconSvgMocks() {
     "@/browser/assets/icons/openrouter.svg?react",
     "@/browser/assets/icons/ollama.svg?react",
     "@/browser/assets/icons/deepseek.svg?react",
+    "@/browser/assets/icons/moonshotai.svg?react",
     "@/browser/assets/icons/aws.svg?react",
     "@/browser/assets/icons/github.svg?react",
   ] as const;
@@ -1226,7 +1227,7 @@ describe("ProjectSidebar multi-project completed-subagent toggles", () => {
     expect(parentRow.getAttribute("aria-describedby")).toBe("workspace-status-description-parent");
   });
 
-  test("renders variants groups with a shared row and labeled members when expanded", async () => {
+  test("archives a variants group from its context menu and renders labeled members when expanded", async () => {
     window.localStorage.setItem(EXPANDED_PROJECTS_KEY, JSON.stringify(["/projects/demo-project"]));
 
     const singleProjectRefs = [
@@ -1322,7 +1323,34 @@ describe("ProjectSidebar multi-project completed-subagent toggles", () => {
     expect(view.queryByTestId(agentItemTestId("child-1"))).toBeNull();
     expect(view.queryByTestId(agentItemTestId("child-2"))).toBeNull();
 
-    fireEvent.click(groupRow);
+    fireEvent.contextMenu(groupRow, { clientX: 120, clientY: 80 });
+    const archiveAllVariants = view.getByRole("button", { name: /Archive all variants/ });
+    fireEvent.click(archiveAllVariants);
+
+    await waitFor(() => {
+      expect(preflightArchiveWorkspaceMock).toHaveBeenCalledTimes(2);
+      expect(archiveWorkspaceActionMock).toHaveBeenCalledTimes(2);
+    });
+    expect(preflightArchiveWorkspaceMock).toHaveBeenNthCalledWith(1, "child-1");
+    expect(preflightArchiveWorkspaceMock).toHaveBeenNthCalledWith(2, "child-2");
+    expect(archiveWorkspaceActionMock).toHaveBeenNthCalledWith(1, "child-1", undefined);
+    expect(archiveWorkspaceActionMock).toHaveBeenNthCalledWith(2, "child-2", undefined);
+
+    archiveWorkspaceActionMock.mockClear();
+    archiveWorkspaceActionMock.mockImplementationOnce(() =>
+      Promise.resolve({ success: false as const, error: "archive failed" })
+    );
+    fireEvent.contextMenu(groupRow, { clientX: 120, clientY: 80 });
+    fireEvent.click(view.getByRole("button", { name: /Archive all variants/ }));
+
+    await waitFor(() => {
+      expect(archiveWorkspaceActionMock).toHaveBeenCalledTimes(1);
+    });
+    expect(archiveWorkspaceActionMock).toHaveBeenCalledWith("child-1", undefined);
+
+    if (groupRow.getAttribute("aria-expanded") !== "true") {
+      fireEvent.click(groupRow);
+    }
 
     await waitFor(() => {
       expect(view.getByText("frontend · Split review")).toBeTruthy();

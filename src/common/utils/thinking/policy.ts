@@ -19,6 +19,7 @@ import {
   THINKING_LEVEL_OFF,
   anthropicRejectsDisabledThinking,
   anthropicSupportsNativeXhigh,
+  isKimiK3Model,
   openaiSupportsNativeMaxEffort,
   stripModelProviderPrefixes,
   type ThinkingLevel,
@@ -42,7 +43,9 @@ export function isGeminiFlashThinkingLevelModelName(modelName: string): boolean 
   return (
     ((normalized === "gemini-3-flash" || normalized.startsWith("gemini-3-flash-")) &&
       !normalized.startsWith("gemini-3-flash-lite")) ||
-    (normalized.startsWith("gemini-3.5-flash") && !normalized.startsWith("gemini-3.5-flash-lite"))
+    (normalized.startsWith("gemini-3.5-flash") &&
+      !normalized.startsWith("gemini-3.5-flash-lite")) ||
+    (normalized.startsWith("gemini-3.6-flash") && !normalized.startsWith("gemini-3.6-flash-lite"))
   );
 }
 
@@ -166,6 +169,12 @@ function getExplicitThinkingPolicy(modelString: string): ThinkingPolicy | null {
   // Gemini 3 Pro only supports "low" and "high" reasoning levels
   if (withoutProviderNamespace.includes("gemini-3")) {
     return ["low", "high"];
+  }
+
+  // Kimi K3 always reasons and supports only the max reasoning effort, so the
+  // policy is a fixed single level.
+  if (isKimiK3Model(withoutProviderNamespace)) {
+    return ["max"];
   }
 
   // No explicit reasoning rule matched.

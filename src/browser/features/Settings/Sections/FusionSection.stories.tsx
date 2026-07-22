@@ -1,4 +1,4 @@
-import { CHROMATIC_DISABLED, lightweightMeta } from "@/browser/stories/meta.js";
+import { PIXEL_DISABLED, lightweightMeta } from "@/browser/stories/meta.js";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { within } from "@storybook/test";
 import { FusionSection } from "./FusionSection.js";
@@ -11,7 +11,7 @@ const meta: Meta = {
   parameters: {
     ...lightweightMeta.parameters,
     // Keep the responsive play contract without creating a new snapshot-enabled file.
-    chromatic: CHROMATIC_DISABLED,
+    pixel: PIXEL_DISABLED,
   },
 };
 
@@ -23,12 +23,7 @@ export const ConfiguredMobile: Story = {
     viewport: { value: "mobile1", isRotated: false },
   },
   parameters: {
-    chromatic: {
-      modes: {
-        "dark-mobile": { theme: "dark", viewport: 375 },
-        "light-mobile": { theme: "light", viewport: 375 },
-      },
-    },
+    pixel: PIXEL_DISABLED,
   },
   render: () => (
     <div className="w-[343px] p-3">

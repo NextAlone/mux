@@ -5521,6 +5521,7 @@ export const router = (authToken?: string) => {
             title: input.title,
             modelString: input.modelString,
             thinkingLevel,
+            sticky: input.sticky,
           });
         }),
     },

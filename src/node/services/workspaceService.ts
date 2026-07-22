@@ -554,6 +554,10 @@ type WorkspaceRuntimeStatus = "running" | "stopped" | "unknown" | "unsupported";
 const POST_COMPACTION_METADATA_REFRESH_DEBOUNCE_MS = 100;
 const ACTIVE_SHARED_CHECKOUT_TASK_STATUSES = new Set(["starting", "running", "awaiting_report"]);
 
+const STICKY_DESCENDANT_ARCHIVE_ERROR =
+  "This workspace has unarchived sticky sub-agent workspaces. Archive or remove those sub-agents explicitly before archiving their parent.";
+const STICKY_DESCENDANT_REMOVE_ERROR =
+  "This workspace has sticky sub-agent workspaces. Remove those sub-agents explicitly before removing their parent.";
 const MULTI_PROJECT_WORKSPACES_DISABLED_ERROR = "Multi-project workspaces experiment is disabled";
 
 function normalizeRepoRootProjectPath(projectPath: string | null | undefined): string {
@@ -4475,6 +4479,10 @@ export class WorkspaceService extends EventEmitter {
 
     // Try to remove from runtime (filesystem)
     try {
+      if (this.taskService?.hasStickyDescendants?.(workspaceId) === true) {
+        return Err(STICKY_DESCENDANT_REMOVE_ERROR);
+      }
+
       if (!force) {
         const config = this.config.loadConfigOrDefault();
         const taskSettings = normalizeTaskSettings(config.taskSettings);
@@ -6513,6 +6521,9 @@ export class WorkspaceService extends EventEmitter {
       if (!workspace) {
         return Err("Workspace not found");
       }
+      if (this.taskService?.hasUnarchivedStickyDescendants?.(workspaceId) === true) {
+        return Err(STICKY_DESCENDANT_ARCHIVE_ERROR);
+      }
 
       const worktreeArchiveBehavior = this.getWorktreeArchiveBehavior();
       const snapshotBehaviorEnabled =
@@ -6566,6 +6577,9 @@ export class WorkspaceService extends EventEmitter {
       const workspace = this.config.findWorkspace(workspaceId);
       if (!workspace) {
         return Err("Workspace not found");
+      }
+      if (this.taskService?.hasUnarchivedStickyDescendants?.(workspaceId) === true) {
+        return Err(STICKY_DESCENDANT_ARCHIVE_ERROR);
       }
       const initState = this.initStateManager.getInitState(workspaceId);
       if (initState?.status === "running") {
@@ -8314,6 +8328,8 @@ export class WorkspaceService extends EventEmitter {
       requireIdle?: boolean;
       /** Coalescing for queued sends: drop the message when the same key is already queued. */
       queueDedupeKey?: string;
+      /** Keep this dedupe-keyed queue entry isolated so it can be selectively superseded. */
+      removableQueueDedupeKey?: boolean;
       /**
        * For queued sends: quietly drop the message (success) when other messages are already
        * queued at enqueue time. Scheduled heartbeats use this so a user send racing the awaits
@@ -8530,6 +8546,7 @@ export class WorkspaceService extends EventEmitter {
           synthetic: internal?.synthetic,
           agentInitiated: internal?.agentInitiated,
           dedupeKey: internal?.queueDedupeKey,
+          removableDedupeKey: internal?.removableQueueDedupeKey,
           onCanceled: internal?.onCanceled,
           onAccepted: internal?.onAccepted,
           onAcceptedPreStreamFailure: internal?.onAcceptedPreStreamFailure,
@@ -9180,6 +9197,29 @@ export class WorkspaceService extends EventEmitter {
       const errorMessage = getErrorMessage(error);
       log.error("Unexpected error in clearQueue handler:", error);
       return Err(`Failed to clear queue: ${errorMessage}`);
+    }
+  }
+
+  removeQueuedMessagesByDedupeKeyPrefix(
+    workspaceId: string,
+    prefix: string,
+    options?: { cancelReason?: string }
+  ): Result<number> {
+    try {
+      const session = this.sessions.get(workspaceId.trim());
+      if (session == null) {
+        return Ok(0);
+      }
+      return Ok(
+        session.removeQueuedMessagesByDedupeKeyPrefix(
+          prefix,
+          options?.cancelReason ?? "Queued message superseded before dispatch."
+        )
+      );
+    } catch (error) {
+      const errorMessage = getErrorMessage(error);
+      log.error("Unexpected error removing queued messages by dedupe prefix:", error);
+      return Err(`Failed to remove queued messages: ${errorMessage}`);
     }
   }
 

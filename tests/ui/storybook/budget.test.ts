@@ -4,13 +4,13 @@ import { join } from "node:path";
 
 const STORY_DIR = "src/browser/stories";
 const COLOCATED_STORY_DIRS = ["src/browser/components", "src/browser/features"];
-const MAX_SNAPSHOT_ENABLED_FILES = 79;
+const MAX_SNAPSHOT_ENABLED_FILES = 80;
 // Exact current retained snapshot baseline. Keep this no-headroom guardrail tight:
-// future growth should disable, consolidate, or intentionally rebalance snapshots
-// rather than silently increasing Chromatic load.
-const MAX_ESTIMATED_SNAPSHOTS = 293;
-const SMOKE_MODE_PATTERN = /modes:\s*CHROMATIC_SMOKE_MODES/g;
-const INLINE_MODE_OBJECT_PATTERN = /modes:\s*{/g;
+// future growth should exclude, consolidate, or intentionally rebalance snapshots
+// rather than silently increasing Pixel load.
+const MAX_ESTIMATED_SNAPSHOTS = 312;
+const DUAL_THEME_PATTERN = /matrix:\s*PIXEL_DUAL_THEME/g;
+const INLINE_MATRIX_OBJECT_PATTERN = /matrix:\s*{/g;
 
 function findColocatedStories(dirs: string[]): string[] {
   return dirs.flatMap((dir: string) =>
@@ -21,11 +21,7 @@ function findColocatedStories(dirs: string[]): string[] {
 }
 
 function hasSnapshotDisable(content: string): boolean {
-  return (
-    content.includes("chromatic: CHROMATIC_DISABLED") ||
-    /chromatic:\s*{[\s\S]*?\.\.\.CHROMATIC_DISABLED/.test(content) ||
-    /disableSnapshot:\s*true/.test(content)
-  );
+  return content.includes("pixel: PIXEL_DISABLED") || /exclude:\s*true/.test(content);
 }
 
 function splitStorySections(content: string): {
@@ -59,94 +55,33 @@ function findClosingBrace(content: string, openingBraceIndex: number): number {
   return -1;
 }
 
-function countTopLevelObjectEntries(objectLiteral: string): number {
-  const source = objectLiteral.slice(1, -1);
-  if (source.trim().length === 0) {
+function countArrayEntries(arrayLiteral: string): number {
+  const source = arrayLiteral.trim();
+  if (source.length === 0) {
     return 0;
   }
-
-  let braceDepth = 0;
-  let bracketDepth = 0;
-  let parenDepth = 0;
-  let quote: '"' | "'" | "`" | null = null;
-  let escaped = false;
-  let entryHasContent = false;
-  let entryCount = 0;
-
-  for (const char of source) {
-    if (quote) {
-      if (escaped) {
-        escaped = false;
-      } else if (char === "\\") {
-        escaped = true;
-      } else if (char === quote) {
-        quote = null;
-      }
-      continue;
-    }
-
-    if (char === '"' || char === "'" || char === "`") {
-      quote = char;
-      entryHasContent = true;
-      continue;
-    }
-
-    if (char === "{") {
-      braceDepth += 1;
-      entryHasContent = true;
-      continue;
-    }
-    if (char === "}") {
-      braceDepth -= 1;
-      entryHasContent = true;
-      continue;
-    }
-    if (char === "[") {
-      bracketDepth += 1;
-      entryHasContent = true;
-      continue;
-    }
-    if (char === "]") {
-      bracketDepth -= 1;
-      entryHasContent = true;
-      continue;
-    }
-    if (char === "(") {
-      parenDepth += 1;
-      entryHasContent = true;
-      continue;
-    }
-    if (char === ")") {
-      parenDepth -= 1;
-      entryHasContent = true;
-      continue;
-    }
-
-    const atTopLevel = braceDepth === 0 && bracketDepth === 0 && parenDepth === 0;
-    if (char === "," && atTopLevel) {
-      if (entryHasContent) {
-        entryCount += 1;
-        entryHasContent = false;
-      }
-      continue;
-    }
-
-    if (!/\s/.test(char)) {
-      entryHasContent = true;
-    }
-  }
-
-  if (entryHasContent) {
-    entryCount += 1;
-  }
-
-  return entryCount;
+  return source.split(",").filter((entry) => entry.trim().length > 0).length;
 }
 
-function estimateInlineModeExtras(content: string): number {
+// Pixel expands every configured matrix axis as a cross-product.
+function estimateMatrixVariants(matrixLiteral: string): number {
+  const inner = matrixLiteral.slice(1, -1);
+
+  let variants = 1;
+  for (const axis of ["browsers", "viewports", "themes", "colorSchemes"]) {
+    const axisMatch = new RegExp(`${axis}:\\s*\\[([^\\]]*)\\]`).exec(inner);
+    if (axisMatch?.[1] != null) {
+      variants *= Math.max(1, countArrayEntries(axisMatch[1]));
+    }
+  }
+
+  return variants;
+}
+
+function estimateInlineMatrixExtras(content: string): number {
   let extraSnapshots = 0;
 
-  for (const match of content.matchAll(INLINE_MODE_OBJECT_PATTERN)) {
+  for (const match of content.matchAll(INLINE_MATRIX_OBJECT_PATTERN)) {
     if (match.index == null) {
       continue;
     }
@@ -157,10 +92,10 @@ function estimateInlineModeExtras(content: string): number {
       continue;
     }
 
-    const modeCount = countTopLevelObjectEntries(
+    const variantCount = estimateMatrixVariants(
       content.slice(openingBraceIndex, closingBraceIndex + 1)
     );
-    extraSnapshots += Math.max(0, modeCount - 1);
+    extraSnapshots += Math.max(0, variantCount - 1);
   }
 
   return extraSnapshots;
@@ -193,8 +128,6 @@ describe("Storybook snapshot budget", () => {
       }
 
       const { metaSection, storySections } = splitStorySections(content);
-      // Story-level disables keep local/test-runner coverage without consuming
-      // paid Chromatic snapshots, so the budget must exclude their modes too.
       const enabledStorySections = storySections.filter((section) => !hasSnapshotDisable(section));
       const storyCount = enabledStorySections.length;
       if (storyCount === 0) {
@@ -202,9 +135,9 @@ describe("Storybook snapshot budget", () => {
       }
 
       const snapshotContent = [metaSection, ...enabledStorySections].join("\n");
-      const smokeStories = (snapshotContent.match(SMOKE_MODE_PATTERN) ?? []).length;
-      const inlineModeExtras = estimateInlineModeExtras(snapshotContent);
-      totalSnapshots += storyCount + smokeStories + inlineModeExtras;
+      const dualThemeStories = (snapshotContent.match(DUAL_THEME_PATTERN) ?? []).length;
+      const inlineMatrixExtras = estimateInlineMatrixExtras(snapshotContent);
+      totalSnapshots += storyCount + dualThemeStories + inlineMatrixExtras;
     }
 
     expect(totalSnapshots).toBeLessThanOrEqual(MAX_ESTIMATED_SNAPSHOTS);

@@ -409,6 +409,7 @@ export const createTaskTool: ToolFactory = (config: ToolConfiguration) => {
         prompt,
         title,
         run_in_background,
+        sticky,
         n,
         variants,
         model,
@@ -571,6 +572,7 @@ export const createTaskTool: ToolFactory = (config: ToolConfiguration) => {
             ? { thinkingLevel: aiOverrides.thinkingLevel }
             : {}),
           ...(isolation != null ? { isolation } : {}),
+          ...(sticky === true ? { sticky: true } : {}),
           ...(parentRuntimeAiSettings != null ? { parentRuntimeAiSettings } : {}),
           // Background launches are non-blocking with terminal wake-up; foreground/default block.
           attentionPolicy: run_in_background ? "notify_on_terminal" : "blocking_until_terminal",

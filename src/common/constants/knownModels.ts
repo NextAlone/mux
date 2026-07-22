@@ -4,7 +4,7 @@
 
 import { formatModelDisplayName } from "../utils/ai/modelDisplay";
 
-type ModelProvider = "anthropic" | "openai" | "google" | "xai" | "deepseek";
+type ModelProvider = "anthropic" | "openai" | "google" | "xai" | "deepseek" | "moonshotai";
 
 interface KnownModelDefinition {
   /** Provider identifier used by SDK factories */
@@ -173,10 +173,11 @@ const MODEL_DEFINITIONS = {
     aliases: ["gemini", "gemini-pro"],
     tokenizerOverride: "google/gemini-2.5-pro",
   },
-  // Gemini Flash alias tracks the latest stable Flash tier.
+  // Gemini Flash alias tracks the latest stable Flash tier (3.6 Flash, GA July 21, 2026).
+  // 3.5 Flash stays usable as the custom model string `google:gemini-3.5-flash`.
   GEMINI_FLASH: {
     provider: "google",
-    providerModelId: "gemini-3.5-flash",
+    providerModelId: "gemini-3.6-flash",
     aliases: ["gemini-flash"],
     tokenizerOverride: "google/gemini-2.5-pro",
   },
@@ -210,6 +211,17 @@ const MODEL_DEFINITIONS = {
     providerModelId: "deepseek-v4-flash",
     aliases: ["deepseek-flash", "deepseek-v4-flash"],
     tokenizerOverride: "deepseek/deepseek-v3.1",
+  },
+  // Kimi K3 - Moonshot AI's flagship open-weight multimodal reasoning model (released
+  // July 16, 2026; 1M context, text+image input; $3/M in, $15/M out).
+  // Bare `kimi` alias tracks Moonshot's flagship per the shortest-alias convention.
+  KIMI_K3: {
+    provider: "moonshotai",
+    providerModelId: "kimi-k3",
+    aliases: ["kimi", "k3", "kimi-k3"],
+    // K3's tokenizer isn't published in ai-tokenizer yet; reuse Kimi K2 (the newest
+    // Moonshot tokenizer available) for approximate counting.
+    tokenizerOverride: "moonshotai/kimi-k2",
   },
 } as const satisfies Record<string, KnownModelDefinition>;
 

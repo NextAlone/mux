@@ -9,7 +9,7 @@ import { DndProvider } from "react-dnd";
 import { HTML5Backend } from "react-dnd-html5-backend";
 import { TooltipProvider } from "@/browser/components/Tooltip/Tooltip";
 import { screen, waitFor, userEvent } from "@storybook/test";
-import { CHROMATIC_DISABLED } from "@/browser/stories/meta.js";
+import { PIXEL_DISABLED } from "@/browser/stories/meta.js";
 import { createMockORPCClient } from "@/browser/stories/mocks/orpc";
 import { NOW, createWorkspace } from "@/browser/stories/mocks/workspaces";
 import { useWorkspaceStoreRaw, workspaceStore } from "@/browser/stores/WorkspaceStore";
@@ -528,8 +528,8 @@ export const WorkflowOnlyActivity: Story = {
 
 export const BashMonitorWaiting: Story = {
   args: undefined as never,
-  // The state remains covered by Storybook tests without growing the Chromatic budget.
-  parameters: { chromatic: CHROMATIC_DISABLED },
+  // The state remains covered by Storybook tests without growing the Pixel budget.
+  parameters: { pixel: PIXEL_DISABLED },
   render: renderBashMonitorWaiting,
 };
 
@@ -579,7 +579,7 @@ function renderSubAgentGallery() {
   // Own ws-idle's last-read state. IdleSeen/IdleNotSeen write the same persisted
   // key, so without pinning it here the idle rows inherit whichever sibling story
   // rendered last and flip between "idle" (primary title) and "seen" (tertiary
-  // title) — a non-deterministic Chromatic diff. Pin to unread (matching the
+  // title), causing a non-deterministic snapshot diff. Pin to unread (matching the
   // workspace's "idle" semantics) so the gallery is stable regardless of order.
   const idleCreatedAtMs = Date.parse(idle.createdAt ?? new Date(NOW).toISOString());
   updatePersistedState(getWorkspaceLastReadKey(idle.id), idleCreatedAtMs - 60_000);
@@ -671,7 +671,7 @@ export const SubAgentStates: Story = {
   // ws-active streams asynchronously: the scaffold's onChat emits stream-start
   // through a fire-and-forget store subscription (ensureActiveOnChatSubscription
   // → void runOnChatSubscription), which flips its rows to the "active" visual
-  // state (success-colored status dot). With no play() Chromatic races that
+  // state (success-colored status dot). With no play() the snapshot races that
   // async transition and captures the dot as active-or-not at random. Wait for
   // the settled signal so every snapshot captures the same frame.
   play: async ({ canvasElement }) => {

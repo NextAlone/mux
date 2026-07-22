@@ -1579,6 +1579,27 @@ describe("buildProviderOptions - Google", () => {
     });
   });
 
+  test("maps Gemini 3.6 Flash off to minimal thinking without thoughts", () => {
+    expect(buildProviderOptions("google:gemini-3.6-flash", "off")).toEqual({
+      google: {
+        thinkingConfig: {
+          thinkingLevel: "minimal",
+        },
+      },
+    });
+  });
+
+  test("maps Gemini 3.6 Flash medium to thinkingLevel medium with thoughts", () => {
+    expect(buildProviderOptions("google:gemini-3.6-flash", "medium")).toEqual({
+      google: {
+        thinkingConfig: {
+          includeThoughts: true,
+          thinkingLevel: "medium",
+        },
+      },
+    });
+  });
+
   test("maps Gemini 3.5 Flash medium to thinkingLevel medium with thoughts", () => {
     expect(buildProviderOptions("mux-gateway:google/gemini-3.5-flash", "medium")).toEqual({
       google: {
@@ -1684,6 +1705,59 @@ describe("buildProviderOptions - Google", () => {
         thinkingConfig: undefined,
       },
     });
+  });
+});
+
+describe("buildProviderOptions - Moonshot", () => {
+  test("sends the explicit max reasoning effort for direct Kimi K3", () => {
+    expect(buildProviderOptions("moonshotai:kimi-k3", "max")).toEqual({
+      moonshotai: { reasoningEffort: "max" },
+    });
+  });
+
+  test("emits no provider options for other Moonshot models", () => {
+    expect(buildProviderOptions("moonshotai:kimi-k2.5", "medium")).toEqual({});
+  });
+});
+
+describe("buildProviderOptions - OpenRouter", () => {
+  test("sends the explicit max effort for OpenRouter-routed Kimi K3", () => {
+    // `enabled: true` alone falls back to OpenRouter's default (medium) effort,
+    // which K3 does not support, so the effort must be sent explicitly.
+    const result = buildProviderOptions(
+      "moonshotai:kimi-k3",
+      "max",
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      "openrouter"
+    );
+    expect(result).toEqual({
+      openrouter: {
+        reasoning: {
+          enabled: true,
+          effort: "max",
+          exclude: false,
+        },
+      },
+    });
+  });
+
+  test("maps thinking levels to effort for other OpenRouter reasoning models", () => {
+    expect(buildProviderOptions("openrouter:z-ai/glm-4.6", "medium")).toEqual({
+      openrouter: {
+        reasoning: {
+          enabled: true,
+          effort: "medium",
+          exclude: false,
+        },
+      },
+    });
+
+    expect(buildProviderOptions("openrouter:z-ai/glm-4.6", "off")).toEqual({});
   });
 });
 
