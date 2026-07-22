@@ -1877,6 +1877,188 @@ describe("AIService.streamMessage compaction boundary slicing", () => {
     expect(harness.startStreamCalls).toHaveLength(0);
   });
 
+  it("keeps a synthetic post-compaction executable continuation on Pi", async () => {
+    using muxHome = new DisposableTempDir("ai-service-pi-compaction-continuation");
+    const projectPath = path.join(muxHome.path, "project");
+    await fs.mkdir(projectPath, { recursive: true });
+    const workspaceId = "workspace-pi-compaction-continuation";
+    const harness = createHarness(
+      muxHome.path,
+      createLocalWorkspaceMetadata(workspaceId, projectPath)
+    );
+    harness.service.setCodexOauthService({
+      getValidAuth: () => Promise.resolve({ success: true, data: TEST_CODEX_OAUTH }),
+      persistRuntimeAuthRefresh: () => Promise.resolve({ success: true, data: undefined }),
+    } as unknown as CodexOauthService);
+    const piCalls: PiAgentRuntimeStreamOptions[] = [];
+    spyOn(PiAgentRuntimeService.prototype, "startStream").mockImplementation(
+      (options, onSettled) => {
+        piCalls.push(options);
+        onSettled();
+        return Promise.resolve({ success: true, data: undefined });
+      }
+    );
+    const streamManager = (harness.service as unknown as { streamManager: StreamManager })
+      .streamManager;
+    spyOn(streamManager, "cleanupStreamTempDir").mockImplementation(() => undefined);
+
+    const result = await harness.service.streamMessage({
+      messages: [
+        createMuxMessage("compaction-continuation", "user", "Continue the original request.", {
+          synthetic: true,
+          syntheticExecutable: true,
+        }),
+      ],
+      workspaceId,
+      modelString: "openai:gpt-5.2",
+      thinkingLevel: "off",
+      experiments: { piAgentRuntime: true },
+    });
+
+    expect(result.success).toBe(true);
+    expect(piCalls).toHaveLength(1);
+    expect(harness.startStreamCalls).toHaveLength(0);
+  });
+
+  it("passes maxOutputTokens into the Pi runtime", async () => {
+    using muxHome = new DisposableTempDir("ai-service-pi-max-output-tokens");
+    const projectPath = path.join(muxHome.path, "project");
+    await fs.mkdir(projectPath, { recursive: true });
+    const workspaceId = "workspace-pi-max-output-tokens";
+    const harness = createHarness(
+      muxHome.path,
+      createLocalWorkspaceMetadata(workspaceId, projectPath)
+    );
+    harness.service.setCodexOauthService({
+      getValidAuth: () => Promise.resolve({ success: true, data: TEST_CODEX_OAUTH }),
+      persistRuntimeAuthRefresh: () => Promise.resolve({ success: true, data: undefined }),
+    } as unknown as CodexOauthService);
+    const piCalls: PiAgentRuntimeStreamOptions[] = [];
+    spyOn(PiAgentRuntimeService.prototype, "startStream").mockImplementation(
+      (options, onSettled) => {
+        piCalls.push(options);
+        onSettled();
+        return Promise.resolve({ success: true, data: undefined });
+      }
+    );
+    const streamManager = (harness.service as unknown as { streamManager: StreamManager })
+      .streamManager;
+    spyOn(streamManager, "cleanupStreamTempDir").mockImplementation(() => undefined);
+
+    const result = await harness.service.streamMessage({
+      messages: [createMuxMessage("latest-user", "user", "Answer briefly")],
+      workspaceId,
+      modelString: "openai:gpt-5.2",
+      thinkingLevel: "off",
+      maxOutputTokens: 2048,
+      experiments: { piAgentRuntime: true },
+    });
+
+    expect(result.success).toBe(true);
+    expect(piCalls[0]?.maxOutputTokens).toBe(2048);
+  });
+
+  it("fails closed when a Pi turn has a configured refusal fallback", async () => {
+    using muxHome = new DisposableTempDir("ai-service-pi-model-fallback");
+    const projectPath = path.join(muxHome.path, "project");
+    await fs.mkdir(projectPath, { recursive: true });
+    const workspaceId = "workspace-pi-model-fallback";
+    await writeMainConfig(muxHome.path, {
+      modelFallbacks: {
+        "openai:gpt-5.2": { models: ["anthropic:claude-sonnet-4-5"] },
+      },
+    });
+    const harness = createHarness(
+      muxHome.path,
+      createLocalWorkspaceMetadata(workspaceId, projectPath)
+    );
+    const piCalls: PiAgentRuntimeStreamOptions[] = [];
+    spyOn(PiAgentRuntimeService.prototype, "startStream").mockImplementation(
+      (options, onSettled) => {
+        piCalls.push(options);
+        onSettled();
+        return Promise.resolve({ success: true, data: undefined });
+      }
+    );
+
+    const result = await harness.service.streamMessage({
+      messages: [createMuxMessage("latest-user", "user", "Run the task")],
+      workspaceId,
+      modelString: "openai:gpt-5.2",
+      thinkingLevel: "off",
+      experiments: { piAgentRuntime: true },
+    });
+
+    expect(result.success).toBe(false);
+    if (result.success) throw new Error("Expected unsupported Pi fallback to fail closed");
+    expect(result.error).toMatchObject({ type: "unknown" });
+    expect("raw" in result.error ? result.error.raw : "").toContain("model fallback");
+    expect(piCalls).toHaveLength(0);
+  });
+
+  it("fails closed when Pi would ignore model parameter overrides", async () => {
+    using muxHome = new DisposableTempDir("ai-service-pi-model-overrides");
+    const projectPath = path.join(muxHome.path, "project");
+    await fs.mkdir(projectPath, { recursive: true });
+    const workspaceId = "workspace-pi-model-overrides";
+    await writeProvidersConfig(muxHome.path, {
+      openai: {
+        modelParameters: {
+          "gpt-5.2": { temperature: 0.4 },
+        },
+      },
+    });
+    const harness = createHarness(
+      muxHome.path,
+      createLocalWorkspaceMetadata(workspaceId, projectPath)
+    );
+    const piCalls: PiAgentRuntimeStreamOptions[] = [];
+    spyOn(PiAgentRuntimeService.prototype, "startStream").mockImplementation(
+      (options, onSettled) => {
+        piCalls.push(options);
+        onSettled();
+        return Promise.resolve({ success: true, data: undefined });
+      }
+    );
+
+    const result = await harness.service.streamMessage({
+      messages: [createMuxMessage("latest-user", "user", "Run the task")],
+      workspaceId,
+      modelString: "openai:gpt-5.2",
+      thinkingLevel: "off",
+      experiments: { piAgentRuntime: true },
+    });
+
+    expect(result.success).toBe(false);
+    if (result.success) throw new Error("Expected unsupported Pi overrides to fail closed");
+    expect("raw" in result.error ? result.error.raw : "").toContain("model parameter overrides");
+    expect(piCalls).toHaveLength(0);
+  });
+
+  it("fails closed when Pi would ignore OpenAI provider options", async () => {
+    using muxHome = new DisposableTempDir("ai-service-pi-provider-options");
+    const projectPath = path.join(muxHome.path, "project");
+    await fs.mkdir(projectPath, { recursive: true });
+    const workspaceId = "workspace-pi-provider-options";
+    const harness = createHarness(
+      muxHome.path,
+      createLocalWorkspaceMetadata(workspaceId, projectPath)
+    );
+
+    const result = await harness.service.streamMessage({
+      messages: [createMuxMessage("latest-user", "user", "Run the task")],
+      workspaceId,
+      modelString: "openai:gpt-5.2",
+      thinkingLevel: "off",
+      muxProviderOptions: { openai: { serviceTier: "priority" } },
+      experiments: { piAgentRuntime: true },
+    });
+
+    expect(result.success).toBe(false);
+    if (result.success) throw new Error("Expected unsupported Pi provider options to fail closed");
+    expect("raw" in result.error ? result.error.raw : "").toContain("OpenAI provider options");
+  });
+
   it("fails closed instead of falling back to the Mux harness for an incompatible Pi model", async () => {
     using muxHome = new DisposableTempDir("ai-service-pi-incompatible-model");
     const projectPath = path.join(muxHome.path, "project");

@@ -621,6 +621,8 @@ export interface MuxMetadata {
   systemMessageTokens?: number; // Token count for system message sent with this request (calculated by AIService)
   partial?: boolean; // Whether this message was interrupted and is incomplete
   synthetic?: boolean; // Whether this message was synthetically generated (e.g., [CONTINUE] sentinel)
+  /** Synthetic row that still carries an executable user request across an internal boundary. */
+  syntheticExecutable?: boolean;
   /**
    * UI hint: show in the chat UI even when synthetic.
    *

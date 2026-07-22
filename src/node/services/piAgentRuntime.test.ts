@@ -954,8 +954,8 @@ describe("PiAgentRuntimeService", () => {
         input: 12,
         output: 3,
         cacheRead: 4,
-        cacheWrite: 0,
-        totalTokens: 15,
+        cacheWrite: 2,
+        totalTokens: 21,
         cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
       },
       stopReason: "stop",
@@ -968,7 +968,9 @@ describe("PiAgentRuntimeService", () => {
         ...finalAssistant.usage,
         input: 7,
         output: 1,
-        totalTokens: 8,
+        cacheRead: 2,
+        cacheWrite: 1,
+        totalTokens: 11,
       },
       stopReason: "toolUse",
     };
@@ -1017,6 +1019,17 @@ describe("PiAgentRuntimeService", () => {
             },
             isError: false,
           });
+          listener({
+            type: "message_end",
+            message: {
+              role: "toolResult",
+              toolCallId: piToolCallId,
+              toolName: "bash",
+              content: [{ type: "text", text: '{"success":true,"path":"/workspace"}' }],
+              isError: false,
+              timestamp: 2,
+            },
+          });
           listener({ type: "message_end", message: finalAssistant });
         }
         streamInfoDuringPrompt = service.getStreamInfo(workspaceId);
@@ -1030,6 +1043,7 @@ describe("PiAgentRuntimeService", () => {
     let receivedModelId: string | undefined;
     let receivedAccessToken: string | undefined;
     let recordedInputTokens: number | undefined;
+    let recordedProviderMetadata: Record<string, unknown> | undefined;
     const service = new PiAgentRuntimeService({
       historyService,
       getCodexAuth: getTestCodexAuth,
@@ -1038,8 +1052,9 @@ describe("PiAgentRuntimeService", () => {
         receivedAccessToken = options.auth.access;
         return Promise.resolve(session);
       },
-      recordUsage: (_workspaceId, _model, usage) => {
-        recordedInputTokens = usage.inputTokens;
+      recordUsage: (...args: unknown[]) => {
+        recordedInputTokens = (args[2] as { inputTokens?: number }).inputTokens;
+        recordedProviderMetadata = args[3] as Record<string, unknown> | undefined;
         return Promise.resolve();
       },
       emit: (_name, event) => {
@@ -1089,15 +1104,43 @@ describe("PiAgentRuntimeService", () => {
     ).toBe(true);
     expect(receivedModelId).toBe("gpt-5.6-sol");
     expect(receivedAccessToken).toBe("access");
-    expect(recordedInputTokens).toBe(19);
+    expect(recordedInputTokens).toBe(28);
+    expect(recordedProviderMetadata).toEqual({
+      anthropic: { cacheCreationInputTokens: 3 },
+      mux: { costsIncluded: true },
+    });
+    const usageDeltas = events.filter((event) => event.type === "usage-delta");
+    expect(usageDeltas).toHaveLength(2);
+    expect(usageDeltas.at(-1)?.usage).toMatchObject({
+      inputTokens: 18,
+      outputTokens: 3,
+      totalTokens: 21,
+      cachedInputTokens: 4,
+    });
+    expect(usageDeltas.at(-1)?.cumulativeUsage).toMatchObject({
+      inputTokens: 28,
+      outputTokens: 4,
+      totalTokens: 32,
+      cachedInputTokens: 6,
+    });
+    expect(usageDeltas.at(-1)?.cumulativeProviderMetadata).toEqual({
+      anthropic: { cacheCreationInputTokens: 3 },
+      mux: { costsIncluded: true },
+    });
 
     const history = await historyService.getHistoryFromLatestBoundary(workspaceId);
     expect(history.success).toBe(true);
     if (!history.success) return;
     const assistant = history.data.find((message) => message.role === "assistant");
     expect(assistant?.metadata?.partial).toBe(false);
-    expect(assistant?.metadata?.usage?.inputTokens).toBe(19);
-    expect(assistant?.metadata?.contextUsage?.inputTokens).toBe(12);
+    expect(assistant?.metadata?.usage?.inputTokens).toBe(28);
+    expect(assistant?.metadata?.usage?.totalTokens).toBe(32);
+    expect(assistant?.metadata?.contextUsage?.inputTokens).toBe(18);
+    expect(assistant?.metadata?.contextUsage?.totalTokens).toBe(21);
+    expect(assistant?.metadata?.providerMetadata).toEqual({
+      anthropic: { cacheCreationInputTokens: 3 },
+      mux: { costsIncluded: true },
+    });
     expect(assistant?.parts.some((part) => part.type === "text" && part.text === "done")).toBe(
       true
     );

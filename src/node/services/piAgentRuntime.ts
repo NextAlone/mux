@@ -266,6 +266,7 @@ interface CreatePiSessionOptions {
   cwd: string;
   modelId: string;
   thinkingLevel: ThinkingLevel;
+  maxOutputTokens?: number;
   auth: CodexOauthAuth;
   agentId?: string;
   toolPolicy?: ToolPolicy;
@@ -365,7 +366,8 @@ export interface PiAgentRuntimeDependencies {
   recordUsage?: (
     workspaceId: string,
     modelString: string,
-    usage: LanguageModelV2Usage
+    usage: LanguageModelV2Usage,
+    providerMetadata?: Record<string, unknown>
   ) => Promise<void>;
   persistCodexAuth?: (expectedRefresh: string, auth: CodexOauthAuth) => Promise<void>;
   createSession?: (options: CreatePiSessionOptions) => Promise<PiSessionAdapter>;
@@ -389,6 +391,7 @@ export interface PiAgentRuntimeStreamOptions {
   messages: MuxMessage[];
   modelString: string;
   thinkingLevel?: ThinkingLevel;
+  maxOutputTokens?: number;
   agentId?: string;
   mode?: "plan" | "exec" | "compact";
   toolPolicy?: ToolPolicy;
@@ -643,12 +646,17 @@ function getPiLegacyMode(agentId: string | undefined): "plan" | "exec" | undefin
 function sumPiUsage(events: readonly AgentSessionEvent[]): {
   usage: LanguageModelV2Usage | undefined;
   contextUsage: LanguageModelV2Usage | undefined;
+  providerMetadata: Record<string, unknown> | undefined;
+  contextProviderMetadata: Record<string, unknown> | undefined;
   finishReason: string | undefined;
   errorMessage: string | undefined;
 } {
   let inputTokens = 0;
   let outputTokens = 0;
   let cachedInputTokens = 0;
+  let cacheWriteTokens = 0;
+  let contextCacheWriteTokens = 0;
+  let totalTokens = 0;
   let reasoningTokens = 0;
   let sawUsage = false;
   let contextUsage: LanguageModelV2Usage | undefined;
@@ -659,18 +667,27 @@ function sumPiUsage(events: readonly AgentSessionEvent[]): {
     const message = event.message;
     if (message.role !== "assistant" || !isRecord(message.usage)) continue;
     const usage = message.usage;
-    inputTokens += typeof usage.input === "number" ? usage.input : 0;
-    outputTokens += typeof usage.output === "number" ? usage.output : 0;
-    cachedInputTokens += typeof usage.cacheRead === "number" ? usage.cacheRead : 0;
-    reasoningTokens += typeof usage.reasoning === "number" ? usage.reasoning : 0;
-    const stepInputTokens = typeof usage.input === "number" ? usage.input : 0;
+    const stepUncachedInputTokens = typeof usage.input === "number" ? usage.input : 0;
     const stepOutputTokens = typeof usage.output === "number" ? usage.output : 0;
     const stepCachedInputTokens = typeof usage.cacheRead === "number" ? usage.cacheRead : 0;
+    const stepCacheWriteTokens = typeof usage.cacheWrite === "number" ? usage.cacheWrite : 0;
+    const stepInputTokens = stepUncachedInputTokens + stepCachedInputTokens + stepCacheWriteTokens;
+    const stepTotalTokens =
+      typeof usage.totalTokens === "number"
+        ? usage.totalTokens
+        : stepInputTokens + stepOutputTokens;
+    inputTokens += stepInputTokens;
+    outputTokens += stepOutputTokens;
+    cachedInputTokens += stepCachedInputTokens;
+    cacheWriteTokens += stepCacheWriteTokens;
+    contextCacheWriteTokens = stepCacheWriteTokens;
+    totalTokens += stepTotalTokens;
+    reasoningTokens += typeof usage.reasoning === "number" ? usage.reasoning : 0;
     const stepReasoningTokens = typeof usage.reasoning === "number" ? usage.reasoning : 0;
     contextUsage = {
       inputTokens: stepInputTokens,
       outputTokens: stepOutputTokens,
-      totalTokens: stepInputTokens + stepOutputTokens,
+      totalTokens: stepTotalTokens,
       ...(stepCachedInputTokens > 0 ? { cachedInputTokens: stepCachedInputTokens } : {}),
       ...(stepReasoningTokens > 0 ? { reasoningTokens: stepReasoningTokens } : {}),
     };
@@ -678,17 +695,26 @@ function sumPiUsage(events: readonly AgentSessionEvent[]): {
     errorMessage = typeof message.errorMessage === "string" ? message.errorMessage : errorMessage;
     sawUsage = true;
   }
+  const createProviderMetadata = (stepCacheWriteTokens: number): Record<string, unknown> => ({
+    ...(stepCacheWriteTokens > 0
+      ? { anthropic: { cacheCreationInputTokens: stepCacheWriteTokens } }
+      : {}),
+    // Pi is available only through the subscription-covered Codex OAuth route.
+    mux: { costsIncluded: true },
+  });
   return {
     usage: sawUsage
       ? {
           inputTokens,
           outputTokens,
-          totalTokens: inputTokens + outputTokens,
+          totalTokens,
           ...(cachedInputTokens > 0 ? { cachedInputTokens } : {}),
           ...(reasoningTokens > 0 ? { reasoningTokens } : {}),
         }
       : undefined,
     contextUsage,
+    providerMetadata: sawUsage ? createProviderMetadata(cacheWriteTokens) : undefined,
+    contextProviderMetadata: sawUsage ? createProviderMetadata(contextCacheWriteTokens) : undefined,
     finishReason,
     errorMessage,
   };
@@ -705,6 +731,10 @@ async function createDefaultPiSession(options: CreatePiSessionOptions): Promise<
   if (!model) {
     throw new Error(`Pi does not provide the Codex OAuth model ${options.modelId}`);
   }
+  const modelForTurn =
+    options.maxOutputTokens == null
+      ? model
+      : { ...model, maxTokens: Math.min(model.maxTokens, options.maxOutputTokens) };
 
   const resourceLoader = await createEmbeddedPiResourceLoader({
     cwd: options.cwd,
@@ -730,7 +760,7 @@ async function createDefaultPiSession(options: CreatePiSessionOptions): Promise<
   const { session } = await createAgentSession({
     cwd: options.cwd,
     modelRuntime,
-    model,
+    model: modelForTurn,
     thinkingLevel: options.thinkingLevel,
     tools:
       options.activeToolNames ??
@@ -996,6 +1026,7 @@ export class PiAgentRuntimeService {
       cwd: options.cwd,
       modelId,
       thinkingLevel: options.thinkingLevel ?? "medium",
+      maxOutputTokens: options.maxOutputTokens,
       auth,
       persistCodexAuth: this.dependencies.persistCodexAuth,
       agentId: options.agentId,
@@ -1188,6 +1219,23 @@ export class PiAgentRuntimeService {
         return;
       }
       if (event.type === "message_end") {
+        // Pi also emits message_end for prompts and tool results. Only assistant
+        // messages advance model usage; replaying the last total would double-fire
+        // context accounting and compaction checks.
+        if (event.message.role === "assistant") {
+          const usageResult = sumPiUsage(sessionEvents);
+          if (usageResult.contextUsage && usageResult.usage) {
+            emit({
+              type: "usage-delta",
+              workspaceId: options.workspaceId,
+              messageId,
+              usage: usageResult.contextUsage,
+              providerMetadata: usageResult.contextProviderMetadata,
+              cumulativeUsage: usageResult.usage,
+              cumulativeProviderMetadata: usageResult.providerMetadata,
+            });
+          }
+        }
         checkSoftAbortBoundary();
         return;
       }
@@ -1321,7 +1369,8 @@ export class PiAgentRuntimeService {
           await this.dependencies.recordUsage?.(
             options.workspaceId,
             options.modelString,
-            usageResult.usage
+            usageResult.usage,
+            usageResult.providerMetadata
           );
         }
         cleanupTurn();
@@ -1382,6 +1431,8 @@ export class PiAgentRuntimeService {
           mode: options.mode ?? getPiLegacyMode(options.agentId),
           usage: usageResult.usage,
           contextUsage: usageResult.contextUsage,
+          providerMetadata: usageResult.providerMetadata,
+          contextProviderMetadata: usageResult.contextProviderMetadata,
           finishReason: usageResult.finishReason,
           duration: Date.now() - startTime,
           ttftMs: undefined,
@@ -1423,7 +1474,8 @@ export class PiAgentRuntimeService {
         await this.dependencies.recordUsage?.(
           options.workspaceId,
           options.modelString,
-          usageResult.usage
+          usageResult.usage,
+          usageResult.providerMetadata
         );
       }
       cleanupTurn();
@@ -1446,7 +1498,8 @@ export class PiAgentRuntimeService {
         await this.dependencies.recordUsage?.(
           options.workspaceId,
           options.modelString,
-          usageResult.usage
+          usageResult.usage,
+          usageResult.providerMetadata
         );
       }
       if (parts.length === 0) {
@@ -1470,6 +1523,8 @@ export class PiAgentRuntimeService {
               errorType: "unknown",
               usage: usageResult.usage,
               contextUsage: usageResult.contextUsage,
+              providerMetadata: usageResult.providerMetadata,
+              contextProviderMetadata: usageResult.contextProviderMetadata,
               finishReason: usageResult.finishReason,
               duration: Date.now() - startTime,
             },
@@ -1525,6 +1580,8 @@ export class PiAgentRuntimeService {
           partial: true,
           usage: usageResult.usage,
           contextUsage: usageResult.contextUsage,
+          providerMetadata: usageResult.providerMetadata,
+          contextProviderMetadata: usageResult.contextProviderMetadata,
           finishReason: usageResult.finishReason,
           duration: Date.now() - startTime,
         },
@@ -1565,6 +1622,8 @@ export class PiAgentRuntimeService {
         duration: Date.now() - startTime,
         usage: usageResult.usage,
         contextUsage: usageResult.contextUsage,
+        providerMetadata: usageResult.providerMetadata,
+        contextProviderMetadata: usageResult.contextProviderMetadata,
         finishReason: usageResult.finishReason,
       },
       abandonPartial: abortState.abandonPartial,

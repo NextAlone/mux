@@ -822,9 +822,9 @@ export class AIService extends EventEmitter {
           throw new Error(result.error);
         }
       },
-      recordUsage: async (workspaceId, modelString, usage) => {
+      recordUsage: async (workspaceId, modelString, usage, providerMetadata) => {
         if (!this.sessionUsageService) return;
-        const displayUsage = createDisplayUsage(usage, modelString);
+        const displayUsage = createDisplayUsage(usage, modelString, providerMetadata);
         if (!displayUsage) return;
         try {
           await this.sessionUsageService.recordUsage(
@@ -1605,12 +1605,15 @@ export class AIService extends EventEmitter {
         metadata.parentWorkspaceId != null &&
         (agentInitiated === true ||
           latestUserForRuntimeSelection?.metadata?.retrySendOptions?.agentInitiated === true);
+      const latestUserIsSyntheticExecutable =
+        latestUserForRuntimeSelection?.metadata?.syntheticExecutable === true ||
+        latestUserIsDelegatedExecutable;
       const piAgentRuntimeRequested = shouldUsePiAgentRuntime(
         experiments,
         muxMetadata,
         latestUserMuxMetadata,
         latestUserIsSynthetic,
-        latestUserIsDelegatedExecutable
+        latestUserIsSyntheticExecutable
       );
       if (piAgentRuntimeRequested) {
         const incompatibility = getPiAgentRuntimeIncompatibility({
@@ -1626,6 +1629,47 @@ export class AIService extends EventEmitter {
         }
       }
       const usePiAgentRuntime = piAgentRuntimeRequested;
+      if (usePiAgentRuntime) {
+        const modelFallbackChain = resolveWorkspaceModelFallbackChain(
+          this.config.loadConfigOrDefault(),
+          workspaceId,
+          canonicalModelString
+        );
+        if (modelFallbackChain.length > 0) {
+          return Err({
+            type: "unknown",
+            raw: "Pi agent runtime does not support the configured model fallback chain. Remove the fallback for this model or disable the Pi runtime experiment.",
+          });
+        }
+
+        const piOverrides = resolveModelParameterOverrides(
+          this.config.loadProvidersConfig(),
+          canonicalProviderName,
+          canonicalModelString,
+          effectiveModelString
+        );
+        if (Object.keys(piOverrides.standard).length > 0 || piOverrides.providerExtras) {
+          return Err({
+            type: "unknown",
+            raw: "Pi agent runtime does not support providers.jsonc model parameter overrides. Remove the overrides for this model or disable the Pi runtime experiment.",
+          });
+        }
+
+        const openAIOptions = effectiveMuxProviderOptions.openai;
+        const unsupportedOpenAIOptions = [
+          openAIOptions?.serviceTier != null ? "serviceTier" : null,
+          openAIOptions?.wireFormat === "chatCompletions" ? "wireFormat=chatCompletions" : null,
+          openAIOptions?.store === true ? "store=true" : null,
+          openAIOptions?.forceContextLimitError === true ? "forceContextLimitError" : null,
+          openAIOptions?.simulateToolPolicyNoop === true ? "simulateToolPolicyNoop" : null,
+        ].filter((option): option is string => option != null);
+        if (unsupportedOpenAIOptions.length > 0) {
+          return Err({
+            type: "unknown",
+            raw: `Pi agent runtime does not support these OpenAI provider options: ${unsupportedOpenAIOptions.join(", ")}. Clear them or disable the Pi runtime experiment.`,
+          });
+        }
+      }
       // Mux retains product orchestration, but Pi owns its model/function-tool loop.
       // Code Mode is a legacy Mux Responses-Lite JavaScript tool surface; passing it
       // into Pi makes the model send shell source to a JavaScript-only `exec` tool.
@@ -2915,6 +2959,7 @@ export class AIService extends EventEmitter {
               messages: piMessages,
               modelString: canonicalModelString,
               thinkingLevel: effectiveThinkingLevel,
+              maxOutputTokens,
               agentId: effectiveAgentId,
               mode: legacyModeForMetadata,
               toolPolicy: effectiveToolPolicy,

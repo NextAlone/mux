@@ -2370,6 +2370,7 @@ export class AgentSession {
     options?: SendMessageOptions & { fileParts?: FilePart[] },
     internal?: {
       synthetic?: boolean;
+      syntheticExecutable?: boolean;
       agentInitiated?: boolean;
       goalContinuation?: boolean;
       goalKind?: GoalSyntheticMessageKind;
@@ -2524,6 +2525,8 @@ export class AgentSession {
       internal?.synthetic === true &&
       internal?.agentInitiated === true &&
       (await this.getWorkspaceMetadataForRetry())?.parentWorkspaceId != null;
+    const isSyntheticExecutable =
+      internal?.syntheticExecutable === true || isSyntheticDelegatedExecutable;
     if (
       effectiveFileParts &&
       shouldUsePiAgentRuntime(
@@ -2531,7 +2534,7 @@ export class AgentSession {
         typedMuxMetadata,
         typedMuxMetadata,
         internal?.synthetic === true,
-        isSyntheticDelegatedExecutable
+        isSyntheticExecutable
       )
     ) {
       for (const part of effectiveFileParts) {
@@ -2733,6 +2736,7 @@ export class AgentSession {
         ...(goalKind != null ? { kind: goalKind } : {}),
         // Auto-resume and other system-generated messages are synthetic + UI-visible
         ...(internal?.synthetic && { synthetic: true, uiVisible: true }),
+        ...(internal?.syntheticExecutable === true && { syntheticExecutable: true }),
       },
       additionalParts
     );
@@ -5986,6 +5990,9 @@ export class AgentSession {
     // re-enable auto-retry after a user explicitly opted out.
     const sendResult = await this.sendMessage(finalText, options, {
       synthetic: true,
+      // This is the deferred original request, not the Mux-owned compaction
+      // control turn. Preserve its accepted Pi runtime ownership explicitly.
+      syntheticExecutable: true,
       agentInitiated: followUp.agentInitiated === true ? true : undefined,
       goalKind: followUp.goalKind,
       goalContinuation: followUp.goalKind === GOAL_CONTINUATION_KIND,

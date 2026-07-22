@@ -177,6 +177,9 @@ export const MuxMessageSchema = z.object({
       agentId: AgentIdSchema.optional().catch(undefined),
       partial: z.boolean().optional(),
       synthetic: z.boolean().optional(),
+      // Synthetic provenance must not imply Mux runtime ownership when the row
+      // carries the user's executable request across a compaction boundary.
+      syntheticExecutable: z.boolean().optional(),
       uiVisible: z.boolean().optional(),
 
       agentSkillSnapshot: z

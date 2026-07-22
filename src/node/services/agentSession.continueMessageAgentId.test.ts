@@ -28,7 +28,7 @@ interface SessionInternals {
   sendMessage: (
     message: string,
     options?: SendOptions,
-    internal?: { synthetic?: boolean; agentInitiated?: boolean }
+    internal?: { synthetic?: boolean; agentInitiated?: boolean; syntheticExecutable?: boolean }
   ) => Promise<SendMessageResult>;
   scheduleStartupRecovery: () => void;
   startupRecoveryPromise: Promise<void> | null;
@@ -149,7 +149,7 @@ describe("AgentSession continue-message agentId fallback", () => {
   test("legacy continueMessage.mode does not fall back to compact agent", async () => {
     let dispatchedMessage: string | undefined;
     let dispatchedOptions: SendOptions | undefined;
-    let dispatchedInternal: { synthetic?: boolean } | undefined;
+    let dispatchedInternal: { synthetic?: boolean; syntheticExecutable?: boolean } | undefined;
     const legacyFollowUp = {
       text: "follow up",
       model: "openai:gpt-4o",
@@ -161,7 +161,11 @@ describe("AgentSession continue-message agentId fallback", () => {
     ]);
 
     internals.sendMessage = mock(
-      (message: string, options?: SendOptions, internal?: { synthetic?: boolean }) => {
+      (
+        message: string,
+        options?: SendOptions,
+        internal?: { synthetic?: boolean; syntheticExecutable?: boolean }
+      ) => {
         dispatchedMessage = message;
         dispatchedOptions = options;
         dispatchedInternal = internal;
@@ -173,7 +177,7 @@ describe("AgentSession continue-message agentId fallback", () => {
 
     expect(dispatchedMessage).toBe("follow up");
     expect(dispatchedOptions?.agentId).toBe("plan");
-    expect(dispatchedInternal?.synthetic).toBe(true);
+    expect(dispatchedInternal).toMatchObject({ synthetic: true, syntheticExecutable: true });
   });
 
   test("dispatchPendingFollowUp preserves the agent-initiated classification", async () => {

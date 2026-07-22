@@ -66,19 +66,18 @@ export function shouldUsePiAgentRuntime(
   muxMetadata: { type: MuxMessageMetadata["type"] } | undefined,
   latestUserMuxMetadata?: { type: MuxMessageMetadata["type"] },
   latestUserIsSynthetic = false,
-  latestUserIsDelegatedExecutable = false
+  latestUserIsSyntheticExecutable = false
 ): boolean {
   const isExecutableTurn = (metadata: { type: MuxMessageMetadata["type"] } | undefined): boolean =>
     metadata == null || metadata.type === "normal" || metadata.type === "workspace-turn-task";
 
   // Mux owns synthetic control turns because their metadata drives orchestration,
-  // correlation, and UI behavior outside the model loop. TaskService also marks
-  // restart and Plan→Exec continuations synthetic to distinguish their UI/history
-  // origin, even though they start a delegated child agent's real model/tool loop.
-  // That explicit delegated-execution marker is the only synthetic exception.
+  // correlation, and UI behavior outside the model loop. Internal continuations
+  // can also be synthetic for UI/history provenance while still carrying the
+  // original executable request. Only that explicit marker keeps ownership on Pi.
   return (
     resolveAgentRuntimeKind(experiments) === "pi" &&
-    (!latestUserIsSynthetic || latestUserIsDelegatedExecutable) &&
+    (!latestUserIsSynthetic || latestUserIsSyntheticExecutable) &&
     isExecutableTurn(muxMetadata) &&
     isExecutableTurn(latestUserMuxMetadata)
   );
