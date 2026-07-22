@@ -868,7 +868,7 @@ describe("PiAgentRuntimeService", () => {
     };
     const now = 1_000;
     const nowSpy = spyOn(Date, "now").mockImplementation(() => now);
-    const replayDeltas: string[] = [];
+    const replayDeltas: Array<{ delta: string; tokens: unknown }> = [];
     const session: PiSessionAdapter = {
       agent: { state: { messages: [] } },
       subscribe(listener) {
@@ -914,7 +914,7 @@ describe("PiAgentRuntimeService", () => {
       createSession: () => Promise.resolve(session),
       emit: (_name, event) => {
         if (event.type === "stream-delta" && event.replay === true) {
-          replayDeltas.push(String(event.delta));
+          replayDeltas.push({ delta: String(event.delta), tokens: event.tokens });
         }
       },
     });
@@ -928,7 +928,7 @@ describe("PiAgentRuntimeService", () => {
         modelString: "openai:gpt-5.6-sol",
       });
       expect(result.success).toBe(true);
-      expect(replayDeltas).toEqual(["second"]);
+      expect(replayDeltas).toEqual([{ delta: "second", tokens: 2 }]);
     } finally {
       nowSpy.mockRestore();
     }
@@ -1078,6 +1078,7 @@ describe("PiAgentRuntimeService", () => {
     expect(result.success).toBe(true);
     expect(events.map((event) => event.type)).toContain("stream-start");
     expect(events.map((event) => event.type)).toContain("stream-delta");
+    expect(events.find((event) => event.type === "stream-delta")?.tokens).toBeGreaterThan(0);
     expect(events.map((event) => event.type)).toContain("tool-call-end");
     expect(events.find((event) => event.type === "tool-call-end")?.result).toEqual({
       success: true,

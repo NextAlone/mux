@@ -119,6 +119,15 @@ function stringifyToolValue(value: unknown): string {
   }
 }
 
+function estimateStreamingDeltaTokens(text: string): number {
+  if (text.length === 0) {
+    return 0;
+  }
+  // Pi emits deltas synchronously; live TPS needs a cheap non-blocking estimate.
+  // Final accounting still comes from provider usage on message_end.
+  return Math.max(1, Math.ceil(text.length / 4));
+}
+
 function formatToolPart(part: MuxToolPart): string {
   const input = stringifyToolValue(part.input);
   if (part.state === "output-available") {
@@ -426,6 +435,7 @@ type TextualStreamPart = MuxTextPart | MuxReasoningPart;
 interface TextDeltaChunk {
   delta: string;
   timestamp: number;
+  tokens: number;
 }
 
 interface PiAbortOptions {
@@ -907,7 +917,11 @@ export class PiAgentRuntimeService {
     for (const part of parts) {
       if (part.type === "text" || part.type === "reasoning") {
         const chunks = turn.textDeltaChunks.get(part) ?? [
-          { delta: part.text, timestamp: part.timestamp ?? turn.startTime },
+          {
+            delta: part.text,
+            timestamp: part.timestamp ?? turn.startTime,
+            tokens: estimateStreamingDeltaTokens(part.text),
+          },
         ];
         const replayChunks = chunks.filter(
           (chunk) => options?.afterTimestamp == null || chunk.timestamp > options.afterTimestamp
@@ -918,7 +932,7 @@ export class PiAgentRuntimeService {
             workspaceId,
             messageId: turn.messageId,
             delta: chunk.delta,
-            tokens: 0,
+            tokens: chunk.tokens,
             timestamp: chunk.timestamp,
             replay: true,
           });
@@ -952,7 +966,7 @@ export class PiAgentRuntimeService {
         toolCallId: part.toolCallId,
         toolName: part.toolName,
         args: part.input,
-        tokens: 0,
+        tokens: estimateStreamingDeltaTokens(stringifyToolValue(part.input)),
         timestamp: part.timestamp ?? Date.now(),
         executionStartedAt: part.executionStartedAt,
         replay: true,
@@ -1179,10 +1193,11 @@ export class PiAgentRuntimeService {
       if (event.type === "message_update") {
         const update = event.assistantMessageEvent;
         if (update.type === "text_delta") {
+          const tokens = estimateStreamingDeltaTokens(update.delta);
           const part = addTextDelta(parts, "text", update.delta, timestamp);
           if (part) {
             const chunks = textDeltaChunks.get(part) ?? [];
-            chunks.push({ delta: update.delta, timestamp });
+            chunks.push({ delta: update.delta, timestamp, tokens });
             textDeltaChunks.set(part, chunks);
           }
           schedulePartialWrite();
@@ -1191,14 +1206,15 @@ export class PiAgentRuntimeService {
             workspaceId: options.workspaceId,
             messageId,
             delta: update.delta,
-            tokens: 0,
+            tokens,
             timestamp,
           });
         } else if (update.type === "thinking_delta") {
+          const tokens = estimateStreamingDeltaTokens(update.delta);
           const part = addTextDelta(parts, "reasoning", update.delta, timestamp);
           if (part) {
             const chunks = textDeltaChunks.get(part) ?? [];
-            chunks.push({ delta: update.delta, timestamp });
+            chunks.push({ delta: update.delta, timestamp, tokens });
             textDeltaChunks.set(part, chunks);
           }
           schedulePartialWrite();
@@ -1207,7 +1223,7 @@ export class PiAgentRuntimeService {
             workspaceId: options.workspaceId,
             messageId,
             delta: update.delta,
-            tokens: 0,
+            tokens,
             timestamp,
           });
         } else if (update.type === "thinking_end") {
@@ -1258,7 +1274,7 @@ export class PiAgentRuntimeService {
           toolCallId,
           toolName: event.toolName,
           args: event.args,
-          tokens: 0,
+          tokens: estimateStreamingDeltaTokens(stringifyToolValue(event.args)),
           timestamp,
           executionStartedAt: timestamp,
         });
