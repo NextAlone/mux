@@ -71,6 +71,21 @@ describe("CYCLE_MODEL keybind (Ctrl+/)", () => {
   });
 });
 
+describe("OPEN_MODEL_SELECTOR keybind (Option/Alt+P)", () => {
+  it("matches Option+P on macOS via the KeyP code", () => {
+    globalThis.window = { api: { platform: "darwin" } } as unknown as Window & typeof globalThis;
+    // Option+P produces π on macOS, so matching event.key would be unreliable.
+    const event = createEvent({ key: "π", code: "KeyP", altKey: true });
+    expect(matchesKeybind(event, KEYBINDS.OPEN_MODEL_SELECTOR)).toBe(true);
+  });
+
+  it("matches Alt+P on Linux/Windows", () => {
+    globalThis.window = { api: { platform: "linux" } } as unknown as Window & typeof globalThis;
+    const event = createEvent({ key: "p", code: "KeyP", altKey: true });
+    expect(matchesKeybind(event, KEYBINDS.OPEN_MODEL_SELECTOR)).toBe(true);
+  });
+});
+
 describe("CYCLE_AGENT keybind (Ctrl/Cmd+.)", () => {
   it("matches Cmd+. on macOS via the Period key code", () => {
     globalThis.window = { api: { platform: "darwin" } } as unknown as Window & typeof globalThis;
@@ -115,6 +130,18 @@ describe("thinking adjustment keybinds (Ctrl/Cmd+Shift+[ and ])", () => {
     const decrease = createEvent({ key: "{", code: "BracketLeft", ctrlKey: true, shiftKey: true });
     expect(matchesKeybind(decrease, KEYBINDS.DECREASE_THINKING)).toBe(true);
     expect(matchesKeybind(decrease, KEYBINDS.NAVIGATE_BACK)).toBe(false);
+  });
+});
+
+describe("CYCLE_THINKING keybind (Shift+Tab)", () => {
+  it("matches Shift+Tab without other modifiers", () => {
+    const event = createEvent({ key: "Tab", shiftKey: true });
+    expect(matchesKeybind(event, KEYBINDS.CYCLE_THINKING)).toBe(true);
+  });
+
+  it("does not match plain Tab", () => {
+    const event = createEvent({ key: "Tab" });
+    expect(matchesKeybind(event, KEYBINDS.CYCLE_THINKING)).toBe(false);
   });
 });
 

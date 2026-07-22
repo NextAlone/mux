@@ -321,10 +321,16 @@ export const ThinkingProvider: React.FC<ThinkingProviderProps> = (props) => {
   // and the "New Workspace" creation screen (which doesn't mount AIView).
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Focused controls (such as the model selector) own Tab navigation first.
+      if (e.defaultPrevented) {
+        return;
+      }
+
       const isIncrease = matchesKeybind(e, KEYBINDS.INCREASE_THINKING);
       const isDecrease = matchesKeybind(e, KEYBINDS.DECREASE_THINKING);
       // TOGGLE_THINKING is deprecated but still honored for muscle memory.
-      const isCycle = matchesKeybind(e, KEYBINDS.TOGGLE_THINKING);
+      const isCycle =
+        matchesKeybind(e, KEYBINDS.CYCLE_THINKING) || matchesKeybind(e, KEYBINDS.TOGGLE_THINKING);
       if (!isIncrease && !isDecrease && !isCycle) {
         return;
       }

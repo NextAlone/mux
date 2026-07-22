@@ -1305,8 +1305,7 @@ export function buildCoreSources(p: BuildSourcesParams): Array<() => CommandActi
         id: CommandIds.modelChange(),
         title: "Change Model…",
         section: section.mode,
-        // No shortcutHint: CYCLE_MODEL (⌘/) cycles to next model directly,
-        // but this action opens the model selector picker — different behavior.
+        shortcutHint: formatKeybind(KEYBINDS.OPEN_MODEL_SELECTOR),
         run: () => {
           window.dispatchEvent(createCustomEvent(CUSTOM_EVENTS.OPEN_MODEL_SELECTOR));
         },

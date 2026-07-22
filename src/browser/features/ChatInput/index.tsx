@@ -1466,6 +1466,12 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
 
   useEffect(() => {
     const handleGlobalKeyDown = (event: KeyboardEvent) => {
+      if (matchesKeybind(event, KEYBINDS.OPEN_MODEL_SELECTOR)) {
+        event.preventDefault();
+        openModelSelector();
+        return;
+      }
+
       if (isEditableElement(event.target)) {
         return;
       }

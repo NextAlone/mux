@@ -675,7 +675,7 @@ describe("ThinkingContext", () => {
     expect(setActiveTurnThinkingLevel).not.toHaveBeenCalled();
   });
 
-  test("cycles thinking level via keybind in project-scoped (creation) flow", async () => {
+  test("cycles thinking level via Shift+Tab in project-scoped (creation) flow", async () => {
     const projectPath = "/Users/dev/my-project";
 
     // Force a model with a multi-level thinking policy.
@@ -697,9 +697,7 @@ describe("ThinkingContext", () => {
     });
 
     act(() => {
-      window.dispatchEvent(
-        new window.KeyboardEvent("keydown", { key: "T", ctrlKey: true, shiftKey: true })
-      );
+      window.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Tab", shiftKey: true }));
     });
 
     // gpt-4.1 is not an explicitly-recognized reasoning model, so it keeps the legacy

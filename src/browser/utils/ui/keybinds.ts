@@ -378,6 +378,10 @@ export const KEYBINDS = {
   /** Cycle through configured models */
   CYCLE_MODEL: { key: "/", ctrl: true },
 
+  /** Open the model selector without changing the current model */
+  // Use the physical P key: macOS Option+P produces "π" for event.key.
+  OPEN_MODEL_SELECTOR: { key: "p", code: "KeyP", alt: true },
+
   /** Open new integrated terminal tab in sidebar */
   // macOS: Cmd+T, Win/Linux: Ctrl+T
   OPEN_TERMINAL: { key: "T", ctrl: true },
@@ -402,6 +406,9 @@ export const KEYBINDS = {
   /** Open Command Palette directly in command mode (prefills ">") */
   // F4 avoids browser-level collisions with Ctrl/Cmd+Shift+P in Firefox.
   OPEN_COMMAND_PALETTE_ACTIONS: { key: "F4" },
+
+  /** Cycle thinking effort from anywhere without leaving the current workflow */
+  CYCLE_THINKING: { key: "Tab", shift: true },
 
   /**
    * @deprecated Superseded by INCREASE_THINKING / DECREASE_THINKING.
